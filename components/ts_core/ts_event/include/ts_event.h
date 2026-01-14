@@ -169,6 +169,32 @@ typedef struct {
 #define TS_EVENT_SYSTEM_LOW_MEMORY  0x0005
 
 /* ============================================================================
+ * 网络事件 ID
+ * ========================================================================== */
+
+/** 以太网连接 */
+#define TS_EVT_ETH_CONNECTED        0x0101
+/** 以太网断开 */
+#define TS_EVT_ETH_DISCONNECTED     0x0102
+/** WiFi 连接 */
+#define TS_EVT_WIFI_CONNECTED       0x0103
+/** WiFi 断开 */
+#define TS_EVT_WIFI_DISCONNECTED    0x0104
+/** 获取到 IP 地址 */
+#define TS_EVT_GOT_IP               0x0105
+/** IP 地址丢失 */
+#define TS_EVT_LOST_IP              0x0106
+
+/* ============================================================================
+ * 事件基础别名（兼容旧代码）
+ * ========================================================================== */
+
+#define TS_EVENT_NETWORK    TS_EVENT_BASE_NETWORK
+#define TS_EVENT_SYSTEM     TS_EVENT_BASE_SYSTEM
+#define TS_EVENT_LED        TS_EVENT_BASE_LED
+#define TS_EVENT_POWER      TS_EVENT_BASE_POWER
+
+/* ============================================================================
  * 初始化和反初始化
  * ========================================================================== */
 

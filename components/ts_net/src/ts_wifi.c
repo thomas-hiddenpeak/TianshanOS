@@ -42,19 +42,24 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                 break;
             case WIFI_EVENT_AP_STACONNECTED: {
                 wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *)event_data;
-                TS_LOGI(TAG, "Station " MACSTR " joined", MAC2STR(event->mac));
+                TS_LOGI(TAG, "Station %02x:%02x:%02x:%02x:%02x:%02x joined",
+                        event->mac[0], event->mac[1], event->mac[2],
+                        event->mac[3], event->mac[4], event->mac[5]);
                 break;
             }
             case WIFI_EVENT_AP_STADISCONNECTED: {
                 wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *)event_data;
-                TS_LOGI(TAG, "Station " MACSTR " left", MAC2STR(event->mac));
+                TS_LOGI(TAG, "Station %02x:%02x:%02x:%02x:%02x:%02x left",
+                        event->mac[0], event->mac[1], event->mac[2],
+                        event->mac[3], event->mac[4], event->mac[5]);
                 break;
             }
         }
     } else if (event_base == IP_EVENT) {
         if (event_id == IP_EVENT_STA_GOT_IP) {
             ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-            TS_LOGI(TAG, "WiFi got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+            TS_LOGI(TAG, "WiFi got IP: %d.%d.%d.%d",
+                    IP2STR(&event->ip_info.ip));
             ts_event_post(TS_EVENT_NETWORK, TS_EVT_GOT_IP,
                           &event->ip_info, sizeof(event->ip_info), 0);
         }

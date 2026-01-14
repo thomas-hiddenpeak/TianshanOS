@@ -51,7 +51,7 @@ static void got_ip_handler(void *arg, esp_event_base_t event_base,
 {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     if (event->esp_netif == s_eth_netif) {
-        TS_LOGI(TAG, "Ethernet got IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        TS_LOGI(TAG, "Ethernet got IP: %d.%d.%d.%d", IP2STR(&event->ip_info.ip));
         ts_event_post(TS_EVENT_NETWORK, TS_EVT_GOT_IP, 
                       &event->ip_info, sizeof(event->ip_info), 0);
     }
@@ -86,23 +86,16 @@ esp_err_t ts_eth_init(const ts_eth_config_t *config)
         return ret;
     }
     
-    // W5500 SPI device
-    spi_device_interface_config_t devcfg = {
+    // W5500 SPI device configuration (ESP-IDF 5.5 API)
+    spi_device_interface_config_t spi_devcfg = {
         .mode = 0,
         .clock_speed_hz = config->spi_clock_mhz * 1000 * 1000,
         .spics_io_num = config->gpio_cs,
         .queue_size = 20,
     };
     
-    spi_device_handle_t spi_handle;
-    ret = spi_bus_add_device(config->spi_host, &devcfg, &spi_handle);
-    if (ret != ESP_OK) {
-        TS_LOGE(TAG, "SPI device add failed");
-        return ret;
-    }
-    
-    // W5500 MAC driver
-    eth_w5500_config_t w5500_config = ETH_W5500_DEFAULT_CONFIG(spi_handle);
+    // W5500 MAC driver (ESP-IDF 5.5 API)
+    eth_w5500_config_t w5500_config = ETH_W5500_DEFAULT_CONFIG(config->spi_host, &spi_devcfg);
     w5500_config.int_gpio_num = config->gpio_int;
     
     eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
