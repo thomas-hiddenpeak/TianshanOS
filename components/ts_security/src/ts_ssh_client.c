@@ -25,6 +25,10 @@
 #include <mbedtls/entropy.h>
 #include <mbedtls/bignum.h>
 #include <mbedtls/dhm.h>
+#include <mbedtls/pk.h>
+#include <mbedtls/rsa.h>
+#include <mbedtls/ecdsa.h>
+#include <mbedtls/pem.h>
 
 #define TAG "ts_ssh"
 #define SSH_MAX_PACKET_SIZE 35000
@@ -682,6 +686,255 @@ static esp_err_t ssh_authenticate(ts_ssh_session_t session)
         } else if (msg_type == SSH_MSG_USERAUTH_FAILURE) {
             snprintf(session->error_msg, sizeof(session->error_msg), 
                      "Authentication failed");
+            return ESP_ERR_INVALID_ARG;
+        }
+    }
+    
+    // Public key authentication
+    if (session->config.auth_method == TS_SSH_AUTH_PUBLICKEY) {
+        if (!session->config.auth.key.private_key || 
+            session->config.auth.key.private_key_len == 0) {
+            snprintf(session->error_msg, sizeof(session->error_msg), 
+                     "No private key provided");
+            return ESP_ERR_INVALID_ARG;
+        }
+        
+        // Parse private key
+        mbedtls_pk_context pk;
+        mbedtls_pk_init(&pk);
+        
+        int pk_ret = mbedtls_pk_parse_key(&pk, 
+                                           session->config.auth.key.private_key,
+                                           session->config.auth.key.private_key_len,
+                                           (const unsigned char*)session->config.auth.key.passphrase,
+                                           session->config.auth.key.passphrase ? 
+                                               strlen(session->config.auth.key.passphrase) : 0,
+                                           mbedtls_ctr_drbg_random, &session->ctr_drbg);
+        if (pk_ret != 0) {
+            mbedtls_pk_free(&pk);
+            snprintf(session->error_msg, sizeof(session->error_msg), 
+                     "Failed to parse private key: -0x%04x", -pk_ret);
+            return ESP_FAIL;
+        }
+        
+        // Determine key type and build public key blob
+        const char *key_type = NULL;
+        uint8_t pubkey_blob[512];
+        size_t pubkey_len = 0;
+        
+        if (mbedtls_pk_get_type(&pk) == MBEDTLS_PK_RSA) {
+            key_type = "ssh-rsa";
+            mbedtls_rsa_context *rsa = mbedtls_pk_rsa(pk);
+            
+            // Build ssh-rsa public key blob: string("ssh-rsa") + mpint(e) + mpint(n)
+            size_t blob_pos = 0;
+            
+            // Key type string
+            ssh_write_uint32(pubkey_blob + blob_pos, strlen(key_type));
+            blob_pos += 4;
+            memcpy(pubkey_blob + blob_pos, key_type, strlen(key_type));
+            blob_pos += strlen(key_type);
+            
+            // Export e
+            uint8_t e_buf[16];
+            size_t e_len = mbedtls_rsa_get_len(rsa);
+            mbedtls_mpi e_mpi;
+            mbedtls_mpi_init(&e_mpi);
+            mbedtls_rsa_export(rsa, NULL, NULL, NULL, NULL, &e_mpi);
+            e_len = mbedtls_mpi_size(&e_mpi);
+            mbedtls_mpi_write_binary(&e_mpi, e_buf, e_len);
+            mbedtls_mpi_free(&e_mpi);
+            
+            ssh_write_uint32(pubkey_blob + blob_pos, e_len);
+            blob_pos += 4;
+            memcpy(pubkey_blob + blob_pos, e_buf, e_len);
+            blob_pos += e_len;
+            
+            // Export n
+            uint8_t n_buf[512];
+            mbedtls_mpi n_mpi;
+            mbedtls_mpi_init(&n_mpi);
+            mbedtls_rsa_export(rsa, &n_mpi, NULL, NULL, NULL, NULL);
+            size_t n_len = mbedtls_mpi_size(&n_mpi);
+            mbedtls_mpi_write_binary(&n_mpi, n_buf, n_len);
+            mbedtls_mpi_free(&n_mpi);
+            
+            ssh_write_uint32(pubkey_blob + blob_pos, n_len);
+            blob_pos += 4;
+            memcpy(pubkey_blob + blob_pos, n_buf, n_len);
+            blob_pos += n_len;
+            
+            pubkey_len = blob_pos;
+        } else if (mbedtls_pk_get_type(&pk) == MBEDTLS_PK_ECKEY) {
+            // For EC keys, determine curve
+            size_t bitlen = mbedtls_pk_get_bitlen(&pk);
+            if (bitlen == 256) {
+                key_type = "ecdsa-sha2-nistp256";
+            } else if (bitlen == 384) {
+                key_type = "ecdsa-sha2-nistp384";
+            } else {
+                mbedtls_pk_free(&pk);
+                snprintf(session->error_msg, sizeof(session->error_msg), 
+                         "Unsupported EC curve");
+                return ESP_ERR_NOT_SUPPORTED;
+            }
+            
+            // Build ECDSA public key blob (simplified)
+            size_t blob_pos = 0;
+            ssh_write_uint32(pubkey_blob + blob_pos, strlen(key_type));
+            blob_pos += 4;
+            memcpy(pubkey_blob + blob_pos, key_type, strlen(key_type));
+            blob_pos += strlen(key_type);
+            
+            // Curve identifier
+            const char *curve_id = (bitlen == 256) ? "nistp256" : "nistp384";
+            ssh_write_uint32(pubkey_blob + blob_pos, strlen(curve_id));
+            blob_pos += 4;
+            memcpy(pubkey_blob + blob_pos, curve_id, strlen(curve_id));
+            blob_pos += strlen(curve_id);
+            
+            // Public point (Q) - write as uncompressed point
+            uint8_t q_buf[133];  // Max for P-521
+            size_t q_len = sizeof(q_buf);
+            
+            // Use accessor functions for newer mbedtls API
+            mbedtls_ecp_group grp;
+            mbedtls_ecp_point Q;
+            mbedtls_ecp_group_init(&grp);
+            mbedtls_ecp_point_init(&Q);
+            
+            // Export group and public key point from the keypair
+            mbedtls_ecp_export(mbedtls_pk_ec(pk), &grp, NULL, &Q);
+            
+            mbedtls_ecp_point_write_binary(&grp, &Q, 
+                                            MBEDTLS_ECP_PF_UNCOMPRESSED,
+                                            &q_len, q_buf, sizeof(q_buf));
+            
+            mbedtls_ecp_point_free(&Q);
+            mbedtls_ecp_group_free(&grp);
+            
+            ssh_write_uint32(pubkey_blob + blob_pos, q_len);
+            blob_pos += 4;
+            memcpy(pubkey_blob + blob_pos, q_buf, q_len);
+            blob_pos += q_len;
+            
+            pubkey_len = blob_pos;
+        } else {
+            mbedtls_pk_free(&pk);
+            snprintf(session->error_msg, sizeof(session->error_msg), 
+                     "Unsupported key type");
+            return ESP_ERR_NOT_SUPPORTED;
+        }
+        
+        // Build authentication request with signature
+        uint8_t auth_req[2048];
+        pos = 0;
+        
+        auth_req[pos++] = SSH_MSG_USERAUTH_REQUEST;
+        
+        // Username
+        size_t ulen = strlen(session->config.username);
+        ssh_write_uint32(auth_req + pos, ulen);
+        pos += 4;
+        memcpy(auth_req + pos, session->config.username, ulen);
+        pos += ulen;
+        
+        // Service name
+        const char *svc = "ssh-connection";
+        ssh_write_uint32(auth_req + pos, strlen(svc));
+        pos += 4;
+        memcpy(auth_req + pos, svc, strlen(svc));
+        pos += strlen(svc);
+        
+        // Method name
+        const char *method = "publickey";
+        ssh_write_uint32(auth_req + pos, strlen(method));
+        pos += 4;
+        memcpy(auth_req + pos, method, strlen(method));
+        pos += strlen(method);
+        
+        // TRUE (has signature)
+        auth_req[pos++] = 1;
+        
+        // Public key algorithm name
+        ssh_write_uint32(auth_req + pos, strlen(key_type));
+        pos += 4;
+        memcpy(auth_req + pos, key_type, strlen(key_type));
+        pos += strlen(key_type);
+        
+        // Public key blob
+        ssh_write_uint32(auth_req + pos, pubkey_len);
+        pos += 4;
+        memcpy(auth_req + pos, pubkey_blob, pubkey_len);
+        pos += pubkey_len;
+        
+        // Build data to sign: session_id + auth_request (without signature)
+        uint8_t sign_data[2048];
+        size_t sign_data_len = 0;
+        
+        // Session ID (use placeholder if not established)
+        ssh_write_uint32(sign_data, 32);
+        sign_data_len += 4;
+        memcpy(sign_data + sign_data_len, session->session_id, 32);
+        sign_data_len += 32;
+        
+        // Copy auth request data
+        memcpy(sign_data + sign_data_len, auth_req, pos);
+        sign_data_len += pos;
+        
+        // Compute signature
+        uint8_t hash[32];
+        mbedtls_sha256(sign_data, sign_data_len, hash, 0);
+        
+        uint8_t sig_buf[512];
+        size_t sig_len = 0;
+        
+        pk_ret = mbedtls_pk_sign(&pk, MBEDTLS_MD_SHA256, hash, 32,
+                                  sig_buf, sizeof(sig_buf), &sig_len,
+                                  mbedtls_ctr_drbg_random, &session->ctr_drbg);
+        
+        mbedtls_pk_free(&pk);
+        
+        if (pk_ret != 0) {
+            snprintf(session->error_msg, sizeof(session->error_msg), 
+                     "Signing failed: -0x%04x", -pk_ret);
+            return ESP_FAIL;
+        }
+        
+        // Build signature blob: string(key_type) + string(signature)
+        uint8_t sig_blob[600];
+        size_t sig_blob_len = 0;
+        
+        ssh_write_uint32(sig_blob, strlen(key_type));
+        sig_blob_len += 4;
+        memcpy(sig_blob + sig_blob_len, key_type, strlen(key_type));
+        sig_blob_len += strlen(key_type);
+        
+        ssh_write_uint32(sig_blob + sig_blob_len, sig_len);
+        sig_blob_len += 4;
+        memcpy(sig_blob + sig_blob_len, sig_buf, sig_len);
+        sig_blob_len += sig_len;
+        
+        // Append signature blob to auth request
+        ssh_write_uint32(auth_req + pos, sig_blob_len);
+        pos += 4;
+        memcpy(auth_req + pos, sig_blob, sig_blob_len);
+        pos += sig_blob_len;
+        
+        ret = ssh_send_packet(session, auth_req, pos);
+        if (ret != ESP_OK) return ret;
+        
+        // Check response
+        ret = ssh_recv_packet(session, &response, &resp_len, &msg_type);
+        if (ret != ESP_OK) return ret;
+        free(response);
+        
+        if (msg_type == SSH_MSG_USERAUTH_SUCCESS) {
+            TS_LOGI(TAG, "Public key authentication successful");
+            return ESP_OK;
+        } else if (msg_type == SSH_MSG_USERAUTH_FAILURE) {
+            snprintf(session->error_msg, sizeof(session->error_msg), 
+                     "Public key authentication failed");
             return ESP_ERR_INVALID_ARG;
         }
     }
