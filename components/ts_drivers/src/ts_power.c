@@ -6,6 +6,7 @@
 #include "ts_power.h"
 #include "ts_hal_adc.h"
 #include "ts_hal_i2c.h"
+#include "ts_hal_uart.h"
 #include "ts_log.h"
 #include "ts_event.h"
 #include "esp_timer.h"
@@ -65,11 +66,32 @@
 
 #define INA3221_MANUF_ID        0x5449  /* TI */
 
+/*===========================================================================*/
+/*                          UART Power Monitor                                */
+/*===========================================================================*/
+
+/* PZEM-004T V3 Modbus Protocol */
+#define PZEM_DEFAULT_ADDR       0xF8
+#define PZEM_REG_VOLTAGE        0x0000
+#define PZEM_REG_CURRENT_L      0x0001
+#define PZEM_REG_CURRENT_H      0x0002
+#define PZEM_REG_POWER_L        0x0003
+#define PZEM_REG_POWER_H        0x0004
+#define PZEM_REG_ENERGY_L       0x0005
+#define PZEM_REG_ENERGY_H       0x0006
+#define PZEM_REG_FREQUENCY      0x0007
+#define PZEM_REG_PF             0x0008
+#define PZEM_REG_ALARM          0x0009
+
+#define PZEM_CMD_READ_INPUT     0x04
+#define PZEM_READ_ALL_REGS      10
+
 typedef struct {
     bool configured;
     ts_power_rail_config_t config;
     ts_adc_handle_t adc;
     ts_i2c_handle_t i2c;
+    ts_uart_handle_t uart;
     uint16_t calibration;
     float current_lsb;
     ts_power_data_t last_data;
@@ -79,6 +101,7 @@ typedef struct {
 
 static power_rail_t s_rails[TS_POWER_RAIL_MAX];
 static ts_i2c_handle_t s_i2c = NULL;
+static ts_uart_handle_t s_uart[3] = {NULL, NULL, NULL};  /* Per-UART handle */
 static bool s_initialized = false;
 
 /*===========================================================================*/
@@ -249,6 +272,120 @@ static esp_err_t ina3221_read(power_rail_t *r, ts_power_data_t *data)
     return ESP_OK;
 }
 
+/*===========================================================================*/
+/*                          UART Power Functions                              */
+/*===========================================================================*/
+
+/* CRC16 for Modbus RTU */
+static uint16_t modbus_crc16(const uint8_t *data, size_t len)
+{
+    uint16_t crc = 0xFFFF;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int j = 0; j < 8; j++) {
+            if (crc & 0x0001) {
+                crc = (crc >> 1) ^ 0xA001;
+            } else {
+                crc >>= 1;
+            }
+        }
+    }
+    return crc;
+}
+
+static esp_err_t uart_power_init(power_rail_t *r)
+{
+    int uart_num = r->config.uart.uart_num;
+    if (uart_num < 0 || uart_num > 2) {
+        TS_LOGE(TAG, "Invalid UART number: %d", uart_num);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (!s_uart[uart_num]) {
+        ts_uart_config_t uart_cfg = {
+            .port = (ts_uart_port_t)uart_num,
+            .tx_function = TS_PIN_FUNC_POWER_UART_TX,
+            .rx_function = TS_PIN_FUNC_POWER_UART_RX,
+            .baud_rate = 9600,
+            .data_bits = TS_UART_DATA_BITS_8,
+            .parity = TS_UART_PARITY_NONE,
+            .stop_bits = TS_UART_STOP_BITS_1,
+            .flow_ctrl = TS_UART_FLOW_CTRL_NONE,
+            .rx_buffer_size = 256,
+            .tx_buffer_size = 0
+        };
+        s_uart[uart_num] = ts_uart_create(&uart_cfg, "power_uart");
+        if (!s_uart[uart_num]) {
+            TS_LOGE(TAG, "Failed to create UART %d for power monitor", uart_num);
+            return ESP_FAIL;
+        }
+    }
+    r->uart = s_uart[uart_num];
+    
+    TS_LOGI(TAG, "UART power monitor initialized on UART%d", uart_num);
+    return ESP_OK;
+}
+
+static esp_err_t uart_power_read(power_rail_t *r, ts_power_data_t *data)
+{
+    if (!r->uart) return ESP_ERR_INVALID_STATE;
+    
+    /* Build Modbus RTU read input registers command */
+    uint8_t cmd[8];
+    cmd[0] = PZEM_DEFAULT_ADDR;         /* Slave address */
+    cmd[1] = PZEM_CMD_READ_INPUT;       /* Function code: Read Input Registers */
+    cmd[2] = (PZEM_REG_VOLTAGE >> 8);   /* Start address high */
+    cmd[3] = (PZEM_REG_VOLTAGE & 0xFF); /* Start address low */
+    cmd[4] = 0x00;                      /* Number of registers high */
+    cmd[5] = PZEM_READ_ALL_REGS;        /* Number of registers low */
+    uint16_t crc = modbus_crc16(cmd, 6);
+    cmd[6] = crc & 0xFF;                /* CRC low */
+    cmd[7] = (crc >> 8) & 0xFF;         /* CRC high */
+    
+    /* Flush RX buffer first */
+    uint8_t dummy[64];
+    ts_uart_read(r->uart, dummy, sizeof(dummy), 10);
+    
+    /* Send request */
+    int written = ts_uart_write(r->uart, cmd, 8, 100);
+    if (written != 8) {
+        return ESP_FAIL;
+    }
+    
+    /* Wait for response: 3 header + 20 data + 2 CRC = 25 bytes */
+    uint8_t resp[25];
+    int len = ts_uart_read(r->uart, resp, sizeof(resp), 100);
+    if (len < 25) {
+        TS_LOGD(TAG, "UART power: short response (%d bytes)", len);
+        return ESP_FAIL;
+    }
+    
+    /* Verify CRC */
+    crc = modbus_crc16(resp, len - 2);
+    uint16_t resp_crc = resp[len-2] | (resp[len-1] << 8);
+    if (crc != resp_crc) {
+        TS_LOGW(TAG, "UART power: CRC mismatch");
+        return ESP_FAIL;
+    }
+    
+    /* Parse response (big-endian registers, 2 bytes each) */
+    /* Voltage: 0.1V LSB */
+    uint16_t voltage = (resp[3] << 8) | resp[4];
+    data->voltage_mv = voltage * 100;  /* 0.1V -> mV */
+    
+    /* Current: 32-bit, 0.001A LSB */
+    uint32_t current = ((uint32_t)resp[5] << 24) | ((uint32_t)resp[6] << 16) |
+                       ((uint32_t)resp[7] << 8) | resp[8];
+    data->current_ma = current;  /* Already in mA */
+    
+    /* Power: 32-bit, 0.1W LSB */
+    uint32_t power = ((uint32_t)resp[9] << 24) | ((uint32_t)resp[10] << 16) |
+                     ((uint32_t)resp[11] << 8) | resp[12];
+    data->power_mw = power * 100;  /* 0.1W -> mW */
+    
+    return ESP_OK;
+}
+
 esp_err_t ts_power_init(void)
 {
     if (s_initialized) return ESP_OK;
@@ -324,10 +461,13 @@ esp_err_t ts_power_configure_rail(ts_power_rail_t rail, const ts_power_rail_conf
             break;
         }
             
-        case TS_POWER_CHIP_UART:
-            // TODO: Implement UART power monitor
-            TS_LOGW(TAG, "UART power monitor not yet implemented");
+        case TS_POWER_CHIP_UART: {
+            esp_err_t ret = uart_power_init(r);
+            if (ret != ESP_OK) {
+                return ret;
+            }
             break;
+        }
     }
     
     r->configured = true;
@@ -368,8 +508,11 @@ esp_err_t ts_power_read(ts_power_rail_t rail, ts_power_data_t *data)
             break;
         }
         
-        case TS_POWER_CHIP_UART:
-            return ESP_ERR_NOT_SUPPORTED;
+        case TS_POWER_CHIP_UART: {
+            esp_err_t ret = uart_power_read(r, data);
+            if (ret != ESP_OK) return ret;
+            break;
+        }
     }
     
     r->last_data = *data;

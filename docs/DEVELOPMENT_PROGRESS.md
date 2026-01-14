@@ -172,7 +172,7 @@
 - [x] 电压警报 (高低阈值)
 - [x] INA226 I2C芯片支持
 - [x] INA3221 I2C芯片支持 (3通道)
-- [ ] UART 电源芯片 - 待实现
+- [x] UART 电源芯片 (PZEM-004T Modbus RTU 协议)
 
 ### ts_drivers/device - 设备控制
 - [x] AGX 电源控制 (开/关/复位/强制关机)
