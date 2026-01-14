@@ -199,7 +199,7 @@
 - [x] 路由注册/处理
 - [x] 静态文件服务
 - [x] WebSocket (ts_webui_ws)
-- [ ] HTTPS/mTLS - 待完善
+- [x] HTTPS/mTLS (ts_https_server - TLS 1.2/1.3, 自签名证书, mTLS客户端验证)
 
 ### ts_security - 安全
 - [x] 随机数生成 (esp_random)

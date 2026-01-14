@@ -5,6 +5,7 @@ idf_component_register(
         "src/ts_wifi.c"
         "src/ts_dhcp_server.c"
         "src/ts_http_server.c"
+        "src/ts_https_server.c"
     INCLUDE_DIRS
         "include"
     REQUIRES
@@ -15,7 +16,9 @@ idf_component_register(
         esp_eth
         esp_wifi
         esp_http_server
+        esp_https_server
         lwip
+        mbedtls
     PRIV_REQUIRES
         driver
         esp_event
