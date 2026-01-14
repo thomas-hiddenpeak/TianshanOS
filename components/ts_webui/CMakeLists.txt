@@ -1,8 +1,8 @@
 idf_component_register(
     SRCS
         "src/ts_webui.c"
-        # "src/ts_webui_api.c"   # TODO: Fix ts_api_call usage
-        # "src/ts_webui_ws.c"    # TODO: Fix dependencies
+        "src/ts_webui_api.c"
+        # "src/ts_webui_ws.c"    # TODO: Enable HTTPD_WS in menuconfig
     INCLUDE_DIRS
         "include"
     REQUIRES

@@ -14,7 +14,7 @@
 #include "esp_flash.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
-#include "esp_app_format.h"
+#include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
@@ -164,7 +164,11 @@ static esp_err_t api_system_tasks(const cJSON *params, ts_api_result_t *result)
         cJSON_AddStringToObject(task, "name", task_array[i].pcTaskName);
         cJSON_AddNumberToObject(task, "priority", task_array[i].uxCurrentPriority);
         cJSON_AddNumberToObject(task, "stack_hwm", task_array[i].usStackHighWaterMark);
+#if configTASKLIST_INCLUDE_COREID
         cJSON_AddNumberToObject(task, "core", task_array[i].xCoreID);
+#else
+        cJSON_AddNumberToObject(task, "core", -1);
+#endif
         
         const char *state = "unknown";
         switch (task_array[i].eCurrentState) {
@@ -234,7 +238,7 @@ static esp_err_t api_system_log_level(const cJSON *params, ts_api_result_t *resu
         
         if (level && cJSON_IsNumber(level)) {
             int lvl = level->valueint;
-            if (lvl >= TS_LOG_LEVEL_NONE && lvl <= TS_LOG_LEVEL_VERBOSE) {
+            if (lvl >= TS_LOG_NONE && lvl <= TS_LOG_VERBOSE) {
                 if (tag && cJSON_IsString(tag)) {
                     ts_log_set_tag_level(tag->valuestring, lvl);
                     cJSON_AddStringToObject(data, "tag", tag->valuestring);

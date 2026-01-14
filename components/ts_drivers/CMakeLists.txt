@@ -1,10 +1,10 @@
 idf_component_register(
     SRCS
         "src/ts_drivers.c"
-        # "src/ts_fan.c"        # TODO: Fix HAL API mismatch
-        # "src/ts_power.c"      # TODO: Fix HAL API mismatch
-        # "src/ts_device_ctrl.c" # TODO: Fix GPIO API
-        # "src/ts_usb_mux.c"    # TODO: Fix GPIO API
+        "src/ts_fan.c"
+        "src/ts_power.c"
+        "src/ts_device_ctrl.c"
+        "src/ts_usb_mux.c"
     INCLUDE_DIRS
         "include"
     REQUIRES

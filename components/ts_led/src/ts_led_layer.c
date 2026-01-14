@@ -3,25 +3,12 @@
  * @brief LED Layer Management
  */
 
-#include "ts_led.h"
+#include "ts_led_private.h"
 #include "ts_log.h"
 #include <stdlib.h>
 #include <string.h>
 
 #define TAG "led_layer"
-
-typedef struct ts_led_device ts_led_device_impl_t;
-
-struct ts_led_layer {
-    ts_led_device_impl_t *device;
-    ts_led_rgb_t *buffer;
-    ts_led_layer_config_t config;
-    ts_led_effect_fn_t effect_fn;
-    void *effect_data;
-    uint32_t effect_interval;
-    uint32_t effect_last_time;
-    bool used;
-};
 
 esp_err_t ts_led_layer_create(ts_led_device_t device, 
                                const ts_led_layer_config_t *config,
@@ -32,7 +19,7 @@ esp_err_t ts_led_layer_create(ts_led_device_t device,
     
     if (dev->layer_count >= TS_LED_MAX_LAYERS) return ESP_ERR_NO_MEM;
     
-    struct ts_led_layer *l = calloc(1, sizeof(struct ts_led_layer));
+    ts_led_layer_impl_t *l = calloc(1, sizeof(ts_led_layer_impl_t));
     if (!l) return ESP_ERR_NO_MEM;
     
     l->buffer = calloc(dev->config.led_count, sizeof(ts_led_rgb_t));
@@ -42,8 +29,16 @@ esp_err_t ts_led_layer_create(ts_led_device_t device,
     }
     
     l->device = dev;
-    l->config = config ? *config : (ts_led_layer_config_t)TS_LED_LAYER_DEFAULT_CONFIG();
-    l->used = true;
+    l->size = dev->config.led_count;
+    if (config) {
+        l->blend_mode = config->blend_mode;
+        l->opacity = config->opacity;
+        l->visible = config->visible;
+    } else {
+        l->blend_mode = TS_LED_BLEND_NORMAL;
+        l->opacity = 255;
+        l->visible = true;
+    }
     
     dev->layers[dev->layer_count++] = l;
     *layer = l;
@@ -54,7 +49,7 @@ esp_err_t ts_led_layer_create(ts_led_device_t device,
 esp_err_t ts_led_layer_destroy(ts_led_layer_t layer)
 {
     if (!layer) return ESP_ERR_INVALID_ARG;
-    struct ts_led_layer *l = layer;
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
     
     free(l->buffer);
     free(l);
@@ -64,43 +59,50 @@ esp_err_t ts_led_layer_destroy(ts_led_layer_t layer)
 esp_err_t ts_led_layer_set_blend(ts_led_layer_t layer, ts_led_blend_t mode)
 {
     if (!layer) return ESP_ERR_INVALID_ARG;
-    layer->config.blend_mode = mode;
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
+    l->blend_mode = mode;
     return ESP_OK;
 }
 
 esp_err_t ts_led_layer_set_opacity(ts_led_layer_t layer, uint8_t opacity)
 {
     if (!layer) return ESP_ERR_INVALID_ARG;
-    layer->config.opacity = opacity;
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
+    l->opacity = opacity;
     return ESP_OK;
 }
 
 esp_err_t ts_led_layer_set_visible(ts_led_layer_t layer, bool visible)
 {
     if (!layer) return ESP_ERR_INVALID_ARG;
-    layer->config.visible = visible;
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
+    l->visible = visible;
     return ESP_OK;
 }
 
 esp_err_t ts_led_layer_clear(ts_led_layer_t layer)
 {
     if (!layer) return ESP_ERR_INVALID_ARG;
-    memset(layer->buffer, 0, layer->device->config.led_count * sizeof(ts_led_rgb_t));
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
+    memset(l->buffer, 0, l->device->config.led_count * sizeof(ts_led_rgb_t));
     return ESP_OK;
 }
 
 /* Drawing operations */
 esp_err_t ts_led_set_pixel(ts_led_layer_t layer, uint16_t index, ts_led_rgb_t color)
 {
-    if (!layer || index >= layer->device->config.led_count) return ESP_ERR_INVALID_ARG;
-    layer->buffer[index] = color;
+    if (!layer) return ESP_ERR_INVALID_ARG;
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
+    if (index >= l->device->config.led_count) return ESP_ERR_INVALID_ARG;
+    l->buffer[index] = color;
     return ESP_OK;
 }
 
 esp_err_t ts_led_set_pixel_xy(ts_led_layer_t layer, uint16_t x, uint16_t y, ts_led_rgb_t color)
 {
     if (!layer) return ESP_ERR_INVALID_ARG;
-    ts_led_device_impl_t *dev = layer->device;
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
+    ts_led_device_impl_t *dev = l->device;
     
     if (x >= dev->config.width || y >= dev->config.height) return ESP_ERR_INVALID_ARG;
     
@@ -120,8 +122,9 @@ esp_err_t ts_led_set_pixel_xy(ts_led_layer_t layer, uint16_t x, uint16_t y, ts_l
 esp_err_t ts_led_fill(ts_led_layer_t layer, ts_led_rgb_t color)
 {
     if (!layer) return ESP_ERR_INVALID_ARG;
-    for (int i = 0; i < layer->device->config.led_count; i++) {
-        layer->buffer[i] = color;
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
+    for (int i = 0; i < l->device->config.led_count; i++) {
+        l->buffer[i] = color;
     }
     return ESP_OK;
 }
@@ -129,11 +132,12 @@ esp_err_t ts_led_fill(ts_led_layer_t layer, ts_led_rgb_t color)
 esp_err_t ts_led_fill_range(ts_led_layer_t layer, uint16_t start, uint16_t count, ts_led_rgb_t color)
 {
     if (!layer) return ESP_ERR_INVALID_ARG;
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
     uint16_t end = start + count;
-    if (end > layer->device->config.led_count) end = layer->device->config.led_count;
+    if (end > l->device->config.led_count) end = l->device->config.led_count;
     
     for (uint16_t i = start; i < end; i++) {
-        layer->buffer[i] = color;
+        l->buffer[i] = color;
     }
     return ESP_OK;
 }

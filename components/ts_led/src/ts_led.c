@@ -3,44 +3,20 @@
  * @brief TianShanOS LED Core Implementation
  */
 
-#include "ts_led.h"
+#include "ts_led_private.h"
 #include "ts_log.h"
-#include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/semphr.h"
 #include <string.h>
 #include <stdlib.h>
 
 #define TAG "ts_led"
 
-#ifndef CONFIG_TS_LED_MAX_DEVICES
-#define CONFIG_TS_LED_MAX_DEVICES 8
-#endif
+static ts_led_state_t s_led = {0};
 
-typedef struct ts_led_device {
-    char name[TS_LED_MAX_NAME];
-    ts_led_config_t config;
-    ts_led_rgb_t *framebuffer;
-    ts_led_layer_t layers[TS_LED_MAX_LAYERS];
-    uint8_t layer_count;
-    uint8_t brightness;
-    void *driver_handle;
-    bool used;
-    SemaphoreHandle_t mutex;
-} ts_led_device_impl_t;
-
-static struct {
-    bool initialized;
-    ts_led_device_impl_t devices[CONFIG_TS_LED_MAX_DEVICES];
-    SemaphoreHandle_t mutex;
-    TaskHandle_t render_task;
-    bool render_running;
-} s_led = {0};
-
-/* Forward declarations */
-esp_err_t ts_led_driver_init(ts_led_device_impl_t *dev);
-esp_err_t ts_led_driver_send(ts_led_device_impl_t *dev);
-void ts_led_driver_deinit(ts_led_device_impl_t *dev);
+ts_led_state_t *ts_led_get_state(void)
+{
+    return &s_led;
+}
 
 static void render_task(void *arg)
 {

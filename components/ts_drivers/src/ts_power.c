@@ -5,8 +5,6 @@
 
 #include "ts_power.h"
 #include "ts_hal_adc.h"
-#include "ts_hal_i2c.h"
-#include "ts_pin_manager.h"
 #include "ts_log.h"
 #include "ts_event.h"
 #include "esp_timer.h"
@@ -43,7 +41,7 @@ esp_err_t ts_power_deinit(void)
     
     for (int i = 0; i < TS_POWER_RAIL_MAX; i++) {
         if (s_rails[i].adc) {
-            ts_adc_deinit(s_rails[i].adc);
+            ts_adc_destroy(s_rails[i].adc);
             s_rails[i].adc = NULL;
         }
     }
@@ -63,14 +61,15 @@ esp_err_t ts_power_configure_rail(ts_power_rail_t rail, const ts_power_rail_conf
         case TS_POWER_CHIP_NONE: {
             // ADC-based monitoring
             ts_adc_config_t adc_cfg = {
-                .gpio = config->adc.gpio,
-                .atten = TS_ADC_ATTEN_11DB,
-                .bitwidth = TS_ADC_WIDTH_12BIT
+                .function = TS_PIN_FUNC_POWER_ADC,
+                .attenuation = TS_ADC_ATTEN_11DB,
+                .width = TS_ADC_WIDTH_12BIT,
+                .use_calibration = true
             };
-            esp_err_t ret = ts_adc_init(&adc_cfg, &r->adc);
-            if (ret != ESP_OK) {
-                TS_LOGE(TAG, "Failed to init ADC for rail %d", rail);
-                return ret;
+            r->adc = ts_adc_create(&adc_cfg, "power");
+            if (!r->adc) {
+                TS_LOGE(TAG, "Failed to create ADC for rail %d", rail);
+                return ESP_FAIL;
             }
             break;
         }
@@ -105,13 +104,10 @@ esp_err_t ts_power_read(ts_power_rail_t rail, ts_power_data_t *data)
     
     switch (r->config.chip) {
         case TS_POWER_CHIP_NONE: {
-            int raw = 0;
-            esp_err_t ret = ts_adc_read(r->adc, &raw);
-            if (ret != ESP_OK) return ret;
+            int mv = ts_adc_read_mv(r->adc);
+            if (mv < 0) return ESP_FAIL;
             
-            // Convert to mV with divider ratio
-            int mv = 0;
-            ts_adc_to_voltage(r->adc, raw, &mv);
+            // Apply divider ratio
             data->voltage_mv = (int32_t)(mv * r->config.adc.divider_ratio);
             break;
         }
@@ -126,12 +122,10 @@ esp_err_t ts_power_read(ts_power_rail_t rail, ts_power_data_t *data)
     
     // Check alerts
     if (r->alert_high > 0 && data->voltage_mv > r->alert_high) {
-        ts_event_post(TS_EVENT_SYSTEM, TS_EVT_POWER_ALERT_HIGH, 
-                      &rail, sizeof(rail), 0);
+        TS_LOGW(TAG, "Power rail %d voltage high: %ld mV", rail, (long)data->voltage_mv);
     }
     if (r->alert_low > 0 && data->voltage_mv < r->alert_low) {
-        ts_event_post(TS_EVENT_SYSTEM, TS_EVT_POWER_ALERT_LOW,
-                      &rail, sizeof(rail), 0);
+        TS_LOGW(TAG, "Power rail %d voltage low: %ld mV", rail, (long)data->voltage_mv);
     }
     
     return ESP_OK;

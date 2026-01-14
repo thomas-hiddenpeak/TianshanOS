@@ -6,7 +6,6 @@
 #include "ts_fan.h"
 #include "ts_hal_pwm.h"
 #include "ts_hal_gpio.h"
-#include "ts_pin_manager.h"
 #include "ts_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -19,6 +18,7 @@ typedef struct {
     bool initialized;
     ts_fan_config_t config;
     ts_pwm_handle_t pwm;
+    ts_gpio_handle_t tach_gpio;
     ts_fan_mode_t mode;
     uint8_t current_duty;
     uint16_t rpm;
@@ -31,7 +31,7 @@ static fan_instance_t s_fans[TS_FAN_MAX];
 static esp_timer_handle_t s_update_timer = NULL;
 static bool s_initialized = false;
 
-static void IRAM_ATTR tach_isr(void *arg)
+static void tach_isr_callback(ts_gpio_handle_t handle, void *arg)
 {
     fan_instance_t *fan = (fan_instance_t *)arg;
     fan->tach_count++;
@@ -67,8 +67,8 @@ static void fan_update_callback(void *arg)
         fan_instance_t *fan = &s_fans[i];
         if (!fan->initialized) continue;
         
-        // Calculate RPM
-        if (fan->config.gpio_tach >= 0) {
+        // Calculate RPM from tachometer
+        if (fan->tach_gpio) {
             int64_t dt_us = now - fan->last_tach_time;
             if (dt_us > 0) {
                 fan->rpm = (fan->tach_count * 60 * 1000000) / (dt_us * 2);
@@ -77,7 +77,7 @@ static void fan_update_callback(void *arg)
             }
         }
         
-        // Auto mode
+        // Auto mode: adjust duty based on temperature curve
         if (fan->mode == TS_FAN_MODE_AUTO) {
             uint8_t target = calc_duty_from_curve(fan, fan->temperature);
             if (target < fan->config.min_duty && target > 0) {
@@ -88,7 +88,7 @@ static void fan_update_callback(void *arg)
             }
             if (target != fan->current_duty) {
                 fan->current_duty = target;
-                ts_pwm_set_duty(fan->pwm, target);
+                ts_pwm_set_duty(fan->pwm, (float)target);
             }
         }
     }
@@ -142,8 +142,12 @@ esp_err_t ts_fan_deinit(void)
     
     for (int i = 0; i < TS_FAN_MAX; i++) {
         if (s_fans[i].pwm) {
-            ts_pwm_deinit(s_fans[i].pwm);
+            ts_pwm_destroy(s_fans[i].pwm);
             s_fans[i].pwm = NULL;
+        }
+        if (s_fans[i].tach_gpio) {
+            ts_gpio_destroy(s_fans[i].tach_gpio);
+            s_fans[i].tach_gpio = NULL;
         }
     }
     
@@ -158,35 +162,46 @@ esp_err_t ts_fan_configure(ts_fan_id_t fan, const ts_fan_config_t *config)
     fan_instance_t *f = &s_fans[fan];
     f->config = *config;
     
-    // Initialize PWM
-    ts_pwm_config_t pwm_cfg = {
-        .gpio = config->gpio_pwm,
-#ifdef CONFIG_TS_DRIVERS_FAN_PWM_FREQ
-        .freq_hz = CONFIG_TS_DRIVERS_FAN_PWM_FREQ,
-#else
-        .freq_hz = 25000,
-#endif
-        .resolution_bits = 8,
-        .duty_percent = 0
-    };
+    // Create PWM handle for the fan's GPIO
+    f->pwm = ts_pwm_create_raw(config->gpio_pwm, "fan");
+    if (!f->pwm) {
+        TS_LOGE(TAG, "Failed to create PWM for fan %d", fan);
+        return ESP_FAIL;
+    }
     
-    esp_err_t ret = ts_pwm_init(&pwm_cfg, &f->pwm);
+    // Configure PWM
+    ts_pwm_config_t pwm_cfg = {
+        .frequency = 25000,  // 25kHz for PC fans
+        .resolution_bits = 8,
+        .timer = TS_PWM_TIMER_AUTO,
+        .invert = false,
+        .initial_duty = 0.0f
+    };
+    esp_err_t ret = ts_pwm_configure(f->pwm, &pwm_cfg);
     if (ret != ESP_OK) {
-        TS_LOGE(TAG, "Failed to init PWM for fan %d", fan);
+        TS_LOGE(TAG, "Failed to configure PWM for fan %d", fan);
+        ts_pwm_destroy(f->pwm);
+        f->pwm = NULL;
         return ret;
     }
     
-    // Initialize tachometer
+    // Initialize tachometer if configured
     if (config->gpio_tach >= 0) {
-        ts_gpio_config_t gpio_cfg = {
-            .gpio = config->gpio_tach,
-            .direction = TS_GPIO_DIR_INPUT,
-            .pull = TS_GPIO_PULL_UP,
-            .intr_type = TS_GPIO_INTR_NEGEDGE
-        };
-        ts_gpio_init(&gpio_cfg);
-        ts_gpio_set_isr_handler(config->gpio_tach, tach_isr, f);
-        f->last_tach_time = esp_timer_get_time();
+        f->tach_gpio = ts_gpio_create_raw(config->gpio_tach, "fan_tach");
+        if (f->tach_gpio) {
+            ts_gpio_config_t gpio_cfg = {
+                .direction = TS_GPIO_DIR_INPUT,
+                .pull_mode = TS_GPIO_PULL_UP,
+                .intr_type = TS_GPIO_INTR_NEGEDGE,
+                .drive = TS_GPIO_DRIVE_2,
+                .invert = false,
+                .initial_level = -1
+            };
+            ts_gpio_configure(f->tach_gpio, &gpio_cfg);
+            ts_gpio_set_isr_callback(f->tach_gpio, tach_isr_callback, f);
+            ts_gpio_intr_enable(f->tach_gpio);
+            f->last_tach_time = esp_timer_get_time();
+        }
     }
     
     f->initialized = true;
@@ -221,7 +236,7 @@ esp_err_t ts_fan_set_duty(ts_fan_id_t fan, uint8_t duty_percent)
     s_fans[fan].mode = TS_FAN_MODE_MANUAL;
     s_fans[fan].current_duty = duty_percent;
     
-    return ts_pwm_set_duty(s_fans[fan].pwm, duty_percent);
+    return ts_pwm_set_duty(s_fans[fan].pwm, (float)duty_percent);
 }
 
 esp_err_t ts_fan_set_temperature(ts_fan_id_t fan, int16_t temp_01c)
@@ -263,7 +278,7 @@ esp_err_t ts_fan_emergency_full(void)
         if (s_fans[i].initialized) {
             s_fans[i].mode = TS_FAN_MODE_MANUAL;
             s_fans[i].current_duty = 100;
-            ts_pwm_set_duty(s_fans[i].pwm, 100);
+            ts_pwm_set_duty(s_fans[i].pwm, 100.0f);
         }
     }
     return ESP_OK;

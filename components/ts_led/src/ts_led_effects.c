@@ -3,15 +3,17 @@
  * @brief Built-in LED Effects
  */
 
-#include "ts_led.h"
+#include "ts_led_private.h"
 #include "esp_timer.h"
+#include "esp_random.h"
 #include <string.h>
 #include <math.h>
 
 /* Effect: Rainbow */
 static void effect_rainbow(ts_led_layer_t layer, uint32_t time_ms, void *data)
 {
-    uint16_t count = layer->device->config.led_count;
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
+    uint16_t count = l->device->config.led_count;
     uint8_t offset = (time_ms / 20) & 0xFF;
     
     for (int i = 0; i < count; i++) {
@@ -36,7 +38,8 @@ static void effect_breathing(ts_led_layer_t layer, uint32_t time_ms, void *data)
 /* Effect: Chase */
 static void effect_chase(ts_led_layer_t layer, uint32_t time_ms, void *data)
 {
-    uint16_t count = layer->device->config.led_count;
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
+    uint16_t count = l->device->config.led_count;
     uint16_t pos = (time_ms / 50) % count;
     
     ts_led_fill(layer, TS_LED_BLACK);
@@ -51,7 +54,8 @@ static void effect_chase(ts_led_layer_t layer, uint32_t time_ms, void *data)
 /* Effect: Fire */
 static void effect_fire(ts_led_layer_t layer, uint32_t time_ms, void *data)
 {
-    uint16_t count = layer->device->config.led_count;
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
+    uint16_t count = l->device->config.led_count;
     static uint8_t heat[256];
     
     for (int i = 0; i < count; i++) {
@@ -84,10 +88,11 @@ static void effect_fire(ts_led_layer_t layer, uint32_t time_ms, void *data)
 /* Effect: Sparkle */
 static void effect_sparkle(ts_led_layer_t layer, uint32_t time_ms, void *data)
 {
-    uint16_t count = layer->device->config.led_count;
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
+    uint16_t count = l->device->config.led_count;
     
     for (int i = 0; i < count; i++) {
-        layer->buffer[i] = ts_led_scale_color(layer->buffer[i], 200);
+        l->buffer[i] = ts_led_scale_color(l->buffer[i], 200);
     }
     
     if ((esp_random() & 0x0F) == 0) {
@@ -137,11 +142,12 @@ size_t ts_led_effect_list_builtin(const char **names, size_t max_names)
 esp_err_t ts_led_effect_start(ts_led_layer_t layer, const ts_led_effect_t *effect)
 {
     if (!layer || !effect) return ESP_ERR_INVALID_ARG;
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
     
-    layer->effect_fn = effect->func;
-    layer->effect_data = effect->user_data;
-    layer->effect_interval = effect->frame_interval_ms;
-    layer->effect_last_time = 0;
+    l->effect_fn = effect->func;
+    l->effect_data = effect->user_data;
+    l->effect_interval = effect->frame_interval_ms;
+    l->effect_last_time = 0;
     
     return ESP_OK;
 }
@@ -149,6 +155,7 @@ esp_err_t ts_led_effect_start(ts_led_layer_t layer, const ts_led_effect_t *effec
 esp_err_t ts_led_effect_stop(ts_led_layer_t layer)
 {
     if (!layer) return ESP_ERR_INVALID_ARG;
-    layer->effect_fn = NULL;
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
+    l->effect_fn = NULL;
     return ESP_OK;
 }

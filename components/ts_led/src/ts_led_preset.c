@@ -18,7 +18,7 @@ static ts_led_layer_t s_status_layer = NULL;
 
 esp_err_t ts_led_touch_init(void)
 {
-    int gpio = ts_pin_get_gpio(TS_PIN_LED_TOUCH);
+    int gpio = ts_pin_manager_get_gpio(TS_PIN_FUNC_LED_TOUCH);
     if (gpio < 0) gpio = 45;
     
     ts_led_config_t cfg = TS_LED_DEFAULT_CONFIG();
@@ -45,7 +45,7 @@ esp_err_t ts_led_touch_init(void)
 
 esp_err_t ts_led_board_init(void)
 {
-    int gpio = ts_pin_get_gpio(TS_PIN_LED_BOARD);
+    int gpio = ts_pin_manager_get_gpio(TS_PIN_FUNC_LED_BOARD);
     if (gpio < 0) gpio = 42;
     
     ts_led_config_t cfg = TS_LED_DEFAULT_CONFIG();
@@ -72,7 +72,7 @@ esp_err_t ts_led_board_init(void)
 
 esp_err_t ts_led_matrix_init(void)
 {
-    int gpio = ts_pin_get_gpio(TS_PIN_LED_MATRIX);
+    int gpio = ts_pin_manager_get_gpio(TS_PIN_FUNC_LED_MATRIX);
     if (gpio < 0) gpio = 9;
     
     ts_led_config_t cfg = TS_LED_DEFAULT_CONFIG();

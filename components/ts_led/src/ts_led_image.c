@@ -4,6 +4,7 @@
  */
 
 #include "ts_led_image.h"
+#include "ts_led_private.h"
 #include "ts_storage.h"
 #include "ts_log.h"
 #include <stdlib.h>
@@ -183,11 +184,13 @@ esp_err_t ts_led_image_display(ts_led_layer_t layer, ts_led_image_t image,
 {
     if (!layer || !image) return ESP_ERR_INVALID_ARG;
     
+    ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
+    
     ts_led_image_options_t opts = options ? *options : 
         (ts_led_image_options_t)TS_LED_IMAGE_DEFAULT_OPTIONS();
     
-    uint16_t dev_w = layer->device->config.width;
-    uint16_t dev_h = layer->device->config.height;
+    uint16_t dev_w = l->device->config.width;
+    uint16_t dev_h = l->device->config.height;
     
     for (int y = 0; y < image->height && y + opts.y < dev_h; y++) {
         for (int x = 0; x < image->width && x + opts.x < dev_w; x++) {

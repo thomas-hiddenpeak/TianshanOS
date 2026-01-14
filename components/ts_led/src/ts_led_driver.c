@@ -3,19 +3,12 @@
  * @brief WS2812 LED Driver using RMT
  */
 
-#include "ts_led.h"
+#include "ts_led_private.h"
 #include "ts_log.h"
 #include "led_strip.h"
 #include <string.h>
 
 #define TAG "led_driver"
-
-typedef struct ts_led_device ts_led_device_impl_t;
-
-/* Access internal device structure */
-extern ts_led_rgb_t *ts_led_device_get_fb(ts_led_device_impl_t *dev);
-extern uint16_t ts_led_device_get_led_count(ts_led_device_impl_t *dev);
-extern uint8_t ts_led_device_get_dev_brightness(ts_led_device_impl_t *dev);
 
 esp_err_t ts_led_driver_init(ts_led_device_impl_t *dev)
 {
@@ -27,9 +20,11 @@ esp_err_t ts_led_driver_init(ts_led_device_impl_t *dev)
     led_strip_config_t strip_config = {
         .strip_gpio_num = gpio,
         .max_leds = count,
-        .led_pixel_format = LED_PIXEL_FORMAT_GRB,
         .led_model = LED_MODEL_WS2812,
-        .flags.invert_out = false,
+        .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRB,
+        .flags = {
+            .invert_out = false,
+        }
     };
     
     led_strip_rmt_config_t rmt_config = {
@@ -38,14 +33,14 @@ esp_err_t ts_led_driver_init(ts_led_device_impl_t *dev)
         .flags.with_dma = dev->config.use_dma,
     };
     
-    led_strip_handle_t strip;
+    led_strip_handle_t strip = NULL;
     esp_err_t ret = led_strip_new_rmt_device(&strip_config, &rmt_config, &strip);
     if (ret != ESP_OK) {
         TS_LOGE(TAG, "Failed to create LED strip: %s", esp_err_to_name(ret));
         return ret;
     }
     
-    dev->driver_handle = strip;
+    dev->strip_handle = strip;
     led_strip_clear(strip);
     
     TS_LOGI(TAG, "LED driver initialized: GPIO %d, %d LEDs", gpio, count);
@@ -54,9 +49,9 @@ esp_err_t ts_led_driver_init(ts_led_device_impl_t *dev)
 
 esp_err_t ts_led_driver_send(ts_led_device_impl_t *dev)
 {
-    if (!dev || !dev->driver_handle) return ESP_ERR_INVALID_STATE;
+    if (!dev || !dev->strip_handle) return ESP_ERR_INVALID_STATE;
     
-    led_strip_handle_t strip = (led_strip_handle_t)dev->driver_handle;
+    led_strip_handle_t strip = dev->strip_handle;
     uint8_t brightness = dev->brightness;
     
     for (int i = 0; i < dev->config.led_count; i++) {
@@ -72,8 +67,8 @@ esp_err_t ts_led_driver_send(ts_led_device_impl_t *dev)
 
 void ts_led_driver_deinit(ts_led_device_impl_t *dev)
 {
-    if (dev && dev->driver_handle) {
-        led_strip_del((led_strip_handle_t)dev->driver_handle);
-        dev->driver_handle = NULL;
+    if (dev && dev->strip_handle) {
+        led_strip_del(dev->strip_handle);
+        dev->strip_handle = NULL;
     }
 }

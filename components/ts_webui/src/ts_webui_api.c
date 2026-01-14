@@ -35,12 +35,17 @@ static esp_err_t check_auth(ts_http_request_t *req, uint32_t *session_id, ts_per
     if (level < required) return ESP_ERR_NOT_ALLOWED;
     return ESP_OK;
 #else
+    (void)req;
+    (void)session_id;
+    (void)required;
     return ESP_OK;
 #endif
 }
 
 static esp_err_t api_handler(ts_http_request_t *req, void *user_data)
 {
+    (void)user_data;
+    
 #ifdef CONFIG_TS_WEBUI_CORS_ENABLE
     ts_http_set_cors(req, "*");
 #endif
@@ -52,6 +57,7 @@ static esp_err_t api_handler(ts_http_request_t *req, void *user_data)
     // Convert slashes to dots for API lookup
     char api_name[64];
     strncpy(api_name, endpoint, sizeof(api_name) - 1);
+    api_name[sizeof(api_name) - 1] = '\0';
     for (char *p = api_name; *p; p++) {
         if (*p == '/') *p = '.';
     }
@@ -85,14 +91,33 @@ static esp_err_t api_handler(ts_http_request_t *req, void *user_data)
     }
     
     // Call API
-    char *result = NULL;
+    ts_api_result_t result = {0};
     esp_err_t ret = ts_api_call(api_name, request, &result);
     cJSON_Delete(request);
     
-    if (ret == ESP_OK && result) {
-        esp_err_t send_ret = ts_http_send_json(req, 200, result);
-        free(result);
-        return send_ret;
+    if (ret == ESP_OK) {
+        // Build response JSON
+        cJSON *response = cJSON_CreateObject();
+        cJSON_AddNumberToObject(response, "code", result.code);
+        if (result.message) {
+            cJSON_AddStringToObject(response, "message", result.message);
+        }
+        if (result.data) {
+            cJSON_AddItemToObject(response, "data", cJSON_Duplicate(result.data, true));
+        }
+        
+        char *json = cJSON_PrintUnformatted(response);
+        cJSON_Delete(response);
+        
+        // Free result resources
+        ts_api_result_free(&result);
+        
+        if (json) {
+            esp_err_t send_ret = ts_http_send_json(req, 200, json);
+            free(json);
+            return send_ret;
+        }
+        return ts_http_send_error(req, 500, "JSON serialization failed");
     } else if (ret == ESP_ERR_NOT_FOUND) {
         return ts_http_send_error(req, 404, "API not found");
     } else {
@@ -102,6 +127,8 @@ static esp_err_t api_handler(ts_http_request_t *req, void *user_data)
 
 static esp_err_t login_handler(ts_http_request_t *req, void *user_data)
 {
+    (void)user_data;
+    
 #ifdef CONFIG_TS_WEBUI_CORS_ENABLE
     ts_http_set_cors(req, "*");
 #endif
@@ -150,6 +177,8 @@ static esp_err_t login_handler(ts_http_request_t *req, void *user_data)
 
 static esp_err_t logout_handler(ts_http_request_t *req, void *user_data)
 {
+    (void)user_data;
+    
 #ifdef CONFIG_TS_WEBUI_CORS_ENABLE
     ts_http_set_cors(req, "*");
 #endif
@@ -170,6 +199,8 @@ static esp_err_t logout_handler(ts_http_request_t *req, void *user_data)
 
 static esp_err_t options_handler(ts_http_request_t *req, void *user_data)
 {
+    (void)user_data;
+    
 #ifdef CONFIG_TS_WEBUI_CORS_ENABLE
     ts_http_set_cors(req, "*");
 #endif
@@ -185,7 +216,8 @@ esp_err_t ts_webui_api_init(void)
         .uri = API_PREFIX "/auth/login",
         .method = TS_HTTP_POST,
         .handler = login_handler,
-        .requires_auth = false
+        .requires_auth = false,
+        .user_data = NULL
     };
     ts_http_server_register_route(&login);
     
@@ -193,7 +225,8 @@ esp_err_t ts_webui_api_init(void)
         .uri = API_PREFIX "/auth/logout",
         .method = TS_HTTP_POST,
         .handler = logout_handler,
-        .requires_auth = true
+        .requires_auth = true,
+        .user_data = NULL
     };
     ts_http_server_register_route(&logout);
     
@@ -204,7 +237,8 @@ esp_err_t ts_webui_api_init(void)
             .uri = API_PREFIX "/*",
             .method = methods[i],
             .handler = api_handler,
-            .requires_auth = true
+            .requires_auth = true,
+            .user_data = NULL
         };
         ts_http_server_register_route(&route);
     }
@@ -213,7 +247,9 @@ esp_err_t ts_webui_api_init(void)
     ts_http_route_t options = {
         .uri = API_PREFIX "/*",
         .method = HTTP_OPTIONS,
-        .handler = options_handler
+        .handler = options_handler,
+        .requires_auth = false,
+        .user_data = NULL
     };
     ts_http_server_register_route(&options);
     

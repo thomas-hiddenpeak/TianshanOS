@@ -28,7 +28,7 @@ static esp_err_t api_config_get(const cJSON *params, ts_api_result_t *result)
         return ESP_ERR_INVALID_ARG;
     }
     
-    cJSON *key = cJSON_GetObjectItem(params, "key");
+    const cJSON *key = cJSON_GetObjectItem(params, "key");
     if (key == NULL || !cJSON_IsString(key)) {
         ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'key' parameter");
         return ESP_ERR_INVALID_ARG;
@@ -61,7 +61,7 @@ static esp_err_t api_config_get(const cJSON *params, ts_api_result_t *result)
         return ESP_ERR_NOT_FOUND;
     }
     
-    ts_api_result_success(result, data);
+    ts_api_result_ok(result, data);
     return ESP_OK;
 }
 
@@ -75,8 +75,8 @@ static esp_err_t api_config_set(const cJSON *params, ts_api_result_t *result)
         return ESP_ERR_INVALID_ARG;
     }
     
-    cJSON *key = cJSON_GetObjectItem(params, "key");
-    cJSON *value = cJSON_GetObjectItem(params, "value");
+    const cJSON *key = cJSON_GetObjectItem(params, "key");
+    const cJSON *value = cJSON_GetObjectItem(params, "value");
     
     if (key == NULL || !cJSON_IsString(key)) {
         ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'key' parameter");
@@ -116,7 +116,7 @@ static esp_err_t api_config_set(const cJSON *params, ts_api_result_t *result)
     cJSON_AddStringToObject(data, "key", key->valuestring);
     cJSON_AddBoolToObject(data, "success", true);
     
-    ts_api_result_success(result, data);
+    ts_api_result_ok(result, data);
     return ESP_OK;
 }
 
@@ -130,7 +130,7 @@ static esp_err_t api_config_delete(const cJSON *params, ts_api_result_t *result)
         return ESP_ERR_INVALID_ARG;
     }
     
-    cJSON *key = cJSON_GetObjectItem(params, "key");
+    const cJSON *key = cJSON_GetObjectItem(params, "key");
     if (key == NULL || !cJSON_IsString(key)) {
         ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'key' parameter");
         return ESP_ERR_INVALID_ARG;
@@ -146,7 +146,7 @@ static esp_err_t api_config_delete(const cJSON *params, ts_api_result_t *result)
     cJSON_AddStringToObject(data, "key", key->valuestring);
     cJSON_AddBoolToObject(data, "deleted", true);
     
-    ts_api_result_success(result, data);
+    ts_api_result_ok(result, data);
     return ESP_OK;
 }
 
@@ -161,17 +161,17 @@ static esp_err_t api_config_list(const cJSON *params, ts_api_result_t *result)
     cJSON *items = cJSON_AddArrayToObject(data, "items");
     
     /* Get config statistics */
-    ts_config_stats_t stats;
-    if (ts_config_get_stats(&stats) == ESP_OK) {
-        cJSON_AddNumberToObject(data, "total_keys", stats.total_keys);
-        cJSON_AddNumberToObject(data, "used_memory", stats.used_memory);
-    }
+    size_t total_count = 0, nvs_count = 0, file_count = 0;
+    ts_config_get_stats(&total_count, &nvs_count, &file_count);
+    cJSON_AddNumberToObject(data, "total_keys", (double)total_count);
+    cJSON_AddNumberToObject(data, "nvs_keys", (double)nvs_count);
+    cJSON_AddNumberToObject(data, "file_keys", (double)file_count);
     
     /* Note: Full iteration would require iterator API */
     /* For now just return stats */
     (void)items;
     
-    ts_api_result_success(result, data);
+    ts_api_result_ok(result, data);
     return ESP_OK;
 }
 
@@ -191,7 +191,7 @@ static esp_err_t api_config_save(const cJSON *params, ts_api_result_t *result)
     cJSON *data = cJSON_CreateObject();
     cJSON_AddBoolToObject(data, "saved", true);
     
-    ts_api_result_success(result, data);
+    ts_api_result_ok(result, data);
     return ESP_OK;
 }
 
@@ -199,25 +199,55 @@ static esp_err_t api_config_save(const cJSON *params, ts_api_result_t *result)
 /*                          Registration                                      */
 /*===========================================================================*/
 
-esp_err_t ts_api_config_register(void)
+esp_err_t ts_api_register_config_apis(void)
 {
-    esp_err_t ret;
+    static const ts_api_endpoint_t config_apis[] = {
+        {
+            .name = "config.get",
+            .description = "Get configuration value",
+            .category = TS_API_CAT_CONFIG,
+            .handler = api_config_get,
+            .requires_auth = false,
+            .permission = NULL
+        },
+        {
+            .name = "config.set",
+            .description = "Set configuration value",
+            .category = TS_API_CAT_CONFIG,
+            .handler = api_config_set,
+            .requires_auth = true,
+            .permission = "config.write"
+        },
+        {
+            .name = "config.delete",
+            .description = "Delete configuration value",
+            .category = TS_API_CAT_CONFIG,
+            .handler = api_config_delete,
+            .requires_auth = true,
+            .permission = "config.admin"
+        },
+        {
+            .name = "config.list",
+            .description = "List configuration keys",
+            .category = TS_API_CAT_CONFIG,
+            .handler = api_config_list,
+            .requires_auth = false,
+            .permission = NULL
+        },
+        {
+            .name = "config.save",
+            .description = "Save configuration to storage",
+            .category = TS_API_CAT_CONFIG,
+            .handler = api_config_save,
+            .requires_auth = true,
+            .permission = "config.write"
+        }
+    };
     
-    ret = ts_api_register("config.get", api_config_get, TS_API_PERM_READ);
-    if (ret != ESP_OK) return ret;
-    
-    ret = ts_api_register("config.set", api_config_set, TS_API_PERM_WRITE);
-    if (ret != ESP_OK) return ret;
-    
-    ret = ts_api_register("config.delete", api_config_delete, TS_API_PERM_ADMIN);
-    if (ret != ESP_OK) return ret;
-    
-    ret = ts_api_register("config.list", api_config_list, TS_API_PERM_READ);
-    if (ret != ESP_OK) return ret;
-    
-    ret = ts_api_register("config.save", api_config_save, TS_API_PERM_WRITE);
-    if (ret != ESP_OK) return ret;
-    
-    TS_LOGI(TAG, "Config API registered");
-    return ESP_OK;
+    esp_err_t ret = ts_api_register_multiple(config_apis, 
+                                              sizeof(config_apis) / sizeof(config_apis[0]));
+    if (ret == ESP_OK) {
+        TS_LOGI(TAG, "Config API registered");
+    }
+    return ret;
 }
