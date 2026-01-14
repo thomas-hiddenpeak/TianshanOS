@@ -111,10 +111,10 @@
 - [x] 参数解析器 (argtable3)
 - [x] 命令分类管理
 - [x] 帮助系统
-- [x] 内置命令 (help, version, sysinfo, tasks, free, reboot, clear, echo, log)
+- [x] 内置命令 (help, version, sysinfo, tasks, free, reboot, clear, echo, log, lang)
 - [x] 历史记录管理
 - [x] 彩色输出支持
-- [ ] 多语言支持
+- [x] 多语言支持 (ts_i18n - 英文/简中/繁中/日文/韩文)
 - [ ] 脚本引擎
 - [ ] 单元测试
 

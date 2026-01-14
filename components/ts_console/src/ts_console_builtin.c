@@ -9,6 +9,7 @@
 
 #include "ts_console.h"
 #include "ts_console_args.h"
+#include "ts_i18n.h"
 #include "ts_log.h"
 #include "esp_system.h"
 #include "esp_chip_info.h"
@@ -262,6 +263,64 @@ static int cmd_echo(int argc, char **argv)
 }
 
 /*===========================================================================*/
+/*                          Command: lang                                     */
+/*===========================================================================*/
+
+static struct {
+    struct arg_str *lang;
+    struct arg_lit *list;
+    struct arg_end *end;
+} s_lang_args;
+
+static int cmd_lang(int argc, char **argv)
+{
+    int nerrors = arg_parse(argc, argv, (void **)&s_lang_args);
+    if (nerrors != 0) {
+        arg_print_errors(stderr, s_lang_args.end, argv[0]);
+        return 1;
+    }
+    
+    /* List available languages */
+    if (s_lang_args.list->count > 0) {
+        ts_console_printf("\nAvailable languages:\n");
+        ts_console_printf("  en     - %s\n", ts_i18n_get_language_name(TS_LANG_EN));
+        ts_console_printf("  zh-cn  - %s\n", ts_i18n_get_language_name(TS_LANG_ZH_CN));
+        ts_console_printf("  zh-tw  - %s\n", ts_i18n_get_language_name(TS_LANG_ZH_TW));
+        ts_console_printf("  ja     - %s\n", ts_i18n_get_language_name(TS_LANG_JA));
+        ts_console_printf("  ko     - %s\n", ts_i18n_get_language_name(TS_LANG_KO));
+        ts_console_printf("\nCurrent: %s\n\n", ts_i18n_get_language_name(ts_i18n_get_language()));
+        return 0;
+    }
+    
+    /* Set language */
+    if (s_lang_args.lang->count > 0) {
+        const char *lang_str = s_lang_args.lang->sval[0];
+        ts_language_t lang;
+        
+        if (strcmp(lang_str, "en") == 0) lang = TS_LANG_EN;
+        else if (strcmp(lang_str, "zh-cn") == 0 || strcmp(lang_str, "zh") == 0) lang = TS_LANG_ZH_CN;
+        else if (strcmp(lang_str, "zh-tw") == 0) lang = TS_LANG_ZH_TW;
+        else if (strcmp(lang_str, "ja") == 0) lang = TS_LANG_JA;
+        else if (strcmp(lang_str, "ko") == 0) lang = TS_LANG_KO;
+        else {
+            ts_console_error("Unknown language: %s\n", lang_str);
+            ts_console_printf("Use 'lang -l' to list available languages\n");
+            return 1;
+        }
+        
+        ts_i18n_set_language(lang);
+        ts_console_success("Language set to: %s\n", ts_i18n_get_language_name(lang));
+        ts_console_printf("%s\n", TS_STR(TS_STR_WELCOME));
+    } else {
+        /* Show current language */
+        ts_console_printf("Current language: %s\n", ts_i18n_get_language_name(ts_i18n_get_language()));
+        ts_console_printf("Use 'lang -l' to list available languages\n");
+    }
+    
+    return 0;
+}
+
+/*===========================================================================*/
 /*                          Command: log                                      */
 /*===========================================================================*/
 
@@ -315,6 +374,11 @@ static int cmd_log(int argc, char **argv)
 
 esp_err_t ts_console_register_builtin_cmds(void)
 {
+    /* Initialize lang command arguments */
+    s_lang_args.lang = arg_str0(NULL, NULL, "<language>", "Language code (en/zh-cn/zh-tw/ja/ko)");
+    s_lang_args.list = arg_lit0("l", "list", "List available languages");
+    s_lang_args.end = arg_end(2);
+    
     /* Initialize log command arguments */
     s_log_args.level = arg_str0("l", "level", "<level>", "Log level (none/error/warn/info/debug/verbose)");
     s_log_args.tag = arg_str0("t", "tag", "<tag>", "Tag to set level for");
@@ -384,6 +448,14 @@ esp_err_t ts_console_register_builtin_cmds(void)
             .category = TS_CMD_CAT_SYSTEM,
             .func = cmd_echo,
             .argtable = NULL
+        },
+        {
+            .command = "lang",
+            .help = "Get/set display language",
+            .hint = NULL,
+            .category = TS_CMD_CAT_SYSTEM,
+            .func = cmd_lang,
+            .argtable = &s_lang_args
         },
         {
             .command = "log",
