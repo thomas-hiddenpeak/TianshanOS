@@ -4,6 +4,9 @@ build/
 # ESP-IDF managed components (downloaded dependencies)
 managed_components/
 
+# Cache directories
+.cache/
+
 # IDE & Editor files
 .vscode/
 .idea/
