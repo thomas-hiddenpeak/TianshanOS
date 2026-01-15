@@ -328,6 +328,25 @@ esp_err_t ts_led_device_refresh(ts_led_device_t device);
  */
 esp_err_t ts_led_device_clear(ts_led_device_t device);
 
+/**
+ * @brief Fill all LEDs with a color (direct framebuffer access)
+ * 
+ * @param device Device handle
+ * @param color Color to fill
+ * @return ESP_OK on success
+ */
+esp_err_t ts_led_device_fill(ts_led_device_t device, ts_led_rgb_t color);
+
+/**
+ * @brief Set a single LED pixel (direct framebuffer access)
+ * 
+ * @param device Device handle
+ * @param index LED index
+ * @param color Color to set
+ * @return ESP_OK on success
+ */
+esp_err_t ts_led_device_set_pixel(ts_led_device_t device, uint16_t index, ts_led_rgb_t color);
+
 /*===========================================================================*/
 /*                           Layer Management                                 */
 /*===========================================================================*/
@@ -343,6 +362,17 @@ esp_err_t ts_led_device_clear(ts_led_device_t device);
 esp_err_t ts_led_layer_create(ts_led_device_t device, 
                                const ts_led_layer_config_t *config,
                                ts_led_layer_t *layer);
+
+/**
+ * @brief Get existing layer by index
+ * 
+ * Creates layer 0 automatically if it doesn't exist.
+ * 
+ * @param device Device handle
+ * @param index Layer index (0 = base layer)
+ * @return Layer handle or NULL if not found
+ */
+ts_led_layer_t ts_led_layer_get(ts_led_device_t device, uint8_t index);
 
 /**
  * @brief Destroy layer
@@ -525,6 +555,21 @@ const ts_led_effect_t *ts_led_effect_get_builtin(const char *name);
  * @return Number of effects
  */
 size_t ts_led_effect_list_builtin(const char **names, size_t max_names);
+
+/**
+ * @brief List effects suitable for a specific device layout
+ * 
+ * 不同形态的LED设备支持不同特效：
+ * - TS_LED_LAYOUT_STRIP: 点光源特效 (pulse, heartbeat, color_cycle)
+ * - TS_LED_LAYOUT_RING: 环形特效 (chase, comet, spin, breathe_wave)
+ * - TS_LED_LAYOUT_MATRIX: 矩阵特效 (fire, rain, plasma, ripple)
+ * 
+ * @param layout Device layout type
+ * @param names Array to store effect names (NULL to just count)
+ * @param max_names Maximum names to retrieve
+ * @return Number of suitable effects
+ */
+size_t ts_led_effect_list_for_device(ts_led_layout_t layout, const char **names, size_t max_names);
 
 /*===========================================================================*/
 /*                            Color Utilities                                 */

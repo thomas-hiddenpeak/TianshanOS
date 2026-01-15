@@ -13,6 +13,11 @@
 
 #define TAG "ts_drivers"
 
+// Default fan GPIO pin (from pins.json: FAN_PWM_0=41)
+#ifndef CONFIG_TS_DRIVERS_FAN0_PWM_GPIO
+#define CONFIG_TS_DRIVERS_FAN0_PWM_GPIO 41
+#endif
+
 esp_err_t ts_drivers_init(void)
 {
     esp_err_t ret;
@@ -23,6 +28,21 @@ esp_err_t ts_drivers_init(void)
     ret = ts_fan_init();
     if (ret != ESP_OK) {
         TS_LOGW(TAG, "Fan driver init failed: %s", esp_err_to_name(ret));
+    } else {
+        // Configure fan 0 only (only one fan GPIO on this board)
+        ts_fan_config_t fan0_cfg = {
+            .gpio_pwm = CONFIG_TS_DRIVERS_FAN0_PWM_GPIO,
+            .gpio_tach = -1,  // No tach for now
+            .min_duty = 20,
+            .max_duty = 100,
+            .curve_points = 0
+        };
+        ret = ts_fan_configure(TS_FAN_1, &fan0_cfg);
+        if (ret != ESP_OK) {
+            TS_LOGW(TAG, "Fan 0 configure failed: %s", esp_err_to_name(ret));
+        } else {
+            TS_LOGI(TAG, "Fan 0 configured on GPIO %d", fan0_cfg.gpio_pwm);
+        }
     }
 #endif
 

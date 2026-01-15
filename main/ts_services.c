@@ -1,0 +1,438 @@
+/**
+ * @file ts_services.c
+ * @brief TianShanOS Service Registration
+ *
+ * 服务注册和初始化
+ * 
+ * 此文件将各个组件(storage, console等)包装成服务，
+ * 并在系统启动时注册到服务管理器。
+ *
+ * @author TianShanOS Team
+ * @version 0.1.0
+ */
+
+#include "ts_services.h"
+#include "ts_service.h"
+#include "ts_storage.h"
+#include "ts_console.h"
+#include "ts_cmd_all.h"
+#include "ts_hal.h"
+#include "ts_led.h"
+#include "ts_led_preset.h"
+#include "ts_drivers.h"
+#include "ts_fan.h"
+#include "esp_log.h"
+
+static const char *TAG = "ts_services";
+
+/* ============================================================================
+ * 服务句柄
+ * ========================================================================== */
+
+static ts_service_handle_t s_hal_handle = NULL;
+static ts_service_handle_t s_storage_handle = NULL;
+static ts_service_handle_t s_led_handle = NULL;
+static ts_service_handle_t s_drivers_handle = NULL;
+static ts_service_handle_t s_console_handle = NULL;
+
+/* ============================================================================
+ * HAL 服务回调
+ * ========================================================================== */
+
+static esp_err_t hal_service_init(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Initializing HAL service...");
+    
+    ts_hal_config_t config = TS_HAL_CONFIG_DEFAULT();
+    esp_err_t ret = ts_hal_init(&config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init HAL: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t hal_service_start(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    return ESP_OK;  // HAL 在 init 时已启动
+}
+
+static esp_err_t hal_service_stop(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    return ts_hal_deinit();
+}
+
+static bool hal_service_health(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    return ts_hal_is_initialized();
+}
+
+/* ============================================================================
+ * Storage 服务回调
+ * ========================================================================== */
+
+static esp_err_t storage_service_init(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Initializing storage service...");
+    
+    esp_err_t ret = ts_storage_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init storage: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t storage_service_start(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Starting storage service...");
+    
+    // 挂载 SPIFFS
+    ts_spiffs_config_t spiffs_config = TS_SPIFFS_DEFAULT_CONFIG();
+    esp_err_t ret = ts_storage_mount_spiffs(&spiffs_config);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to mount SPIFFS: %s", esp_err_to_name(ret));
+        // 继续，SPIFFS 不是必须的
+    } else {
+        ESP_LOGI(TAG, "SPIFFS mounted at /spiffs");
+    }
+    
+    // 挂载 SD 卡 - 传 NULL 使用 Kconfig 默认 GPIO 配置
+    // 已添加任务看门狗保护，超时后会安全返回
+    ret = ts_storage_mount_sd(NULL);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "SD card not mounted: %s", esp_err_to_name(ret));
+        ESP_LOGI(TAG, "Use 'storage --mount' to try again after inserting card");
+    } else {
+        ESP_LOGI(TAG, "SD card mounted at /sdcard");
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t storage_service_stop(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Stopping storage service...");
+    
+    ts_storage_unmount_sd();
+    ts_storage_unmount_spiffs();
+    
+    return ESP_OK;
+}
+
+static bool storage_service_health(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    // 检查至少一个存储是否可用
+    return ts_storage_spiffs_mounted() || ts_storage_sd_mounted();
+}
+
+/* ============================================================================
+ * LED 服务回调
+ * ========================================================================== */
+
+static esp_err_t led_service_init(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Initializing LED service...");
+    
+    esp_err_t ret = ts_led_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init LED: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t led_service_start(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Starting LED service...");
+    
+    // 初始化预设 LED 设备 (touch, board, matrix)
+    esp_err_t ret = ts_led_preset_init_all();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Some LED devices failed to init: %s", esp_err_to_name(ret));
+        // 不是致命错误，继续
+    }
+    
+    // 加载并应用保存的启动配置
+    ts_led_load_all_boot_config();
+    
+    return ESP_OK;
+}
+
+static esp_err_t led_service_stop(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    return ESP_OK;  // LED 不需要特别停止
+}
+
+static bool led_service_health(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    return true;  // LED 始终可用
+}
+
+/* ============================================================================
+ * Drivers 服务回调
+ * ========================================================================== */
+
+static esp_err_t drivers_service_init(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Initializing drivers service...");
+    
+    esp_err_t ret = ts_drivers_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Some drivers failed to init: %s", esp_err_to_name(ret));
+        // 不是致命错误
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t drivers_service_start(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    // 加载风扇配置
+    ts_fan_load_config();
+    
+    return ESP_OK;
+}
+
+static esp_err_t drivers_service_stop(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    return ts_drivers_deinit();
+}
+
+static bool drivers_service_health(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    return true;
+}
+
+/* ============================================================================
+ * Console 服务回调
+ * ========================================================================== */
+
+static esp_err_t console_service_init(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Initializing console service...");
+    
+    ts_console_config_t config = TS_CONSOLE_DEFAULT_CONFIG();
+    config.prompt = "TianShanOS> ";
+    
+    esp_err_t ret = ts_console_init(&config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init console: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // 注册内置命令 (help, version, reboot 等)
+    ret = ts_console_register_builtin_cmds();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to register builtin commands: %s", esp_err_to_name(ret));
+        // 不是致命错误，继续
+    }
+    
+    // 注册所有扩展命令 (system, service, config, fan, storage, net, device, led)
+    ret = ts_cmd_register_all();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Some extended commands failed to register");
+        // 不是致命错误，继续
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t console_service_start(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Starting console service...");
+    
+    esp_err_t ret = ts_console_start();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start console: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t console_service_stop(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Stopping console service...");
+    return ts_console_stop();
+}
+
+static bool console_service_health(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    return ts_console_is_running();
+}
+
+/* ============================================================================
+ * 服务定义
+ * ========================================================================== */
+
+static const ts_service_def_t s_hal_service_def = {
+    .name = "hal",
+    .phase = TS_SERVICE_PHASE_HAL,
+    .capabilities = 0,
+    .dependencies = {NULL},
+    .init = hal_service_init,
+    .start = hal_service_start,
+    .stop = hal_service_stop,
+    .health_check = hal_service_health,
+    .user_data = NULL,
+};
+
+static const ts_service_def_t s_storage_service_def = {
+    .name = "storage",
+    .phase = TS_SERVICE_PHASE_DRIVER,
+    .capabilities = TS_SERVICE_CAP_RESTARTABLE | TS_SERVICE_CAP_CONFIGURABLE,
+    .dependencies = {"hal", NULL},  // 依赖 HAL
+    .init = storage_service_init,
+    .start = storage_service_start,
+    .stop = storage_service_stop,
+    .health_check = storage_service_health,
+    .user_data = NULL,
+};
+
+static const ts_service_def_t s_led_service_def = {
+    .name = "led",
+    .phase = TS_SERVICE_PHASE_DRIVER,
+    .capabilities = TS_SERVICE_CAP_RESTARTABLE,
+    .dependencies = {"hal", NULL},  // 不依赖 storage，在加载图像时容错处理
+    .init = led_service_init,
+    .start = led_service_start,
+    .stop = led_service_stop,
+    .health_check = led_service_health,
+    .user_data = NULL,
+};
+
+static const ts_service_def_t s_drivers_service_def = {
+    .name = "drivers",
+    .phase = TS_SERVICE_PHASE_DRIVER,
+    .capabilities = TS_SERVICE_CAP_RESTARTABLE,
+    .dependencies = {"hal", NULL},
+    .init = drivers_service_init,
+    .start = drivers_service_start,
+    .stop = drivers_service_stop,
+    .health_check = drivers_service_health,
+    .user_data = NULL,
+};
+
+static const ts_service_def_t s_console_service_def = {
+    .name = "console",
+    .phase = TS_SERVICE_PHASE_UI,
+    .capabilities = TS_SERVICE_CAP_RESTARTABLE,
+    .dependencies = {"storage", "led", "drivers", NULL},  // 依赖所有硬件服务
+    .init = console_service_init,
+    .start = console_service_start,
+    .stop = console_service_stop,
+    .health_check = console_service_health,
+    .user_data = NULL,
+};
+
+/* ============================================================================
+ * 公开 API
+ * ========================================================================== */
+
+esp_err_t ts_services_register_all(void)
+{
+    esp_err_t ret;
+    
+    ESP_LOGI(TAG, "Registering services...");
+    
+    // 注册 HAL 服务 (最先)
+    ret = ts_service_register(&s_hal_service_def, &s_hal_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register HAL service: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  - hal service registered");
+    
+    // 注册 storage 服务
+    ret = ts_service_register(&s_storage_service_def, &s_storage_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register storage service: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  - storage service registered");
+    
+    // 注册 LED 服务
+    ret = ts_service_register(&s_led_service_def, &s_led_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register LED service: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  - led service registered");
+    
+    // 注册 Drivers 服务
+    ret = ts_service_register(&s_drivers_service_def, &s_drivers_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register drivers service: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  - drivers service registered");
+    
+    // 注册 console 服务 (最后)
+    ret = ts_service_register(&s_console_service_def, &s_console_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register console service: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  - console service registered");
+    
+    ESP_LOGI(TAG, "All core services registered");
+    
+    return ESP_OK;
+}

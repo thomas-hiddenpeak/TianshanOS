@@ -15,6 +15,7 @@
 #include "esp_chip_info.h"
 #include "esp_log.h"
 #include "ts_core.h"
+#include "ts_services.h"
 
 static const char *TAG = "main";
 
@@ -78,6 +79,14 @@ void app_main(void)
     ret = ts_core_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize TianShanOS core: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    // 注册所有核心服务
+    ESP_LOGI(TAG, "Registering core services...");
+    ret = ts_services_register_all();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register services: %s", esp_err_to_name(ret));
         return;
     }
 

@@ -46,6 +46,28 @@ esp_err_t ts_led_layer_create(ts_led_device_t device,
     return ESP_OK;
 }
 
+ts_led_layer_t ts_led_layer_get(ts_led_device_t device, uint8_t index)
+{
+    if (!device) return NULL;
+    ts_led_device_impl_t *dev = (ts_led_device_impl_t *)device;
+    
+    // Return existing layer if available
+    if (index < dev->layer_count) {
+        return dev->layers[index];
+    }
+    
+    // Auto-create layer 0 if requested and doesn't exist
+    if (index == 0 && dev->layer_count == 0) {
+        ts_led_layer_t layer = NULL;
+        ts_led_layer_config_t cfg = TS_LED_LAYER_DEFAULT_CONFIG();
+        if (ts_led_layer_create(device, &cfg, &layer) == ESP_OK) {
+            return layer;
+        }
+    }
+    
+    return NULL;
+}
+
 esp_err_t ts_led_layer_destroy(ts_led_layer_t layer)
 {
     if (!layer) return ESP_ERR_INVALID_ARG;
@@ -106,14 +128,47 @@ esp_err_t ts_led_set_pixel_xy(ts_led_layer_t layer, uint16_t x, uint16_t y, ts_l
     
     if (x >= dev->config.width || y >= dev->config.height) return ESP_ERR_INVALID_ARG;
     
+    uint16_t w = dev->config.width;
+    uint16_t h = dev->config.height;
+    uint16_t tx = x, ty = y;
+    
+    // 根据 origin 转换坐标
+    switch (dev->config.origin) {
+        case TS_LED_ORIGIN_TOP_RIGHT:
+            tx = w - 1 - x;
+            break;
+        case TS_LED_ORIGIN_BOTTOM_LEFT:
+            ty = h - 1 - y;
+            break;
+        case TS_LED_ORIGIN_BOTTOM_RIGHT:
+            tx = w - 1 - x;
+            ty = h - 1 - y;
+            break;
+        case TS_LED_ORIGIN_TOP_LEFT:
+        default:
+            break;
+    }
+    
     uint16_t index;
     switch (dev->config.scan) {
         case TS_LED_SCAN_ZIGZAG_ROWS:
-            index = (y % 2 == 0) ? y * dev->config.width + x 
-                                 : y * dev->config.width + (dev->config.width - 1 - x);
+            // 蛇形布线：根据行号决定方向
+            // 偶数行(0,2,4...)正序，奇数行(1,3,5...)反序
+            index = (ty % 2 == 0) ? ty * w + tx
+                                  : ty * w + (w - 1 - tx);
             break;
+        case TS_LED_SCAN_ZIGZAG_COLS:
+            // 蛇形布线（列优先）
+            index = (tx % 2 == 0) ? tx * h + ty
+                                  : tx * h + (h - 1 - ty);
+            break;
+        case TS_LED_SCAN_COLUMNS:
+            index = tx * h + ty;
+            break;
+        case TS_LED_SCAN_ROWS:
         default:
-            index = y * dev->config.width + x;
+            index = ty * w + tx;
+            break;
     }
     
     return ts_led_set_pixel(layer, index, color);

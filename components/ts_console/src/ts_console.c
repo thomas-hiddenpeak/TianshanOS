@@ -75,8 +75,8 @@ static void console_task(void *arg)
     TS_LOGI(TAG, "Console task started");
     
     /* Configure linenoise */
-    linenoiseSetMultiLine(1);
-    linenoiseSetDumbMode(0);
+    linenoiseSetMultiLine(0);  /* Single line mode works better in dumb mode */
+    linenoiseSetDumbMode(1);   /* Use dumb mode for serial monitor compatibility */
     linenoiseHistorySetMaxLen(s_console.config.max_history);
     
     /* Load history if available */
@@ -85,15 +85,16 @@ static void console_task(void *arg)
 #endif
     
     while (s_console.running) {
-        /* Get a line of input */
+        /* Get a line of input - linenoise blocks waiting for input in dumb mode */
         char *line = linenoise(s_console.prompt);
         
         if (line == NULL) {
-            /* EOF or error */
-            vTaskDelay(pdMS_TO_TICKS(10));
+            /* EOF, error, or Ctrl+C - add small delay before retry */
+            vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
         
+        /* Only process non-empty lines */
         if (strlen(line) > 0) {
             /* Add to history */
             linenoiseHistoryAdd(line);
@@ -112,6 +113,7 @@ static void console_task(void *arg)
                 ts_console_error("Command returned error: %d\n", ret);
             }
         }
+        /* For empty lines, just free and loop - linenoise handles prompt */
         
         linenoiseFree(line);
     }
@@ -215,12 +217,28 @@ esp_err_t ts_console_init(const ts_console_config_t *config)
         fflush(stdout);
         fsync(fileno(stdout));
         
-        /* Configure UART */
-        setvbuf(stdin, NULL, _IONBF, 0);
+        /* Install UART driver for interrupt-driven reads and writes */
+        const int uart_num = CONFIG_ESP_CONSOLE_UART_NUM;
+        const uart_config_t uart_config = {
+            .baud_rate = CONFIG_ESP_CONSOLE_UART_BAUDRATE,
+            .data_bits = UART_DATA_8_BITS,
+            .parity = UART_PARITY_DISABLE,
+            .stop_bits = UART_STOP_BITS_1,
+            .source_clk = UART_SCLK_DEFAULT,
+        };
+        /* Install UART driver with RX buffer only */
+        ESP_ERROR_CHECK(uart_driver_install(uart_num, 256, 0, 0, NULL, 0));
+        ESP_ERROR_CHECK(uart_param_config(uart_num, &uart_config));
         
-        /* Enable linenoise driver */
-        esp_vfs_dev_uart_port_set_rx_line_endings(CONFIG_ESP_CONSOLE_UART_NUM, ESP_LINE_ENDINGS_CR);
-        esp_vfs_dev_uart_port_set_tx_line_endings(CONFIG_ESP_CONSOLE_UART_NUM, ESP_LINE_ENDINGS_CRLF);
+        /* Tell VFS to use UART driver - this makes stdin blocking */
+        esp_vfs_dev_uart_use_driver(uart_num);
+        
+        /* Configure line endings */
+        esp_vfs_dev_uart_port_set_rx_line_endings(uart_num, ESP_LINE_ENDINGS_CR);
+        esp_vfs_dev_uart_port_set_tx_line_endings(uart_num, ESP_LINE_ENDINGS_CRLF);
+        
+        /* Disable buffering on stdin */
+        setvbuf(stdin, NULL, _IONBF, 0);
     }
     
     s_console.initialized = true;
@@ -245,6 +263,12 @@ esp_err_t ts_console_deinit(void)
     
     /* Deinitialize esp_console */
     esp_console_deinit();
+    
+    /* Restore UART to non-driver mode and uninstall driver */
+    if (s_console.config.output == TS_CONSOLE_OUTPUT_UART) {
+        esp_vfs_dev_uart_use_nonblocking(CONFIG_ESP_CONSOLE_UART_NUM);
+        uart_driver_delete(CONFIG_ESP_CONSOLE_UART_NUM);
+    }
     
     /* Free mutex */
     if (s_console.mutex) {

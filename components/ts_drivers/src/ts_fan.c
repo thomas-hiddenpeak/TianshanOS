@@ -8,11 +8,14 @@
 #include "ts_hal_gpio.h"
 #include "ts_log.h"
 #include "esp_timer.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
 
 #define TAG "ts_fan"
+#define FAN_NVS_NAMESPACE "fan_config"
 
 typedef struct {
     bool initialized;
@@ -281,5 +284,87 @@ esp_err_t ts_fan_emergency_full(void)
             ts_pwm_set_duty(s_fans[i].pwm, 100.0f);
         }
     }
+    return ESP_OK;
+}
+
+esp_err_t ts_fan_save_config(void)
+{
+    nvs_handle_t nvs;
+    esp_err_t ret = nvs_open(FAN_NVS_NAMESPACE, NVS_READWRITE, &nvs);
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to open NVS: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    for (int i = 0; i < TS_FAN_MAX; i++) {
+        if (!s_fans[i].initialized) continue;
+        
+        char key[16];
+        
+        // 保存模式
+        snprintf(key, sizeof(key), "fan%d.mode", i);
+        nvs_set_u8(nvs, key, (uint8_t)s_fans[i].mode);
+        
+        // 保存当前占空比
+        snprintf(key, sizeof(key), "fan%d.duty", i);
+        nvs_set_u8(nvs, key, s_fans[i].current_duty);
+        
+        // 保存启用标志
+        snprintf(key, sizeof(key), "fan%d.en", i);
+        nvs_set_u8(nvs, key, 1);
+        
+        TS_LOGI(TAG, "Saved fan %d: mode=%d, duty=%d%%", 
+                i, s_fans[i].mode, s_fans[i].current_duty);
+    }
+    
+    ret = nvs_commit(nvs);
+    nvs_close(nvs);
+    
+    return ret;
+}
+
+esp_err_t ts_fan_load_config(void)
+{
+    nvs_handle_t nvs;
+    esp_err_t ret = nvs_open(FAN_NVS_NAMESPACE, NVS_READONLY, &nvs);
+    if (ret != ESP_OK) {
+        TS_LOGD(TAG, "No saved fan config found");
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    for (int i = 0; i < TS_FAN_MAX; i++) {
+        if (!s_fans[i].initialized) continue;
+        
+        char key[16];
+        
+        // 检查是否有保存的配置
+        snprintf(key, sizeof(key), "fan%d.en", i);
+        uint8_t enabled = 0;
+        if (nvs_get_u8(nvs, key, &enabled) != ESP_OK || !enabled) {
+            continue;
+        }
+        
+        // 加载模式
+        snprintf(key, sizeof(key), "fan%d.mode", i);
+        uint8_t mode = 0;
+        if (nvs_get_u8(nvs, key, &mode) == ESP_OK) {
+            s_fans[i].mode = (ts_fan_mode_t)mode;
+        }
+        
+        // 加载占空比
+        snprintf(key, sizeof(key), "fan%d.duty", i);
+        uint8_t duty = 0;
+        if (nvs_get_u8(nvs, key, &duty) == ESP_OK) {
+            s_fans[i].current_duty = duty;
+            if (s_fans[i].mode == TS_FAN_MODE_MANUAL && s_fans[i].pwm) {
+                ts_pwm_set_duty(s_fans[i].pwm, (float)duty);
+            }
+        }
+        
+        TS_LOGI(TAG, "Restored fan %d: mode=%d, duty=%d%%", 
+                i, s_fans[i].mode, s_fans[i].current_duty);
+    }
+    
+    nvs_close(nvs);
     return ESP_OK;
 }

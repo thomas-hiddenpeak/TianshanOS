@@ -64,4 +64,54 @@ menu "TianShanOS Storage Configuration"
             bool "SDIO 4-bit mode"
     endchoice
 
+    menu "SD Card GPIO Configuration"
+        depends on TS_STORAGE_ENABLE_SD && !TS_STORAGE_SD_MODE_SPI
+
+        config TS_STORAGE_SD_CMD_GPIO
+            int "SD CMD GPIO"
+            default 35
+            range -1 48
+            help
+                GPIO for SD card CMD line. Set -1 to use slot default.
+
+        config TS_STORAGE_SD_CLK_GPIO
+            int "SD CLK GPIO"
+            default 36
+            range -1 48
+            help
+                GPIO for SD card CLK line. Set -1 to use slot default.
+
+        config TS_STORAGE_SD_D0_GPIO
+            int "SD D0 GPIO"
+            default 37
+            range -1 48
+            help
+                GPIO for SD card D0 line. Set -1 to use slot default.
+
+        config TS_STORAGE_SD_D1_GPIO
+            int "SD D1 GPIO"
+            default 33
+            range -1 48
+            depends on TS_STORAGE_SD_MODE_SDIO_4BIT
+            help
+                GPIO for SD card D1 line (4-bit mode only).
+
+        config TS_STORAGE_SD_D2_GPIO
+            int "SD D2 GPIO"
+            default 34
+            range -1 48
+            depends on TS_STORAGE_SD_MODE_SDIO_4BIT
+            help
+                GPIO for SD card D2 line (4-bit mode only).
+
+        config TS_STORAGE_SD_D3_GPIO
+            int "SD D3 GPIO"
+            default 21
+            range -1 48
+            depends on TS_STORAGE_SD_MODE_SDIO_4BIT
+            help
+                GPIO for SD card D3 line (4-bit mode only).
+
+    endmenu
+
 endmenu

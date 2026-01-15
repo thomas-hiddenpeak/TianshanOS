@@ -5,6 +5,7 @@ idf_component_register(
     SRCS
         "main.c"
         "ts_core_init.c"
+        "ts_services.c"
     INCLUDE_DIRS
         "."
     REQUIRES
@@ -13,4 +14,9 @@ idf_component_register(
         ts_log
         ts_event
         ts_service
+        ts_storage
+        ts_console
+        ts_hal
+        ts_led
+        ts_drivers
 )

@@ -14,9 +14,23 @@
 #include "driver/sdmmc_host.h"
 #include "driver/sdspi_host.h"
 #include "driver/spi_common.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_task_wdt.h"
 #include <string.h>
 
 #define TAG "storage_sd"
+
+/**
+ * @brief 安全喂看门狗 - 仅当任务已注册时才调用
+ * 
+ * 在 ESP-IDF v5.x 中，如果任务未注册到 TWDT，调用 esp_task_wdt_reset() 会报错。
+ * 使用 taskYIELD() 作为替代方案，让出 CPU 使 IDLE 任务有机会喂狗。
+ */
+static inline void sd_yield_to_wdt(void)
+{
+    taskYIELD();
+}
 
 /*===========================================================================*/
 /*                          External Functions                                */
@@ -68,15 +82,53 @@ esp_err_t ts_storage_mount_sd(const ts_sd_config_t *config)
         cfg.mode = TS_SD_MODE_SDIO_4BIT;
 #endif
         cfg.format_if_mount_failed = false;
+        
+        /* SDIO GPIO configuration from Kconfig */
+#ifdef CONFIG_TS_STORAGE_SD_CMD_GPIO
+        cfg.pin_cmd = CONFIG_TS_STORAGE_SD_CMD_GPIO;
+#else
+        cfg.pin_cmd = -1;
+#endif
+#ifdef CONFIG_TS_STORAGE_SD_CLK_GPIO
+        cfg.pin_clk = CONFIG_TS_STORAGE_SD_CLK_GPIO;
+#else
+        cfg.pin_clk = -1;
+#endif
+#ifdef CONFIG_TS_STORAGE_SD_D0_GPIO
+        cfg.pin_d0 = CONFIG_TS_STORAGE_SD_D0_GPIO;
+#else
+        cfg.pin_d0 = -1;
+#endif
+#ifdef CONFIG_TS_STORAGE_SD_D1_GPIO
+        cfg.pin_d1 = CONFIG_TS_STORAGE_SD_D1_GPIO;
+#else
+        cfg.pin_d1 = -1;
+#endif
+#ifdef CONFIG_TS_STORAGE_SD_D2_GPIO
+        cfg.pin_d2 = CONFIG_TS_STORAGE_SD_D2_GPIO;
+#else
+        cfg.pin_d2 = -1;
+#endif
+#ifdef CONFIG_TS_STORAGE_SD_D3_GPIO
+        cfg.pin_d3 = CONFIG_TS_STORAGE_SD_D3_GPIO;
+#else
+        cfg.pin_d3 = -1;
+#endif
     }
     
     TS_LOGI(TAG, "Mounting SD card at %s (mode: %d, freq: %d kHz)", 
             cfg.mount_point, cfg.mode, cfg.max_freq_khz);
+    TS_LOGI(TAG, "SD GPIO: CMD=%d, CLK=%d, D0=%d, D1=%d, D2=%d, D3=%d",
+            cfg.pin_cmd, cfg.pin_clk, cfg.pin_d0, cfg.pin_d1, cfg.pin_d2, cfg.pin_d3);
+    
+    // 让出 CPU，防止长时间操作阻塞其他任务
+    sd_yield_to_wdt();
     
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = cfg.format_if_mount_failed,
-        .max_files = 5,
-        .allocation_unit_size = 16 * 1024
+        .max_files = 10,
+        .allocation_unit_size = 8 * 1024,
+        .disk_status_check_enable = true
     };
     
     esp_err_t ret;
@@ -130,17 +182,44 @@ esp_err_t ts_storage_mount_sd(const ts_sd_config_t *config)
         
         slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
         
+        // 让出 CPU
+        sd_yield_to_wdt();
+        
         ret = esp_vfs_fat_sdmmc_mount(cfg.mount_point, &host, &slot_config, 
                                        &mount_config, &s_card);
+        
+        // 挂载后让出 CPU
+        sd_yield_to_wdt();
     }
     
     if (ret != ESP_OK) {
-        if (ret == ESP_FAIL) {
-            TS_LOGE(TAG, "Failed to mount filesystem");
-        } else {
-            TS_LOGE(TAG, "Failed to initialize SD card: %s", esp_err_to_name(ret));
+        // 让出 CPU，确保错误处理期间不阻塞
+        sd_yield_to_wdt();
+        
+        // 根据错误类型提供更友好的错误信息
+        switch (ret) {
+            case ESP_ERR_TIMEOUT:
+                TS_LOGW(TAG, "No SD card detected - slot may be empty");
+                break;
+            case ESP_ERR_INVALID_STATE:
+                TS_LOGW(TAG, "SD card slot already in use or hardware conflict");
+                break;
+            case ESP_ERR_NOT_FOUND:
+                TS_LOGW(TAG, "SD card not responding or unsupported");
+                break;
+            case ESP_ERR_NOT_SUPPORTED:
+                TS_LOGW(TAG, "SD card format not supported - may need formatting");
+                break;
+            case ESP_FAIL:
+                TS_LOGE(TAG, "Failed to mount filesystem");
+                break;
+            default:
+                TS_LOGE(TAG, "Failed to initialize SD card: %s", esp_err_to_name(ret));
+                break;
         }
         s_card = NULL;
+        // 给 SDMMC 驱动时间完成清理
+        vTaskDelay(pdMS_TO_TICKS(100));
         return ret;
     }
     

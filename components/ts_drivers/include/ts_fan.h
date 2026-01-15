@@ -99,6 +99,16 @@ esp_err_t ts_fan_set_curve(ts_fan_id_t fan, const ts_fan_curve_point_t *curve, u
  */
 esp_err_t ts_fan_emergency_full(void);
 
+/**
+ * @brief Save fan configuration to NVS
+ */
+esp_err_t ts_fan_save_config(void);
+
+/**
+ * @brief Load fan configuration from NVS
+ */
+esp_err_t ts_fan_load_config(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,11 +1,15 @@
 /**
  * @file ts_led_driver.c
- * @brief WS2812 LED Driver using RMT
+ * @brief WS2812 LED Driver using RMT/SPI
+ * 
+ * 对于小型设备（≤256 LEDs）使用 RMT 后端
+ * 对于大型设备（>256 LEDs）使用 SPI 后端以避免 RMT 内存限制
  */
 
 #include "ts_led_private.h"
 #include "ts_log.h"
 #include "led_strip.h"
+#include "driver/spi_master.h"
 #include <string.h>
 
 #define TAG "led_driver"
@@ -27,23 +31,42 @@ esp_err_t ts_led_driver_init(ts_led_device_impl_t *dev)
         }
     };
     
-    led_strip_rmt_config_t rmt_config = {
-        .clk_src = RMT_CLK_SRC_DEFAULT,
-        .resolution_hz = 10 * 1000 * 1000,
-        .flags.with_dma = dev->config.use_dma,
-    };
-    
     led_strip_handle_t strip = NULL;
-    esp_err_t ret = led_strip_new_rmt_device(&strip_config, &rmt_config, &strip);
+    esp_err_t ret;
+    
+    // 对于大型 LED 设备（超过 256 个），使用 SPI 后端
+    // SPI 没有 RMT 内存块限制，更适合大型矩阵
+    if (count > 256) {
+        TS_LOGI(TAG, "Using SPI backend for %d LEDs on GPIO %d", count, gpio);
+        led_strip_spi_config_t spi_config = {
+            .clk_src = SPI_CLK_SRC_DEFAULT,
+            .spi_bus = SPI2_HOST,
+            .flags = {
+                .with_dma = true,
+            }
+        };
+        ret = led_strip_new_spi_device(&strip_config, &spi_config, &strip);
+    } else {
+        // 小型设备使用 RMT
+        TS_LOGI(TAG, "Using RMT backend for %d LEDs on GPIO %d", count, gpio);
+        led_strip_rmt_config_t rmt_config = {
+            .clk_src = RMT_CLK_SRC_DEFAULT,
+            .resolution_hz = 10 * 1000 * 1000,
+            .flags.with_dma = dev->config.use_dma && (count > 64),
+            .mem_block_symbols = 64,  // 增加内存块大小
+        };
+        ret = led_strip_new_rmt_device(&strip_config, &rmt_config, &strip);
+    }
+    
     if (ret != ESP_OK) {
-        TS_LOGE(TAG, "Failed to create LED strip: %s", esp_err_to_name(ret));
+        TS_LOGE(TAG, "Failed to create LED strip for '%s': %s", dev->name, esp_err_to_name(ret));
         return ret;
     }
     
     dev->strip_handle = strip;
     led_strip_clear(strip);
     
-    TS_LOGI(TAG, "LED driver initialized: GPIO %d, %d LEDs", gpio, count);
+    TS_LOGI(TAG, "LED driver initialized: '%s' - GPIO %d, %d LEDs", dev->name, gpio, count);
     return ESP_OK;
 }
 

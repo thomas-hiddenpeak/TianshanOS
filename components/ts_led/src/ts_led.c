@@ -22,12 +22,52 @@ static void render_task(void *arg)
 {
     TickType_t last_wake = xTaskGetTickCount();
     const TickType_t interval = pdMS_TO_TICKS(1000 / 60);
+    uint32_t tick_ms = 0;
     
     while (s_led.render_running) {
+        tick_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        
         for (int i = 0; i < CONFIG_TS_LED_MAX_DEVICES; i++) {
-            if (s_led.devices[i].used) {
-                ts_led_device_refresh(&s_led.devices[i]);
+            ts_led_device_impl_t *dev = &s_led.devices[i];
+            if (!dev->used) continue;
+            
+            // 处理每个 layer 的特效
+            for (int j = 0; j < dev->layer_count; j++) {
+                ts_led_layer_impl_t *layer = (ts_led_layer_impl_t *)dev->layers[j];
+                if (layer && layer->effect_fn && layer->visible) {
+                    // 检查是否到达特效帧间隔
+                    if (tick_ms - layer->effect_last_time >= layer->effect_interval) {
+                        layer->effect_fn(layer, tick_ms, layer->effect_data);
+                        layer->effect_last_time = tick_ms;
+                        layer->dirty = true;
+                    }
+                }
             }
+            
+            // 合成 layers 到 framebuffer
+            if (dev->layer_count > 0) {
+                // 清空 framebuffer
+                memset(dev->framebuffer, 0, dev->config.led_count * sizeof(ts_led_rgb_t));
+                
+                // 叠加所有可见 layer
+                for (int j = 0; j < dev->layer_count; j++) {
+                    ts_led_layer_impl_t *layer = (ts_led_layer_impl_t *)dev->layers[j];
+                    if (layer && layer->visible && layer->buffer) {
+                        for (uint16_t k = 0; k < dev->config.led_count; k++) {
+                            // 简单叠加 (后续可添加混合模式)
+                            ts_led_rgb_t *dst = &dev->framebuffer[k];
+                            ts_led_rgb_t *src = &layer->buffer[k];
+                            if (src->r || src->g || src->b) {
+                                dst->r = src->r;
+                                dst->g = src->g;
+                                dst->b = src->b;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            ts_led_device_refresh(dev);
         }
         vTaskDelayUntil(&last_wake, interval);
     }
@@ -174,6 +214,32 @@ esp_err_t ts_led_device_clear(ts_led_device_t device)
     
     xSemaphoreTake(dev->mutex, portMAX_DELAY);
     memset(dev->framebuffer, 0, dev->config.led_count * sizeof(ts_led_rgb_t));
+    xSemaphoreGive(dev->mutex);
+    return ESP_OK;
+}
+
+esp_err_t ts_led_device_fill(ts_led_device_t device, ts_led_rgb_t color)
+{
+    if (!device) return ESP_ERR_INVALID_ARG;
+    ts_led_device_impl_t *dev = (ts_led_device_impl_t *)device;
+    
+    xSemaphoreTake(dev->mutex, portMAX_DELAY);
+    for (uint16_t i = 0; i < dev->config.led_count; i++) {
+        dev->framebuffer[i] = color;
+    }
+    xSemaphoreGive(dev->mutex);
+    return ESP_OK;
+}
+
+esp_err_t ts_led_device_set_pixel(ts_led_device_t device, uint16_t index, ts_led_rgb_t color)
+{
+    if (!device) return ESP_ERR_INVALID_ARG;
+    ts_led_device_impl_t *dev = (ts_led_device_impl_t *)device;
+    
+    if (index >= dev->config.led_count) return ESP_ERR_INVALID_ARG;
+    
+    xSemaphoreTake(dev->mutex, portMAX_DELAY);
+    dev->framebuffer[index] = color;
     xSemaphoreGive(dev->mutex);
     return ESP_OK;
 }

@@ -48,6 +48,14 @@ typedef enum {
 } ts_led_image_scale_t;
 
 /**
+ * @brief Image center mode
+ */
+typedef enum {
+    TS_LED_IMG_CENTER_IMAGE = 0, /**< Center the scaled image */
+    TS_LED_IMG_CENTER_CONTENT    /**< Center based on non-transparent content */
+} ts_led_image_center_t;
+
+/**
  * @brief Image handle
  */
 typedef struct ts_led_image *ts_led_image_t;
@@ -70,6 +78,7 @@ typedef struct {
     int16_t x;                   /**< X offset */
     int16_t y;                   /**< Y offset */
     ts_led_image_scale_t scale;  /**< Scale mode */
+    ts_led_image_center_t center; /**< Center mode */
     bool loop;                   /**< Loop animation (for GIF) */
     uint8_t brightness;          /**< Image brightness (0-255) */
 } ts_led_image_options_t;
@@ -82,6 +91,7 @@ typedef struct {
     .x = 0, \
     .y = 0, \
     .scale = TS_LED_IMG_SCALE_FIT, \
+    .center = TS_LED_IMG_CENTER_CONTENT, \
     .loop = true, \
     .brightness = 255 \
 }

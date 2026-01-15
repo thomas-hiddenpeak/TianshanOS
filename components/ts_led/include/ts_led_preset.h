@@ -123,6 +123,114 @@ esp_err_t ts_led_clear_status(void);
 esp_err_t ts_led_bind_event_status(uint32_t event_id, ts_led_status_t status,
                                     uint32_t duration_ms);
 
+/*===========================================================================*/
+/*                          Boot Configuration                                */
+/*===========================================================================*/
+
+/**
+ * @brief LED 启动配置结构
+ */
+typedef struct {
+    char effect[32];        /**< 特效名称，空字符串表示无特效 */
+    char image_path[128];   /**< 图像/动画路径，空字符串表示无图像 */
+    uint8_t brightness;     /**< 亮度 0-255 */
+    ts_led_rgb_t color;     /**< 静态颜色（当effect为空时使用） */
+    uint8_t speed;          /**< 特效速度 1-100，0 使用默认 */
+    bool enabled;           /**< 是否启用 */
+} ts_led_boot_config_t;
+
+/**
+ * @brief 记录当前运行的特效（内部使用）
+ * 
+ * 当通过命令启动特效时调用，以便后续保存。
+ * 
+ * @param device_name 设备名
+ * @param effect 特效名，NULL 表示无特效
+ * @param speed 速度，0 表示默认
+ */
+void ts_led_preset_set_current_effect(const char *device_name, const char *effect, uint8_t speed);
+
+/**
+ * @brief 记录当前运行特效的颜色（内部使用）
+ * 
+ * @param device_name 设备名
+ * @param color 颜色值
+ */
+void ts_led_preset_set_current_color(const char *device_name, ts_led_rgb_t color);
+
+/**
+ * @brief 清除当前特效颜色记录
+ * 
+ * @param device_name 设备名
+ */
+void ts_led_preset_clear_current_color(const char *device_name);
+
+/**
+ * @brief 记录当前显示的图像路径（内部使用）
+ * 
+ * @param device_name 设备名
+ * @param path 图像文件路径，NULL 表示无图像
+ */
+void ts_led_preset_set_current_image(const char *device_name, const char *path);
+
+/**
+ * @brief 清除当前图像路径记录
+ * 
+ * @param device_name 设备名
+ */
+void ts_led_preset_clear_current_image(const char *device_name);
+
+/**
+ * @brief 保存当前 LED 状态为启动配置
+ * 
+ * 保存指定设备的当前特效、亮度等设置，下次启动时自动恢复。
+ * 
+ * @param device_name 设备名（touch, board, matrix）
+ * @return ESP_OK 成功
+ */
+esp_err_t ts_led_save_boot_config(const char *device_name);
+
+/**
+ * @brief 保存所有 LED 设备的当前状态
+ * 
+ * @return ESP_OK 成功
+ */
+esp_err_t ts_led_save_all_boot_config(void);
+
+/**
+ * @brief 加载并应用 LED 启动配置
+ * 
+ * @param device_name 设备名
+ * @return ESP_OK 成功，ESP_ERR_NOT_FOUND 无保存配置
+ */
+esp_err_t ts_led_load_boot_config(const char *device_name);
+
+/**
+ * @brief 加载所有 LED 设备的启动配置
+ * 
+ * 在 LED 服务初始化后调用，自动恢复上次保存的状态。
+ * 
+ * @return ESP_OK 成功
+ */
+esp_err_t ts_led_load_all_boot_config(void);
+
+/**
+ * @brief 清除 LED 启动配置
+ * 
+ * @param device_name 设备名，NULL 表示清除所有
+ * @return ESP_OK 成功
+ */
+esp_err_t ts_led_clear_boot_config(const char *device_name);
+
+/**
+ * @brief 获取当前 LED 设备的启动配置
+ * 
+ * @param device_name 设备名
+ * @param[out] config 输出配置
+ * @return ESP_OK 成功
+ */
+esp_err_t ts_led_get_boot_config(const char *device_name, ts_led_boot_config_t *config);
+
 #ifdef __cplusplus
 }
 #endif
