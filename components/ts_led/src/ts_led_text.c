@@ -414,6 +414,7 @@ typedef struct {
     int16_t base_y;              /**< 基准 Y 位置 */
     int16_t scroll_x;            /**< 当前滚动 X 偏移 */
     int16_t scroll_y;            /**< 当前滚动 Y 偏移 */
+    ts_text_align_t align;       /**< 文本对齐 */
     ts_text_scroll_t scroll_dir;
     uint8_t scroll_speed;
     bool invert_on_overlap;
@@ -603,8 +604,25 @@ static void render_overlay_text(ts_text_overlay_state_t *state)
     // 清除覆盖层（每帧重绘）
     ts_led_layer_clear(state->overlay_layer);
     
+    // 计算基准 X 位置（考虑对齐，仅非滚动模式生效）
+    int16_t aligned_x = state->base_x;
+    if (state->scroll_dir == TS_TEXT_SCROLL_NONE) {
+        switch (state->align) {
+            case TS_TEXT_ALIGN_CENTER:
+                aligned_x = (layer_width - state->text_width) / 2;
+                break;
+            case TS_TEXT_ALIGN_RIGHT:
+                aligned_x = layer_width - state->text_width;
+                break;
+            case TS_TEXT_ALIGN_LEFT:
+            default:
+                // 保持 base_x
+                break;
+        }
+    }
+    
     // 计算实际绘制位置
-    int16_t draw_x = state->base_x + state->scroll_x;
+    int16_t draw_x = aligned_x + state->scroll_x;
     int16_t draw_y = state->base_y + state->scroll_y;
     
     // 获取 layer 0 用于反色计算
@@ -835,6 +853,7 @@ esp_err_t ts_led_text_overlay_start(const char *device_name,
     state->base_y = config->y;
     state->scroll_x = 0;
     state->scroll_y = 0;
+    state->align = config->align;
     state->scroll_dir = config->scroll;
     state->scroll_speed = config->scroll_speed > 0 ? config->scroll_speed : 30;
     state->invert_on_overlap = config->invert_on_overlap;

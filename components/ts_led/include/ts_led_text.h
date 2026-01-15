@@ -97,6 +97,7 @@ typedef struct {
     ts_led_rgb_t color;          /**< Text color (for non-inverted areas) */
     int16_t x;                   /**< Start X position */
     int16_t y;                   /**< Start Y position */
+    ts_text_align_t align;       /**< Text alignment (left/center/right) */
     ts_text_scroll_t scroll;     /**< Scroll direction */
     uint8_t scroll_speed;        /**< Scroll speed 1-100 (pixels per 100ms) */
     bool invert_on_overlap;      /**< Invert text where it overlaps content */
@@ -110,10 +111,11 @@ typedef struct {
     .color = TS_LED_WHITE, \
     .x = 0, \
     .y = 0, \
+    .align = TS_TEXT_ALIGN_LEFT, \
     .scroll = TS_TEXT_SCROLL_NONE, \
     .scroll_speed = 30, \
-    .invert_on_overlap = true, \
-    .loop_scroll = true \
+    .invert_on_overlap = false, \
+    .loop_scroll = false \
 }
 
 /**

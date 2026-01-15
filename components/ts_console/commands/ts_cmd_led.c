@@ -1526,68 +1526,26 @@ static int do_led_draw_text(const char *device_name, const char *text,
         }
     }
     
-    // 如果有滚动参数或反色参数，使用覆盖层模式
-    if (scroll != TS_TEXT_SCROLL_NONE || invert_overlap) {
-        ts_text_overlay_config_t overlay_cfg = TS_TEXT_OVERLAY_DEFAULT_CONFIG();
-        overlay_cfg.text = parsed_text;
-        overlay_cfg.font = s_current_font;
-        overlay_cfg.color = fg_color;
-        overlay_cfg.x = (int16_t)start_x;
-        overlay_cfg.y = (int16_t)start_y;
-        overlay_cfg.scroll = scroll;
-        overlay_cfg.scroll_speed = (scroll_speed > 0) ? (uint8_t)scroll_speed : 30;
-        overlay_cfg.invert_on_overlap = invert_overlap;
-        overlay_cfg.loop_scroll = loop_scroll;
-        
-        esp_err_t ret = ts_led_text_overlay_start(device_name, &overlay_cfg);
-        if (ret != ESP_OK) {
-            ts_console_error("Failed to start text overlay: %s\n", esp_err_to_name(ret));
-            return 1;
-        }
-        
-        ts_console_success("Text overlay started on '%s'\n", device_name);
-        ts_console_printf("  Font: %s (%ux%u)\n", font_name, 
-                          s_current_font->header.width,
-                          s_current_font->header.height);
-        ts_console_printf("  Text: %s\n", parsed_text);
-        if (scroll != TS_TEXT_SCROLL_NONE) {
-            ts_console_printf("  Scroll: %s (speed=%d, loop=%s)\n", 
-                              scroll_dir_str, overlay_cfg.scroll_speed,
-                              loop_scroll ? "yes" : "no");
-        }
-        if (invert_overlap) {
-            ts_console_printf("  Invert: on (text inverts over bright pixels)\n");
-        }
-        ts_console_printf("Use 'led --stop-text' to stop the overlay\n");
-        return 0;
-    }
+    // 统一使用覆盖层模式（Layer 1），便于 --stop-text 管理
+    ts_text_overlay_config_t overlay_cfg = TS_TEXT_OVERLAY_DEFAULT_CONFIG();
+    overlay_cfg.text = parsed_text;
+    overlay_cfg.font = s_current_font;
+    overlay_cfg.color = fg_color;
+    overlay_cfg.x = (int16_t)start_x;
+    overlay_cfg.y = (int16_t)start_y;
+    overlay_cfg.scroll = scroll;
+    overlay_cfg.scroll_speed = (scroll_speed > 0) ? (uint8_t)scroll_speed : 30;
+    overlay_cfg.invert_on_overlap = invert_overlap;
+    overlay_cfg.loop_scroll = loop_scroll;
+    overlay_cfg.align = parse_text_align(align_str);
     
-    // 静态模式：清除 layer 并绘制
-    ts_led_layer_clear(layer);
-    
-    // 配置文本选项
-    ts_text_options_t opts = TS_TEXT_DEFAULT_OPTIONS();
-    opts.color = fg_color;
-    opts.bg_color = TS_LED_BLACK;
-    opts.align = parse_text_align(align_str);
-    // proportional=true (default) + spacing=1 for compact text rendering
-    opts.wrap = true;
-    
-    // 绘制文本（使用解析后的文本，支持起始位置）
-    esp_err_t ret = ts_led_text_draw(layer, parsed_text, (int16_t)start_x, (int16_t)start_y, s_current_font, &opts);
+    esp_err_t ret = ts_led_text_overlay_start(device_name, &overlay_cfg);
     if (ret != ESP_OK) {
-        ts_console_error("Failed to draw text: %s\n", esp_err_to_name(ret));
+        ts_console_error("Failed to start text overlay: %s\n", esp_err_to_name(ret));
         return 1;
     }
     
-    // 刷新显示
-    ret = ts_led_device_refresh(dev);
-    if (ret != ESP_OK) {
-        ts_console_error("Failed to refresh display: %s\n", esp_err_to_name(ret));
-        return 1;
-    }
-    
-    ts_console_success("Text displayed on '%s'\n", device_name);
+    ts_console_success("Text displayed on '%s' (Layer 1)\n", device_name);
     ts_console_printf("  Font: %s (%ux%u)\n", font_name, 
                       s_current_font->header.width,
                       s_current_font->header.height);
@@ -1595,6 +1553,16 @@ static int do_led_draw_text(const char *device_name, const char *text,
     if (start_x != 0 || start_y != 0) {
         ts_console_printf("  Position: (%d, %d)\n", start_x, start_y);
     }
+    if (scroll != TS_TEXT_SCROLL_NONE) {
+        ts_console_printf("  Scroll: %s (speed=%d, loop=%s)\n", 
+                          scroll_dir_str ? scroll_dir_str : "none", 
+                          overlay_cfg.scroll_speed,
+                          loop_scroll ? "yes" : "no");
+    }
+    if (invert_overlap) {
+        ts_console_printf("  Invert: on (text inverts over bright pixels)\n");
+    }
+    ts_console_printf("Use 'led --stop-text' to clear text\n");
     
     // 显示缓存统计
     uint32_t hits, misses;
