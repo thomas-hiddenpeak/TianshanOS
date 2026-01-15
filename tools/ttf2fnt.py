@@ -64,19 +64,21 @@ def get_font_codepoints(ttf_path):
     return sorted(codepoints)
 
 
-def render_glyph(font, codepoint, size):
+def render_glyph(font, codepoint, size, target_width, target_height):
     """
     Render a single character to a bitmap at native size (no scaling).
+    Output bitmap is padded to target_width x target_height.
     
     Args:
         font: PIL ImageFont object
         codepoint: Unicode codepoint to render
         size: Font size for rendering
+        target_width: Target bitmap width (for padding)
+        target_height: Target bitmap height (for padding)
     
     Returns:
-        bytes: Packed bitmap data, or None if character not available
-        int: Actual width of the glyph
-        int: Actual height of the glyph
+        bytes: Packed bitmap data (target_width x target_height), or None
+        int: Actual glyph width (before padding)
     """
     char = chr(codepoint)
     
@@ -84,18 +86,18 @@ def render_glyph(font, codepoint, size):
     try:
         bbox = font.getbbox(char)
         if bbox is None:
-            return None, 0, 0
+            return None, 0
         # Check if glyph is empty
         if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
             # Return minimal bitmap for space
             if codepoint == 0x20:
-                return bytes(1), size // 3, size
-            return None, 0, 0
+                empty_size = (target_width * target_height + 7) // 8
+                return bytes(empty_size), size // 3
+            return None, 0
     except:
-        return None, 0, 0
+        return None, 0
     
     # Render in grayscale then threshold
-    # (1-bit mode has rendering issues with some pixel fonts)
     glyph_width = bbox[2] - bbox[0]
     glyph_height = bbox[3] - bbox[1]
     
@@ -108,18 +110,24 @@ def render_glyph(font, codepoint, size):
     # Find actual content bounds
     content_bbox = img.getbbox()
     if content_bbox is None:
-        return None, 0, 0
+        return None, 0
     
     # Crop to content
     glyph_img = img.crop(content_bbox)
-    final_width = content_bbox[2] - content_bbox[0]
-    final_height = content_bbox[3] - content_bbox[1]
+    actual_width = content_bbox[2] - content_bbox[0]
+    actual_height = content_bbox[3] - content_bbox[1]
     
-    # Threshold to binary (threshold ~8% to capture pixel font edges without noise)
+    # Threshold to binary
     glyph_binary = glyph_img.point(lambda x: 1 if x > 20 else 0, mode='1')
     
+    # Create padded output image (centered)
+    final_img = Image.new('1', (target_width, target_height), 0)
+    x_offset = (target_width - actual_width) // 2
+    y_offset = (target_height - actual_height) // 2
+    final_img.paste(glyph_binary, (x_offset, y_offset))
+    
     # Convert to packed bits
-    pixels = list(glyph_binary.getdata())
+    pixels = list(final_img.getdata())
     packed = []
     byte = 0
     bit_pos = 0
@@ -137,12 +145,17 @@ def render_glyph(font, codepoint, size):
     if bit_pos > 0:
         packed.append(byte)
     
-    return bytes(packed), final_width, final_height
+    return bytes(packed), actual_width
 
 
 def create_font_file(ttf_path, output_path, size, verbose=False):
     """
     Convert TTF font to .fnt format with all glyphs.
+    
+    Output format matches ts_led_font.c expectations:
+    - Header: 16 bytes (magic, version, width, height, flags, glyph_count, index_offset)
+    - Index: 6 bytes per entry (uint16_t codepoint, uint32_t offset)
+    - Bitmaps: Fixed size (width * height + 7) / 8 bytes each
     
     Args:
         ttf_path: Path to TTF file
@@ -165,66 +178,107 @@ def create_font_file(ttf_path, output_path, size, verbose=False):
         print(f"Error loading font: {e}")
         return False
     
+    # First pass: determine max dimensions
     if verbose:
-        print(f"Rendering at {size}px...")
+        print(f"Pass 1: Scanning glyph dimensions...")
     
-    # Render all glyphs
-    glyphs = []
     max_width = 0
     max_height = 0
+    valid_codepoints = []
     
-    for i, cp in enumerate(codepoints):
-        bitmap, width, height = render_glyph(font, cp, size)
-        if bitmap and width > 0 and height > 0:
-            glyphs.append((cp, bitmap, width, height))
-            max_width = max(max_width, width)
-            max_height = max(max_height, height)
+    for cp in codepoints:
+        char = chr(cp)
+        try:
+            bbox = font.getbbox(char)
+            if bbox and bbox[2] > bbox[0] and bbox[3] > bbox[1]:
+                # Render to get actual content size
+                gw = bbox[2] - bbox[0]
+                gh = bbox[3] - bbox[1]
+                img = Image.new('L', (gw + 2, gh + 2), 0)
+                draw = ImageDraw.Draw(img)
+                draw.text((1 - bbox[0], 1 - bbox[1]), char, font=font, fill=255)
+                content = img.getbbox()
+                if content:
+                    w = content[2] - content[0]
+                    h = content[3] - content[1]
+                    max_width = max(max_width, w)
+                    max_height = max(max_height, h)
+                    valid_codepoints.append(cp)
+            elif cp == 0x20:  # Space
+                valid_codepoints.append(cp)
+        except:
+            pass
+    
+    if verbose:
+        print(f"  Max glyph size: {max_width}x{max_height}")
+        print(f"  Valid codepoints: {len(valid_codepoints)}")
+    
+    if max_width == 0 or max_height == 0:
+        print("Error: Could not determine glyph dimensions")
+        return False
+    
+    # Second pass: render all glyphs to fixed size
+    if verbose:
+        print(f"Pass 2: Rendering {len(valid_codepoints)} glyphs at {max_width}x{max_height}...")
+    
+    glyphs = []
+    for i, cp in enumerate(valid_codepoints):
+        bitmap, width = render_glyph(font, cp, size, max_width, max_height)
+        if bitmap:
+            # Filter: codepoint must fit in uint16_t
+            if cp <= 0xFFFF:
+                glyphs.append((cp, bitmap, width))
         
         if verbose and (i + 1) % 1000 == 0:
-            print(f"  Processed {i + 1}/{len(codepoints)}")
+            print(f"  Rendered {i + 1}/{len(valid_codepoints)}")
     
     if verbose:
         print(f"Successfully rendered {len(glyphs)} glyphs")
-        print(f"Max glyph size: {max_width}x{max_height}")
     
     if not glyphs:
         print("Error: No glyphs could be rendered")
         return False
     
-    # Calculate sizes
-    # New format: variable width glyphs
-    # Index entry: codepoint(4) + offset(4) + width(1) + height(1) = 10 bytes
+    # Sort by codepoint for binary search
+    glyphs.sort(key=lambda x: x[0])
+    
+    # Calculate sizes (matching ts_led_font.c format)
+    # Index entry: uint16_t codepoint (2) + uint32_t offset (4) = 6 bytes
     header_size = 16
-    index_entry_size = 10
+    index_entry_size = 6
     index_size = len(glyphs) * index_entry_size
+    bytes_per_glyph = (max_width * max_height + 7) // 8
     
     # Build file
     with open(output_path, 'wb') as f:
         # Write header (16 bytes)
-        # magic(4) + version(1) + max_width(1) + max_height(1) + flags(1) + 
-        # glyph_count(4) + reserved(4)
+        # magic(4) + version(1) + width(1) + height(1) + flags(1) + 
+        # glyph_count(4) + index_offset(4)
         header = struct.pack('<4sBBBBII',
             FONT_MAGIC,
             FONT_VERSION,
             max_width,
             max_height,
-            1,  # flags: 1 = variable width
+            0,  # flags: 0 = fixed width
             len(glyphs),
-            0   # reserved
+            header_size  # index_offset
         )
         f.write(header)
         
         # Write index table
         bitmap_offset = header_size + index_size
-        for cp, bitmap, width, height in glyphs:
-            # codepoint(4) + offset(4) + width(1) + height(1)
-            entry = struct.pack('<IIBB', cp, bitmap_offset, width, height)
+        for cp, bitmap, width in glyphs:
+            # codepoint(2) + offset(4)
+            entry = struct.pack('<HI', cp, bitmap_offset)
             f.write(entry)
-            bitmap_offset += len(bitmap)
+            bitmap_offset += bytes_per_glyph
         
         # Write bitmap data
-        for cp, bitmap, width, height in glyphs:
-            f.write(bitmap)
+        for cp, bitmap, width in glyphs:
+            # Ensure correct size
+            if len(bitmap) < bytes_per_glyph:
+                bitmap = bitmap + bytes(bytes_per_glyph - len(bitmap))
+            f.write(bitmap[:bytes_per_glyph])
     
     # Report
     file_size = Path(output_path).stat().st_size
@@ -240,10 +294,32 @@ def preview_glyph(ttf_path, char, size):
     """Preview a single character rendering"""
     font = ImageFont.truetype(str(ttf_path), size)
     
-    bitmap, width, height = render_glyph(font, ord(char), size)
+    # Get glyph dimensions first
+    bbox = font.getbbox(char)
+    if not bbox or bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
+        print(f"Character '{char}' (U+{ord(char):04X}) not available in font")
+        return
+    
+    # Render at native size for preview
+    gw = bbox[2] - bbox[0]
+    gh = bbox[3] - bbox[1]
+    img = Image.new('L', (gw + 2, gh + 2), 0)
+    draw = ImageDraw.Draw(img)
+    draw.text((1 - bbox[0], 1 - bbox[1]), char, font=font, fill=255)
+    
+    content = img.getbbox()
+    if not content:
+        print(f"Character '{char}' (U+{ord(char):04X}) rendered empty")
+        return
+    
+    width = content[2] - content[0]
+    height = content[3] - content[1]
+    
+    # Use same render function
+    bitmap, actual_width = render_glyph(font, ord(char), size, width, height)
     
     if bitmap is None:
-        print(f"Character '{char}' (U+{ord(char):04X}) not available in font")
+        print(f"Character '{char}' (U+{ord(char):04X}) render failed")
         return
     
     print(f"Character: '{char}' (U+{ord(char):04X})")
