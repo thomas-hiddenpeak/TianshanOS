@@ -214,8 +214,18 @@ led [options]
 | `--list-filters` | | 列出可用后处理效果 |
 | `--filter-name <name>` | | 后处理效果名称 |
 | `--image` | | 显示图像/动画（仅 matrix） |
+| `--draw-text` | | 绘制文本到 matrix（仅 matrix） |
+| `--stop-text` | | 停止文本覆盖层 |
+| `--font <name>` | | 字体名称（boutique9x9/cjk） |
+| `--text-file <path>` | | 从文件读取文本（UTF-8，支持中文） |
+| `--align <mode>` | | 文本对齐：left/center/right |
+| `--scroll <dir>` | | 文本滚动方向：left/right/up/down/none |
+| `--x <pos>` | | 文本起始 X 位置（默认 0） |
+| `--y <pos>` | | 文本起始 Y 位置（默认 0） |
+| `--invert` | | 反色覆盖模式（与底层图像叠加时自动反色） |
+| `--loop` | | 循环滚动（文本滚出后重新进入） |
 | `--qrcode` | | 生成并显示 QR 码（仅 matrix） |
-| `--text <string>` | | QR 码内容（URL/文本） |
+| `--text <string>` | | 文本内容（--draw-text/--qrcode 使用） |
 | `--ecc <L\|M\|Q\|H>` | | QR 纠错等级 |
 | `--file <path>` | `-f` | 图像文件路径（PNG/GIF） |
 | `--center <mode>` | | 居中模式：image（图像居中）或 content（内容居中） |
@@ -224,7 +234,7 @@ led [options]
 | `--name <effect>` | `-n` | 程序动画名称 |
 | `--value <0-255>` | `-v` | 亮度值 |
 | `--color <color>` | | 颜色值 |
-| `--speed <1-100>` | | 动画/效果速度（1=慢, 100=快） |
+| `--speed <1-100>` | | 动画/效果/滚动速度（1=慢, 100=快） |
 | `--save` | | 保存当前状态为开机配置（含动画和后处理效果） |
 | `--show-boot` | | 显示已保存的开机配置 |
 | `--clear-boot` | | 清除开机配置 |
@@ -451,6 +461,82 @@ Matrix 设备支持生成 QR Code v4（33x33 模块）显示：
 | H | ~30% | 50 字符 |
 
 > **注意**：QR v4 尺寸为 33x33，显示在 32x32 matrix 上时会裁剪边缘 1 像素（静默区）。
+
+### 文本显示功能
+
+Matrix 设备支持使用 BoutiqueBitmap9x9 字体显示文本：
+
+| 参数 | 说明 |
+|------|------|
+| `--draw-text` | 启用文本绘制模式 |
+| `--stop-text` | 停止文本覆盖层 |
+| `--text <string>` | 要显示的文本（ASCII） |
+| `--text-file <path>` | 从文件读取 UTF-8 文本（支持中文） |
+| `--font <name>` | 字体名称：boutique9x9（默认）或 cjk |
+| `--align <mode>` | 对齐方式：left/center/right |
+| `--scroll <dir>` | 滚动方向：left/right/up/down/none |
+| `--x <pos>` | 起始 X 位置（默认 0） |
+| `--y <pos>` | 起始 Y 位置（默认 0） |
+| `--invert` | 反色覆盖（在亮色背景上自动反色显示） |
+| `--loop` | 循环滚动 |
+| `--color <color>` | 文本颜色 |
+
+**可用字体**：
+
+| 字体名 | 说明 | 字符集 |
+|--------|------|--------|
+| `boutique9x9` | BoutiqueBitmap 9x9 | ASCII（95 字符） |
+| `cjk` | BoutiqueBitmap 9x9 CJK | GB2312（6763 汉字） |
+
+**基础示例**：
+
+```bash
+# 显示英文文本
+led --draw-text --text "Hello" --color cyan
+
+# 居中显示
+led --draw-text --text "OK" --align center --color green
+
+# 显示中文（通过文件，推荐方式）
+led --draw-text --text-file /sdcard/msg.txt --font cjk --color yellow
+
+# 指定位置显示
+led --draw-text --text "Hi" --x 5 --y 10
+```
+
+**滚动文本示例**：
+
+```bash
+# 向左滚动文本
+led --draw-text --text "Hello World" --scroll left
+
+# 循环滚动（文本滚出后重新从右侧进入）
+led --draw-text --text "Breaking News..." --scroll left --loop
+
+# 调整滚动速度（1=慢, 100=快）
+led --draw-text --text "Fast!" --scroll left --speed 80
+
+# 向上滚动
+led --draw-text --text "UP" --scroll up --loop
+```
+
+**覆盖层模式示例**：
+
+```bash
+# 先显示背景图像
+led --image -f /sdcard/images/bg.raw
+
+# 在图像上叠加文本（反色确保可读性）
+led --draw-text --text "提示" --invert
+
+# 滚动文本覆盖层
+led --draw-text --text "Long scrolling message..." --scroll left --invert --loop
+
+# 停止文本覆盖层（恢复原始图像）
+led --stop-text
+```
+
+> **⚠️ 中文输入限制**：由于 ESP-IDF 串口控制台的 UTF-8 解析限制，直接在命令行输入中文（如 `--text "你好"`）可能导致参数解析错误。**请使用 `--text-file` 从文件读取中文文本**。
 
 ---
 

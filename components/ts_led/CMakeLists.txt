@@ -10,6 +10,8 @@ set(TS_LED_SRCS
     "src/ts_led_image.c"
     "src/ts_led_preset.c"
     "src/ts_led_qrcode.c"
+    "src/ts_led_font.c"
+    "src/ts_led_text.c"
     "src/qrcodegen/qrcodegen.c"
 )
 

@@ -201,6 +201,16 @@ esp_err_t ts_console_unregister_cmd(const char *cmd_name);
 size_t ts_console_get_cmd_count(void);
 
 /**
+ * @brief Get raw command line string
+ * 
+ * Returns the original command line before parsing.
+ * Useful for extracting UTF-8 text that may be corrupted by argument parsing.
+ * 
+ * @return Pointer to raw command line (valid only during command execution)
+ */
+const char *ts_console_get_raw_cmdline(void);
+
+/**
  * @brief Get commands by category
  * 
  * @param category Command category

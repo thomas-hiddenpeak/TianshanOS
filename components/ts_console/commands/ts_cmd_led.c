@@ -21,6 +21,8 @@
 #include "ts_led_preset.h"
 #include "ts_led_image.h"
 #include "ts_led_qrcode.h"
+#include "ts_led_font.h"
+#include "ts_led_text.h"
 #include "ts_log.h"
 #include "argtable3/argtable3.h"
 #include <string.h>
@@ -51,7 +53,17 @@ static struct {
     struct arg_lit *show_boot;
     struct arg_lit *image;
     struct arg_lit *qrcode;
+    struct arg_lit *draw_text;
+    struct arg_lit *stop_text;        /**< 停止文本覆盖层 */
     struct arg_str *text;
+    struct arg_str *text_file;
+    struct arg_str *font;
+    struct arg_str *align;
+    struct arg_str *scroll;           /**< 滚动方向：left, right, up, down, none */
+    struct arg_int *text_x;           /**< 文本起始 X 位置 */
+    struct arg_int *text_y;           /**< 文本起始 Y 位置 */
+    struct arg_lit *invert;           /**< 反色显示（与底层图像） */
+    struct arg_lit *loop;             /**< 循环滚动 */
     struct arg_str *ecc;
     struct arg_lit *test;
     struct arg_str *file;
@@ -1110,6 +1122,493 @@ static int do_led_image(const char *device_name, const char *file_path, const ch
 }
 
 /*===========================================================================*/
+/*                        Command: led --draw-text                            */
+/*===========================================================================*/
+
+/* 当前加载的字体（避免重复加载） */
+static ts_font_t *s_current_font = NULL;
+static char s_current_font_name[32] = {0};
+
+/**
+ * @brief 解析对齐方式字符串
+ */
+static ts_text_align_t parse_text_align(const char *align_str)
+{
+    if (!align_str) return TS_TEXT_ALIGN_LEFT;
+    
+    if (strcmp(align_str, "left") == 0 || strcmp(align_str, "l") == 0) {
+        return TS_TEXT_ALIGN_LEFT;
+    }
+    if (strcmp(align_str, "center") == 0 || strcmp(align_str, "c") == 0) {
+        return TS_TEXT_ALIGN_CENTER;
+    }
+    if (strcmp(align_str, "right") == 0 || strcmp(align_str, "r") == 0) {
+        return TS_TEXT_ALIGN_RIGHT;
+    }
+    
+    return TS_TEXT_ALIGN_LEFT;
+}
+
+/**
+ * @brief 从原始命令行提取简单参数值（非 UTF-8 敏感）
+ * 
+ * @param cmdline 原始命令行
+ * @param param_name 参数名（如 "--font"）
+ * @param output 输出缓冲区
+ * @param output_size 缓冲区大小
+ * @return true 如果找到并提取成功
+ */
+static bool extract_param_from_cmdline(const char *cmdline, const char *param_name,
+                                       char *output, size_t output_size)
+{
+    if (!cmdline || !param_name || !output || output_size == 0) return false;
+    
+    const char *p = strstr(cmdline, param_name);
+    if (!p) return false;
+    
+    p += strlen(param_name);
+    
+    // 跳过空格
+    while (*p == ' ' || *p == '\t') p++;
+    
+    // 跳过可选的引号
+    bool quoted = (*p == '"');
+    if (quoted) p++;
+    
+    const char *end = p;
+    if (quoted) {
+        while (*end && *end != '"') end++;
+    } else {
+        while (*end && *end != ' ' && *end != '\t') {
+            if (*end == '-' && *(end + 1) == '-') break;
+            end++;
+        }
+    }
+    
+    size_t len = end - p;
+    if (len >= output_size) len = output_size - 1;
+    
+    memcpy(output, p, len);
+    output[len] = '\0';
+    return len > 0;
+}
+
+/**
+ * @brief 从原始命令行提取 --text 参数值（支持 UTF-8 中文）
+ * 
+ * 绕过 argtable3 解析问题，直接从原始命令行提取带引号的文本。
+ * 
+ * @param cmdline 原始命令行
+ * @param output 输出缓冲区
+ * @param output_size 缓冲区大小
+ * @return true 如果找到并提取成功
+ */
+static bool extract_text_from_cmdline(const char *cmdline, char *output, size_t output_size)
+{
+    if (!cmdline || !output || output_size == 0) return false;
+    
+    // 查找 --text 
+    const char *p = strstr(cmdline, "--text");
+    if (!p) return false;
+    
+    // 确保不是 --text-file
+    if (strncmp(p, "--text-file", 11) == 0) {
+        // 继续查找下一个 --text
+        p = strstr(p + 11, "--text");
+        if (!p) return false;
+        // 再检查一次
+        if (strncmp(p, "--text-file", 11) == 0) return false;
+    }
+    
+    p += 6;  // 跳过 "--text"
+    
+    // 跳过空格
+    while (*p == ' ' || *p == '\t') p++;
+    
+    // 检查是否是引号开始
+    if (*p == '"') {
+        p++;  // 跳过开始引号
+        const char *end = p;
+        
+        // 查找结束引号（处理转义）
+        while (*end && *end != '"') {
+            if (*end == '\\' && *(end + 1)) {
+                end += 2;  // 跳过转义字符
+            } else {
+                end++;
+            }
+        }
+        
+        size_t len = end - p;
+        if (len >= output_size) len = output_size - 1;
+        
+        memcpy(output, p, len);
+        output[len] = '\0';
+        return len > 0;
+    } else {
+        // 无引号，读取到下一个空格或参数
+        const char *end = p;
+        while (*end && *end != ' ' && *end != '\t') {
+            // 停止于下一个 -- 参数
+            if (*end == '-' && *(end + 1) == '-') break;
+            end++;
+        }
+        
+        size_t len = end - p;
+        if (len >= output_size) len = output_size - 1;
+        
+        memcpy(output, p, len);
+        output[len] = '\0';
+        return len > 0;
+    }
+}
+
+/**
+ * @brief 解析文本中的转义序列
+ * 
+ * 支持 \uXXXX (Unicode) 和 \xHH (十六进制字节) 转义
+ * 用于在控制台输入中文等 UTF-8 字符
+ * 
+ * 例如：
+ *   "\\u4f60\\u597d" -> "你好"
+ *   "Hello\\u0021"   -> "Hello!"
+ * 
+ * @param input 输入字符串
+ * @param output 输出缓冲区
+ * @param output_size 缓冲区大小
+ * @return 实际输出长度
+ */
+static size_t parse_escape_sequences(const char *input, char *output, size_t output_size)
+{
+    if (!input || !output || output_size == 0) return 0;
+    
+    const char *p = input;
+    char *out = output;
+    char *out_end = output + output_size - 1;
+    
+    while (*p && out < out_end) {
+        if (*p == '\\' && *(p + 1)) {
+            char next = *(p + 1);
+            
+            // \uXXXX - Unicode codepoint
+            if (next == 'u' && p[2] && p[3] && p[4] && p[5]) {
+                char hex[5] = {p[2], p[3], p[4], p[5], '\0'};
+                char *endptr;
+                unsigned long cp = strtoul(hex, &endptr, 16);
+                
+                if (endptr == hex + 4 && cp > 0 && cp <= 0xFFFF) {
+                    // Encode as UTF-8
+                    if (cp < 0x80) {
+                        if (out < out_end) *out++ = (char)cp;
+                    } else if (cp < 0x800) {
+                        if (out + 1 < out_end) {
+                            *out++ = 0xC0 | (cp >> 6);
+                            *out++ = 0x80 | (cp & 0x3F);
+                        }
+                    } else {
+                        if (out + 2 < out_end) {
+                            *out++ = 0xE0 | (cp >> 12);
+                            *out++ = 0x80 | ((cp >> 6) & 0x3F);
+                            *out++ = 0x80 | (cp & 0x3F);
+                        }
+                    }
+                    p += 6;
+                    continue;
+                }
+            }
+            // \xHH - Hex byte
+            else if (next == 'x' && p[2] && p[3]) {
+                char hex[3] = {p[2], p[3], '\0'};
+                char *endptr;
+                unsigned long byte = strtoul(hex, &endptr, 16);
+                
+                if (endptr == hex + 2) {
+                    if (out < out_end) *out++ = (char)byte;
+                    p += 4;
+                    continue;
+                }
+            }
+            /* Special escape sequences: \n, \t, \\ */
+            else if (next == 'n') {
+                if (out < out_end) *out++ = '\n';
+                p += 2;
+                continue;
+            }
+            else if (next == 't') {
+                if (out < out_end) *out++ = '\t';
+                p += 2;
+                continue;
+            }
+            else if (next == '\\') {
+                if (out < out_end) *out++ = '\\';
+                p += 2;
+                continue;
+            }
+        }
+        
+        /* Normal character (copy as-is, including raw UTF-8) */
+        *out++ = *p++;
+    }
+    
+    *out = '\0';
+    return out - output;
+}
+
+/**
+ * @brief 构建字体文件路径
+ * @param font_name 字体名（如 "boutique9x9"）
+ * @param path_buf 输出路径缓冲区
+ * @param buf_size 缓冲区大小
+ * @return true 成功，false 失败
+ */
+static bool build_font_path(const char *font_name, char *path_buf, size_t buf_size)
+{
+    if (!font_name || !path_buf) return false;
+    
+    // 如果已经是完整路径，直接使用
+    if (font_name[0] == '/') {
+        strncpy(path_buf, font_name, buf_size - 1);
+        path_buf[buf_size - 1] = '\0';
+        return true;
+    }
+    
+    // 否则在 /sdcard/fonts/ 目录下查找
+    int n = snprintf(path_buf, buf_size, "/sdcard/fonts/%s.fnt", font_name);
+    return n > 0 && (size_t)n < buf_size;
+}
+
+static int do_led_draw_text(const char *device_name, const char *text, 
+                            const char *font_name, const char *color_str,
+                            const char *align_str, const char *text_file,
+                            const char *scroll_dir_str, int start_x, int start_y,
+                            bool invert_overlap, bool loop_scroll, int scroll_speed)
+{
+    if (!device_name) {
+        device_name = "matrix";  // 默认使用 matrix 设备
+    }
+    
+    // 尝试从原始命令行提取 --text 参数（绕过 argtable3 的 UTF-8 问题）
+    char raw_text[256] = {0};
+    const char *cmdline = ts_console_get_raw_cmdline();
+    if (cmdline && extract_text_from_cmdline(cmdline, raw_text, sizeof(raw_text))) {
+        TS_LOGI(TAG, "Extracted text from raw cmdline: %s", raw_text);
+        text = raw_text;  // 使用从原始命令行提取的文本
+        
+        // 同时尝试从原始命令行提取其他参数（因为 argtable3 可能解析失败）
+        static char raw_font[32], raw_color[32], raw_align[16];
+        if (!font_name && extract_param_from_cmdline(cmdline, "--font", raw_font, sizeof(raw_font))) {
+            font_name = raw_font;
+            TS_LOGI(TAG, "Extracted font from raw cmdline: %s", font_name);
+        }
+        if (!color_str && extract_param_from_cmdline(cmdline, "--color", raw_color, sizeof(raw_color))) {
+            color_str = raw_color;
+        }
+        if (!align_str && extract_param_from_cmdline(cmdline, "--align", raw_align, sizeof(raw_align))) {
+            align_str = raw_align;
+        }
+    }
+    
+    // 调试：显示 text 的原始字节
+    if (text) {
+        char hex_buf[256] = {0};
+        int pos = 0;
+        for (size_t i = 0; i < strlen(text) && pos < 250; i++) {
+            pos += snprintf(hex_buf + pos, sizeof(hex_buf) - pos, "%02X ", (uint8_t)text[i]);
+        }
+        TS_LOGI(TAG, "text bytes: %s", hex_buf);
+    }
+    
+    // 文本内容：优先使用文件，其次使用 --text 参数
+    char text_buf[256] = {0};
+    const char *display_text = text;
+    
+    if (text_file && strlen(text_file) > 0) {
+        // 从文件读取文本（支持中文）
+        FILE *f = fopen(text_file, "r");
+        if (!f) {
+            ts_console_error("Cannot open text file: %s\n", text_file);
+            return 1;
+        }
+        size_t n = fread(text_buf, 1, sizeof(text_buf) - 1, f);
+        fclose(f);
+        text_buf[n] = '\0';
+        // 去除末尾换行
+        while (n > 0 && (text_buf[n-1] == '\n' || text_buf[n-1] == '\r')) {
+            text_buf[--n] = '\0';
+        }
+        display_text = text_buf;
+        TS_LOGI(TAG, "Read text from file: %s (%zu bytes)", text_file, n);
+    }
+    
+    if (!display_text || strlen(display_text) == 0) {
+        ts_console_error("--text or --text-file required for text display\n");
+        return 1;
+    }
+    
+    // 解析转义序列（支持 \\uXXXX 输入中文）
+    char parsed_text[256];
+    parse_escape_sequences(display_text, parsed_text, sizeof(parsed_text));
+    
+    if (!font_name) {
+        font_name = "boutique9x9";  // 默认字体
+    }
+    
+    // 只支持 matrix 设备
+    if (strcmp(device_name, "matrix") != 0 && strcmp(device_name, "led_matrix") != 0) {
+        ts_console_error("Text display only supported on matrix device (32x32)\n");
+        return 1;
+    }
+    
+    const char *internal_name = resolve_device_name(device_name);
+    ts_led_device_t dev = ts_led_device_get(internal_name);
+    if (!dev) {
+        ts_console_error("Device '%s' not found\n", device_name);
+        return 1;
+    }
+    
+    // 获取 layer
+    ts_led_layer_t layer = ts_led_layer_get(dev, 0);
+    if (!layer) {
+        ts_console_error("Failed to get layer\n");
+        return 1;
+    }
+    
+    // 加载或复用字体
+    char font_path[64];
+    if (!build_font_path(font_name, font_path, sizeof(font_path))) {
+        ts_console_error("Invalid font name: %s\n", font_name);
+        return 1;
+    }
+    
+    // 检查是否需要切换字体
+    if (s_current_font && strcmp(s_current_font_name, font_name) != 0) {
+        ts_font_unload(s_current_font);
+        s_current_font = NULL;
+        s_current_font_name[0] = '\0';
+    }
+    
+    // 加载字体
+    if (!s_current_font) {
+        ts_font_config_t font_cfg = TS_FONT_DEFAULT_CONFIG();
+        
+        s_current_font = ts_font_load(font_path, &font_cfg);
+        if (!s_current_font) {
+            ts_console_error("Failed to load font: %s\n", font_path);
+            ts_console_printf("Hint: Place font file at /sdcard/fonts/%s.fnt\n", font_name);
+            return 1;
+        }
+        
+        strncpy(s_current_font_name, font_name, sizeof(s_current_font_name) - 1);
+        TS_LOGI(TAG, "Font loaded: %s (%ux%u, %lu glyphs)", 
+                font_path, s_current_font->header.width,
+                s_current_font->header.height, (unsigned long)s_current_font->header.glyph_count);
+    }
+    
+    // 解析颜色
+    ts_led_rgb_t fg_color = TS_LED_WHITE;
+    if (color_str) {
+        if (ts_led_parse_color(color_str, &fg_color) != ESP_OK) {
+            ts_console_error("Invalid color: %s\n", color_str);
+            return 1;
+        }
+    }
+    
+    // 解析滚动方向
+    ts_text_scroll_t scroll = TS_TEXT_SCROLL_NONE;
+    if (scroll_dir_str) {
+        if (strcmp(scroll_dir_str, "left") == 0) scroll = TS_TEXT_SCROLL_LEFT;
+        else if (strcmp(scroll_dir_str, "right") == 0) scroll = TS_TEXT_SCROLL_RIGHT;
+        else if (strcmp(scroll_dir_str, "up") == 0) scroll = TS_TEXT_SCROLL_UP;
+        else if (strcmp(scroll_dir_str, "down") == 0) scroll = TS_TEXT_SCROLL_DOWN;
+        else if (strcmp(scroll_dir_str, "none") != 0) {
+            ts_console_error("Invalid scroll direction: %s (use: left, right, up, down, none)\n", scroll_dir_str);
+            return 1;
+        }
+    }
+    
+    // 如果有滚动参数或反色参数，使用覆盖层模式
+    if (scroll != TS_TEXT_SCROLL_NONE || invert_overlap) {
+        ts_text_overlay_config_t overlay_cfg = TS_TEXT_OVERLAY_DEFAULT_CONFIG();
+        overlay_cfg.text = parsed_text;
+        overlay_cfg.font = s_current_font;
+        overlay_cfg.color = fg_color;
+        overlay_cfg.x = (int16_t)start_x;
+        overlay_cfg.y = (int16_t)start_y;
+        overlay_cfg.scroll = scroll;
+        overlay_cfg.scroll_speed = (scroll_speed > 0) ? (uint8_t)scroll_speed : 30;
+        overlay_cfg.invert_on_overlap = invert_overlap;
+        overlay_cfg.loop_scroll = loop_scroll;
+        
+        esp_err_t ret = ts_led_text_overlay_start(device_name, &overlay_cfg);
+        if (ret != ESP_OK) {
+            ts_console_error("Failed to start text overlay: %s\n", esp_err_to_name(ret));
+            return 1;
+        }
+        
+        ts_console_success("Text overlay started on '%s'\n", device_name);
+        ts_console_printf("  Font: %s (%ux%u)\n", font_name, 
+                          s_current_font->header.width,
+                          s_current_font->header.height);
+        ts_console_printf("  Text: %s\n", parsed_text);
+        if (scroll != TS_TEXT_SCROLL_NONE) {
+            ts_console_printf("  Scroll: %s (speed=%d, loop=%s)\n", 
+                              scroll_dir_str, overlay_cfg.scroll_speed,
+                              loop_scroll ? "yes" : "no");
+        }
+        if (invert_overlap) {
+            ts_console_printf("  Invert: on (text inverts over bright pixels)\n");
+        }
+        ts_console_printf("Use 'led --stop-text' to stop the overlay\n");
+        return 0;
+    }
+    
+    // 静态模式：清除 layer 并绘制
+    ts_led_layer_clear(layer);
+    
+    // 配置文本选项
+    ts_text_options_t opts = TS_TEXT_DEFAULT_OPTIONS();
+    opts.color = fg_color;
+    opts.bg_color = TS_LED_BLACK;
+    opts.align = parse_text_align(align_str);
+    // proportional=true (default) + spacing=1 for compact text rendering
+    opts.wrap = true;
+    
+    // 绘制文本（使用解析后的文本，支持起始位置）
+    esp_err_t ret = ts_led_text_draw(layer, parsed_text, (int16_t)start_x, (int16_t)start_y, s_current_font, &opts);
+    if (ret != ESP_OK) {
+        ts_console_error("Failed to draw text: %s\n", esp_err_to_name(ret));
+        return 1;
+    }
+    
+    // 刷新显示
+    ret = ts_led_device_refresh(dev);
+    if (ret != ESP_OK) {
+        ts_console_error("Failed to refresh display: %s\n", esp_err_to_name(ret));
+        return 1;
+    }
+    
+    ts_console_success("Text displayed on '%s'\n", device_name);
+    ts_console_printf("  Font: %s (%ux%u)\n", font_name, 
+                      s_current_font->header.width,
+                      s_current_font->header.height);
+    ts_console_printf("  Text: %s\n", parsed_text);
+    if (start_x != 0 || start_y != 0) {
+        ts_console_printf("  Position: (%d, %d)\n", start_x, start_y);
+    }
+    
+    // 显示缓存统计
+    uint32_t hits, misses;
+    ts_font_get_stats(s_current_font, &hits, &misses);
+    if (hits + misses > 0) {
+        ts_console_printf("  Cache: %lu hits, %lu misses (%.1f%% hit rate)\n",
+                          (unsigned long)hits, (unsigned long)misses,
+                          100.0f * hits / (hits + misses));
+    }
+    
+    return 0;
+}
+
+/*===========================================================================*/
 /*                          Command: led --qrcode                             */
 /*===========================================================================*/
 
@@ -1212,7 +1711,10 @@ static int cmd_led(int argc, char **argv)
         ts_console_printf("      --parse-color      Parse color info\n");
         ts_console_printf("      --image            Display image on matrix\n");
         ts_console_printf("      --qrcode           Generate and display QR code\n");
-        ts_console_printf("      --text <string>    Text content for QR code\n");
+        ts_console_printf("      --draw-text        Display text on matrix\n");
+        ts_console_printf("      --text <string>    Text content for QR code/text display\n");
+        ts_console_printf("      --font <name>      Font name (default: boutique9x9)\n");
+        ts_console_printf("      --align <mode>     Text align: left, center, right\n");
         ts_console_printf("      --ecc <L|M|Q|H>    QR error correction level\n");
         ts_console_printf("      --file <path>      Image file path\n");
         ts_console_printf("  -d, --device <name>    Device: touch, board, matrix\n");
@@ -1259,7 +1761,14 @@ static int cmd_led(int argc, char **argv)
         ts_console_printf("  led --qrcode --text \"https://tianshan.io\"\n");
         ts_console_printf("  led --qrcode --text \"HELLO\" --ecc H\n");
         ts_console_printf("  led --qrcode --text \"192.168.1.1\" --color green\n");
+        ts_console_printf("  led --draw-text --text \"Hi\" --font boutique9x9\n");
+        ts_console_printf("  led --draw-text --text \"Hello\" --color cyan --align center\n");
+        ts_console_printf("  led --draw-text --text-file /sdcard/msg.txt --font cjk\n");
         ts_console_printf("\nSupported image formats: PNG, BMP, JPG, GIF (animated)\n");
+        ts_console_printf("\nText display:\n");
+        ts_console_printf("  Font files in /sdcard/fonts/*.fnt (use tools/ttf2fnt.py)\n");
+        ts_console_printf("  Chinese: use --text-file with UTF-8 file (recommended)\n");
+        ts_console_printf("  Or use escape: --text \"\\\\u4f60\\\\u597d\" (你好)\n");
         ts_console_printf("\nQR Code v4 capacity (alphanumeric):\n");
         ts_console_printf("  ECC L (~7%% recovery):  114 chars\n");
         ts_console_printf("  ECC M (~15%% recovery): 90 chars\n");
@@ -1268,7 +1777,55 @@ static int cmd_led(int argc, char **argv)
         return 0;
     }
     
-    if (nerrors != 0) {
+    // 检查是否是 --draw-text 命令并且可以从原始命令行提取文本
+    // 如果是，跳过 argtable3 的解析错误（UTF-8 中文会导致解析问题）
+    // 注意：argtable3 可能因 UTF-8 问题而无法正确解析 --draw-text 标志
+    // 所以我们直接从原始命令行检测
+    bool can_recover_from_raw_cmdline = false;
+    bool is_draw_text_from_cmdline = false;
+    const char *cmdline = ts_console_get_raw_cmdline();
+    
+    // 调试：打印原始命令行
+    TS_LOGI(TAG, "nerrors=%d, cmdline=%s", nerrors, cmdline ? cmdline : "(null)");
+    if (cmdline) {
+        // 打印原始字节
+        char hex_buf[128] = {0};
+        int pos = 0;
+        for (size_t i = 0; i < strlen(cmdline) && i < 40 && pos < 120; i++) {
+            pos += snprintf(hex_buf + pos, sizeof(hex_buf) - pos, "%02X ", (uint8_t)cmdline[i]);
+        }
+        TS_LOGI(TAG, "cmdline bytes: %s", hex_buf);
+    }
+    
+    if (nerrors != 0 && cmdline) {
+        // 直接从原始命令行检查是否包含 --draw-text
+        if (strstr(cmdline, "--draw-text")) {
+            is_draw_text_from_cmdline = true;
+            TS_LOGI(TAG, "Found --draw-text in cmdline");
+            // 检查是否有 --text（但不是 --text-file）
+            const char *text_pos = strstr(cmdline, "--text");
+            while (text_pos) {
+                TS_LOGI(TAG, "Found --text at offset %ld", (long)(text_pos - cmdline));
+                // 确保不是 --text-file
+                if (strncmp(text_pos, "--text-file", 11) != 0) {
+                    char test_buf[64];
+                    if (extract_text_from_cmdline(cmdline, test_buf, sizeof(test_buf))) {
+                        can_recover_from_raw_cmdline = true;
+                        TS_LOGI(TAG, "Recovering from UTF-8 parse error, extracted: %s", test_buf);
+                        break;
+                    } else {
+                        TS_LOGW(TAG, "extract_text_from_cmdline failed");
+                    }
+                }
+                // 继续查找下一个 --text
+                text_pos = strstr(text_pos + 6, "--text");
+            }
+        } else {
+            TS_LOGI(TAG, "--draw-text not found in cmdline");
+        }
+    }
+    
+    if (nerrors != 0 && !can_recover_from_raw_cmdline) {
         arg_print_errors(stderr, s_led_args.end, argv[0]);
         return 1;
     }
@@ -1294,6 +1851,39 @@ static int cmd_led(int argc, char **argv)
                           s_led_args.text->sval[0] : NULL;
     const char *qr_ecc = s_led_args.ecc->count > 0 ?
                          s_led_args.ecc->sval[0] : NULL;
+    const char *font_name = s_led_args.font->count > 0 ?
+                            s_led_args.font->sval[0] : NULL;
+    const char *text_align = s_led_args.align->count > 0 ?
+                             s_led_args.align->sval[0] : NULL;
+    const char *text_file_path = s_led_args.text_file->count > 0 ?
+                                 s_led_args.text_file->sval[0] : NULL;
+    const char *scroll_dir = s_led_args.scroll->count > 0 ?
+                             s_led_args.scroll->sval[0] : NULL;
+    int text_x = s_led_args.text_x->count > 0 ?
+                 s_led_args.text_x->ival[0] : 0;
+    int text_y = s_led_args.text_y->count > 0 ?
+                 s_led_args.text_y->ival[0] : 0;
+    bool invert_overlap = s_led_args.invert->count > 0;
+    bool loop_scroll = s_led_args.loop->count > 0;
+    
+    // 停止文本覆盖层
+    if (s_led_args.stop_text->count > 0) {
+        const char *dev_name = device ? device : "matrix";
+        esp_err_t ret = ts_led_text_overlay_stop(dev_name);
+        if (ret == ESP_OK) {
+            ts_console_success("Text overlay stopped on '%s'\n", dev_name);
+            return 0;
+        } else {
+            ts_console_error("Failed to stop text overlay\n");
+            return 1;
+        }
+    }
+    
+    // 绘制文本（也支持从原始命令行恢复的情况）
+    if (s_led_args.draw_text->count > 0 || is_draw_text_from_cmdline) {
+        return do_led_draw_text(device, qr_text, font_name, color, text_align, text_file_path,
+                                scroll_dir, text_x, text_y, invert_overlap, loop_scroll, speed);
+    }
     
     // 生成 QR 码
     if (s_led_args.qrcode->count > 0) {
@@ -1406,7 +1996,17 @@ esp_err_t ts_cmd_led_register(void)
     s_led_args.parse_color  = arg_lit0(NULL, "parse-color", "Parse color info");
     s_led_args.image        = arg_lit0(NULL, "image", "Display image");
     s_led_args.qrcode       = arg_lit0(NULL, "qrcode", "Generate QR code");
-    s_led_args.text         = arg_str0(NULL, "text", "<string>", "QR code text content");
+    s_led_args.draw_text    = arg_lit0(NULL, "draw-text", "Display text on matrix");
+    s_led_args.stop_text    = arg_lit0(NULL, "stop-text", "Stop text overlay");
+    s_led_args.text         = arg_str0(NULL, "text", "<string>", "Text content");
+    s_led_args.text_file    = arg_str0(NULL, "text-file", "<path>", "Read text from file (UTF-8)");
+    s_led_args.font         = arg_str0(NULL, "font", "<name>", "Font name (default: boutique9x9)");
+    s_led_args.align        = arg_str0(NULL, "align", "<mode>", "Text align: left, center, right");
+    s_led_args.scroll       = arg_str0(NULL, "scroll", "<dir>", "Scroll: left, right, up, down, none");
+    s_led_args.text_x       = arg_int0(NULL, "x", "<pos>", "Text X position (default: 0)");
+    s_led_args.text_y       = arg_int0(NULL, "y", "<pos>", "Text Y position (default: 0)");
+    s_led_args.invert       = arg_lit0(NULL, "invert", "Invert on overlap for readability");
+    s_led_args.loop         = arg_lit0(NULL, "loop", "Loop scroll continuously");
     s_led_args.ecc          = arg_str0(NULL, "ecc", "<L|M|Q|H>", "QR error correction");
     s_led_args.test         = arg_lit0("t", "test", "Show test pattern");
     s_led_args.save         = arg_lit0(NULL, "save", "Save as boot config");
@@ -1421,7 +2021,7 @@ esp_err_t ts_cmd_led_register(void)
     s_led_args.speed        = arg_int0(NULL, "speed", "<1-100>", "Effect speed (1=slow, 100=fast)");
     s_led_args.json         = arg_lit0("j", "json", "JSON output");
     s_led_args.help         = arg_lit0("h", "help", "Show help");
-    s_led_args.end          = arg_end(20);
+    s_led_args.end          = arg_end(32);
     
     const ts_console_cmd_t cmd = {
         .command = "led",

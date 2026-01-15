@@ -11,7 +11,7 @@
 #include "ts_log.h"
 #include "esp_console.h"
 #include "esp_vfs_dev.h"
-#include "linenoise/linenoise.h"
+#include "linenoise.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -21,6 +21,9 @@
 #include <stdio.h>
 
 #define TAG "ts_console"
+
+/* 保存当前执行的原始命令行，用于需要原始 UTF-8 文本的命令 */
+static char s_raw_cmdline[512] = {0};
 
 /*===========================================================================*/
 /*                          Category Names                                    */
@@ -99,9 +102,16 @@ static void console_task(void *arg)
             /* Add to history */
             linenoiseHistoryAdd(line);
             
+            /* 保存原始命令行，供命令处理函数使用 */
+            strncpy(s_raw_cmdline, line, sizeof(s_raw_cmdline) - 1);
+            s_raw_cmdline[sizeof(s_raw_cmdline) - 1] = '\0';
+            
             /* Execute command */
             int ret;
             esp_err_t err = esp_console_run(line, &ret);
+            
+            /* 清除原始命令行 */
+            s_raw_cmdline[0] = '\0';
             
             if (err == ESP_ERR_NOT_FOUND) {
                 ts_console_error("Unknown command: %s\n", line);
@@ -638,4 +648,9 @@ const char *ts_console_category_name(ts_cmd_category_t category)
         return "Unknown";
     }
     return s_category_names[category];
+}
+
+const char *ts_console_get_raw_cmdline(void)
+{
+    return s_raw_cmdline;
 }

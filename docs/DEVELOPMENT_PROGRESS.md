@@ -157,6 +157,9 @@
 - [x] 设备实例（touch/board/matrix 预设）
 - [x] 状态指示绑定
 - [x] LED 命令 (led, led_brightness, led_clear, led_fill, led_effect, led_color)
+- [x] 字体加载器 (ts_led_font) - SD卡动态加载, LRU缓存, 二分查找
+- [x] 文本渲染器 (ts_led_text) - UTF-8解析, 对齐, 滚动, 覆盖层
+- [x] 文本覆盖层系统 - 独立Layer渲染, 反色叠加, 循环滚动
 
 ---
 
@@ -252,6 +255,19 @@
 ---
 
 ## 📝 开发日志
+
+### 2026-01-16
+- **LED 文本显示系统**：
+  - 实现 ttf2fnt.py 字体转换工具（TTF → .fnt 嵌入式格式）
+  - 实现 ts_led_font 模块（字库动态加载, LRU缓存, 二分查找索引）
+  - 实现 ts_led_text 模块（UTF-8解析, 对齐, 滚动, 覆盖层渲染）
+  - 支持 BoutiqueBitmap9x9 像素字体（ASCII + GB2312）
+  - 实现文本覆盖层系统（Layer 1独立渲染, 与动画/图像叠加）
+  - 实现反色覆盖模式（--invert, 自动检测亮色背景）
+  - 实现循环滚动（--loop, 文本滚出后重新进入）
+  - 生成测试字库：boutique9x9.fnt (ASCII), cjk.fnt (GB2312)
+  - CLI命令：--draw-text, --stop-text, --font, --scroll, --align, --invert, --loop
+  - 更新 COMMANDS.md 文档
 
 ### 2026-01-15
 - 完成项目规划与设计阶段
