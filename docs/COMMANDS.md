@@ -496,6 +496,7 @@ led --draw-text --text "Hi" --x 5 --y 10
 ```bash
 # 滚动文本
 led --draw-text --text "Hello World" --scroll left
+led --draw-text --text "Super Mario World" --scroll left
 
 # 循环滚动
 led --draw-text --text "Breaking News..." --scroll left --loop

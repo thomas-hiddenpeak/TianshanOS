@@ -3,22 +3,23 @@
  * @brief Network Console Commands
  * 
  * 实现 net 命令族：
- * - net --status       显示网络状态
- * - net --ip           显示 IP 配置
- * - net --set          设置静态 IP
- * - net --dhcp         DHCP 管理
+ * - net --status           显示网络状态
+ * - net --config           显示当前配置
+ * - net --set              设置网络参数
+ * - net --start/--stop     启动/停止接口
+ * - net --restart          重启接口
+ * - net --save             保存配置
+ * - net --reset            重置为默认配置
  * 
  * @author TianShanOS Team
- * @version 1.0.0
- * @date 2026-01-15
+ * @version 2.0.0
+ * @date 2026-01-16
  */
 
 #include "ts_console.h"
+#include "ts_net_manager.h"
 #include "ts_log.h"
 #include "argtable3/argtable3.h"
-#include "esp_netif.h"
-#include "esp_wifi.h"
-#include "esp_mac.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -30,15 +31,21 @@
 
 static struct {
     struct arg_lit *status;
-    struct arg_lit *ip;
+    struct arg_lit *config;
     struct arg_lit *set;
+    struct arg_lit *start;
+    struct arg_lit *stop;
+    struct arg_lit *restart;
+    struct arg_lit *save;
+    struct arg_lit *load;
     struct arg_lit *reset;
-    struct arg_lit *enable;
-    struct arg_lit *disable;
-    struct arg_str *ip_addr;
+    struct arg_str *iface;
+    struct arg_str *ip;
     struct arg_str *netmask;
     struct arg_str *gateway;
-    struct arg_lit *dhcp;
+    struct arg_str *dns;
+    struct arg_str *mode;
+    struct arg_str *hostname;
     struct arg_lit *json;
     struct arg_lit *help;
     struct arg_end *end;
@@ -48,17 +55,24 @@ static struct {
 /*                          Helper Functions                                  */
 /*===========================================================================*/
 
-static const char *wifi_auth_mode_str(wifi_auth_mode_t mode)
+static ts_net_if_t parse_iface(const char *str)
 {
-    switch (mode) {
-        case WIFI_AUTH_OPEN:            return "OPEN";
-        case WIFI_AUTH_WEP:             return "WEP";
-        case WIFI_AUTH_WPA_PSK:         return "WPA-PSK";
-        case WIFI_AUTH_WPA2_PSK:        return "WPA2-PSK";
-        case WIFI_AUTH_WPA_WPA2_PSK:    return "WPA/WPA2-PSK";
-        case WIFI_AUTH_WPA3_PSK:        return "WPA3-PSK";
-        case WIFI_AUTH_WPA2_WPA3_PSK:   return "WPA2/WPA3-PSK";
-        default:                        return "UNKNOWN";
+    if (!str || str[0] == '\0') return TS_NET_IF_ETH;  /* 默认以太网 */
+    if (strcmp(str, "eth") == 0 || strcmp(str, "ethernet") == 0) return TS_NET_IF_ETH;
+    if (strcmp(str, "wifi") == 0 || strcmp(str, "wlan") == 0) return TS_NET_IF_WIFI_STA;
+    if (strcmp(str, "ap") == 0) return TS_NET_IF_WIFI_AP;
+    return TS_NET_IF_ETH;
+}
+
+static const char *state_color(ts_net_state_t state)
+{
+    switch (state) {
+        case TS_NET_STATE_GOT_IP:      return "\033[32m";  /* 绿色 */
+        case TS_NET_STATE_CONNECTED:   return "\033[33m";  /* 黄色 */
+        case TS_NET_STATE_CONNECTING:
+        case TS_NET_STATE_STARTING:    return "\033[33m";  /* 黄色 */
+        case TS_NET_STATE_ERROR:       return "\033[31m";  /* 红色 */
+        default:                       return "\033[90m";  /* 灰色 */
     }
 }
 
@@ -66,54 +80,84 @@ static const char *wifi_auth_mode_str(wifi_auth_mode_t mode)
 /*                          Command: net --status                             */
 /*===========================================================================*/
 
-static int do_net_status(bool json)
+static int do_net_status(bool json_out)
 {
-    esp_netif_t *netif_sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    esp_netif_t *netif_eth = esp_netif_get_handle_from_ifkey("ETH_DEF");
+    ts_net_manager_status_t status;
+    esp_err_t ret = ts_net_manager_get_status(&status);
     
-    bool wifi_connected = false;
-    bool eth_connected = false;
-    
-    wifi_ap_record_t ap_info;
-    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-        wifi_connected = true;
+    if (ret != ESP_OK) {
+        ts_console_error("Failed to get network status\n");
+        return 1;
     }
     
-    // 以太网状态检查
-    if (netif_eth && esp_netif_is_netif_up(netif_eth)) {
-        eth_connected = true;
-    }
-    
-    if (json) {
-        ts_console_printf("{\"wifi\":{\"connected\":%s", 
-            wifi_connected ? "true" : "false");
-        if (wifi_connected) {
-            ts_console_printf(",\"ssid\":\"%s\",\"rssi\":%d,\"auth\":\"%s\"",
-                ap_info.ssid, ap_info.rssi, wifi_auth_mode_str(ap_info.authmode));
+    if (json_out) {
+        ts_console_printf("{\n");
+        ts_console_printf("  \"initialized\": %s,\n", status.initialized ? "true" : "false");
+        ts_console_printf("  \"hostname\": \"%s\",\n", status.hostname);
+        
+        /* 以太网 */
+        ts_console_printf("  \"ethernet\": {\n");
+        ts_console_printf("    \"state\": \"%s\",\n", ts_net_state_to_str(status.eth.state));
+        ts_console_printf("    \"link_up\": %s,\n", status.eth.link_up ? "true" : "false");
+        ts_console_printf("    \"has_ip\": %s,\n", status.eth.has_ip ? "true" : "false");
+        if (status.eth.has_ip) {
+            ts_console_printf("    \"ip\": \"%s\",\n", status.eth.ip_info.ip);
+            ts_console_printf("    \"netmask\": \"%s\",\n", status.eth.ip_info.netmask);
+            ts_console_printf("    \"gateway\": \"%s\",\n", status.eth.ip_info.gateway);
+            ts_console_printf("    \"dns\": \"%s\",\n", status.eth.ip_info.dns1);
         }
-        ts_console_printf("},\"ethernet\":{\"connected\":%s}}\n",
-            eth_connected ? "true" : "false");
+        ts_console_printf("    \"mac\": \"%02x:%02x:%02x:%02x:%02x:%02x\",\n",
+            status.eth.mac[0], status.eth.mac[1], status.eth.mac[2],
+            status.eth.mac[3], status.eth.mac[4], status.eth.mac[5]);
+        ts_console_printf("    \"uptime_sec\": %lu\n", (unsigned long)status.eth.uptime_sec);
+        ts_console_printf("  },\n");
+        
+        /* WiFi STA */
+        ts_console_printf("  \"wifi_sta\": {\n");
+        ts_console_printf("    \"state\": \"%s\",\n", ts_net_state_to_str(status.wifi_sta.state));
+        ts_console_printf("    \"has_ip\": %s\n", status.wifi_sta.has_ip ? "true" : "false");
+        ts_console_printf("  }\n");
+        
+        ts_console_printf("}\n");
     } else {
-        ts_console_printf("Network Status:\n\n");
+        ts_console_printf("\n");
+        ts_console_printf("╔══════════════════════════════════════════════════════════════╗\n");
+        ts_console_printf("║                      Network Status                          ║\n");
+        ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
+        ts_console_printf("║ Hostname: %-50s ║\n", status.hostname);
+        ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
         
-        ts_console_printf("WiFi:\n");
-        if (wifi_connected) {
-            ts_console_printf("  Status:   \033[32mConnected\033[0m\n");
-            ts_console_printf("  SSID:     %s\n", ap_info.ssid);
-            ts_console_printf("  RSSI:     %d dBm\n", ap_info.rssi);
-            ts_console_printf("  Auth:     %s\n", wifi_auth_mode_str(ap_info.authmode));
-            ts_console_printf("  Channel:  %d\n", ap_info.primary);
-        } else {
-            ts_console_printf("  Status:   \033[33mDisconnected\033[0m\n");
+        /* 以太网状态 */
+        ts_console_printf("║ \033[1mEthernet (W5500)\033[0m                                            ║\n");
+        ts_console_printf("║   State:    %s%-12s\033[0m                                   ║\n",
+            state_color(status.eth.state), ts_net_state_to_str(status.eth.state));
+        ts_console_printf("║   Link:     %-12s                                   ║\n",
+            status.eth.link_up ? "Up" : "Down");
+        ts_console_printf("║   MAC:      %02x:%02x:%02x:%02x:%02x:%02x                            ║\n",
+            status.eth.mac[0], status.eth.mac[1], status.eth.mac[2],
+            status.eth.mac[3], status.eth.mac[4], status.eth.mac[5]);
+        
+        if (status.eth.has_ip) {
+            ts_console_printf("║   IP:       %-15s                              ║\n", status.eth.ip_info.ip);
+            ts_console_printf("║   Netmask:  %-15s                              ║\n", status.eth.ip_info.netmask);
+            ts_console_printf("║   Gateway:  %-15s                              ║\n", status.eth.ip_info.gateway);
+            ts_console_printf("║   DNS:      %-15s                              ║\n", status.eth.ip_info.dns1);
+            ts_console_printf("║   Uptime:   %lu sec                                         ║\n", 
+                (unsigned long)status.eth.uptime_sec);
         }
         
-        ts_console_printf("\nEthernet:\n");
-        if (eth_connected) {
-            ts_console_printf("  Status:   \033[32mConnected\033[0m\n");
-        } else {
-            ts_console_printf("  Status:   \033[33mDisconnected\033[0m\n");
+        ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
+        
+        /* WiFi 状态 */
+        ts_console_printf("║ \033[1mWiFi Station\033[0m                                                ║\n");
+        ts_console_printf("║   State:    %s%-12s\033[0m                                   ║\n",
+            state_color(status.wifi_sta.state), ts_net_state_to_str(status.wifi_sta.state));
+        
+        if (status.wifi_sta.has_ip) {
+            ts_console_printf("║   IP:       %-15s                              ║\n", status.wifi_sta.ip_info.ip);
         }
         
+        ts_console_printf("╚══════════════════════════════════════════════════════════════╝\n");
         ts_console_printf("\n");
     }
     
@@ -121,104 +165,45 @@ static int do_net_status(bool json)
 }
 
 /*===========================================================================*/
-/*                          Command: net --ip                                 */
+/*                          Command: net --config                             */
 /*===========================================================================*/
 
-static int do_net_ip(bool json)
+static int do_net_config(const char *iface_str, bool json_out)
 {
-    esp_netif_t *netif_sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    esp_netif_t *netif_eth = esp_netif_get_handle_from_ifkey("ETH_DEF");
+    ts_net_if_t iface = parse_iface(iface_str);
+    ts_net_if_config_t config;
     
-    esp_netif_ip_info_t ip_info;
-    esp_netif_dns_info_t dns_info;
-    uint8_t mac[6];
-    char mac_str[18];
-    char ip_str[16], gw_str[16], nm_str[16], dns_str[16];
+    esp_err_t ret = ts_net_manager_get_config(iface, &config);
+    if (ret != ESP_OK) {
+        ts_console_error("Failed to get config for %s\n", ts_net_if_to_str(iface));
+        return 1;
+    }
     
-    if (json) {
-        ts_console_printf("{\"interfaces\":[");
-        bool first = true;
-        
-        // WiFi 接口
-        if (netif_sta && esp_netif_is_netif_up(netif_sta)) {
-            esp_netif_get_ip_info(netif_sta, &ip_info);
-            esp_netif_get_mac(netif_sta, mac);
-            esp_netif_get_dns_info(netif_sta, ESP_NETIF_DNS_MAIN, &dns_info);
-            
-            snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-            
-            if (!first) ts_console_printf(",");
-            ts_console_printf(
-                "{\"name\":\"wifi\",\"ip\":\"%s\",\"netmask\":\"%s\","
-                "\"gateway\":\"%s\",\"dns\":\"%s\",\"mac\":\"%s\"}",
-                esp_ip4addr_ntoa(&ip_info.ip, ip_str, sizeof(ip_str)),
-                esp_ip4addr_ntoa(&ip_info.netmask, nm_str, sizeof(nm_str)),
-                esp_ip4addr_ntoa(&ip_info.gw, gw_str, sizeof(gw_str)),
-                esp_ip4addr_ntoa(&dns_info.ip.u_addr.ip4, dns_str, sizeof(dns_str)),
-                mac_str);
-            first = false;
-        }
-        
-        // 以太网接口
-        if (netif_eth && esp_netif_is_netif_up(netif_eth)) {
-            esp_netif_get_ip_info(netif_eth, &ip_info);
-            esp_netif_get_mac(netif_eth, mac);
-            esp_netif_get_dns_info(netif_eth, ESP_NETIF_DNS_MAIN, &dns_info);
-            
-            snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-            
-            if (!first) ts_console_printf(",");
-            ts_console_printf(
-                "{\"name\":\"eth\",\"ip\":\"%s\",\"netmask\":\"%s\","
-                "\"gateway\":\"%s\",\"dns\":\"%s\",\"mac\":\"%s\"}",
-                esp_ip4addr_ntoa(&ip_info.ip, ip_str, sizeof(ip_str)),
-                esp_ip4addr_ntoa(&ip_info.netmask, nm_str, sizeof(nm_str)),
-                esp_ip4addr_ntoa(&ip_info.gw, gw_str, sizeof(gw_str)),
-                esp_ip4addr_ntoa(&dns_info.ip.u_addr.ip4, dns_str, sizeof(dns_str)),
-                mac_str);
-        }
-        
-        ts_console_printf("]}\n");
+    if (json_out) {
+        ts_console_printf("{\n");
+        ts_console_printf("  \"interface\": \"%s\",\n", ts_net_if_to_str(iface));
+        ts_console_printf("  \"enabled\": %s,\n", config.enabled ? "true" : "false");
+        ts_console_printf("  \"ip_mode\": \"%s\",\n", 
+            config.ip_mode == TS_NET_IP_MODE_DHCP ? "dhcp" : "static");
+        ts_console_printf("  \"auto_start\": %s,\n", config.auto_start ? "true" : "false");
+        ts_console_printf("  \"static_ip\": {\n");
+        ts_console_printf("    \"ip\": \"%s\",\n", config.static_ip.ip);
+        ts_console_printf("    \"netmask\": \"%s\",\n", config.static_ip.netmask);
+        ts_console_printf("    \"gateway\": \"%s\",\n", config.static_ip.gateway);
+        ts_console_printf("    \"dns1\": \"%s\"\n", config.static_ip.dns1);
+        ts_console_printf("  }\n");
+        ts_console_printf("}\n");
     } else {
-        ts_console_printf("IP Configuration:\n\n");
-        ts_console_printf("%-10s  %-16s  %-16s  %-16s  %s\n",
-            "IFACE", "IP", "NETMASK", "GATEWAY", "MAC");
-        ts_console_printf("─────────────────────────────────────────────────────────────────────────\n");
-        
-        // WiFi 接口
-        if (netif_sta && esp_netif_is_netif_up(netif_sta)) {
-            esp_netif_get_ip_info(netif_sta, &ip_info);
-            esp_netif_get_mac(netif_sta, mac);
-            
-            snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-            
-            ts_console_printf("%-10s  %-16s  %-16s  %-16s  %s\n",
-                "wifi",
-                esp_ip4addr_ntoa(&ip_info.ip, ip_str, sizeof(ip_str)),
-                esp_ip4addr_ntoa(&ip_info.netmask, nm_str, sizeof(nm_str)),
-                esp_ip4addr_ntoa(&ip_info.gw, gw_str, sizeof(gw_str)),
-                mac_str);
-        }
-        
-        // 以太网接口
-        if (netif_eth && esp_netif_is_netif_up(netif_eth)) {
-            esp_netif_get_ip_info(netif_eth, &ip_info);
-            esp_netif_get_mac(netif_eth, mac);
-            
-            snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
-                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-            
-            ts_console_printf("%-10s  %-16s  %-16s  %-16s  %s\n",
-                "eth",
-                esp_ip4addr_ntoa(&ip_info.ip, ip_str, sizeof(ip_str)),
-                esp_ip4addr_ntoa(&ip_info.netmask, nm_str, sizeof(nm_str)),
-                esp_ip4addr_ntoa(&ip_info.gw, gw_str, sizeof(gw_str)),
-                mac_str);
-        }
-        
+        ts_console_printf("\nConfiguration for %s:\n\n", ts_net_if_to_str(iface));
+        ts_console_printf("  Enabled:    %s\n", config.enabled ? "Yes" : "No");
+        ts_console_printf("  IP Mode:    %s\n", 
+            config.ip_mode == TS_NET_IP_MODE_DHCP ? "DHCP" : "Static");
+        ts_console_printf("  Auto Start: %s\n", config.auto_start ? "Yes" : "No");
+        ts_console_printf("\n  Static IP Configuration:\n");
+        ts_console_printf("    IP:       %s\n", config.static_ip.ip);
+        ts_console_printf("    Netmask:  %s\n", config.static_ip.netmask);
+        ts_console_printf("    Gateway:  %s\n", config.static_ip.gateway);
+        ts_console_printf("    DNS:      %s\n", config.static_ip.dns1);
         ts_console_printf("\n");
     }
     
@@ -229,97 +214,169 @@ static int do_net_ip(bool json)
 /*                          Command: net --set                                */
 /*===========================================================================*/
 
-static int do_net_set(const char *ip, const char *netmask, const char *gateway)
+static int do_net_set(const char *iface_str, const char *ip, const char *netmask,
+                       const char *gateway, const char *dns, const char *mode,
+                       const char *hostname)
 {
-    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (!netif) {
-        netif = esp_netif_get_handle_from_ifkey("ETH_DEF");
-    }
+    ts_net_if_t iface = parse_iface(iface_str);
+    bool changed = false;
     
-    if (!netif) {
-        ts_console_error("No network interface available\n");
-        return 1;
-    }
-    
-    // 停止 DHCP 客户端
-    esp_netif_dhcpc_stop(netif);
-    
-    // 设置静态 IP
-    esp_netif_ip_info_t ip_info;
-    memset(&ip_info, 0, sizeof(ip_info));
-    
-    ip_info.ip.addr = esp_ip4addr_aton(ip);
-    if (ip_info.ip.addr == 0 && strcmp(ip, "0.0.0.0") != 0) {
-        ts_console_error("Invalid IP address: %s\n", ip);
-        return 1;
-    }
-    
-    if (netmask) {
-        ip_info.netmask.addr = esp_ip4addr_aton(netmask);
-        if (ip_info.netmask.addr == 0) {
-            ts_console_error("Invalid netmask: %s\n", netmask);
+    /* 设置 IP 模式 */
+    if (mode && mode[0]) {
+        ts_net_ip_mode_t ip_mode;
+        if (strcmp(mode, "dhcp") == 0) {
+            ip_mode = TS_NET_IP_MODE_DHCP;
+        } else if (strcmp(mode, "static") == 0) {
+            ip_mode = TS_NET_IP_MODE_STATIC;
+        } else {
+            ts_console_error("Invalid mode: %s (use 'dhcp' or 'static')\n", mode);
             return 1;
         }
+        ts_net_manager_set_ip_mode(iface, ip_mode);
+        ts_console_printf("IP mode set to: %s\n", mode);
+        changed = true;
+    }
+    
+    /* 设置静态 IP 配置 */
+    if (ip || netmask || gateway || dns) {
+        ts_net_if_config_t config;
+        ts_net_manager_get_config(iface, &config);
+        
+        if (ip && ip[0]) {
+            strncpy(config.static_ip.ip, ip, TS_NET_IP_STR_MAX_LEN - 1);
+            ts_console_printf("IP set to: %s\n", ip);
+        }
+        if (netmask && netmask[0]) {
+            strncpy(config.static_ip.netmask, netmask, TS_NET_IP_STR_MAX_LEN - 1);
+            ts_console_printf("Netmask set to: %s\n", netmask);
+        }
+        if (gateway && gateway[0]) {
+            strncpy(config.static_ip.gateway, gateway, TS_NET_IP_STR_MAX_LEN - 1);
+            ts_console_printf("Gateway set to: %s\n", gateway);
+        }
+        if (dns && dns[0]) {
+            strncpy(config.static_ip.dns1, dns, TS_NET_IP_STR_MAX_LEN - 1);
+            ts_console_printf("DNS set to: %s\n", dns);
+        }
+        
+        ts_net_manager_set_static_ip(iface, &config.static_ip);
+        changed = true;
+    }
+    
+    /* 设置主机名 */
+    if (hostname && hostname[0]) {
+        ts_net_manager_set_hostname(hostname);
+        ts_console_printf("Hostname set to: %s\n", hostname);
+        changed = true;
+    }
+    
+    if (changed) {
+        ts_console_printf("\nNote: Use 'net --save' to persist, 'net --restart' to apply\n");
     } else {
-        ip_info.netmask.addr = esp_ip4addr_aton("255.255.255.0");
+        ts_console_printf("No changes made. Use --ip, --netmask, --gateway, --dns, --mode, or --hostname\n");
     }
     
-    if (gateway) {
-        ip_info.gw.addr = esp_ip4addr_aton(gateway);
-        if (ip_info.gw.addr == 0 && strcmp(gateway, "0.0.0.0") != 0) {
-            ts_console_error("Invalid gateway: %s\n", gateway);
-            return 1;
-        }
-    }
-    
-    esp_err_t ret = esp_netif_set_ip_info(netif, &ip_info);
-    if (ret != ESP_OK) {
-        ts_console_error("Failed to set IP: %s\n", esp_err_to_name(ret));
-        return 1;
-    }
-    
-    ts_console_success("IP configuration set\n");
     return 0;
 }
 
 /*===========================================================================*/
-/*                          Command: net --dhcp                               */
+/*                          Command: net --start/stop/restart                 */
 /*===========================================================================*/
 
-static int do_net_dhcp(bool enable)
+static int do_net_start(const char *iface_str)
 {
-    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-    if (!netif) {
-        netif = esp_netif_get_handle_from_ifkey("ETH_DEF");
-    }
+    ts_net_if_t iface = parse_iface(iface_str);
     
-    if (!netif) {
-        ts_console_error("No network interface available\n");
-        return 1;
-    }
+    ts_console_printf("Starting %s...\n", ts_net_if_to_str(iface));
+    esp_err_t ret = ts_net_manager_start(iface);
     
-    esp_err_t ret;
-    if (enable) {
-        ret = esp_netif_dhcpc_start(netif);
-        if (ret == ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED) {
-            ts_console_warn("DHCP client already running\n");
-            return 0;
-        }
+    if (ret == ESP_OK) {
+        ts_console_printf("%s started successfully\n", ts_net_if_to_str(iface));
+        return 0;
     } else {
-        ret = esp_netif_dhcpc_stop(netif);
-        if (ret == ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
-            ts_console_warn("DHCP client already stopped\n");
-            return 0;
-        }
-    }
-    
-    if (ret != ESP_OK) {
-        ts_console_error("Failed: %s\n", esp_err_to_name(ret));
+        ts_console_error("Failed to start %s: %s\n", ts_net_if_to_str(iface), esp_err_to_name(ret));
         return 1;
     }
+}
+
+static int do_net_stop(const char *iface_str)
+{
+    ts_net_if_t iface = parse_iface(iface_str);
     
-    ts_console_success("DHCP client %s\n", enable ? "started" : "stopped");
-    return 0;
+    ts_console_printf("Stopping %s...\n", ts_net_if_to_str(iface));
+    esp_err_t ret = ts_net_manager_stop(iface);
+    
+    if (ret == ESP_OK) {
+        ts_console_printf("%s stopped\n", ts_net_if_to_str(iface));
+        return 0;
+    } else {
+        ts_console_error("Failed to stop %s: %s\n", ts_net_if_to_str(iface), esp_err_to_name(ret));
+        return 1;
+    }
+}
+
+static int do_net_restart(const char *iface_str)
+{
+    ts_net_if_t iface = parse_iface(iface_str);
+    
+    ts_console_printf("Restarting %s...\n", ts_net_if_to_str(iface));
+    esp_err_t ret = ts_net_manager_restart(iface);
+    
+    if (ret == ESP_OK) {
+        ts_console_printf("%s restarted successfully\n", ts_net_if_to_str(iface));
+        return 0;
+    } else {
+        ts_console_error("Failed to restart %s: %s\n", ts_net_if_to_str(iface), esp_err_to_name(ret));
+        return 1;
+    }
+}
+
+/*===========================================================================*/
+/*                          Command: net --save/load/reset                    */
+/*===========================================================================*/
+
+static int do_net_save(void)
+{
+    ts_console_printf("Saving network configuration...\n");
+    esp_err_t ret = ts_net_manager_save_config();
+    
+    if (ret == ESP_OK) {
+        ts_console_printf("Configuration saved to NVS\n");
+        return 0;
+    } else {
+        ts_console_error("Failed to save configuration: %s\n", esp_err_to_name(ret));
+        return 1;
+    }
+}
+
+static int do_net_load(void)
+{
+    ts_console_printf("Loading network configuration...\n");
+    esp_err_t ret = ts_net_manager_load_config();
+    
+    if (ret == ESP_OK) {
+        ts_console_printf("Configuration loaded from NVS\n");
+        ts_console_printf("Use 'net --restart' to apply changes\n");
+        return 0;
+    } else {
+        ts_console_error("Failed to load configuration: %s\n", esp_err_to_name(ret));
+        return 1;
+    }
+}
+
+static int do_net_reset(void)
+{
+    ts_console_printf("Resetting network configuration to defaults...\n");
+    esp_err_t ret = ts_net_manager_reset_config();
+    
+    if (ret == ESP_OK) {
+        ts_console_printf("Configuration reset to defaults\n");
+        ts_console_printf("Use 'net --restart' to apply changes\n");
+        return 0;
+    } else {
+        ts_console_error("Failed to reset configuration: %s\n", esp_err_to_name(ret));
+        return 1;
+    }
 }
 
 /*===========================================================================*/
@@ -330,71 +387,95 @@ static int cmd_net(int argc, char **argv)
 {
     int nerrors = arg_parse(argc, argv, (void **)&s_net_args);
     
+    /* 显示帮助 */
     if (s_net_args.help->count > 0) {
         ts_console_printf("Usage: net [options]\n\n");
         ts_console_printf("Options:\n");
-        ts_console_printf("  -s, --status        Show network status\n");
-        ts_console_printf("  -i, --ip            Show IP configuration\n");
-        ts_console_printf("      --set           Set static IP\n");
-        ts_console_printf("      --ip <addr>     IP address\n");
-        ts_console_printf("      --netmask <nm>  Netmask\n");
-        ts_console_printf("      --gateway <gw>  Gateway\n");
-        ts_console_printf("      --dhcp          DHCP management\n");
-        ts_console_printf("      --enable        Enable DHCP\n");
-        ts_console_printf("      --disable       Disable DHCP\n");
-        ts_console_printf("      --reset         Reset network\n");
-        ts_console_printf("  -j, --json          JSON output\n");
-        ts_console_printf("  -h, --help          Show this help\n\n");
+        ts_console_printf("  --status            Show network status\n");
+        ts_console_printf("  --config            Show interface configuration\n");
+        ts_console_printf("  --set               Set network parameters\n");
+        ts_console_printf("  --start             Start network interface\n");
+        ts_console_printf("  --stop              Stop network interface\n");
+        ts_console_printf("  --restart           Restart network interface\n");
+        ts_console_printf("  --save              Save configuration to NVS\n");
+        ts_console_printf("  --load              Load configuration from NVS\n");
+        ts_console_printf("  --reset             Reset to default configuration\n");
+        ts_console_printf("\n");
+        ts_console_printf("Parameters:\n");
+        ts_console_printf("  --iface <if>        Interface: eth, wifi (default: eth)\n");
+        ts_console_printf("  --ip <addr>         IP address (e.g., 192.168.1.100)\n");
+        ts_console_printf("  --netmask <mask>    Netmask (e.g., 255.255.255.0)\n");
+        ts_console_printf("  --gateway <addr>    Gateway address\n");
+        ts_console_printf("  --dns <addr>        DNS server address\n");
+        ts_console_printf("  --mode <mode>       IP mode: dhcp, static\n");
+        ts_console_printf("  --hostname <name>   Set hostname\n");
+        ts_console_printf("  --json              Output in JSON format\n");
+        ts_console_printf("\n");
         ts_console_printf("Examples:\n");
-        ts_console_printf("  net --status\n");
-        ts_console_printf("  net --ip\n");
-        ts_console_printf("  net --set --ip 10.10.99.97 --netmask 255.255.255.0 --gateway 10.10.99.1\n");
-        ts_console_printf("  net --dhcp --enable\n");
+        ts_console_printf("  net --status                          Show current status\n");
+        ts_console_printf("  net --config --iface eth              Show ethernet config\n");
+        ts_console_printf("  net --set --mode static --ip 10.0.0.100\n");
+        ts_console_printf("  net --set --mode dhcp\n");
+        ts_console_printf("  net --save                            Persist configuration\n");
+        ts_console_printf("  net --restart                         Apply changes\n");
         return 0;
     }
     
-    if (nerrors != 0) {
-        arg_print_errors(stderr, s_net_args.end, argv[0]);
+    if (nerrors > 0 && argc > 1) {
+        arg_print_errors(stderr, s_net_args.end, "net");
         return 1;
     }
     
-    bool json = s_net_args.json->count > 0;
+    bool json_out = s_net_args.json->count > 0;
+    const char *iface_str = s_net_args.iface->count > 0 ? s_net_args.iface->sval[0] : NULL;
     
-    if (s_net_args.ip->count > 0) {
-        return do_net_ip(json);
+    /* 处理各个操作 */
+    if (s_net_args.status->count > 0 || argc == 1) {
+        return do_net_status(json_out);
+    }
+    
+    if (s_net_args.config->count > 0) {
+        return do_net_config(iface_str, json_out);
     }
     
     if (s_net_args.set->count > 0) {
-        if (s_net_args.ip_addr->count == 0) {
-            ts_console_error("--ip required for --set\n");
-            return 1;
-        }
         return do_net_set(
-            s_net_args.ip_addr->sval[0],
+            iface_str,
+            s_net_args.ip->count > 0 ? s_net_args.ip->sval[0] : NULL,
             s_net_args.netmask->count > 0 ? s_net_args.netmask->sval[0] : NULL,
-            s_net_args.gateway->count > 0 ? s_net_args.gateway->sval[0] : NULL);
+            s_net_args.gateway->count > 0 ? s_net_args.gateway->sval[0] : NULL,
+            s_net_args.dns->count > 0 ? s_net_args.dns->sval[0] : NULL,
+            s_net_args.mode->count > 0 ? s_net_args.mode->sval[0] : NULL,
+            s_net_args.hostname->count > 0 ? s_net_args.hostname->sval[0] : NULL
+        );
     }
     
-    if (s_net_args.dhcp->count > 0) {
-        if (s_net_args.enable->count > 0) {
-            return do_net_dhcp(true);
-        } else if (s_net_args.disable->count > 0) {
-            return do_net_dhcp(false);
-        } else {
-            // 显示 DHCP 状态
-            ts_console_printf("Use --dhcp --enable or --dhcp --disable\n");
-            return 0;
-        }
+    if (s_net_args.start->count > 0) {
+        return do_net_start(iface_str);
+    }
+    
+    if (s_net_args.stop->count > 0) {
+        return do_net_stop(iface_str);
+    }
+    
+    if (s_net_args.restart->count > 0) {
+        return do_net_restart(iface_str);
+    }
+    
+    if (s_net_args.save->count > 0) {
+        return do_net_save();
+    }
+    
+    if (s_net_args.load->count > 0) {
+        return do_net_load();
     }
     
     if (s_net_args.reset->count > 0) {
-        // TODO: 重置网络配置
-        ts_console_success("Network configuration reset\n");
-        return 0;
+        return do_net_reset();
     }
     
-    // 默认显示状态
-    return do_net_status(json);
+    /* 默认显示状态 */
+    return do_net_status(json_out);
 }
 
 /*===========================================================================*/
@@ -403,23 +484,30 @@ static int cmd_net(int argc, char **argv)
 
 esp_err_t ts_cmd_net_register(void)
 {
-    s_net_args.status   = arg_lit0("s", "status", "Show status");
-    s_net_args.ip       = arg_lit0("i", "ip", "Show IP config");
-    s_net_args.set      = arg_lit0(NULL, "set", "Set static IP");
-    s_net_args.reset    = arg_lit0(NULL, "reset", "Reset network");
-    s_net_args.enable   = arg_lit0(NULL, "enable", "Enable");
-    s_net_args.disable  = arg_lit0(NULL, "disable", "Disable");
-    s_net_args.ip_addr  = arg_str0(NULL, "ip", "<addr>", "IP address");
-    s_net_args.netmask  = arg_str0(NULL, "netmask", "<nm>", "Netmask");
-    s_net_args.gateway  = arg_str0(NULL, "gateway", "<gw>", "Gateway");
-    s_net_args.dhcp     = arg_lit0(NULL, "dhcp", "DHCP control");
-    s_net_args.json     = arg_lit0("j", "json", "JSON output");
+    /* 初始化参数表 */
+    s_net_args.status   = arg_lit0("s", "status", "Show network status");
+    s_net_args.config   = arg_lit0("c", "config", "Show interface configuration");
+    s_net_args.set      = arg_lit0(NULL, "set", "Set network parameters");
+    s_net_args.start    = arg_lit0(NULL, "start", "Start network interface");
+    s_net_args.stop     = arg_lit0(NULL, "stop", "Stop network interface");
+    s_net_args.restart  = arg_lit0(NULL, "restart", "Restart network interface");
+    s_net_args.save     = arg_lit0(NULL, "save", "Save configuration to NVS");
+    s_net_args.load     = arg_lit0(NULL, "load", "Load configuration from NVS");
+    s_net_args.reset    = arg_lit0(NULL, "reset", "Reset to default configuration");
+    s_net_args.iface    = arg_str0(NULL, "iface", "<if>", "Interface: eth, wifi");
+    s_net_args.ip       = arg_str0(NULL, "ip", "<addr>", "IP address");
+    s_net_args.netmask  = arg_str0(NULL, "netmask", "<mask>", "Netmask");
+    s_net_args.gateway  = arg_str0(NULL, "gateway", "<addr>", "Gateway address");
+    s_net_args.dns      = arg_str0(NULL, "dns", "<addr>", "DNS server");
+    s_net_args.mode     = arg_str0(NULL, "mode", "<mode>", "IP mode: dhcp, static");
+    s_net_args.hostname = arg_str0(NULL, "hostname", "<name>", "Hostname");
+    s_net_args.json     = arg_lit0("j", "json", "Output in JSON format");
     s_net_args.help     = arg_lit0("h", "help", "Show help");
-    s_net_args.end      = arg_end(12);
+    s_net_args.end      = arg_end(5);
     
     const ts_console_cmd_t cmd = {
         .command = "net",
-        .help = "Network configuration and status",
+        .help = "Network management (status, config, start/stop)",
         .hint = NULL,
         .category = TS_CMD_CAT_NETWORK,
         .func = cmd_net,

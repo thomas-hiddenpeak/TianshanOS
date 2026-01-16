@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "src/ts_net.c"
+        "src/ts_net_manager.c"
         "src/ts_eth.c"
         "src/ts_wifi.c"
         "src/ts_dhcp_server.c"

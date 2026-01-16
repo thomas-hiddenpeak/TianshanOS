@@ -184,6 +184,8 @@ typedef struct {
 #define TS_EVT_GOT_IP               0x0105
 /** IP 地址丢失 */
 #define TS_EVT_LOST_IP              0x0106
+/** DHCP 服务器给客户端分配了 IP（用于监控连接的设备）*/
+#define TS_EVT_DHCP_CLIENT_CONNECTED    0x0107
 
 /* ============================================================================
  * 事件基础别名（兼容旧代码）

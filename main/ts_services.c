@@ -21,6 +21,8 @@
 #include "ts_led_preset.h"
 #include "ts_drivers.h"
 #include "ts_fan.h"
+#include "ts_net_manager.h"
+#include "ts_dhcp_server.h"
 #include "esp_log.h"
 
 static const char *TAG = "ts_services";
@@ -33,6 +35,7 @@ static ts_service_handle_t s_hal_handle = NULL;
 static ts_service_handle_t s_storage_handle = NULL;
 static ts_service_handle_t s_led_handle = NULL;
 static ts_service_handle_t s_drivers_handle = NULL;
+static ts_service_handle_t s_network_handle = NULL;
 static ts_service_handle_t s_console_handle = NULL;
 
 /* ============================================================================
@@ -249,6 +252,73 @@ static bool drivers_service_health(ts_service_handle_t handle, void *user_data)
 }
 
 /* ============================================================================
+ * Network 服务回调
+ * ========================================================================== */
+
+static esp_err_t network_service_init(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Initializing network service...");
+    
+    esp_err_t ret = ts_net_manager_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init network manager: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* 初始化 DHCP 服务器 */
+    ret = ts_dhcp_server_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to init DHCP server: %s", esp_err_to_name(ret));
+        /* 不是致命错误，继续 */
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t network_service_start(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Starting network service...");
+    
+    /* 启动以太网 */
+    esp_err_t ret = ts_net_manager_start(TS_NET_IF_ETH);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to start Ethernet: %s", esp_err_to_name(ret));
+        /* 不是致命错误，继续 */
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t network_service_stop(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Stopping network service...");
+    
+    ts_net_manager_stop(TS_NET_IF_ETH);
+    ts_net_manager_stop(TS_NET_IF_WIFI_STA);
+    
+    return ESP_OK;
+}
+
+static bool network_service_health(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    /* 检查是否有任意网络接口可用 */
+    return ts_net_manager_is_ready(TS_NET_IF_ETH) || 
+           ts_net_manager_is_ready(TS_NET_IF_WIFI_STA);
+}
+
+/* ============================================================================
  * Console 服务回调
  * ========================================================================== */
 
@@ -370,11 +440,23 @@ static const ts_service_def_t s_drivers_service_def = {
     .user_data = NULL,
 };
 
+static const ts_service_def_t s_network_service_def = {
+    .name = "network",
+    .phase = TS_SERVICE_PHASE_NETWORK,
+    .capabilities = TS_SERVICE_CAP_RESTARTABLE | TS_SERVICE_CAP_CONFIGURABLE,
+    .dependencies = {"hal", "storage", NULL},  // 依赖 HAL 和 storage
+    .init = network_service_init,
+    .start = network_service_start,
+    .stop = network_service_stop,
+    .health_check = network_service_health,
+    .user_data = NULL,
+};
+
 static const ts_service_def_t s_console_service_def = {
     .name = "console",
     .phase = TS_SERVICE_PHASE_UI,
     .capabilities = TS_SERVICE_CAP_RESTARTABLE,
-    .dependencies = {"storage", "led", "drivers", NULL},  // 依赖所有硬件服务
+    .dependencies = {"storage", "led", "drivers", "network", NULL},  // 依赖所有硬件服务和网络
     .init = console_service_init,
     .start = console_service_start,
     .stop = console_service_stop,
@@ -423,6 +505,14 @@ esp_err_t ts_services_register_all(void)
         return ret;
     }
     ESP_LOGI(TAG, "  - drivers service registered");
+    
+    // 注册 network 服务
+    ret = ts_service_register(&s_network_service_def, &s_network_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register network service: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  - network service registered");
     
     // 注册 console 服务 (最后)
     ret = ts_service_register(&s_console_service_def, &s_console_handle);

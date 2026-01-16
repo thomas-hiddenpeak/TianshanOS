@@ -19,4 +19,5 @@ idf_component_register(
         ts_hal
         ts_led
         ts_drivers
+        ts_net
 )

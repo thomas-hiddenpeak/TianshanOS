@@ -67,6 +67,12 @@ esp_err_t ts_cmd_device_register(void);
 esp_err_t ts_cmd_led_register(void);
 
 /**
+ * @brief 注册 DHCP 命令
+ * dhcp --status/--clients/--start/--stop/--pool/--bind
+ */
+esp_err_t ts_cmd_dhcp_register(void);
+
+/**
  * @brief 注册文件系统命令
  * ls, cat, cd, pwd, mkdir, rm, cp, mv, hexdump
  */
