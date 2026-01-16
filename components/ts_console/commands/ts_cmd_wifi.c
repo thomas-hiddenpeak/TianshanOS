@@ -20,6 +20,7 @@
 #include "ts_net_manager.h"
 #include "ts_wifi.h"
 #include "ts_log.h"
+#include "esp_wifi.h"
 #include "argtable3/argtable3.h"
 #include <string.h>
 #include <stdio.h>
@@ -157,7 +158,17 @@ static int do_wifi_scan(bool json_out)
     /* 确保 WiFi 已初始化并设置为 STA 模式（用于扫描） */
     ts_wifi_mode_t mode = ts_wifi_get_mode();
     if (mode == TS_WIFI_MODE_OFF) {
-        ts_wifi_set_mode(TS_WIFI_MODE_STA);
+        esp_err_t ret = ts_wifi_set_mode(TS_WIFI_MODE_STA);
+        if (ret != ESP_OK) {
+            ts_console_error("Failed to set WiFi mode: %s\n", esp_err_to_name(ret));
+            return 1;
+        }
+        /* 启动 WiFi（STA 模式下需要启动才能扫描） */
+        ret = esp_wifi_start();
+        if (ret != ESP_OK) {
+            ts_console_error("Failed to start WiFi: %s\n", esp_err_to_name(ret));
+            return 1;
+        }
     }
     
     /* 启动扫描（阻塞） */
