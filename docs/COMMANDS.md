@@ -688,9 +688,12 @@ storage --status --json
 
 ## net - 网络管理
 
-管理 WiFi 和以太网网络配置。
+管理以太网网络配置。
 
-> **注意**：当前部分功能为模拟实现。
+> **当前状态**：
+> - ✅ 以太网（W5500）完全支持
+> - ❌ WiFi 未实现（硬件未启用）
+> - ✅ 配置保存/加载支持 NVS 持久化
 
 ### 语法
 
@@ -703,15 +706,21 @@ net [options]
 | 选项 | 简写 | 说明 |
 |------|------|------|
 | `--status` | `-s` | 显示网络状态 |
-| `--ip` | `-i` | 显示 IP 配置 |
-| `--set` | | 设置静态 IP |
-| `--reset` | | 重置网络配置 |
-| `--enable` | | 启用（与 --dhcp 配合） |
-| `--disable` | | 禁用（与 --dhcp 配合） |
-| `--ip <addr>` | | IP 地址 |
+| `--config` | | 显示接口配置详情 |
+| `--set` | | 设置网络参数（需配合其他参数） |
+| `--start` | | 启动网络接口 |
+| `--stop` | | 停止网络接口 |
+| `--restart` | | 重启网络接口 |
+| `--save` | | 保存配置到 NVS |
+| `--load` | | 从 NVS 加载配置 |
+| `--reset` | | 重置为默认配置 |
+| `--iface <if>` | | 指定接口：eth（默认） |
+| `--ip <addr>` | | 静态 IP 地址 |
 | `--netmask <mask>` | | 子网掩码 |
 | `--gateway <gw>` | | 默认网关 |
-| `--dhcp` | | DHCP 控制 |
+| `--dns <addr>` | | DNS 服务器地址 |
+| `--mode <mode>` | | IP 模式：dhcp, static |
+| `--hostname <name>` | | 设置主机名 |
 | `--json` | `-j` | JSON 格式输出 |
 | `--help` | `-h` | 显示帮助 |
 
@@ -721,24 +730,42 @@ net [options]
 # 显示网络状态
 net --status
 
-# 显示 IP 配置
-net --ip
+# 显示以太网配置详情
+net --config --iface eth
 
 # 设置静态 IP
-net --set --ip 192.168.1.100 --netmask 255.255.255.0 --gateway 192.168.1.1
+net --set --mode static --ip 10.10.99.97 --netmask 255.255.255.0 --gateway 10.10.99.1
 
-# 启用 DHCP
-net --dhcp --enable
+# 切换到 DHCP 客户端模式
+net --set --mode dhcp
 
-# 禁用 DHCP
-net --dhcp --disable
+# 设置 DNS
+net --set --dns 8.8.8.8
 
-# 重置网络配置
+# 设置主机名
+net --set --hostname TianShanOS
+
+# 保存配置到 NVS（重启后生效）
+net --save
+
+# 重启接口应用更改
+net --restart
+
+# 从 NVS 加载配置
+net --load
+
+# 重置为默认配置
 net --reset
 
 # JSON 格式输出
 net --status --json
 ```
+
+### 配置持久化
+
+- `net --set` 修改的配置是**临时的**，重启后丢失
+- 使用 `net --save` 保存到 NVS，重启后自动加载
+- 修改配置后需要 `net --restart` 才能生效
 
 ---
 
@@ -1039,7 +1066,7 @@ device --agx --status --json
 | `led` | ✅ 可用 | touch/board/matrix 全部可用 |
 | `fan` | ✅ 可用 | 支持 Fan 0（GPIO 41） |
 | `storage` | ✅ 可用 | SPIFFS 可用，SD 卡需插入 |
-| `net` | ✅ 可用 | W5500 以太网，静态 IP/DHCP 服务器 |
+| `net` | ⚠️ 部分 | 以太网可用，WiFi 未实现 |
 | `dhcp` | ✅ 可用 | 完整 DHCP 服务器，支持静态绑定 |
 | `fs` | ✅ 可用 | 文件系统操作（ls/cat/rm/mkdir 等） |
 | `device` | ⚠️ 模拟 | 未接入真实驱动 |
