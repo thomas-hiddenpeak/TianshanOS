@@ -13,6 +13,7 @@
 - [fan - 风扇控制](#fan---风扇控制)
 - [storage - 存储管理](#storage---存储管理)
 - [net - 网络管理](#net---网络管理)
+- [dhcp - DHCP 服务器管理](#dhcp---dhcp-服务器管理)
 - [device - 设备控制](#device---设备控制)
 
 ---
@@ -737,6 +738,125 @@ net --reset
 # JSON 格式输出
 net --status --json
 ```
+
+---
+
+## dhcp - DHCP 服务器管理
+
+管理 TianShanOS 内置的 DHCP 服务器，支持多接口（WiFi AP、Ethernet）。
+
+### 语法
+
+```
+dhcp [options]
+```
+
+### 选项
+
+| 选项 | 简写 | 说明 |
+|------|------|------|
+| `--status` | | 显示 DHCP 服务器状态 |
+| `--list` | | 列出所有接口状态 |
+| `--clients` | | 列出已连接的客户端 |
+| `--start` | | 启动 DHCP 服务器 |
+| `--stop` | | 停止 DHCP 服务器 |
+| `--restart` | | 重启 DHCP 服务器 |
+| `--pool` | | 配置地址池 |
+| `--bind` | | 添加静态绑定 |
+| `--unbind` | | 删除静态绑定 |
+| `--bindings` | | 列出所有静态绑定 |
+| `--save` | | 保存配置到 NVS |
+| `--reset` | | 重置为默认配置 |
+| `--iface <if>` | | 指定接口：`ap`、`eth`、`all`（默认） |
+| `--start-ip <ip>` | | 地址池起始 IP |
+| `--end-ip <ip>` | | 地址池结束 IP |
+| `--gateway <ip>` | | 网关地址 |
+| `--netmask <mask>` | | 子网掩码 |
+| `--dns <ip>` | | DNS 服务器地址 |
+| `--lease <min>` | | 租约时间（分钟） |
+| `--mac <addr>` | | MAC 地址（用于绑定） |
+| `--ip <addr>` | | IP 地址（用于绑定） |
+| `--hostname <name>` | | 主机名（用于绑定） |
+| `--json` | `-j` | JSON 格式输出 |
+| `--help` | `-h` | 显示帮助 |
+
+### 接口说明
+
+| 接口 | 别名 | 说明 |
+|------|------|------|
+| `ap` | `wifi`, `wifi_ap` | WiFi 接入点 |
+| `eth` | `ethernet` | 以太网接口 |
+| `all` | （默认） | 所有接口 |
+
+### 示例
+
+```bash
+# 显示所有接口 DHCP 状态
+dhcp --status
+
+# 显示以太网接口详细状态
+dhcp --status --iface eth
+
+# 列出所有客户端
+dhcp --clients
+
+# 列出以太网接口的客户端
+dhcp --clients --iface eth
+
+# 启动以太网 DHCP 服务器
+dhcp --start --iface eth
+
+# 停止 WiFi AP DHCP 服务器
+dhcp --stop --iface ap
+
+# 重启所有接口的 DHCP 服务器
+dhcp --restart
+
+# 配置以太网地址池
+dhcp --pool --iface eth --start-ip 10.10.99.100 --end-ip 10.10.99.200
+
+# 配置完整地址池
+dhcp --pool --iface eth \
+    --start-ip 10.10.99.100 \
+    --end-ip 10.10.99.200 \
+    --gateway 10.10.99.97 \
+    --netmask 255.255.255.0 \
+    --dns 8.8.8.8 \
+    --lease 120
+
+# 添加静态绑定（MAC → IP）
+dhcp --bind --iface eth --mac aa:bb:cc:dd:ee:ff --ip 10.10.99.50
+
+# 添加带主机名的静态绑定
+dhcp --bind --iface eth --mac aa:bb:cc:dd:ee:ff --ip 10.10.99.50 --hostname jetson-agx
+
+# 删除静态绑定
+dhcp --unbind --iface eth --mac aa:bb:cc:dd:ee:ff
+
+# 列出所有静态绑定
+dhcp --bindings --iface eth
+
+# 保存配置
+dhcp --save
+
+# 重置为默认配置
+dhcp --reset
+
+# JSON 格式输出
+dhcp --status --json
+dhcp --clients --iface eth --json
+```
+
+### 配置存储
+
+DHCP 配置存储在 NVS 中，重启后自动加载。使用 `--save` 命令保存当前配置，使用 `--reset` 恢复默认值。
+
+### 默认配置
+
+| 接口 | 地址池 | 网关 | DNS | 租约 |
+|------|--------|------|-----|------|
+| Ethernet | 10.10.99.100-103 | 10.10.99.100 | 8.8.8.8 | 60 分钟 |
+| WiFi AP | 192.168.4.2-10 | 192.168.4.1 | 192.168.4.1 | 60 分钟 |
 
 ---
 
