@@ -714,6 +714,7 @@ net [options]
 | `--save` | | 保存配置到 NVS |
 | `--load` | | 从 NVS 加载配置 |
 | `--reset` | | 重置为默认配置 |
+| `--ip` | | 快速显示 IP 地址 |
 | `--iface <if>` | | 指定接口：eth（默认） |
 | `--ip <addr>` | | 静态 IP 地址 |
 | `--netmask <mask>` | | 子网掩码 |
@@ -729,6 +730,9 @@ net [options]
 ```bash
 # 显示网络状态
 net --status
+
+# 快速查看 IP
+net --ip
 
 # 显示以太网配置详情
 net --config --iface eth

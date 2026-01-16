@@ -39,6 +39,7 @@ static struct {
     struct arg_lit *save;
     struct arg_lit *load;
     struct arg_lit *reset;
+    struct arg_lit *show_ip;     /* --ip: 快速显示IP配置 */
     struct arg_str *iface;
     struct arg_str *ip;
     struct arg_str *netmask;
@@ -74,6 +75,71 @@ static const char *state_color(ts_net_state_t state)
         case TS_NET_STATE_ERROR:       return "\033[31m";  /* 红色 */
         default:                       return "\033[90m";  /* 灰色 */
     }
+}
+
+/*===========================================================================*/
+/*                          Command: net --ip                                 */
+/*===========================================================================*/
+
+static int do_net_ip(const char *iface_str, bool json_out)
+{
+    ts_net_manager_status_t status;
+    esp_err_t ret = ts_net_manager_get_status(&status);
+    
+    if (ret != ESP_OK) {
+        ts_console_error("Failed to get network status\n");
+        return 1;
+    }
+    
+    ts_net_if_t iface = parse_iface(iface_str);
+    
+    /* 获取要显示的接口状态 */
+    ts_net_if_status_t *if_status = NULL;
+    const char *if_name = NULL;
+    
+    switch (iface) {
+        case TS_NET_IF_ETH:
+            if_status = &status.eth;
+            if_name = "eth";
+            break;
+        case TS_NET_IF_WIFI_STA:
+            if_status = &status.wifi_sta;
+            if_name = "wifi";
+            break;
+        case TS_NET_IF_WIFI_AP:
+            if_status = &status.wifi_ap;
+            if_name = "ap";
+            break;
+        default:
+            if_status = &status.eth;
+            if_name = "eth";
+            break;
+    }
+    
+    if (json_out) {
+        ts_console_printf("{\n");
+        ts_console_printf("  \"interface\": \"%s\",\n", if_name);
+        ts_console_printf("  \"has_ip\": %s,\n", if_status->has_ip ? "true" : "false");
+        if (if_status->has_ip) {
+            ts_console_printf("  \"ip\": \"%s\",\n", if_status->ip_info.ip);
+            ts_console_printf("  \"netmask\": \"%s\",\n", if_status->ip_info.netmask);
+            ts_console_printf("  \"gateway\": \"%s\",\n", if_status->ip_info.gateway);
+            ts_console_printf("  \"dns\": \"%s\"\n", if_status->ip_info.dns1);
+        }
+        ts_console_printf("}\n");
+    } else {
+        if (if_status->has_ip) {
+            ts_console_printf("%s: %s/%s gw %s\n",
+                if_name,
+                if_status->ip_info.ip,
+                if_status->ip_info.netmask,
+                if_status->ip_info.gateway);
+        } else {
+            ts_console_printf("%s: no IP\n", if_name);
+        }
+    }
+    
+    return 0;
 }
 
 /*===========================================================================*/
@@ -400,6 +466,7 @@ static int cmd_net(int argc, char **argv)
         ts_console_printf("  --save              Save configuration to NVS\n");
         ts_console_printf("  --load              Load configuration from NVS\n");
         ts_console_printf("  --reset             Reset to default configuration\n");
+        ts_console_printf("  --ip                Show IP address (quick view)\n");
         ts_console_printf("\n");
         ts_console_printf("Parameters:\n");
         ts_console_printf("  --iface <if>        Interface: eth, wifi (default: eth)\n");
@@ -413,6 +480,8 @@ static int cmd_net(int argc, char **argv)
         ts_console_printf("\n");
         ts_console_printf("Examples:\n");
         ts_console_printf("  net --status                          Show current status\n");
+        ts_console_printf("  net --ip                              Quick IP check\n");
+        ts_console_printf("  net --ip --iface wifi                 Quick WiFi IP check\n");
         ts_console_printf("  net --config --iface eth              Show ethernet config\n");
         ts_console_printf("  net --set --mode static --ip 10.0.0.100\n");
         ts_console_printf("  net --set --mode dhcp\n");
@@ -436,6 +505,10 @@ static int cmd_net(int argc, char **argv)
     
     if (s_net_args.config->count > 0) {
         return do_net_config(iface_str, json_out);
+    }
+    
+    if (s_net_args.show_ip->count > 0) {
+        return do_net_ip(iface_str, json_out);
     }
     
     if (s_net_args.set->count > 0) {
@@ -494,6 +567,7 @@ esp_err_t ts_cmd_net_register(void)
     s_net_args.save     = arg_lit0(NULL, "save", "Save configuration to NVS");
     s_net_args.load     = arg_lit0(NULL, "load", "Load configuration from NVS");
     s_net_args.reset    = arg_lit0(NULL, "reset", "Reset to default configuration");
+    s_net_args.show_ip  = arg_lit0(NULL, "ip", "Show IP address (quick view)");
     s_net_args.iface    = arg_str0(NULL, "iface", "<if>", "Interface: eth, wifi");
     s_net_args.ip       = arg_str0(NULL, "ip", "<addr>", "IP address");
     s_net_args.netmask  = arg_str0(NULL, "netmask", "<mask>", "Netmask");
