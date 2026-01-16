@@ -25,11 +25,24 @@
 #include "dhcpserver/dhcpserver.h"  /* For dhcps_lease_t */
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
+#include "freertos/task.h"
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
 
 #define TAG "ts_dhcps"
+
+/* 事件队列配置 */
+#define DHCP_EVENT_QUEUE_SIZE  8
+#define DHCP_EVENT_TASK_STACK  3072
+#define DHCP_EVENT_TASK_PRIO   5
+
+/* IP 事件数据结构（用于队列传递） */
+typedef struct {
+    uint8_t mac[6];
+    esp_ip4_addr_t ip;
+} dhcp_ip_event_t;
 
 /* ============================================================================
  * NVS 存储键
@@ -64,7 +77,7 @@ typedef struct {
     ts_dhcp_static_binding_t static_bindings[TS_DHCP_MAX_STATIC_BINDINGS];
     size_t static_binding_count;
     uint32_t total_offers;
-    uint32_t start_time;
+    TickType_t start_tick;           /* 启动时的 tick 计数 */
     esp_netif_t *netif;
 } ts_dhcp_if_state_t;
 
@@ -74,6 +87,8 @@ typedef struct {
     SemaphoreHandle_t mutex;
     ts_dhcp_if_state_t iface[TS_DHCP_IF_MAX];
     ts_dhcp_cb_node_t *callbacks;
+    QueueHandle_t event_queue;      /* IP 事件队列 */
+    TaskHandle_t event_task;        /* 事件处理任务 */
 } ts_dhcp_module_state_t;
 
 static ts_dhcp_module_state_t s_state = {0};
@@ -88,6 +103,9 @@ static void set_default_config(ts_dhcp_config_t *config);
 static esp_err_t apply_config_to_netif(ts_dhcp_if_t iface);
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                 int32_t event_id, void *event_data);
+static void ip_event_handler(void *arg, esp_event_base_t event_base,
+                              int32_t event_id, void *event_data);
+static void dhcp_event_task(void *arg);
 
 /* ============================================================================
  * 工具函数实现
@@ -366,71 +384,105 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     xSemaphoreGive(s_state.mutex);
 }
 
-/* IP 分配事件处理 - 用于追踪 DHCP 客户端
+/* IP 分配事件处理 - 将事件发送到队列，由独立任务处理
  * 
- * 注意：此函数在系统事件任务中运行，需保持简洁以避免栈溢出
- * 关键：必须在使用任何状态前检查 initialized 和 mutex
+ * 这样避免在系统事件任务中使用 mutex 导致的崩溃
  */
 static void ip_event_handler(void *arg, esp_event_base_t event_base,
                               int32_t event_id, void *event_data)
 {
     if (event_id != IP_EVENT_AP_STAIPASSIGNED) return;
-    
-    /* 关键安全检查：确保模块已初始化且 mutex 有效 */
-    if (!s_state.initialized || !s_state.mutex) {
-        return;
-    }
+    if (!s_state.event_queue) return;
     
     ip_event_ap_staipassigned_t *event = (ip_event_ap_staipassigned_t *)event_data;
     
-    /* 尝试获取互斥锁（非阻塞） */
-    if (xSemaphoreTake(s_state.mutex, pdMS_TO_TICKS(10)) != pdTRUE) {
-        return;  /* 无法获取锁，跳过追踪 */
-    }
+    /* 将事件数据发送到队列（非阻塞） */
+    dhcp_ip_event_t ev;
+    memcpy(ev.mac, event->mac, 6);
+    ev.ip = event->ip;
     
-    /* 检查以太网接口 DHCP 服务器状态 */
-    ts_dhcp_if_state_t *if_state = &s_state.iface[TS_DHCP_IF_ETH];
+    xQueueSend(s_state.event_queue, &ev, 0);
+}
+
+/* DHCP 事件处理任务 - 在独立任务中安全处理 IP 分配事件 */
+static void dhcp_event_task(void *arg)
+{
+    dhcp_ip_event_t ev;
     
-    /* 直接查找 netif，不调用可能打印日志的函数 */
-    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("ETH_DHCPS");
-    if (!netif) {
-        netif = esp_netif_get_handle_from_ifkey("ETH_DEF");
-    }
+    TS_LOGI(TAG, "DHCP event task started");
     
-    if (netif) {
-        esp_netif_dhcp_status_t dhcp_status;
-        if (esp_netif_dhcps_get_status(netif, &dhcp_status) == ESP_OK &&
-            dhcp_status == ESP_NETIF_DHCP_STARTED) {
-            
-            /* 查找或添加客户端 */
-            bool found = false;
-            for (size_t i = 0; i < if_state->client_count; i++) {
-                if (memcmp(if_state->clients[i].mac, event->mac, 6) == 0) {
-                    /* 更新现有客户端 */
-                    esp_ip4addr_ntoa(&event->ip, if_state->clients[i].ip, TS_DHCP_IP_STR_MAX_LEN);
-                    if_state->clients[i].lease_start = (uint32_t)time(NULL);
-                    if_state->clients[i].lease_expire = if_state->clients[i].lease_start + 
-                                                        if_state->config.lease_time_min * 60;
-                    found = true;
-                    break;
+    while (1) {
+        /* 等待事件 */
+        if (xQueueReceive(s_state.event_queue, &ev, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        
+        /* 检查模块状态 */
+        if (!s_state.initialized || !s_state.mutex) {
+            continue;
+        }
+        
+        /* 获取互斥锁 */
+        if (xSemaphoreTake(s_state.mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+            TS_LOGW(TAG, "Failed to acquire mutex for client tracking");
+            continue;
+        }
+        
+        /* 检查以太网接口 DHCP 服务器状态 */
+        ts_dhcp_if_state_t *if_state = &s_state.iface[TS_DHCP_IF_ETH];
+        
+        /* 查找 netif */
+        esp_netif_t *netif = esp_netif_get_handle_from_ifkey("ETH_DHCPS");
+        if (!netif) {
+            netif = esp_netif_get_handle_from_ifkey("ETH_DEF");
+        }
+        
+        if (netif) {
+            esp_netif_dhcp_status_t dhcp_status;
+            if (esp_netif_dhcps_get_status(netif, &dhcp_status) == ESP_OK &&
+                dhcp_status == ESP_NETIF_DHCP_STARTED) {
+                
+                /* 查找或添加客户端 */
+                bool found = false;
+                for (size_t i = 0; i < if_state->client_count; i++) {
+                    if (memcmp(if_state->clients[i].mac, ev.mac, 6) == 0) {
+                        /* 更新现有客户端 */
+                        esp_ip4addr_ntoa(&ev.ip, if_state->clients[i].ip, TS_DHCP_IP_STR_MAX_LEN);
+                        if_state->clients[i].lease_start = (uint32_t)time(NULL);
+                        if_state->clients[i].lease_expire = if_state->clients[i].lease_start + 
+                                                            if_state->config.lease_time_min * 60;
+                        found = true;
+                        
+                        char mac_str[18];
+                        ts_dhcp_mac_array_to_str(ev.mac, mac_str, sizeof(mac_str));
+                        TS_LOGI(TAG, "Client renewed: %s -> %s", mac_str, if_state->clients[i].ip);
+                        break;
+                    }
+                }
+                
+                /* 添加新客户端 */
+                if (!found && if_state->client_count < TS_DHCP_MAX_CLIENTS) {
+                    ts_dhcp_client_t *client = &if_state->clients[if_state->client_count];
+                    memcpy(client->mac, ev.mac, 6);
+                    esp_ip4addr_ntoa(&ev.ip, client->ip, TS_DHCP_IP_STR_MAX_LEN);
+                    client->lease_start = (uint32_t)time(NULL);
+                    client->lease_expire = client->lease_start + if_state->config.lease_time_min * 60;
+                    client->hostname[0] = '\0';
+                    if_state->client_count++;
+                    if_state->total_offers++;
+                    
+                    char mac_str[18];
+                    ts_dhcp_mac_array_to_str(ev.mac, mac_str, sizeof(mac_str));
+                    TS_LOGI(TAG, "New client: %s -> %s (total: %zu)", mac_str, client->ip, if_state->client_count);
+                    
+                    /* 发送事件通知 */
+                    notify_event(TS_DHCP_IF_ETH, TS_DHCP_EVENT_LEASE_NEW, client);
                 }
             }
-            
-            /* 添加新客户端 */
-            if (!found && if_state->client_count < TS_DHCP_MAX_CLIENTS) {
-                ts_dhcp_client_t *client = &if_state->clients[if_state->client_count];
-                memcpy(client->mac, event->mac, 6);
-                esp_ip4addr_ntoa(&event->ip, client->ip, TS_DHCP_IP_STR_MAX_LEN);
-                client->lease_start = (uint32_t)time(NULL);
-                client->lease_expire = client->lease_start + if_state->config.lease_time_min * 60;
-                client->hostname[0] = '\0';
-                if_state->client_count++;
-                if_state->total_offers++;
-            }
         }
+        
+        xSemaphoreGive(s_state.mutex);
     }
-    
-    xSemaphoreGive(s_state.mutex);
 }
 
 /* ============================================================================
@@ -450,6 +502,27 @@ esp_err_t ts_dhcp_server_init(void)
         return ESP_ERR_NO_MEM;
     }
     
+    /* 创建事件队列 - 用于从 IP 事件上下文安全转发事件 */
+    s_state.event_queue = xQueueCreate(DHCP_EVENT_QUEUE_SIZE, sizeof(dhcp_ip_event_t));
+    if (!s_state.event_queue) {
+        TS_LOGE(TAG, "Failed to create event queue");
+        vSemaphoreDelete(s_state.mutex);
+        s_state.mutex = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    
+    /* 创建事件处理任务 - 在独立任务中处理 IP 事件，避免 ISR 上下文问题 */
+    BaseType_t ret = xTaskCreate(dhcp_event_task, "dhcp_evt", DHCP_EVENT_TASK_STACK, 
+                                  NULL, DHCP_EVENT_TASK_PRIO, &s_state.event_task);
+    if (ret != pdPASS) {
+        TS_LOGE(TAG, "Failed to create event task");
+        vQueueDelete(s_state.event_queue);
+        s_state.event_queue = NULL;
+        vSemaphoreDelete(s_state.mutex);
+        s_state.mutex = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    
     /* 初始化接口状态 */
     for (int i = 0; i < TS_DHCP_IF_MAX; i++) {
         set_default_config(&s_state.iface[i].config);
@@ -461,17 +534,13 @@ esp_err_t ts_dhcp_server_init(void)
     /* 加载 NVS 配置 */
     ts_dhcp_server_load_config();
     
-    /* 注册事件处理器 - 只注册 WiFi 事件
-     * 注意：不注册 IP_EVENT_AP_STAIPASSIGNED，因为在事件任务中处理
-     * 可能导致崩溃（mutex 相关）。客户端追踪功能暂时禁用。
-     */
+    /* 注册事件处理器 */
     esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL);
-    /* 暂时禁用 IP 事件处理，避免在事件任务中使用 mutex 导致崩溃
-     * esp_event_handler_register(IP_EVENT, IP_EVENT_AP_STAIPASSIGNED, ip_event_handler, NULL);
-     */
+    /* IP 事件现在通过队列安全处理，可以重新启用 */
+    esp_event_handler_register(IP_EVENT, IP_EVENT_AP_STAIPASSIGNED, ip_event_handler, NULL);
     
     s_state.initialized = true;
-    TS_LOGI(TAG, "DHCP server initialized");
+    TS_LOGI(TAG, "DHCP server initialized (event queue enabled)");
     
     return ESP_OK;
 }
@@ -487,9 +556,19 @@ esp_err_t ts_dhcp_server_deinit(void)
     
     /* 注销事件处理器 */
     esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler);
-    /* IP 事件处理器已禁用
-     * esp_event_handler_unregister(IP_EVENT, IP_EVENT_AP_STAIPASSIGNED, ip_event_handler);
-     */
+    esp_event_handler_unregister(IP_EVENT, IP_EVENT_AP_STAIPASSIGNED, ip_event_handler);
+    
+    /* 停止事件处理任务 */
+    if (s_state.event_task) {
+        vTaskDelete(s_state.event_task);
+        s_state.event_task = NULL;
+    }
+    
+    /* 删除事件队列 */
+    if (s_state.event_queue) {
+        vQueueDelete(s_state.event_queue);
+        s_state.event_queue = NULL;
+    }
     
     /* 释放回调链表 */
     ts_dhcp_cb_node_t *node = s_state.callbacks;
@@ -555,7 +634,7 @@ esp_err_t ts_dhcp_server_start(ts_dhcp_if_t iface)
     }
     
     if_state->state = TS_DHCP_STATE_RUNNING;
-    if_state->start_time = (uint32_t)time(NULL);
+    if_state->start_tick = xTaskGetTickCount();
     
     xSemaphoreGive(s_state.mutex);
     
@@ -645,9 +724,10 @@ esp_err_t ts_dhcp_server_get_status(ts_dhcp_if_t iface, ts_dhcp_status_t *status
     status->total_pool_size = ntohl(end) - ntohl(start) + 1;
     status->available_count = status->total_pool_size - status->active_leases;
     
-    /* 计算运行时间 */
-    if (if_state->state == TS_DHCP_STATE_RUNNING && if_state->start_time > 0) {
-        status->uptime_sec = (uint32_t)time(NULL) - if_state->start_time;
+    /* 计算运行时间 - 使用 tick 计数，不依赖系统时间 */
+    if (if_state->state == TS_DHCP_STATE_RUNNING && if_state->start_tick > 0) {
+        TickType_t elapsed_ticks = xTaskGetTickCount() - if_state->start_tick;
+        status->uptime_sec = elapsed_ticks / configTICK_RATE_HZ;
     } else {
         status->uptime_sec = 0;
     }

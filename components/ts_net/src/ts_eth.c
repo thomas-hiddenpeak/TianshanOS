@@ -15,6 +15,7 @@
 
 #include "ts_eth.h"
 #include "ts_net.h"
+#include "ts_dhcp_server.h"
 #include "ts_pin_manager.h"
 #include "ts_log.h"
 #include "ts_event.h"
@@ -71,24 +72,11 @@ static void dhcp_start_task(void *arg)
     vTaskDelay(pdMS_TO_TICKS(100));
     
     if (netif && s_link_up) {
-        /* 1. 停止 DHCP 服务器 */
-        esp_netif_dhcps_stop(netif);
-        
-        /* 2. 设置 IP 池配置 */
-        dhcps_lease_t lease;
-        memset(&lease, 0, sizeof(lease));
-        lease.enable = true;
-        lease.start_ip.addr = ipaddr_addr(ETH_DHCP_POOL_START);
-        lease.end_ip.addr = ipaddr_addr(ETH_DHCP_POOL_END);
-        esp_netif_dhcps_option(netif, ESP_NETIF_OP_SET,
-                               ESP_NETIF_REQUESTED_IP_ADDRESS,
-                               &lease, sizeof(lease));
-        
-        /* 3. 启动 DHCP 服务器 */
-        esp_err_t ret = esp_netif_dhcps_start(netif);
+        /* 通过 ts_dhcp_server 启动 DHCP 服务器
+         * 这样可以正确追踪状态和统计信息 */
+        esp_err_t ret = ts_dhcp_server_start(TS_DHCP_IF_ETH);
         if (ret == ESP_OK) {
-            TS_LOGI(TAG, "DHCP server started (pool: %s - %s)", 
-                    ETH_DHCP_POOL_START, ETH_DHCP_POOL_END);
+            TS_LOGI(TAG, "DHCP server started via ts_dhcp_server");
         } else if (ret != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED) {
             TS_LOGW(TAG, "DHCP start failed: %s", esp_err_to_name(ret));
         }
@@ -136,9 +124,7 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
         case ETHERNET_EVENT_DISCONNECTED:
             TS_LOGI(TAG, "Ethernet link down");
             s_link_up = false;
-            if (netif) {
-                esp_netif_dhcps_stop(netif);
-            }
+            ts_dhcp_server_stop(TS_DHCP_IF_ETH);
             break;
             
         case ETHERNET_EVENT_START:
