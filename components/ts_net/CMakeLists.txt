@@ -5,6 +5,7 @@ idf_component_register(
         "src/ts_eth.c"
         "src/ts_wifi.c"
         "src/ts_dhcp_server.c"
+        "src/ts_nat.c"
         "src/ts_http_server.c"
         "src/ts_https_server.c"
     INCLUDE_DIRS

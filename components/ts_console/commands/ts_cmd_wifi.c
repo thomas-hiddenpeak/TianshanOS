@@ -22,6 +22,8 @@
 #include "ts_log.h"
 #include "esp_wifi.h"
 #include "argtable3/argtable3.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -155,26 +157,48 @@ static int do_wifi_scan(bool json_out)
 {
     ts_console_printf("Scanning for WiFi networks...\n");
     
-    /* 确保 WiFi 已初始化并设置为 STA 模式（用于扫描） */
-    ts_wifi_mode_t mode = ts_wifi_get_mode();
-    if (mode == TS_WIFI_MODE_OFF) {
-        esp_err_t ret = ts_wifi_set_mode(TS_WIFI_MODE_STA);
-        if (ret != ESP_OK) {
-            ts_console_error("Failed to set WiFi mode: %s\n", esp_err_to_name(ret));
+    /* 确保 WiFi 已初始化 - 通过 ts_net_manager */
+    ts_net_manager_status_t status;
+    ts_net_manager_get_status(&status);
+    
+    /* 如果 WiFi STA 和 AP 都没启动，需要临时启用 STA 模式用于扫描 */
+    bool need_stop_after = false;
+    if (status.wifi_sta.state < TS_NET_STATE_STARTING &&
+        status.wifi_ap.state < TS_NET_STATE_STARTING) {
+        
+        /* 设置 STA 模式并启动 */
+        ts_wifi_mode_t mode = ts_wifi_get_mode();
+        if (mode == TS_WIFI_MODE_OFF) {
+            esp_err_t ret = ts_wifi_set_mode(TS_WIFI_MODE_STA);
+            if (ret != ESP_OK) {
+                ts_console_error("Failed to set WiFi mode: %s\n", esp_err_to_name(ret));
+                return 1;
+            }
+        }
+        
+        /* 配置一个空的 STA 配置用于扫描 */
+        wifi_config_t wifi_config = {0};
+        esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+        
+        esp_err_t ret = esp_wifi_start();
+        if (ret != ESP_OK && ret != ESP_ERR_WIFI_CONN) {
+            ts_console_error("Failed to start WiFi for scan: %s\n", esp_err_to_name(ret));
             return 1;
         }
-        /* 启动 WiFi（STA 模式下需要启动才能扫描） */
-        ret = esp_wifi_start();
-        if (ret != ESP_OK) {
-            ts_console_error("Failed to start WiFi: %s\n", esp_err_to_name(ret));
-            return 1;
-        }
+        
+        /* 等待 WiFi 启动完成 */
+        vTaskDelay(pdMS_TO_TICKS(100));
+        need_stop_after = true;
     }
     
     /* 启动扫描（阻塞） */
     esp_err_t ret = ts_wifi_scan_start(true);
     if (ret != ESP_OK) {
         ts_console_error("Scan failed: %s\n", esp_err_to_name(ret));
+        if (need_stop_after) {
+            esp_wifi_stop();
+            ts_wifi_set_mode(TS_WIFI_MODE_OFF);
+        }
         return 1;
     }
     
@@ -217,6 +241,12 @@ static int do_wifi_scan(bool json_out)
                 auth_mode_str(results[i].auth_mode));
         }
         ts_console_printf("\n");
+    }
+    
+    /* 如果是临时启动的 WiFi，扫描后停止 */
+    if (need_stop_after) {
+        esp_wifi_stop();
+        ts_wifi_set_mode(TS_WIFI_MODE_OFF);
     }
     
     return 0;

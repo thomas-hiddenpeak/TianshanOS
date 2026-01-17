@@ -7,6 +7,7 @@
 
 #include "esp_err.h"
 #include "esp_wifi_types.h"
+#include "esp_netif.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -21,6 +22,12 @@ typedef enum {
     TS_WIFI_MODE_AP,
     TS_WIFI_MODE_APSTA
 } ts_wifi_mode_t;
+
+/** WiFi interface type */
+typedef enum {
+    TS_WIFI_IF_STA,
+    TS_WIFI_IF_AP,
+} ts_wifi_if_t;
 
 /** WiFi station config */
 typedef struct {
@@ -134,6 +141,18 @@ esp_err_t ts_wifi_scan_start(bool block);
  * @brief Get scan results
  */
 esp_err_t ts_wifi_scan_get_results(ts_wifi_scan_result_t *results, uint16_t *count);
+
+/**
+ * @brief Check if WiFi STA is connected
+ */
+bool ts_wifi_is_connected(void);
+
+/**
+ * @brief Get netif handle for specified interface
+ * @param iface Interface type (STA or AP)
+ * @return esp_netif_t handle or NULL
+ */
+esp_netif_t *ts_wifi_get_netif(ts_wifi_if_t iface);
 
 #ifdef __cplusplus
 }

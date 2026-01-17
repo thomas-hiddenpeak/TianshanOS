@@ -248,19 +248,17 @@ static void net_event_handler(void *arg, esp_event_base_t event_base,
 {
     (void)arg;
     
-    xSemaphoreTake(s_state.mutex, portMAX_DELAY);
-    
-    if (event_base == ETH_EVENT) {
+    /* 只处理 ETH_EVENT */
+    if (event_base != ETH_EVENT) {
+        return;
+    }
         switch (event_id) {
             case ETHERNET_EVENT_CONNECTED:
                 TS_LOGI(TAG, "Ethernet link up");
                 s_state.eth_status.link_up = true;
                 s_state.eth_status.state = TS_NET_STATE_CONNECTED;
                 s_state.eth_connect_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
-                
-                /* 发布到事件总线 */
-                ts_event_post(TS_EVENT_NETWORK, TS_EVT_ETH_CONNECTED, NULL, 0, 0);
-                notify_callbacks(TS_NET_IF_ETH, TS_NET_STATE_CONNECTED);
+                /* 不在事件处理器内发布事件，避免队列锁冲突 */
                 break;
                 
             case ETHERNET_EVENT_DISCONNECTED:
@@ -269,9 +267,6 @@ static void net_event_handler(void *arg, esp_event_base_t event_base,
                 s_state.eth_status.has_ip = false;
                 s_state.eth_status.state = TS_NET_STATE_DISCONNECTED;
                 memset(&s_state.eth_status.ip_info, 0, sizeof(s_state.eth_status.ip_info));
-                
-                ts_event_post(TS_EVENT_NETWORK, TS_EVT_ETH_DISCONNECTED, NULL, 0, 0);
-                notify_callbacks(TS_NET_IF_ETH, TS_NET_STATE_DISCONNECTED);
                 break;
                 
             case ETHERNET_EVENT_START:
@@ -286,9 +281,6 @@ static void net_event_handler(void *arg, esp_event_base_t event_base,
                 s_state.eth_status.has_ip = false;
                 break;
         }
-    }
-    
-    xSemaphoreGive(s_state.mutex);
 }
 
 static void ip_event_handler(void *arg, esp_event_base_t event_base,
@@ -303,12 +295,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         return;
     }
     
-    /* 确保 mutex 有效 */
-    if (!s_state.mutex) {
-        return;
-    }
-    
-    xSemaphoreTake(s_state.mutex, portMAX_DELAY);
+    /* 注意：不使用 mutex，事件循环是单线程的，直接更新状态 */
     
     if (event_id == IP_EVENT_ETH_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
@@ -339,19 +326,12 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
                                      TS_NET_IP_STR_MAX_LEN);
             }
         }
-        
-        ts_event_post(TS_EVENT_NETWORK, TS_EVT_GOT_IP, 
-                      &event->ip_info, sizeof(event->ip_info), 0);
-        notify_callbacks(TS_NET_IF_ETH, TS_NET_STATE_GOT_IP);
     }
     else if (event_id == IP_EVENT_ETH_LOST_IP) {
         TS_LOGW(TAG, "Ethernet lost IP");
         s_state.eth_status.has_ip = false;
         s_state.eth_status.state = TS_NET_STATE_CONNECTED;
         memset(&s_state.eth_status.ip_info, 0, sizeof(s_state.eth_status.ip_info));
-        
-        ts_event_post(TS_EVENT_NETWORK, TS_EVT_LOST_IP, NULL, 0, 0);
-        notify_callbacks(TS_NET_IF_ETH, TS_NET_STATE_CONNECTED);
     }
     else if (event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
@@ -370,13 +350,7 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         ts_net_ip_u32_to_str(event->ip_info.gw.addr, 
                              s_state.wifi_sta_status.ip_info.gateway, 
                              TS_NET_IP_STR_MAX_LEN);
-        
-        ts_event_post(TS_EVENT_NETWORK, TS_EVT_GOT_IP, 
-                      &event->ip_info, sizeof(event->ip_info), 0);
-        notify_callbacks(TS_NET_IF_WIFI_STA, TS_NET_STATE_GOT_IP);
     }
-    
-    xSemaphoreGive(s_state.mutex);
 }
 
 static void notify_callbacks(ts_net_if_t iface, ts_net_state_t state)
@@ -441,10 +415,15 @@ esp_err_t ts_net_manager_init(void)
         return ret;
     }
     
-    /* 注册事件处理器 */
-    esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, net_event_handler, NULL);
-    esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, ip_event_handler, NULL);
-    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, net_event_handler, NULL);
+    /* 注册事件处理器 - 只注册需要处理的事件，避免 ESP_EVENT_ANY_ID */
+    esp_event_handler_register(ETH_EVENT, ETHERNET_EVENT_CONNECTED, net_event_handler, NULL);
+    esp_event_handler_register(ETH_EVENT, ETHERNET_EVENT_DISCONNECTED, net_event_handler, NULL);
+    esp_event_handler_register(ETH_EVENT, ETHERNET_EVENT_START, net_event_handler, NULL);
+    esp_event_handler_register(ETH_EVENT, ETHERNET_EVENT_STOP, net_event_handler, NULL);
+    esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, ip_event_handler, NULL);
+    esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_LOST_IP, ip_event_handler, NULL);
+    esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, ip_event_handler, NULL);
+    /* 注意：不再注册 WIFI_EVENT，由 ts_wifi.c 和 ts_dhcp_server.c 处理 */
     
     /* 初始化以太网硬件 */
 #ifdef CONFIG_TS_NET_ETHERNET_ENABLE
@@ -522,9 +501,14 @@ esp_err_t ts_net_manager_deinit(void)
     ts_net_manager_stop(TS_NET_IF_WIFI_STA);
     
     /* 注销事件处理器 */
-    esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, net_event_handler);
-    esp_event_handler_unregister(IP_EVENT, ESP_EVENT_ANY_ID, ip_event_handler);
-    esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, net_event_handler);
+    esp_event_handler_unregister(ETH_EVENT, ETHERNET_EVENT_CONNECTED, net_event_handler);
+    esp_event_handler_unregister(ETH_EVENT, ETHERNET_EVENT_DISCONNECTED, net_event_handler);
+    esp_event_handler_unregister(ETH_EVENT, ETHERNET_EVENT_START, net_event_handler);
+    esp_event_handler_unregister(ETH_EVENT, ETHERNET_EVENT_STOP, net_event_handler);
+    esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, ip_event_handler);
+    esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_LOST_IP, ip_event_handler);
+    esp_event_handler_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, ip_event_handler);
+    /* 注意：WIFI_EVENT 不再由我们注册 */
     
     /* 反初始化以太网 */
 #ifdef CONFIG_TS_NET_ETHERNET_ENABLE

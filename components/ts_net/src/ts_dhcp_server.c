@@ -544,19 +544,25 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 {
     if (event_base != WIFI_EVENT) return;
     
-    xSemaphoreTake(s_state.mutex, portMAX_DELAY);
+    /* 只处理 AP 相关事件 */
+    if (event_id != WIFI_EVENT_AP_STACONNECTED && 
+        event_id != WIFI_EVENT_AP_STADISCONNECTED &&
+        event_id != WIFI_EVENT_AP_START &&
+        event_id != WIFI_EVENT_AP_STOP) {
+        return;
+    }
+    
+    /* 注意：不使用 mutex，避免事件循环死锁 */
     ts_dhcp_if_state_t *if_state = &s_state.iface[TS_DHCP_IF_AP];
     
     switch (event_id) {
         case WIFI_EVENT_AP_STACONNECTED: {
             wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *)event_data;
-            char mac_str[18];
-            snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
-                     event->mac[0], event->mac[1], event->mac[2],
-                     event->mac[3], event->mac[4], event->mac[5]);
-            TS_LOGI(TAG, "Station connected: %s, AID=%d", mac_str, event->aid);
+            TS_LOGI(TAG, "Station connected: %02x:%02x:%02x:%02x:%02x:%02x, AID=%d",
+                    event->mac[0], event->mac[1], event->mac[2],
+                    event->mac[3], event->mac[4], event->mac[5], event->aid);
             
-            /* 记录客户端 */
+            /* 记录客户端（简化，不使用 mutex） */
             if (if_state->client_count < TS_DHCP_MAX_CLIENTS) {
                 ts_dhcp_client_t *client = &if_state->clients[if_state->client_count];
                 memset(client, 0, sizeof(*client));
@@ -566,32 +572,24 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                        if_state->config.lease_time_min * 60;
                 if_state->client_count++;
                 if_state->total_offers++;
-                
-                notify_event(TS_DHCP_IF_AP, TS_DHCP_EVENT_CLIENT_CONNECT, client);
             }
             break;
         }
         
         case WIFI_EVENT_AP_STADISCONNECTED: {
             wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *)event_data;
-            char mac_str[18];
-            snprintf(mac_str, sizeof(mac_str), "%02x:%02x:%02x:%02x:%02x:%02x",
-                     event->mac[0], event->mac[1], event->mac[2],
-                     event->mac[3], event->mac[4], event->mac[5]);
-            TS_LOGI(TAG, "Station disconnected: %s, AID=%d", mac_str, event->aid);
+            TS_LOGI(TAG, "Station disconnected: %02x:%02x:%02x:%02x:%02x:%02x, AID=%d",
+                    event->mac[0], event->mac[1], event->mac[2],
+                    event->mac[3], event->mac[4], event->mac[5], event->aid);
             
             /* 从列表移除 */
             for (size_t i = 0; i < if_state->client_count; i++) {
                 if (memcmp(if_state->clients[i].mac, event->mac, 6) == 0) {
-                    ts_dhcp_client_t client = if_state->clients[i];
-                    
                     /* 移动后面的元素 */
                     for (size_t j = i; j < if_state->client_count - 1; j++) {
                         if_state->clients[j] = if_state->clients[j + 1];
                     }
                     if_state->client_count--;
-                    
-                    notify_event(TS_DHCP_IF_AP, TS_DHCP_EVENT_CLIENT_DISCONNECT, &client);
                     break;
                 }
             }
@@ -607,8 +605,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             if_state->client_count = 0;
             break;
     }
-    
-    xSemaphoreGive(s_state.mutex);
 }
 
 /* IP 分配事件处理 - 将事件发送到队列，由独立任务处理
@@ -761,8 +757,11 @@ esp_err_t ts_dhcp_server_init(void)
     /* 加载 NVS 配置 */
     ts_dhcp_server_load_config();
     
-    /* 注册事件处理器 */
-    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL);
+    /* 注册事件处理器 - 只注册 AP 相关事件，避免 STA 事件导致不必要的处理 */
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_START, wifi_event_handler, NULL);
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_STOP, wifi_event_handler, NULL);
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_STACONNECTED, wifi_event_handler, NULL);
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_AP_STADISCONNECTED, wifi_event_handler, NULL);
     /* IP 事件现在通过队列安全处理，可以重新启用 */
     esp_event_handler_register(IP_EVENT, IP_EVENT_AP_STAIPASSIGNED, ip_event_handler, NULL);
     
@@ -782,7 +781,10 @@ esp_err_t ts_dhcp_server_deinit(void)
     }
     
     /* 注销事件处理器 */
-    esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler);
+    esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_AP_START, wifi_event_handler);
+    esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_AP_STOP, wifi_event_handler);
+    esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_AP_STACONNECTED, wifi_event_handler);
+    esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_AP_STADISCONNECTED, wifi_event_handler);
     esp_event_handler_unregister(IP_EVENT, IP_EVENT_AP_STAIPASSIGNED, ip_event_handler);
     
     /* 停止事件处理任务 */

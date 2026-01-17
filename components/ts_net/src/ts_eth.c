@@ -242,10 +242,12 @@ esp_err_t ts_eth_init(const ts_eth_config_t *config)
      * 注册事件处理器
      * eth_event_handler: 处理以太网状态（link up/down）
      * 
-     * 注意：不注册 IP_EVENT_AP_STAIPASSIGNED 事件，因为它在系统事件任务中
-     * 触发时可能导致崩溃。DHCP 分配日志由 lwIP 自动输出。
+     * 只注册特定事件，避免 ESP_EVENT_ANY_ID 导致与 ts_net_manager 重复处理
      */
-    esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, eth_event_handler, s_eth_netif);
+    esp_event_handler_register(ETH_EVENT, ETHERNET_EVENT_CONNECTED, eth_event_handler, s_eth_netif);
+    esp_event_handler_register(ETH_EVENT, ETHERNET_EVENT_DISCONNECTED, eth_event_handler, s_eth_netif);
+    esp_event_handler_register(ETH_EVENT, ETHERNET_EVENT_START, eth_event_handler, s_eth_netif);
+    esp_event_handler_register(ETH_EVENT, ETHERNET_EVENT_STOP, eth_event_handler, s_eth_netif);
     
     // SPI bus configuration
     spi_bus_config_t buscfg = {
@@ -373,6 +375,12 @@ esp_err_t ts_eth_deinit(void)
     if (!s_initialized) return ESP_OK;
     
     ts_eth_stop();
+    
+    // Unregister event handlers
+    esp_event_handler_unregister(ETH_EVENT, ETHERNET_EVENT_CONNECTED, eth_event_handler);
+    esp_event_handler_unregister(ETH_EVENT, ETHERNET_EVENT_DISCONNECTED, eth_event_handler);
+    esp_event_handler_unregister(ETH_EVENT, ETHERNET_EVENT_START, eth_event_handler);
+    esp_event_handler_unregister(ETH_EVENT, ETHERNET_EVENT_STOP, eth_event_handler);
     
     if (s_eth_handle) {
         esp_eth_driver_uninstall(s_eth_handle);

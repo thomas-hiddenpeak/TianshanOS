@@ -18,6 +18,7 @@ set(TS_CONSOLE_SRCS
     "commands/ts_cmd_device.c"
     "commands/ts_cmd_dhcp.c"
     "commands/ts_cmd_wifi.c"
+    "commands/ts_cmd_nat.c"
     "commands/ts_cmd_fs.c"
     "commands/ts_cmd_register.c"
 )

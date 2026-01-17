@@ -30,40 +30,16 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             case WIFI_EVENT_STA_CONNECTED:
                 TS_LOGI(TAG, "WiFi STA connected");
                 s_sta_connected = true;
-                ts_event_post(TS_EVENT_NETWORK, TS_EVT_WIFI_CONNECTED, NULL, 0, 0);
+                // 不在事件处理器内发布事件，避免队列锁冲突
                 break;
             case WIFI_EVENT_STA_DISCONNECTED:
                 TS_LOGI(TAG, "WiFi STA disconnected");
                 s_sta_connected = false;
-                ts_event_post(TS_EVENT_NETWORK, TS_EVT_WIFI_DISCONNECTED, NULL, 0, 0);
                 break;
-            case WIFI_EVENT_AP_START:
-                TS_LOGI(TAG, "WiFi AP started");
-                break;
-            case WIFI_EVENT_AP_STACONNECTED: {
-                wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *)event_data;
-                TS_LOGI(TAG, "Station %02x:%02x:%02x:%02x:%02x:%02x joined",
-                        event->mac[0], event->mac[1], event->mac[2],
-                        event->mac[3], event->mac[4], event->mac[5]);
-                break;
-            }
-            case WIFI_EVENT_AP_STADISCONNECTED: {
-                wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *)event_data;
-                TS_LOGI(TAG, "Station %02x:%02x:%02x:%02x:%02x:%02x left",
-                        event->mac[0], event->mac[1], event->mac[2],
-                        event->mac[3], event->mac[4], event->mac[5]);
-                break;
-            }
-        }
-    } else if (event_base == IP_EVENT) {
-        if (event_id == IP_EVENT_STA_GOT_IP) {
-            ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-            TS_LOGI(TAG, "WiFi got IP: %d.%d.%d.%d",
-                    IP2STR(&event->ip_info.ip));
-            ts_event_post(TS_EVENT_NETWORK, TS_EVT_GOT_IP,
-                          &event->ip_info, sizeof(event->ip_info), 0);
+            /* AP 事件由 ts_dhcp_server 处理 */
         }
     }
+    /* IP 事件由 ts_net_manager 统一处理 */
 }
 
 esp_err_t ts_wifi_init(void)
@@ -84,9 +60,12 @@ esp_err_t ts_wifi_init(void)
         return ret;
     }
     
-    // Register event handlers
-    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL);
-    esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event_handler, NULL);
+    // Register event handlers - 只注册 STA 相关事件
+    // AP 事件由 ts_dhcp_server 处理，这里不注册避免重复
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_START, wifi_event_handler, NULL);
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, wifi_event_handler, NULL);
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, wifi_event_handler, NULL);
+    /* IP 事件由 ts_net_manager 统一处理，这里不注册 */
     
     s_initialized = true;
     TS_LOGI(TAG, "WiFi initialized");
@@ -96,6 +75,12 @@ esp_err_t ts_wifi_init(void)
 esp_err_t ts_wifi_deinit(void)
 {
     if (!s_initialized) return ESP_OK;
+    
+    // Unregister event handlers (只有 STA 事件)
+    esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_START, wifi_event_handler);
+    esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, wifi_event_handler);
+    esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, wifi_event_handler);
+    /* IP 事件由 ts_net_manager 处理 */
     
     esp_wifi_stop();
     esp_wifi_deinit();
@@ -281,4 +266,21 @@ esp_err_t ts_wifi_scan_get_results(ts_wifi_scan_result_t *results, uint16_t *cou
     *count = ap_num;
     free(ap_list);
     return ESP_OK;
+}
+
+bool ts_wifi_is_connected(void)
+{
+    return s_sta_connected;
+}
+
+esp_netif_t *ts_wifi_get_netif(ts_wifi_if_t iface)
+{
+    switch (iface) {
+        case TS_WIFI_IF_STA:
+            return s_sta_netif;
+        case TS_WIFI_IF_AP:
+            return s_ap_netif;
+        default:
+            return NULL;
+    }
 }

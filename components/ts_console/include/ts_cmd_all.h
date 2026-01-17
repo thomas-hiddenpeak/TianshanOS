@@ -79,6 +79,12 @@ esp_err_t ts_cmd_dhcp_register(void);
 esp_err_t ts_cmd_wifi_register(void);
 
 /**
+ * @brief 注册 NAT 网关命令
+ * nat --status/--enable/--disable/--save
+ */
+void ts_cmd_nat_register(void);
+
+/**
  * @brief 注册文件系统命令
  * ls, cat, cd, pwd, mkdir, rm, cp, mv, hexdump
  */

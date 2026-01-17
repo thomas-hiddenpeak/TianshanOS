@@ -931,7 +931,7 @@ wifi --status
 # 扫描附近 WiFi 网络
 wifi --scan
 
-# 配置并启动 AP 热点
+# 配置并启动 AP 热点 （尚未测试）
 wifi --ap --ssid TianShanOS --pass tianshan123
 wifi --start --iface ap
 
