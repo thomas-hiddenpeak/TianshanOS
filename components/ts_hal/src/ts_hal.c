@@ -10,10 +10,12 @@
 #include "ts_hal.h"
 #include "ts_log.h"
 #include "ts_config.h"
+#include "ts_pin_manager.h"
 #include "esp_system.h"
 #include "esp_chip_info.h"
 #include "esp_flash.h"
 #include "esp_psram.h"
+#include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include <string.h>
@@ -27,6 +29,87 @@
 static bool s_hal_initialized = false;
 static SemaphoreHandle_t s_hal_mutex = NULL;
 static ts_hal_config_t s_hal_config;
+
+/*===========================================================================*/
+/*                         Early Hardware Init                                */
+/*===========================================================================*/
+
+/**
+ * @brief 早期硬件复位引脚初始化
+ * 
+ * 在其他驱动初始化之前设置关键复位引脚的正确状态，
+ * 避免外设在错误状态下启动。
+ * 
+ * 引脚逻辑（与 robOS 一致）：
+ * - W5500_RST (GPIO39):  LOW=复位, HIGH=正常 → 初始化为 HIGH
+ * - AGX_RESET (GPIO1):   HIGH=复位, LOW=正常 → 初始化为 LOW
+ * - AGX_POWER (GPIO3):   LOW=开机, HIGH=关机 → 初始化为 HIGH（关机）
+ * 
+ * @return ESP_OK on success
+ */
+static esp_err_t ts_hal_early_hw_init(void)
+{
+    TS_LOGI(TAG, "Early hardware init: setting reset pins to safe state");
+    
+    /*
+     * W5500 复位引脚 (GPIO39)
+     * LOW = 复位状态，HIGH = 正常运行
+     * 必须先设置为 HIGH，否则 W5500 无法初始化
+     */
+    int gpio_w5500_rst = ts_pin_manager_get_gpio(TS_PIN_FUNC_ETH_RST);
+    if (gpio_w5500_rst >= 0) {
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << gpio_w5500_rst),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        gpio_config(&io_conf);
+        gpio_set_level(gpio_w5500_rst, 1);  // HIGH = 正常运行
+        TS_LOGI(TAG, "W5500_RST (GPIO%d) = HIGH (normal)", gpio_w5500_rst);
+    }
+    
+    /*
+     * AGX 复位引脚 (GPIO1)
+     * HIGH = 复位状态，LOW = 正常运行
+     * 确保 AGX 不在复位状态
+     */
+    int gpio_agx_reset = ts_pin_manager_get_gpio(TS_PIN_FUNC_AGX_RESET);
+    if (gpio_agx_reset >= 0) {
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << gpio_agx_reset),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        gpio_config(&io_conf);
+        gpio_set_level(gpio_agx_reset, 0);  // LOW = 正常运行
+        TS_LOGI(TAG, "AGX_RESET (GPIO%d) = LOW (normal)", gpio_agx_reset);
+    }
+    
+    /*
+     * AGX 电源引脚 (GPIO3)
+     * LOW = 开机，HIGH = 关机（反相逻辑）
+     * 初始化为 HIGH（关机状态），由 device 命令显式开机
+     */
+    int gpio_agx_power = ts_pin_manager_get_gpio(TS_PIN_FUNC_AGX_POWER);
+    if (gpio_agx_power >= 0) {
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << gpio_agx_power),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        gpio_config(&io_conf);
+        gpio_set_level(gpio_agx_power, 1);  // HIGH = 关机
+        TS_LOGI(TAG, "AGX_POWER (GPIO%d) = HIGH (off)", gpio_agx_power);
+    }
+    
+    return ESP_OK;
+}
 
 /*===========================================================================*/
 /*                         Public Functions                                   */
@@ -89,6 +172,22 @@ esp_err_t ts_hal_init(const ts_hal_config_t *config)
     if (ret != ESP_OK) {
         TS_LOGE(TAG, "GPIO init failed: %s", esp_err_to_name(ret));
         goto fail;
+    }
+    
+    /*
+     * 早期硬件复位引脚初始化
+     * 
+     * 必须在其他驱动初始化之前设置这些引脚的正确状态：
+     * - W5500_RST (GPIO39): LOW=复位, HIGH=正常 → 设置为 HIGH
+     * - AGX_RESET (GPIO1): HIGH=复位, LOW=正常 → 设置为 LOW
+     * 
+     * 这确保外设在正确的状态下启动，避免意外复位或干扰。
+     * 详细的设备控制由 ts_drivers 模块处理。
+     */
+    ret = ts_hal_early_hw_init();
+    if (ret != ESP_OK) {
+        TS_LOGW(TAG, "Early HW init warning: %s", esp_err_to_name(ret));
+        // 继续执行，这不是致命错误
     }
     
     ret = ts_pwm_init();

@@ -401,7 +401,7 @@ led --parse-color --color "#FF5500"
 led --image --device matrix --file /sdcard/logo.png
 
 # 播放 GIF 动画
-led --image --device matrix --file /sdcard/animation.gif
+led --image --device matrix --file /sdcard/16mario.gif
 
 # 显示图像（内容居中模式，自动裁剪透明边缘）
 led --image --device matrix --file /sdcard/icon.png --center content

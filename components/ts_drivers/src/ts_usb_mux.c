@@ -1,197 +1,168 @@
 /**
  * @file ts_usb_mux.c
  * @brief USB MUX Control Implementation
+ * 
+ * 3 目标切换：ESP32 / AGX / LPMU
+ * 使用 2 个 GPIO 控制选择
+ * 
+ * Truth Table:
+ *   SEL0=0, SEL1=0 -> ESP32 (default)
+ *   SEL0=1, SEL1=0 -> AGX
+ *   SEL0=1, SEL1=1 -> LPMU
  */
 
 #include "ts_usb_mux.h"
 #include "ts_hal_gpio.h"
 #include "ts_log.h"
-#include "ts_event.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include <string.h>
 
 #define TAG "ts_usb_mux"
 
-typedef struct {
+static struct {
     bool configured;
-    ts_usb_mux_config_t config;
-    ts_gpio_handle_t gpio_sel;
-    ts_gpio_handle_t gpio_oe;
-    ts_usb_target_t current_target;
-    bool enabled;
-} usb_mux_instance_t;
-
-static usb_mux_instance_t s_muxes[TS_USB_MUX_MAX];
-static bool s_initialized = false;
+    bool initialized;
+    ts_usb_mux_pins_t pins;
+    ts_gpio_handle_t gpio_sel0;
+    ts_gpio_handle_t gpio_sel1;
+    ts_usb_mux_target_t current_target;
+} s_mux = {0};
 
 esp_err_t ts_usb_mux_init(void)
 {
-    if (s_initialized) return ESP_OK;
+    if (s_mux.initialized) return ESP_OK;
     
-    memset(s_muxes, 0, sizeof(s_muxes));
+    memset(&s_mux, 0, sizeof(s_mux));
+    s_mux.pins.gpio_sel0 = -1;
+    s_mux.pins.gpio_sel1 = -1;
+    s_mux.current_target = TS_USB_MUX_ESP32;
     
-    // Initialize with invalid pins
-    for (int i = 0; i < TS_USB_MUX_MAX; i++) {
-        s_muxes[i].config.gpio_sel = -1;
-        s_muxes[i].config.gpio_oe = -1;
-    }
-    
-    s_initialized = true;
+    s_mux.initialized = true;
     TS_LOGI(TAG, "USB MUX driver initialized");
     return ESP_OK;
 }
 
 esp_err_t ts_usb_mux_deinit(void)
 {
-    for (int i = 0; i < TS_USB_MUX_MAX; i++) {
-        if (s_muxes[i].gpio_sel) {
-            ts_gpio_destroy(s_muxes[i].gpio_sel);
-            s_muxes[i].gpio_sel = NULL;
-        }
-        if (s_muxes[i].gpio_oe) {
-            ts_gpio_destroy(s_muxes[i].gpio_oe);
-            s_muxes[i].gpio_oe = NULL;
-        }
+    if (s_mux.gpio_sel0) {
+        ts_gpio_destroy(s_mux.gpio_sel0);
+        s_mux.gpio_sel0 = NULL;
+    }
+    if (s_mux.gpio_sel1) {
+        ts_gpio_destroy(s_mux.gpio_sel1);
+        s_mux.gpio_sel1 = NULL;
     }
     
-    s_initialized = false;
+    s_mux.configured = false;
+    s_mux.initialized = false;
     return ESP_OK;
 }
 
-esp_err_t ts_usb_mux_configure(ts_usb_mux_id_t mux, const ts_usb_mux_config_t *config)
+esp_err_t ts_usb_mux_configure(const ts_usb_mux_pins_t *pins)
 {
-    if (mux >= TS_USB_MUX_MAX || !config) return ESP_ERR_INVALID_ARG;
+    if (!pins) return ESP_ERR_INVALID_ARG;
+    if (!s_mux.initialized) return ESP_ERR_INVALID_STATE;
     
-    usb_mux_instance_t *m = &s_muxes[mux];
-    m->config = *config;
+    s_mux.pins = *pins;
     
-    // Configure select pin
-    if (config->gpio_sel >= 0) {
-        m->gpio_sel = ts_gpio_create_raw(config->gpio_sel, "usb_sel");
-        if (m->gpio_sel) {
+    // Configure SEL0 pin
+    if (pins->gpio_sel0 >= 0) {
+        s_mux.gpio_sel0 = ts_gpio_create_raw(pins->gpio_sel0, "usb_sel0");
+        if (s_mux.gpio_sel0) {
             ts_gpio_config_t cfg = {
                 .direction = TS_GPIO_DIR_OUTPUT,
                 .pull_mode = TS_GPIO_PULL_NONE,
                 .intr_type = TS_GPIO_INTR_DISABLE,
                 .drive = TS_GPIO_DRIVE_2,
                 .invert = false,
-                .initial_level = config->sel_active_low ? 1 : 0
+                .initial_level = 0  // Default to ESP32 (LOW)
             };
-            ts_gpio_configure(m->gpio_sel, &cfg);
+            ts_gpio_configure(s_mux.gpio_sel0, &cfg);
         }
     }
     
-    // Configure OE pin
-    if (config->gpio_oe >= 0) {
-        m->gpio_oe = ts_gpio_create_raw(config->gpio_oe, "usb_oe");
-        if (m->gpio_oe) {
+    // Configure SEL1 pin
+    if (pins->gpio_sel1 >= 0) {
+        s_mux.gpio_sel1 = ts_gpio_create_raw(pins->gpio_sel1, "usb_sel1");
+        if (s_mux.gpio_sel1) {
             ts_gpio_config_t cfg = {
                 .direction = TS_GPIO_DIR_OUTPUT,
                 .pull_mode = TS_GPIO_PULL_NONE,
                 .intr_type = TS_GPIO_INTR_DISABLE,
                 .drive = TS_GPIO_DRIVE_2,
                 .invert = false,
-                .initial_level = config->oe_active_low ? 1 : 0  // Disabled initially
+                .initial_level = 0  // Default to ESP32 (LOW)
             };
-            ts_gpio_configure(m->gpio_oe, &cfg);
+            ts_gpio_configure(s_mux.gpio_sel1, &cfg);
         }
     }
     
-    m->configured = true;
-    m->current_target = TS_USB_TARGET_DISCONNECT;
-    m->enabled = false;
+    s_mux.configured = true;
+    s_mux.current_target = TS_USB_MUX_ESP32;
     
-    TS_LOGI(TAG, "USB MUX %d configured: SEL=%d, OE=%d", mux, config->gpio_sel, config->gpio_oe);
+    TS_LOGI(TAG, "USB MUX configured (sel0=%d, sel1=%d)",
+            pins->gpio_sel0, pins->gpio_sel1);
     return ESP_OK;
 }
 
-esp_err_t ts_usb_mux_set_target(ts_usb_mux_id_t mux, ts_usb_target_t target)
+esp_err_t ts_usb_mux_set_target(ts_usb_mux_target_t target)
 {
-    if (mux >= TS_USB_MUX_MAX) return ESP_ERR_INVALID_ARG;
+    if (!s_mux.configured) {
+        TS_LOGW(TAG, "USB MUX not configured");
+        return ESP_ERR_INVALID_STATE;
+    }
     
-    usb_mux_instance_t *m = &s_muxes[mux];
-    if (!m->configured) return ESP_ERR_INVALID_STATE;
-    
-    int sel_level = 0;
+    int sel0 = 0, sel1 = 0;
+    const char *target_str;
     
     switch (target) {
-        case TS_USB_TARGET_HOST:
-            sel_level = m->config.sel_active_low ? 1 : 0;
+        case TS_USB_MUX_ESP32:
+            // SEL0=0, SEL1=0
+            sel0 = 0;
+            sel1 = 0;
+            target_str = "ESP32";
             break;
-        case TS_USB_TARGET_DEVICE:
-            sel_level = m->config.sel_active_low ? 0 : 1;
+        case TS_USB_MUX_AGX:
+            // SEL0=1, SEL1=0
+            sel0 = 1;
+            sel1 = 0;
+            target_str = "AGX";
             break;
-        case TS_USB_TARGET_DISCONNECT:
-            // Just disable the MUX
-            return ts_usb_mux_enable(mux, false);
+        case TS_USB_MUX_LPMU:
+            // SEL0=1, SEL1=1
+            sel0 = 1;
+            sel1 = 1;
+            target_str = "LPMU";
+            break;
+        case TS_USB_MUX_DISCONNECT:
+            // SEL0=0, SEL1=1 (unused state, acts as disconnect)
+            sel0 = 0;
+            sel1 = 1;
+            target_str = "DISCONNECT";
+            break;
+        default:
+            return ESP_ERR_INVALID_ARG;
     }
     
-    if (m->gpio_sel) {
-        ts_gpio_set_level(m->gpio_sel, sel_level);
+    // Set GPIO levels
+    if (s_mux.gpio_sel0) {
+        ts_gpio_set_level(s_mux.gpio_sel0, sel0);
+    }
+    if (s_mux.gpio_sel1) {
+        ts_gpio_set_level(s_mux.gpio_sel1, sel1);
     }
     
-    m->current_target = target;
+    s_mux.current_target = target;
     
-    TS_LOGI(TAG, "USB MUX %d target: %s", mux, 
-            target == TS_USB_TARGET_HOST ? "HOST" : "DEVICE");
-    
+    TS_LOGI(TAG, "USB MUX -> %s (sel0=%d, sel1=%d)", target_str, sel0, sel1);
     return ESP_OK;
 }
 
-esp_err_t ts_usb_mux_get_status(ts_usb_mux_id_t mux, ts_usb_mux_status_t *status)
+ts_usb_mux_target_t ts_usb_mux_get_target(void)
 {
-    if (mux >= TS_USB_MUX_MAX || !status) return ESP_ERR_INVALID_ARG;
-    if (!s_muxes[mux].configured) return ESP_ERR_INVALID_STATE;
-    
-    status->target = s_muxes[mux].current_target;
-    status->enabled = s_muxes[mux].enabled;
-    
-    return ESP_OK;
+    return s_mux.current_target;
 }
 
-esp_err_t ts_usb_mux_enable(ts_usb_mux_id_t mux, bool enable)
+bool ts_usb_mux_is_configured(void)
 {
-    if (mux >= TS_USB_MUX_MAX) return ESP_ERR_INVALID_ARG;
-    
-    usb_mux_instance_t *m = &s_muxes[mux];
-    if (!m->configured) return ESP_ERR_INVALID_STATE;
-    
-    if (m->gpio_oe) {
-        int oe_level = enable ? (m->config.oe_active_low ? 0 : 1) 
-                              : (m->config.oe_active_low ? 1 : 0);
-        ts_gpio_set_level(m->gpio_oe, oe_level);
-    }
-    
-    m->enabled = enable;
-    
-    if (!enable) {
-        m->current_target = TS_USB_TARGET_DISCONNECT;
-    }
-    
-    return ESP_OK;
-}
-
-esp_err_t ts_usb_mux_switch_to_agx(ts_usb_mux_id_t mux)
-{
-    esp_err_t ret = ts_usb_mux_set_target(mux, TS_USB_TARGET_DEVICE);
-    if (ret == ESP_OK) {
-        ret = ts_usb_mux_enable(mux, true);
-    }
-    return ret;
-}
-
-esp_err_t ts_usb_mux_switch_to_host(ts_usb_mux_id_t mux, uint32_t timeout_ms)
-{
-    (void)timeout_ms;  // Not used in basic implementation
-    esp_err_t ret = ts_usb_mux_set_target(mux, TS_USB_TARGET_HOST);
-    if (ret == ESP_OK) {
-        ret = ts_usb_mux_enable(mux, true);
-    }
-    return ret;
-}
-
-esp_err_t ts_usb_mux_switch_to_device(ts_usb_mux_id_t mux)
-{
-    return ts_usb_mux_switch_to_agx(mux);
+    return s_mux.configured;
 }

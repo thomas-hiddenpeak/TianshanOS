@@ -14,21 +14,14 @@
 
 #include "ts_console.h"
 #include "ts_log.h"
+#include "ts_device_ctrl.h"
+#include "ts_usb_mux.h"
+#include "ts_config_module.h"
 #include "argtable3/argtable3.h"
 #include <string.h>
 #include <stdio.h>
 
 #define TAG "cmd_device"
-
-/* 模拟设备状态（后续接入真实驱动） */
-typedef struct {
-    bool power_on;
-    const char *status;
-} device_state_t;
-
-static device_state_t s_agx = { .power_on = false, .status = "OFF" };
-static device_state_t s_lpmu = { .power_on = false, .status = "OFF" };
-static const char *s_usb_mux_target = "esp32";
 
 /*===========================================================================*/
 /*                          Argument Tables                                   */
@@ -42,6 +35,7 @@ static struct {
     struct arg_str *target;
     struct arg_lit *status;
     struct arg_lit *reset;
+    struct arg_lit *save;
     struct arg_lit *json;
     struct arg_lit *help;
     struct arg_end *end;
@@ -53,27 +47,50 @@ static struct {
 
 static int do_agx_control(const char *power, bool status_only, bool reset, bool json)
 {
+    ts_device_status_t status;
+    esp_err_t ret;
+    
+    // 检查 AGX 是否配置
+    if (!ts_device_is_configured(TS_DEVICE_AGX)) {
+        ts_console_error("AGX not configured\n");
+        return 1;
+    }
+    
     if (status_only || (!power && !reset)) {
         // 显示状态
+        ret = ts_device_get_status(TS_DEVICE_AGX, &status);
+        if (ret != ESP_OK) {
+            ts_console_error("Failed to get AGX status: %s\n", esp_err_to_name(ret));
+            return 1;
+        }
+        
+        const char *state_str = ts_device_state_to_str(status.state);
+        bool powered = ts_device_is_powered(TS_DEVICE_AGX);
+        
         if (json) {
-            ts_console_printf("{\"device\":\"agx\",\"power\":%s,\"status\":\"%s\"}\n",
-                s_agx.power_on ? "true" : "false", s_agx.status);
+            ts_console_printf("{\"device\":\"agx\",\"power\":%s,\"state\":\"%s\","
+                              "\"uptime_ms\":%lu,\"boot_count\":%lu}\n",
+                powered ? "true" : "false", state_str,
+                status.uptime_ms, status.boot_count);
         } else {
             ts_console_printf("AGX Status:\n");
-            ts_console_printf("  Power:  %s%s\033[0m\n",
-                s_agx.power_on ? "\033[32m" : "\033[33m",
-                s_agx.power_on ? "ON" : "OFF");
-            ts_console_printf("  Status: %s\n", s_agx.status);
+            ts_console_printf("  Power:      %s%s\033[0m\n",
+                powered ? "\033[32m" : "\033[33m",
+                powered ? "ON" : "OFF");
+            ts_console_printf("  State:      %s\n", state_str);
+            ts_console_printf("  Uptime:     %lu ms\n", status.uptime_ms);
+            ts_console_printf("  Boot count: %lu\n", status.boot_count);
         }
         return 0;
     }
     
     if (reset) {
         ts_console_printf("Resetting AGX...\n");
-        // TODO: 调用真实驱动
-        s_agx.status = "RESETTING";
-        vTaskDelay(pdMS_TO_TICKS(100));
-        s_agx.status = s_agx.power_on ? "RUNNING" : "OFF";
+        ret = ts_device_reset(TS_DEVICE_AGX);
+        if (ret != ESP_OK) {
+            ts_console_error("Failed to reset AGX: %s\n", esp_err_to_name(ret));
+            return 1;
+        }
         ts_console_success("AGX reset complete\n");
         return 0;
     }
@@ -81,23 +98,50 @@ static int do_agx_control(const char *power, bool status_only, bool reset, bool 
     if (power) {
         if (strcmp(power, "on") == 0) {
             ts_console_printf("Powering on AGX...\n");
-            // TODO: 调用真实驱动
-            s_agx.power_on = true;
-            s_agx.status = "BOOTING";
+            ret = ts_device_power_on(TS_DEVICE_AGX);
+            if (ret != ESP_OK) {
+                ts_console_error("Failed to power on AGX: %s\n", esp_err_to_name(ret));
+                return 1;
+            }
             ts_console_success("AGX power on\n");
         } else if (strcmp(power, "off") == 0) {
             ts_console_printf("Powering off AGX...\n");
-            // TODO: 调用真实驱动
-            s_agx.power_on = false;
-            s_agx.status = "OFF";
+            ret = ts_device_power_off(TS_DEVICE_AGX);
+            if (ret != ESP_OK) {
+                ts_console_error("Failed to power off AGX: %s\n", esp_err_to_name(ret));
+                return 1;
+            }
             ts_console_success("AGX power off\n");
         } else if (strcmp(power, "restart") == 0) {
             ts_console_printf("Restarting AGX...\n");
-            // TODO: 调用真实驱动
-            s_agx.status = "RESTARTING";
+            ret = ts_device_power_off(TS_DEVICE_AGX);
+            if (ret == ESP_OK) {
+                vTaskDelay(pdMS_TO_TICKS(500));
+                ret = ts_device_power_on(TS_DEVICE_AGX);
+            }
+            if (ret != ESP_OK) {
+                ts_console_error("Failed to restart AGX: %s\n", esp_err_to_name(ret));
+                return 1;
+            }
             ts_console_success("AGX restart initiated\n");
+        } else if (strcmp(power, "force-off") == 0) {
+            ts_console_printf("Force powering off AGX...\n");
+            ret = ts_device_force_off(TS_DEVICE_AGX);
+            if (ret != ESP_OK) {
+                ts_console_error("Failed to force off AGX: %s\n", esp_err_to_name(ret));
+                return 1;
+            }
+            ts_console_success("AGX force power off\n");
+        } else if (strcmp(power, "recovery") == 0) {
+            ts_console_printf("Entering AGX recovery mode...\n");
+            ret = ts_device_enter_recovery(TS_DEVICE_AGX);
+            if (ret != ESP_OK) {
+                ts_console_error("Failed to enter recovery: %s\n", esp_err_to_name(ret));
+                return 1;
+            }
+            ts_console_success("AGX in recovery mode\n");
         } else {
-            ts_console_error("Invalid power option: %s (use: on, off, restart)\n", power);
+            ts_console_error("Invalid power option: %s (use: on, off, restart, force-off, recovery)\n", power);
             return 1;
         }
     }
@@ -111,27 +155,50 @@ static int do_agx_control(const char *power, bool status_only, bool reset, bool 
 
 static int do_lpmu_control(const char *power, bool status_only, bool reset, bool json)
 {
+    ts_device_status_t status;
+    esp_err_t ret;
+    
+    // 检查 LPMU 是否配置
+    if (!ts_device_is_configured(TS_DEVICE_LPMU)) {
+        ts_console_error("LPMU not configured\n");
+        return 1;
+    }
+    
     if (status_only || (!power && !reset)) {
         // 显示状态
+        ret = ts_device_get_status(TS_DEVICE_LPMU, &status);
+        if (ret != ESP_OK) {
+            ts_console_error("Failed to get LPMU status: %s\n", esp_err_to_name(ret));
+            return 1;
+        }
+        
+        const char *state_str = ts_device_state_to_str(status.state);
+        bool powered = ts_device_is_powered(TS_DEVICE_LPMU);
+        
         if (json) {
-            ts_console_printf("{\"device\":\"lpmu\",\"power\":%s,\"status\":\"%s\"}\n",
-                s_lpmu.power_on ? "true" : "false", s_lpmu.status);
+            ts_console_printf("{\"device\":\"lpmu\",\"power\":%s,\"state\":\"%s\","
+                              "\"uptime_ms\":%lu,\"boot_count\":%lu}\n",
+                powered ? "true" : "false", state_str,
+                status.uptime_ms, status.boot_count);
         } else {
             ts_console_printf("LPMU Status:\n");
-            ts_console_printf("  Power:  %s%s\033[0m\n",
-                s_lpmu.power_on ? "\033[32m" : "\033[33m",
-                s_lpmu.power_on ? "ON" : "OFF");
-            ts_console_printf("  Status: %s\n", s_lpmu.status);
+            ts_console_printf("  Power:      %s%s\033[0m\n",
+                powered ? "\033[32m" : "\033[33m",
+                powered ? "ON" : "OFF");
+            ts_console_printf("  State:      %s\n", state_str);
+            ts_console_printf("  Uptime:     %lu ms\n", status.uptime_ms);
+            ts_console_printf("  Boot count: %lu\n", status.boot_count);
         }
         return 0;
     }
     
     if (reset) {
         ts_console_printf("Resetting LPMU...\n");
-        // TODO: 调用真实驱动
-        s_lpmu.status = "RESETTING";
-        vTaskDelay(pdMS_TO_TICKS(100));
-        s_lpmu.status = s_lpmu.power_on ? "READY" : "OFF";
+        ret = ts_device_reset(TS_DEVICE_LPMU);
+        if (ret != ESP_OK) {
+            ts_console_error("Failed to reset LPMU: %s\n", esp_err_to_name(ret));
+            return 1;
+        }
         ts_console_success("LPMU reset complete\n");
         return 0;
     }
@@ -139,15 +206,19 @@ static int do_lpmu_control(const char *power, bool status_only, bool reset, bool
     if (power) {
         if (strcmp(power, "on") == 0) {
             ts_console_printf("Powering on LPMU...\n");
-            // TODO: 调用真实驱动
-            s_lpmu.power_on = true;
-            s_lpmu.status = "READY";
+            ret = ts_device_power_on(TS_DEVICE_LPMU);
+            if (ret != ESP_OK) {
+                ts_console_error("Failed to power on LPMU: %s\n", esp_err_to_name(ret));
+                return 1;
+            }
             ts_console_success("LPMU power on\n");
         } else if (strcmp(power, "off") == 0) {
             ts_console_printf("Powering off LPMU...\n");
-            // TODO: 调用真实驱动
-            s_lpmu.power_on = false;
-            s_lpmu.status = "OFF";
+            ret = ts_device_power_off(TS_DEVICE_LPMU);
+            if (ret != ESP_OK) {
+                ts_console_error("Failed to power off LPMU: %s\n", esp_err_to_name(ret));
+                return 1;
+            }
             ts_console_success("LPMU power off\n");
         } else {
             ts_console_error("Invalid power option: %s (use: on, off)\n", power);
@@ -164,33 +235,74 @@ static int do_lpmu_control(const char *power, bool status_only, bool reset, bool
 
 static int do_usb_mux_control(const char *target, bool status_only, bool json)
 {
+    ts_usb_mux_target_t current = ts_usb_mux_get_target();
+    const char *current_str;
+    
+    switch (current) {
+        case TS_USB_MUX_ESP32: current_str = "esp32"; break;
+        case TS_USB_MUX_AGX:   current_str = "agx";   break;
+        case TS_USB_MUX_LPMU:  current_str = "lpmu";  break;
+        default:              current_str = "unknown"; break;
+    }
+    
     if (status_only || !target) {
         // 显示状态
         if (json) {
-            ts_console_printf("{\"device\":\"usb-mux\",\"target\":\"%s\"}\n", s_usb_mux_target);
+            ts_console_printf("{\"device\":\"usb-mux\",\"target\":\"%s\"}\n", current_str);
         } else {
             ts_console_printf("USB MUX Status:\n");
-            ts_console_printf("  Target: %s\n", s_usb_mux_target);
+            ts_console_printf("  Target: %s\n", current_str);
             ts_console_printf("\n");
             ts_console_printf("Available targets: esp32, agx, lpmu\n");
         }
         return 0;
     }
     
-    // 验证目标
-    if (strcmp(target, "esp32") != 0 && 
-        strcmp(target, "agx") != 0 && 
-        strcmp(target, "lpmu") != 0) {
+    // 验证并设置目标
+    ts_usb_mux_target_t new_target;
+    if (strcmp(target, "esp32") == 0) {
+        new_target = TS_USB_MUX_ESP32;
+    } else if (strcmp(target, "agx") == 0) {
+        new_target = TS_USB_MUX_AGX;
+    } else if (strcmp(target, "lpmu") == 0) {
+        new_target = TS_USB_MUX_LPMU;
+    } else {
         ts_console_error("Invalid target: %s (use: esp32, agx, lpmu)\n", target);
         return 1;
     }
     
     ts_console_printf("Switching USB MUX to %s...\n", target);
-    // TODO: 调用真实驱动
-    s_usb_mux_target = target;  // 注意：实际代码需要复制字符串
+    esp_err_t ret = ts_usb_mux_set_target(new_target);
+    if (ret != ESP_OK) {
+        ts_console_error("Failed to switch USB MUX: %s\n", esp_err_to_name(ret));
+        return 1;
+    }
     ts_console_success("USB MUX switched to %s\n", target);
     
     return 0;
+}
+
+/*===========================================================================*/
+/*                          Command: device --save                            */
+/*===========================================================================*/
+
+static int do_device_save(void)
+{
+    ts_console_printf("Saving device configuration...\n");
+    
+    esp_err_t ret = ts_config_module_persist(TS_CONFIG_MODULE_DEVICE);
+    if (ret == ESP_OK) {
+        ts_console_success("Device configuration saved to NVS");
+        if (ts_config_module_has_pending_sync()) {
+            ts_console_printf(" (SD card sync pending)\n");
+        } else {
+            ts_console_printf(" and SD card\n");
+        }
+        return 0;
+    } else {
+        ts_console_error("Failed to save configuration: %s\n", esp_err_to_name(ret));
+        return 1;
+    }
 }
 
 /*===========================================================================*/
@@ -211,6 +323,7 @@ static int cmd_device(int argc, char **argv)
         ts_console_printf("      --target <dev>  Target: esp32, agx, lpmu\n");
         ts_console_printf("  -s, --status        Show status\n");
         ts_console_printf("      --reset         Reset device\n");
+        ts_console_printf("      --save          Save configuration to NVS and SD\n");
         ts_console_printf("  -j, --json          JSON output\n");
         ts_console_printf("  -h, --help          Show this help\n\n");
         ts_console_printf("Examples:\n");
@@ -246,25 +359,64 @@ static int cmd_device(int argc, char **argv)
         return do_usb_mux_control(target, status_only, json);
     }
     
+    if (s_device_args.save->count > 0) {
+        return do_device_save();
+    }
+    
     // 无设备选择时显示所有设备状态
+    ts_device_status_t agx_status, lpmu_status;
+    bool agx_configured = ts_device_is_configured(TS_DEVICE_AGX);
+    bool lpmu_configured = ts_device_is_configured(TS_DEVICE_LPMU);
+    
+    if (agx_configured) ts_device_get_status(TS_DEVICE_AGX, &agx_status);
+    if (lpmu_configured) ts_device_get_status(TS_DEVICE_LPMU, &lpmu_status);
+    
+    ts_usb_mux_target_t usb_target = ts_usb_mux_get_target();
+    const char *usb_str;
+    switch (usb_target) {
+        case TS_USB_MUX_ESP32: usb_str = "esp32"; break;
+        case TS_USB_MUX_AGX:   usb_str = "agx";   break;
+        case TS_USB_MUX_LPMU:  usb_str = "lpmu";  break;
+        default:              usb_str = "unknown"; break;
+    }
+    
     if (json) {
         ts_console_printf("{\"devices\":[");
-        ts_console_printf("{\"name\":\"agx\",\"power\":%s,\"status\":\"%s\"},",
-            s_agx.power_on ? "true" : "false", s_agx.status);
-        ts_console_printf("{\"name\":\"lpmu\",\"power\":%s,\"status\":\"%s\"},",
-            s_lpmu.power_on ? "true" : "false", s_lpmu.status);
-        ts_console_printf("{\"name\":\"usb-mux\",\"target\":\"%s\"}", s_usb_mux_target);
+        if (agx_configured) {
+            ts_console_printf("{\"name\":\"agx\",\"power\":%s,\"state\":\"%s\"},",
+                ts_device_is_powered(TS_DEVICE_AGX) ? "true" : "false",
+                ts_device_state_to_str(agx_status.state));
+        } else {
+            ts_console_printf("{\"name\":\"agx\",\"configured\":false},");
+        }
+        if (lpmu_configured) {
+            ts_console_printf("{\"name\":\"lpmu\",\"power\":%s,\"state\":\"%s\"},",
+                ts_device_is_powered(TS_DEVICE_LPMU) ? "true" : "false",
+                ts_device_state_to_str(lpmu_status.state));
+        } else {
+            ts_console_printf("{\"name\":\"lpmu\",\"configured\":false},");
+        }
+        ts_console_printf("{\"name\":\"usb-mux\",\"target\":\"%s\"}", usb_str);
         ts_console_printf("]}\n");
     } else {
         ts_console_printf("Device Status:\n\n");
-        ts_console_printf("%-12s  %-8s  %s\n", "DEVICE", "POWER", "STATUS");
+        ts_console_printf("%-12s  %-8s  %s\n", "DEVICE", "POWER", "STATE");
         ts_console_printf("────────────────────────────────────────\n");
-        ts_console_printf("%-12s  %-8s  %s\n", "AGX", 
-            s_agx.power_on ? "ON" : "OFF", s_agx.status);
-        ts_console_printf("%-12s  %-8s  %s\n", "LPMU", 
-            s_lpmu.power_on ? "ON" : "OFF", s_lpmu.status);
-        ts_console_printf("%-12s  %-8s  %s\n", "USB-MUX", 
-            "-", s_usb_mux_target);
+        if (agx_configured) {
+            ts_console_printf("%-12s  %-8s  %s\n", "AGX", 
+                ts_device_is_powered(TS_DEVICE_AGX) ? "ON" : "OFF",
+                ts_device_state_to_str(agx_status.state));
+        } else {
+            ts_console_printf("%-12s  %-8s  %s\n", "AGX", "-", "not configured");
+        }
+        if (lpmu_configured) {
+            ts_console_printf("%-12s  %-8s  %s\n", "LPMU", 
+                ts_device_is_powered(TS_DEVICE_LPMU) ? "ON" : "OFF",
+                ts_device_state_to_str(lpmu_status.state));
+        } else {
+            ts_console_printf("%-12s  %-8s  %s\n", "LPMU", "-", "not configured");
+        }
+        ts_console_printf("%-12s  %-8s  %s\n", "USB-MUX", "-", usb_str);
         ts_console_printf("\n");
     }
     
@@ -284,6 +436,7 @@ esp_err_t ts_cmd_device_register(void)
     s_device_args.target  = arg_str0(NULL, "target", "<dev>", "esp32/agx/lpmu");
     s_device_args.status  = arg_lit0("s", "status", "Show status");
     s_device_args.reset   = arg_lit0(NULL, "reset", "Reset device");
+    s_device_args.save    = arg_lit0(NULL, "save", "Save config to NVS/SD");
     s_device_args.json    = arg_lit0("j", "json", "JSON output");
     s_device_args.help    = arg_lit0("h", "help", "Show help");
     s_device_args.end     = arg_end(10);

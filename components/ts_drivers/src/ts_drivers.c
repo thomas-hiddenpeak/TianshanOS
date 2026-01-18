@@ -10,6 +10,7 @@
 #include "ts_usb_mux.h"
 #include "ts_log.h"
 #include "sdkconfig.h"
+#include "driver/gpio.h"
 
 #define TAG "ts_drivers"
 
@@ -18,11 +19,24 @@
 #define CONFIG_TS_DRIVERS_FAN0_PWM_GPIO 41
 #endif
 
+/* GPIO 映射 (from robOS device_controller.h) */
+#define GPIO_AGX_POWER          3   // LOW=ON, HIGH=OFF (inverted logic)
+#define GPIO_AGX_RESET          1
+#define GPIO_AGX_FORCE_RECOVERY 40
+#define GPIO_LPMU_POWER         46
+#define GPIO_LPMU_RESET         2
+#define GPIO_USB_MUX_SEL0       8
+#define GPIO_USB_MUX_SEL1       48
+
 esp_err_t ts_drivers_init(void)
 {
     esp_err_t ret;
     
     TS_LOGI(TAG, "Initializing device drivers");
+    
+    // GPIO3 测试已完成 - 使用 INPUT_OUTPUT 模式可以正确读取输出电平
+    // 现在正式初始化设备驱动，实际控制使用 OUTPUT 模式即可
+    TS_LOGI(TAG, "Initializing device drivers");;
     
 #ifdef CONFIG_TS_DRIVERS_FAN_ENABLE
     ret = ts_fan_init();
@@ -57,6 +71,38 @@ esp_err_t ts_drivers_init(void)
     ret = ts_device_ctrl_init();
     if (ret != ESP_OK) {
         TS_LOGW(TAG, "Device control init failed: %s", esp_err_to_name(ret));
+    } else {
+        // Configure AGX
+        ts_agx_pins_t agx_pins = {
+            .gpio_power_en = GPIO_AGX_POWER,
+            .gpio_reset = GPIO_AGX_RESET,
+            .gpio_force_recovery = GPIO_AGX_FORCE_RECOVERY,
+            .gpio_sys_rst = -1,          // Not used on this board
+            .gpio_power_good = -1,       // Not used on this board
+            .gpio_carrier_pwr_on = -1,   // Not used on this board
+            .gpio_shutdown_req = -1,     // Not used on this board
+            .gpio_sleep_wake = -1        // Not used on this board
+        };
+        ret = ts_device_configure_agx(&agx_pins);
+        if (ret != ESP_OK) {
+            TS_LOGW(TAG, "AGX configure failed: %s", esp_err_to_name(ret));
+        } else {
+            TS_LOGI(TAG, "AGX configured (pwr=%d, rst=%d, rcv=%d)", 
+                    GPIO_AGX_POWER, GPIO_AGX_RESET, GPIO_AGX_FORCE_RECOVERY);
+        }
+        
+        // Configure LPMU
+        ts_lpmu_pins_t lpmu_pins = {
+            .gpio_power_btn = GPIO_LPMU_POWER,
+            .gpio_reset = GPIO_LPMU_RESET
+        };
+        ret = ts_device_configure_lpmu(&lpmu_pins);
+        if (ret != ESP_OK) {
+            TS_LOGW(TAG, "LPMU configure failed: %s", esp_err_to_name(ret));
+        } else {
+            TS_LOGI(TAG, "LPMU configured (pwr=%d, rst=%d)", 
+                    GPIO_LPMU_POWER, GPIO_LPMU_RESET);
+        }
     }
 #endif
 
@@ -64,6 +110,19 @@ esp_err_t ts_drivers_init(void)
     ret = ts_usb_mux_init();
     if (ret != ESP_OK) {
         TS_LOGW(TAG, "USB MUX init failed: %s", esp_err_to_name(ret));
+    } else {
+        // Configure USB MUX
+        ts_usb_mux_pins_t mux_pins = {
+            .gpio_sel0 = GPIO_USB_MUX_SEL0,
+            .gpio_sel1 = GPIO_USB_MUX_SEL1
+        };
+        ret = ts_usb_mux_configure(&mux_pins);
+        if (ret != ESP_OK) {
+            TS_LOGW(TAG, "USB MUX configure failed: %s", esp_err_to_name(ret));
+        } else {
+            TS_LOGI(TAG, "USB MUX configured (sel0=%d, sel1=%d)",
+                    GPIO_USB_MUX_SEL0, GPIO_USB_MUX_SEL1);
+        }
     }
 #endif
 

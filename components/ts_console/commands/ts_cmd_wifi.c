@@ -19,6 +19,7 @@
 #include "ts_console.h"
 #include "ts_net_manager.h"
 #include "ts_wifi.h"
+#include "ts_config_module.h"
 #include "ts_log.h"
 #include "esp_wifi.h"
 #include "argtable3/argtable3.h"
@@ -405,15 +406,28 @@ static int do_wifi_stop(const char *iface_str)
 static int do_wifi_save(void)
 {
     ts_console_printf("Saving WiFi configuration...\n");
-    esp_err_t ret = ts_net_manager_save_config();
     
-    if (ret == ESP_OK) {
-        ts_console_printf("WiFi configuration saved to NVS\n");
-        return 0;
-    } else {
-        ts_console_error("Failed to save configuration: %s\n", esp_err_to_name(ret));
+    /* 调用原有保存方法 */
+    esp_err_t ret = ts_net_manager_save_config();
+    if (ret != ESP_OK) {
+        ts_console_error("Failed to save to NVS: %s\n", esp_err_to_name(ret));
         return 1;
     }
+    
+    /* 同时使用统一配置模块进行双写 */
+    ret = ts_config_module_persist(TS_CONFIG_MODULE_WIFI);
+    if (ret == ESP_OK) {
+        ts_console_success("Configuration saved to NVS");
+        if (ts_config_module_has_pending_sync()) {
+            ts_console_printf(" (SD card sync pending)\n");
+        } else {
+            ts_console_printf(" and SD card\n");
+        }
+    } else {
+        ts_console_printf("Configuration saved to NVS\n");
+    }
+    
+    return 0;
 }
 
 /*===========================================================================*/

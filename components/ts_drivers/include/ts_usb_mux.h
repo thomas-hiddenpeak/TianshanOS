@@ -1,6 +1,14 @@
 /**
  * @file ts_usb_mux.h
  * @brief USB MUX Control Driver
+ * 
+ * 支持 3 目标切换：ESP32 / AGX / LPMU
+ * 使用 2 个 GPIO 控制 4 路选择（实际使用 3 路）
+ * 
+ * Truth Table:
+ *   MUX1=0, MUX2=0 -> ESP32 (default)
+ *   MUX1=1, MUX2=0 -> AGX
+ *   MUX1=1, MUX2=1 -> LPMU
  */
 
 #pragma once
@@ -12,73 +20,57 @@
 extern "C" {
 #endif
 
-/** USB MUX IDs */
-typedef enum {
-    TS_USB_MUX_1 = 0,
-    TS_USB_MUX_2,
-    TS_USB_MUX_MAX
-} ts_usb_mux_id_t;
-
 /** USB MUX target */
 typedef enum {
-    TS_USB_TARGET_HOST,         // Route to USB host (ESP32/PC)
-    TS_USB_TARGET_DEVICE,       // Route to USB device (AGX)
-    TS_USB_TARGET_DISCONNECT,   // Disconnect both
-} ts_usb_target_t;
+    TS_USB_MUX_ESP32 = 0,       /**< Route to ESP32 (default) */
+    TS_USB_MUX_AGX,             /**< Route to AGX */
+    TS_USB_MUX_LPMU,            /**< Route to LPMU */
+    TS_USB_MUX_DISCONNECT,      /**< Disconnect all */
+} ts_usb_mux_target_t;
 
 /** USB MUX pins configuration */
 typedef struct {
-    int gpio_sel;               // Select pin
-    int gpio_oe;                // Output enable (optional, -1 if not used)
-    bool sel_active_low;        // Select pin active low
-    bool oe_active_low;         // OE pin active low
-} ts_usb_mux_config_t;
-
-/** USB MUX status */
-typedef struct {
-    ts_usb_target_t target;
-    bool enabled;
-} ts_usb_mux_status_t;
+    int gpio_sel0;              /**< MUX select pin 0 */
+    int gpio_sel1;              /**< MUX select pin 1 */
+} ts_usb_mux_pins_t;
 
 /**
  * @brief Initialize USB MUX subsystem
+ * @return ESP_OK on success
  */
 esp_err_t ts_usb_mux_init(void);
 
 /**
  * @brief Deinitialize USB MUX subsystem
+ * @return ESP_OK on success
  */
 esp_err_t ts_usb_mux_deinit(void);
 
 /**
- * @brief Configure a USB MUX
+ * @brief Configure USB MUX pins
+ * @param pins Pin configuration
+ * @return ESP_OK on success
  */
-esp_err_t ts_usb_mux_configure(ts_usb_mux_id_t mux, const ts_usb_mux_config_t *config);
+esp_err_t ts_usb_mux_configure(const ts_usb_mux_pins_t *pins);
 
 /**
  * @brief Set USB MUX target
+ * @param target Target device
+ * @return ESP_OK on success
  */
-esp_err_t ts_usb_mux_set_target(ts_usb_mux_id_t mux, ts_usb_target_t target);
+esp_err_t ts_usb_mux_set_target(ts_usb_mux_target_t target);
 
 /**
- * @brief Get USB MUX status
+ * @brief Get current USB MUX target
+ * @return Current target
  */
-esp_err_t ts_usb_mux_get_status(ts_usb_mux_id_t mux, ts_usb_mux_status_t *status);
+ts_usb_mux_target_t ts_usb_mux_get_target(void);
 
 /**
- * @brief Enable USB MUX
+ * @brief Check if USB MUX is configured
+ * @return true if configured
  */
-esp_err_t ts_usb_mux_enable(ts_usb_mux_id_t mux, bool enable);
-
-/**
- * @brief Switch to host mode with timeout
- */
-esp_err_t ts_usb_mux_switch_to_host(ts_usb_mux_id_t mux, uint32_t timeout_ms);
-
-/**
- * @brief Switch to device mode
- */
-esp_err_t ts_usb_mux_switch_to_device(ts_usb_mux_id_t mux);
+bool ts_usb_mux_is_configured(void);
 
 #ifdef __cplusplus
 }

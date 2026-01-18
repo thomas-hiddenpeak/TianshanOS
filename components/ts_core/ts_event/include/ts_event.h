@@ -150,6 +150,9 @@ typedef struct {
 /** 电源事件 */
 #define TS_EVENT_BASE_POWER     "ts_power"
 
+/** 存储事件 */
+#define TS_EVENT_BASE_STORAGE   "ts_storage"
+
 /** 用户事件 */
 #define TS_EVENT_BASE_USER      "ts_user"
 
@@ -186,6 +189,19 @@ typedef struct {
 #define TS_EVT_LOST_IP              0x0106
 /** DHCP 服务器给客户端分配了 IP（用于监控连接的设备）*/
 #define TS_EVT_DHCP_CLIENT_CONNECTED    0x0107
+
+/* ============================================================================
+ * 存储事件 ID
+ * ========================================================================== */
+
+/** SPIFFS 文件系统已挂载 */
+#define TS_EVT_STORAGE_SPIFFS_MOUNTED       0x0201
+/** SPIFFS 文件系统已卸载 */
+#define TS_EVT_STORAGE_SPIFFS_UNMOUNTED     0x0202
+/** SD 卡已挂载 */
+#define TS_EVT_STORAGE_SD_MOUNTED           0x0203
+/** SD 卡已卸载 */
+#define TS_EVT_STORAGE_SD_UNMOUNTED         0x0204
 
 /* ============================================================================
  * 事件基础别名（兼容旧代码）

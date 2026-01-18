@@ -43,12 +43,13 @@ static const char *fan_mode_to_str(ts_fan_mode_t mode)
     }
 }
 
-static const char *usb_target_to_str(ts_usb_target_t target)
+static const char *usb_target_to_str(ts_usb_mux_target_t target)
 {
     switch (target) {
-        case TS_USB_TARGET_HOST:       return "host";
-        case TS_USB_TARGET_DEVICE:     return "device";
-        case TS_USB_TARGET_DISCONNECT: return "disconnected";
+        case TS_USB_MUX_ESP32:      return "esp32";
+        case TS_USB_MUX_AGX:        return "agx";
+        case TS_USB_MUX_LPMU:       return "lpmu";
+        case TS_USB_MUX_DISCONNECT: return "disconnected";
         default: return "unknown";
     }
 }
@@ -321,18 +322,15 @@ static esp_err_t api_device_power_status(const cJSON *params, ts_api_result_t *r
  */
 static esp_err_t api_device_usb_status(const cJSON *params, ts_api_result_t *result)
 {
-    cJSON *data = cJSON_CreateObject();
-    cJSON *muxes = cJSON_AddArrayToObject(data, "muxes");
+    (void)params;
     
-    for (int i = 0; i < TS_USB_MUX_MAX; i++) {
-        ts_usb_mux_status_t status;
-        if (ts_usb_mux_get_status(i, &status) == ESP_OK) {
-            cJSON *mux = cJSON_CreateObject();
-            cJSON_AddNumberToObject(mux, "id", i);
-            cJSON_AddStringToObject(mux, "target", usb_target_to_str(status.target));
-            cJSON_AddBoolToObject(mux, "enabled", status.enabled);
-            cJSON_AddItemToArray(muxes, mux);
-        }
+    cJSON *data = cJSON_CreateObject();
+    
+    if (!ts_usb_mux_is_configured()) {
+        cJSON_AddBoolToObject(data, "configured", false);
+    } else {
+        cJSON_AddBoolToObject(data, "configured", true);
+        cJSON_AddStringToObject(data, "target", usb_target_to_str(ts_usb_mux_get_target()));
     }
     
     ts_api_result_ok(result, data);
@@ -341,56 +339,49 @@ static esp_err_t api_device_usb_status(const cJSON *params, ts_api_result_t *res
 
 /**
  * @brief device.usb.set - Set USB MUX target
- * @param mux: mux id (0-1)
- * @param target: "host", "device", "disconnect"
+ * @param target: "esp32", "agx", "lpmu", "disconnect"
  */
 static esp_err_t api_device_usb_set(const cJSON *params, ts_api_result_t *result)
 {
-    cJSON *mux_param = cJSON_GetObjectItem(params, "mux");
     cJSON *target_param = cJSON_GetObjectItem(params, "target");
-    
-    if (!mux_param || !cJSON_IsNumber(mux_param)) {
-        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'mux' parameter");
-        return ESP_ERR_INVALID_ARG;
-    }
     
     if (!target_param || !cJSON_IsString(target_param)) {
         ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'target' parameter");
         return ESP_ERR_INVALID_ARG;
     }
     
-    int mux_id = (int)cJSON_GetNumberValue(mux_param);
-    if (mux_id < 0 || mux_id >= TS_USB_MUX_MAX) {
-        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Invalid mux ID");
-        return ESP_ERR_INVALID_ARG;
+    if (!ts_usb_mux_is_configured()) {
+        ts_api_result_error(result, TS_API_ERR_HARDWARE, "USB MUX not configured");
+        return ESP_ERR_INVALID_STATE;
     }
     
-    ts_usb_target_t target;
+    ts_usb_mux_target_t target;
     const char *target_str = target_param->valuestring;
-    if (strcmp(target_str, "host") == 0) {
-        target = TS_USB_TARGET_HOST;
-    } else if (strcmp(target_str, "device") == 0) {
-        target = TS_USB_TARGET_DEVICE;
+    if (strcmp(target_str, "esp32") == 0) {
+        target = TS_USB_MUX_ESP32;
+    } else if (strcmp(target_str, "agx") == 0) {
+        target = TS_USB_MUX_AGX;
+    } else if (strcmp(target_str, "lpmu") == 0) {
+        target = TS_USB_MUX_LPMU;
     } else if (strcmp(target_str, "disconnect") == 0) {
-        target = TS_USB_TARGET_DISCONNECT;
+        target = TS_USB_MUX_DISCONNECT;
     } else {
-        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Invalid target");
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Invalid target (use: esp32, agx, lpmu, disconnect)");
         return ESP_ERR_INVALID_ARG;
     }
     
-    esp_err_t ret = ts_usb_mux_set_target(mux_id, target);
+    esp_err_t ret = ts_usb_mux_set_target(target);
     if (ret != ESP_OK) {
         ts_api_result_error(result, TS_API_ERR_HARDWARE, "USB MUX control failed");
         return ret;
     }
     
     cJSON *data = cJSON_CreateObject();
-    cJSON_AddNumberToObject(data, "mux", mux_id);
     cJSON_AddStringToObject(data, "target", target_str);
     cJSON_AddBoolToObject(data, "success", true);
     
     ts_api_result_ok(result, data);
-    TS_LOGI(TAG, "USB MUX %d set to %s", mux_id, target_str);
+    TS_LOGI(TAG, "USB MUX set to %s", target_str);
     return ESP_OK;
 }
 

@@ -34,16 +34,7 @@
             "resolution_bits": 10,
             "min_duty_percent": 10,
             "max_duty_percent": 100,
-            "description": "Primary cooling fan"
-        },
-        "fan_1": {
-            "type": "pwm_fan",
-            "gpio": "FAN_PWM_1",
-            "frequency_hz": 25000,
-            "resolution_bits": 10,
-            "min_duty_percent": 10,
-            "max_duty_percent": 100,
-            "description": "Secondary cooling fan"
+            "description": "Primary cooling fan (only fan on board)"
         },
         "usb_mux": {
             "type": "usb_mux",
@@ -75,13 +66,16 @@
             "description": "DC input voltage monitor (6.3V per ADC volt)"
         },
         "power_monitor_uart": {
-            "type": "pzem",
-            "tx_gpio": "POWER_UART_TX",
+            "type": "power_chip",
             "rx_gpio": "POWER_UART_RX",
             "uart_port": 1,
             "baud_rate": 9600,
-            "address": 1,
-            "description": "PZEM power meter for voltage/current/power monitoring"
+            "data_bits": 8,
+            "parity": "none",
+            "stop_bits": 1,
+            "frame_format": "[0xFF][voltage][current][CRC]",
+            "frame_size": 4,
+            "description": "Power chip data receiver (voltage/current/power, 9600 8N1)"
         },
         "sd_card": {
             "type": "sdmmc",

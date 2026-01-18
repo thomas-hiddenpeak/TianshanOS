@@ -18,6 +18,7 @@
 
 #include "ts_console.h"
 #include "ts_dhcp_server.h"
+#include "ts_config_module.h"
 #include "ts_log.h"
 #include "argtable3/argtable3.h"
 #include <string.h>
@@ -794,13 +795,28 @@ static int do_dhcp_bindings(ts_dhcp_if_t iface, bool json_output)
 
 static int do_dhcp_save(void)
 {
+    ts_console_printf("Saving DHCP configuration...\n");
+    
+    /* 调用原有保存方法 */
     esp_err_t ret = ts_dhcp_server_save_config();
     if (ret != ESP_OK) {
-        printf("Error: Failed to save configuration: %s\n", esp_err_to_name(ret));
+        ts_console_error("Failed to save to NVS: %s\n", esp_err_to_name(ret));
         return 1;
     }
     
-    printf("DHCP configuration saved to NVS.\n");
+    /* 同时使用统一配置模块进行双写 */
+    ret = ts_config_module_persist(TS_CONFIG_MODULE_DHCP);
+    if (ret == ESP_OK) {
+        ts_console_success("Configuration saved to NVS");
+        if (ts_config_module_has_pending_sync()) {
+            printf(" (SD card sync pending)\n");
+        } else {
+            printf(" and SD card\n");
+        }
+    } else {
+        printf("Configuration saved to NVS\n");
+    }
+    
     return 0;
 }
 

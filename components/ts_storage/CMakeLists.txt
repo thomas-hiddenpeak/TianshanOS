@@ -10,5 +10,5 @@ idf_component_register(
     SRCS ${TS_STORAGE_SRCS}
     INCLUDE_DIRS "include"
     REQUIRES ts_core fatfs spiffs vfs
-    PRIV_REQUIRES driver sdmmc
+    PRIV_REQUIRES driver sdmmc ts_event
 )

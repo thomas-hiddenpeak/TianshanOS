@@ -387,9 +387,9 @@ esp_err_t ts_net_manager_init(void)
     /* 初始化默认配置 */
     strncpy(s_state.hostname, TS_NET_DEFAULT_HOSTNAME, sizeof(s_state.hostname) - 1);
     
-    /* 以太网默认配置 */
+    /* 以太网默认配置 - 作为网关/DHCP服务器，默认使用静态IP */
     s_state.eth_config.enabled = true;
-    s_state.eth_config.ip_mode = TS_NET_IP_MODE_DHCP;
+    s_state.eth_config.ip_mode = TS_NET_IP_MODE_STATIC;
     s_state.eth_config.auto_start = true;
     strncpy(s_state.eth_config.static_ip.ip, TS_NET_DEFAULT_IP, TS_NET_IP_STR_MAX_LEN);
     strncpy(s_state.eth_config.static_ip.netmask, TS_NET_DEFAULT_NETMASK, TS_NET_IP_STR_MAX_LEN);
@@ -1146,9 +1146,9 @@ esp_err_t ts_net_manager_reset_config(void)
 {
     xSemaphoreTake(s_state.mutex, portMAX_DELAY);
     
-    /* 重置以太网配置 */
+    /* 重置以太网配置 - 作为网关/DHCP服务器，默认使用静态IP */
     s_state.eth_config.enabled = true;
-    s_state.eth_config.ip_mode = TS_NET_IP_MODE_DHCP;
+    s_state.eth_config.ip_mode = TS_NET_IP_MODE_STATIC;
     s_state.eth_config.auto_start = true;
     strncpy(s_state.eth_config.static_ip.ip, TS_NET_DEFAULT_IP, TS_NET_IP_STR_MAX_LEN);
     strncpy(s_state.eth_config.static_ip.netmask, TS_NET_DEFAULT_NETMASK, TS_NET_IP_STR_MAX_LEN);

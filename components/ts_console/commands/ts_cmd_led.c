@@ -23,6 +23,7 @@
 #include "ts_led_qrcode.h"
 #include "ts_led_font.h"
 #include "ts_led_text.h"
+#include "ts_config_module.h"
 #include "ts_log.h"
 #include "argtable3/argtable3.h"
 #include <string.h>
@@ -834,20 +835,35 @@ static int do_led_save(const char *device_name)
 {
     esp_err_t ret;
     
+    ts_console_printf("Saving LED configuration...\n");
+    
+    /* 调用原有保存方法 */
     if (device_name) {
         ret = ts_led_save_boot_config(device_name);
         if (ret != ESP_OK) {
             ts_console_error("Failed to save boot config: %s\n", esp_err_to_name(ret));
             return 1;
         }
-        ts_console_success("Boot config saved for '%s'\n", device_name);
     } else {
         ret = ts_led_save_all_boot_config();
         if (ret != ESP_OK) {
             ts_console_error("Failed to save boot config\n");
             return 1;
         }
-        ts_console_success("Boot config saved for all LED devices\n");
+    }
+    
+    /* 同时使用统一配置模块进行双写 */
+    ret = ts_config_module_persist(TS_CONFIG_MODULE_LED);
+    if (ret == ESP_OK) {
+        ts_console_success("Configuration saved to NVS");
+        if (ts_config_module_has_pending_sync()) {
+            ts_console_printf(" (SD card sync pending)\n");
+        } else {
+            ts_console_printf(" and SD card\n");
+        }
+    } else {
+        ts_console_success("Boot config saved for %s\n", 
+            device_name ? device_name : "all LED devices");
     }
     
     return 0;

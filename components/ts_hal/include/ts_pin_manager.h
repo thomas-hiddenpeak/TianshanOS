@@ -71,6 +71,7 @@ typedef enum {
     TS_PIN_FUNC_AGX_FORCE_RECOVERY, /**< AGX force recovery */
     TS_PIN_FUNC_LPMU_POWER,         /**< LPMU power control */
     TS_PIN_FUNC_LPMU_RESET,         /**< LPMU reset */
+    TS_PIN_FUNC_RTL8367_RST,        /**< RTL8367 switch reset */
     
     /* Power Monitoring (50-54) */
     TS_PIN_FUNC_POWER_ADC = 50,     /**< Power ADC input */

@@ -3,7 +3,7 @@
 > **项目**：TianShanOS（天山操作系统）  
 > **版本**：0.1.0-dev  
 > **最后更新**：2026年1月19日  
-> **代码统计**：78 个 C 源文件，52 个头文件
+> **代码统计**：85+ 个 C 源文件，60+ 个头文件
 
 ---
 
@@ -20,6 +20,7 @@
 | Phase 6: 网络与安全 | ✅ 完成 | 100% | 2026-01-15 |
 | Phase 7: WebUI | ✅ 完成 | 100% | 2026-01-15 |
 | Phase 8: 文档与测试 | ✅ 完成 | 100% | 2026-01-15 |
+| Phase 9: 统一配置系统 | ✅ 完成 | 100% | 2026-01-19 |
 
 ---
 
@@ -267,7 +268,78 @@
 
 ---
 
+## 📋 Phase 9: 统一配置系统 ✅
+
+### ts_config_module - 模块化配置管理
+- [x] 模块枚举定义 (NET/DHCP/WIFI/LED/FAN/DEVICE/SYSTEM)
+- [x] Schema 定义结构 (类型、默认值、描述)
+- [x] 模块注册机制 (ts_config_module_register)
+- [x] SD卡优先加载逻辑 (ts_config_module_load)
+- [x] NVS JSON blob 存储 (解决 15 字符键名限制)
+- [x] 双写同步 (NVS + SD卡)
+- [x] pending_sync 热插拔处理
+- [x] 配置导入/导出 (ts_config_module_export_to_sdcard)
+- [x] 配置重置 (ts_config_module_reset)
+
+### ts_config_meta - 元配置管理
+- [x] global_seq 全局序列号
+- [x] sync_seq 同步序列号
+- [x] pending_sync 位掩码
+- [x] Schema 版本存储
+
+### ts_config_schemas - Schema 定义
+- [x] NET 模块 Schema (7 项: eth.enabled, eth.dhcp, eth.ip...)
+- [x] DHCP 模块 Schema (6 项: enabled, start_ip, end_ip...)
+- [x] WIFI 模块 Schema (9 项: mode, ap.ssid, sta.ssid...)
+- [x] LED 模块 Schema (8 项: brightness, effect_speed, matrix.rotation...)
+- [x] FAN 模块 Schema (11 项: mode, min_duty, curve.t1...)
+- [x] DEVICE 模块 Schema (7 项: agx.auto_power_on, monitor.interval...)
+- [x] SYSTEM 模块 Schema (8 项: timezone, log_level, console.baudrate...)
+
+### CLI 命令增强
+- [x] `config --allsave` - 保存所有模块
+- [x] `net --save` - 保存网络配置
+- [x] `dhcp --save` - 保存 DHCP 配置
+- [x] `wifi --save` - 保存 WiFi 配置
+- [x] `led --save` - 保存 LED 配置
+- [x] `fan --save` - 保存风扇配置
+- [x] `device --save` - 保存设备配置
+- [x] `system --save` - 保存系统配置
+
+### 文档
+- [x] 统一配置系统设计文档 (CONFIG_SYSTEM_DESIGN.md)
+- [x] GPIO 引脚映射文档 (GPIO_MAPPING.md)
+
+---
+
 ## 📝 开发日志
+
+### 2026-01-19
+- **统一配置系统 (Phase 9) 完成**：
+  - 创建设计文档 (docs/CONFIG_SYSTEM_DESIGN.md)
+    - SD卡优先 + NVS 备份双写同步机制
+    - 无 RTC 设计（序列号替代时间戳）
+    - pending_sync 热插拔处理
+    - Schema 版本迁移框架
+  - 实现 ts_config_module (ts_config_module.h/c)
+    - 7 个配置模块: NET, DHCP, WIFI, LED, FAN, DEVICE, SYSTEM
+    - 模块注册/加载/持久化/重置 API
+    - SD卡/NVS 自动优先级选择
+    - JSON blob 存储（解决 NVS 15字符键名限制）
+  - 实现 ts_config_meta (ts_config_meta.h/c)
+    - global_seq / sync_seq 序列号管理
+    - pending_sync 位掩码管理
+    - Schema 版本存储
+  - 实现 ts_config_schemas (ts_config_schemas.c)
+    - 7 个模块的 Schema 定义（50+ 配置项）
+    - 自动注册和加载
+  - CLI 命令增强：
+    - `config --allsave` - 一键保存所有模块配置
+    - 7 个模块 `--save` 命令: net, dhcp, wifi, led, fan, device, system
+  - 修复 NVS 键名超长错误（JSON blob 存储方案）
+  - 创建 GPIO 引脚映射文档 (docs/GPIO_MAPPING.md)
+  - 更新架构设计文档引脚定义（与 robOS/PCB 一致）
+  - 修正 SD 卡引脚、设备控制引脚、电源监控引脚
 
 ### 2026-01-18
 - **SSH 高级功能**：

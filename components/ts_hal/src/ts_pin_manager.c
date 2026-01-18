@@ -79,6 +79,7 @@ static const pin_function_info_t s_function_names[] = {
     { TS_PIN_FUNC_AGX_FORCE_RECOVERY, "AGX_FORCE_RECOVERY", "AGX force recovery" },
     { TS_PIN_FUNC_LPMU_POWER, "LPMU_POWER", "LPMU power control" },
     { TS_PIN_FUNC_LPMU_RESET, "LPMU_RESET", "LPMU reset" },
+    { TS_PIN_FUNC_RTL8367_RST, "RTL8367_RST", "RTL8367 switch reset" },
     
     /* Power Monitoring */
     { TS_PIN_FUNC_POWER_ADC, "POWER_ADC", "Power ADC input" },
@@ -489,9 +490,8 @@ esp_err_t ts_pin_manager_load_defaults(void)
     SET_DEFAULT_PIN(TS_PIN_FUNC_LED_BOARD, 42);
     SET_DEFAULT_PIN(TS_PIN_FUNC_LED_MATRIX, 9);
     
-    /* Fan System */
-    SET_DEFAULT_PIN(TS_PIN_FUNC_FAN_PWM_0, 41);
-    SET_DEFAULT_PIN(TS_PIN_FUNC_FAN_PWM_1, 40);
+    /* Fan System - 只有一个风扇 */
+    SET_DEFAULT_PIN(TS_PIN_FUNC_FAN_PWM_0, 41);  // GPIO41: 风扇 PWM (25kHz)
     
     /* Ethernet W5500 */
     SET_DEFAULT_PIN(TS_PIN_FUNC_ETH_MISO, 13);
@@ -505,18 +505,29 @@ esp_err_t ts_pin_manager_load_defaults(void)
     SET_DEFAULT_PIN(TS_PIN_FUNC_USB_MUX_1, 8);
     SET_DEFAULT_PIN(TS_PIN_FUNC_USB_MUX_2, 48);
     
-    /* Device Control */
-    SET_DEFAULT_PIN(TS_PIN_FUNC_AGX_POWER, 1);
-    SET_DEFAULT_PIN(TS_PIN_FUNC_LPMU_POWER, 2);
-    SET_DEFAULT_PIN(TS_PIN_FUNC_LPMU_RESET, 3);
+    /* Device Control (与 robOS 一致) */
+    SET_DEFAULT_PIN(TS_PIN_FUNC_AGX_POWER, 3);          // GPIO3: 强制关机 (LOW=force off, HIGH=normal)
+    SET_DEFAULT_PIN(TS_PIN_FUNC_AGX_RESET, 1);          // GPIO1: 复位 (HIGH=reset, LOW=normal)
+    SET_DEFAULT_PIN(TS_PIN_FUNC_AGX_FORCE_RECOVERY, 40);// GPIO40: 恢复模式 (HIGH=recovery)
+    SET_DEFAULT_PIN(TS_PIN_FUNC_LPMU_POWER, 46);        // GPIO46: 电源按钮 (pulse HIGH)
+    SET_DEFAULT_PIN(TS_PIN_FUNC_LPMU_RESET, 2);         // GPIO2: 复位 (pulse HIGH)
     
-    /* SD Card */
-    SET_DEFAULT_PIN(TS_PIN_FUNC_SD_CMD, 4);
-    SET_DEFAULT_PIN(TS_PIN_FUNC_SD_CLK, 5);
-    SET_DEFAULT_PIN(TS_PIN_FUNC_SD_D0, 6);
-    SET_DEFAULT_PIN(TS_PIN_FUNC_SD_D1, 7);
-    SET_DEFAULT_PIN(TS_PIN_FUNC_SD_D2, 15);
-    SET_DEFAULT_PIN(TS_PIN_FUNC_SD_D3, 16);
+    /* RTL8367 Switch */
+    SET_DEFAULT_PIN(TS_PIN_FUNC_RTL8367_RST, 17);    // GPIO17: RTL8367 复位 (HIGH=reset, LOW=normal)
+
+    /* Power Monitoring (与 PCB 图纸一致) */
+    SET_DEFAULT_PIN(TS_PIN_FUNC_POWER_ADC, 18);      // GPIO18: ADC2_CH7, 分压比 11.4:1, 最高 72V
+    SET_DEFAULT_PIN(TS_PIN_FUNC_POWER_UART_RX, 47);  // GPIO47: UART1_RX, 9600 8N1, [0xFF][V][I][CRC]
+
+    /* SD Card (SDMMC 4-bit 模式，与 robOS storage_device.c 一致) */
+    SET_DEFAULT_PIN(TS_PIN_FUNC_SD_D0, 4);      // GPIO4: D0
+    SET_DEFAULT_PIN(TS_PIN_FUNC_SD_D1, 5);      // GPIO5: D1
+    SET_DEFAULT_PIN(TS_PIN_FUNC_SD_D2, 6);      // GPIO6: D2
+    SET_DEFAULT_PIN(TS_PIN_FUNC_SD_D3, 7);      // GPIO7: D3
+    SET_DEFAULT_PIN(TS_PIN_FUNC_SD_CMD, 15);    // GPIO15: CMD
+    SET_DEFAULT_PIN(TS_PIN_FUNC_SD_CLK, 16);    // GPIO16: CLK (40MHz)
+    
+    /* 注意: POWER_ADC (GPIO18) 和 POWER_UART (GPIO47) 在原理图中未确认，暂不配置 */
     
     #undef SET_DEFAULT_PIN
 #endif

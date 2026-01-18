@@ -31,8 +31,8 @@ esp_err_t ts_cmd_service_register(void);
 esp_err_t ts_cmd_system_register(void);
 
 /**
- * @brief 注册 config 命令
- * config --get/--set/--list/--reset
+ * @brief 注册 config 命令（统一配置管理）
+ * config --get/--set/--list/--reset/--show/--allsave/--sync/--export/--meta
  */
 esp_err_t ts_cmd_config_register(void);
 

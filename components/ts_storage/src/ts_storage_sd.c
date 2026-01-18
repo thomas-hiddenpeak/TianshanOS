@@ -9,6 +9,7 @@
 
 #include "ts_storage.h"
 #include "ts_log.h"
+#include "ts_event.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #include "driver/sdmmc_host.h"
@@ -235,6 +236,10 @@ esp_err_t ts_storage_mount_sd(const ts_sd_config_t *config)
     TS_LOGI(TAG, "  Speed: %s", (s_card->csd.tr_speed > 25000000) ? "high speed" : "default");
     TS_LOGI(TAG, "  Size: %lluMB", ((uint64_t)s_card->csd.capacity) * s_card->csd.sector_size / (1024 * 1024));
     
+    /* 发布 SD 卡挂载事件，通知其他组件（如 ts_config_file）*/
+    ts_event_post(TS_EVENT_BASE_STORAGE, TS_EVT_STORAGE_SD_MOUNTED, 
+                  s_mount_point, strlen(s_mount_point) + 1, 0);
+    
     return ESP_OK;
 }
 
@@ -249,6 +254,10 @@ esp_err_t ts_storage_unmount_sd(void)
         TS_LOGE(TAG, "Failed to unmount SD card: %s", esp_err_to_name(ret));
         return ret;
     }
+    
+    /* 发布 SD 卡卸载事件 */
+    ts_event_post(TS_EVENT_BASE_STORAGE, TS_EVT_STORAGE_SD_UNMOUNTED, 
+                  s_mount_point, strlen(s_mount_point) + 1, 0);
     
     s_card = NULL;
     ts_storage_set_sd_mounted(false, NULL);

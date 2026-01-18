@@ -17,11 +17,7 @@
         },
         "FAN_PWM_0": {
             "gpio": 41,
-            "description": "Fan 0 PWM control"
-        },
-        "FAN_PWM_1": {
-            "gpio": 40,
-            "description": "Fan 1 PWM control"
+            "description": "Fan PWM control (25kHz, 10-bit resolution)"
         },
         "ETH_MISO": {
             "gpio": 13,
@@ -45,100 +41,88 @@
         },
         "ETH_RST": {
             "gpio": 39,
-            "description": "W5500 reset"
+            "active_low": true,
+            "initial_state": "high",
+            "description": "W5500 reset (LOW=reset, HIGH=normal)"
         },
         "USB_MUX_0": {
             "gpio": 8,
-            "description": "USB MUX select 0"
+            "description": "USB MUX0 select (ESP32_MUX0_SEL)"
         },
         "USB_MUX_1": {
             "gpio": 48,
-            "description": "USB MUX select 1"
-        },
-        "AGX_POWER": {
-            "gpio": 1,
-            "description": "AGX power control"
-        },
-        "AGX_RESET": {
-            "gpio": 2,
-            "description": "AGX reset control"
-        },
-        "AGX_FORCE_RECOVERY": {
-            "gpio": 46,
-            "description": "AGX force recovery"
-        },
-        "LPMU_POWER": {
-            "gpio": 3,
-            "description": "LPMU power control"
-        },
-        "LPMU_RESET": {
-            "gpio": 14,
-            "description": "LPMU reset control"
+            "description": "USB MUX1 select (ESP32_MUX1_SEL)"
         },
         "POWER_ADC": {
             "gpio": 18,
-            "adc_unit": 2,
-            "adc_channel": 7,
-            "divider_ratio": 11.4,
-            "description": "Power monitor ADC input (72V max / 11.4 divider)"
-        },
-        "POWER_UART_TX": {
-            "gpio": 17,
-            "description": "Power module UART TX"
+            "description": "DC input voltage monitor (ADC2_CH7, divider 11.4:1, max 72V)"
         },
         "POWER_UART_RX": {
             "gpio": 47,
-            "uart_port": 1,
-            "baud_rate": 9600,
-            "description": "Power module UART RX (PZEM protocol)"
+            "description": "Power chip data RX (UART1_RX, 9600 8N1, [0xFF][V][I][CRC])"
+        },
+        "AGX_FORCE_SHUTDOWN": {
+            "gpio": 3,
+            "active_low": true,
+            "initial_state": "high",
+            "description": "AGX force shutdown (LOW=force off, HIGH=normal)"
+        },
+        "AGX_RESET": {
+            "gpio": 1,
+            "active_high": true,
+            "initial_state": "low",
+            "pulse_ms": 1000,
+            "description": "AGX reset control (HIGH=reset, LOW=normal, pulse 1000ms)"
+        },
+        "AGX_RECOVERY": {
+            "gpio": 40,
+            "active_high": true,
+            "initial_state": "low",
+            "description": "AGX recovery mode (HIGH=enable recovery, LOW=normal)"
+        },
+        "LPMU_POWER": {
+            "gpio": 46,
+            "active_high": true,
+            "initial_state": "low",
+            "pulse_ms": 300,
+            "description": "LPMU power button (pulse HIGH 300ms to toggle)"
+        },
+        "LPMU_RESET": {
+            "gpio": 2,
+            "active_high": true,
+            "initial_state": "low",
+            "pulse_ms": 300,
+            "description": "LPMU reset (pulse HIGH 300ms to reset)"
+        },
+        "RTL8367_RST": {
+            "gpio": 17,
+            "active_high": true,
+            "initial_state": "low",
+            "description": "RTL8367 switch reset (HIGH=reset, LOW=normal)"
         },
         "SD_CMD": {
-            "gpio": 35,
+            "gpio": 15,
             "description": "SD card CMD"
         },
         "SD_CLK": {
-            "gpio": 36,
-            "description": "SD card CLK"
+            "gpio": 16,
+            "description": "SD card CLK (40MHz)"
         },
         "SD_D0": {
-            "gpio": 37,
+            "gpio": 4,
             "description": "SD card D0"
         },
         "SD_D1": {
-            "gpio": 33,
+            "gpio": 5,
             "description": "SD card D1"
         },
         "SD_D2": {
-            "gpio": 34,
+            "gpio": 6,
             "description": "SD card D2"
         },
         "SD_D3": {
-            "gpio": 21,
+            "gpio": 7,
             "description": "SD card D3"
-        },
-        "I2C0_SDA": {
-            "gpio": 5,
-            "description": "I2C bus 0 SDA"
-        },
-        "I2C0_SCL": {
-            "gpio": 6,
-            "description": "I2C bus 0 SCL"
-        },
-        "I2C1_SDA": {
-            "gpio": 15,
-            "description": "I2C bus 1 SDA"
-        },
-        "I2C1_SCL": {
-            "gpio": 16,
-            "description": "I2C bus 1 SCL"
-        },
-        "UART1_TX": {
-            "gpio": 17,
-            "description": "UART1 TX (shared with POWER_UART_TX)"
-        },
-        "UART1_RX": {
-            "gpio": 47,
-            "description": "UART1 RX (shared with POWER_UART_RX)"
         }
     }
 }

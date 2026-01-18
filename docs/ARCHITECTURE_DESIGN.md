@@ -507,46 +507,47 @@ esp_err_t ts_service_boot(void);  // 执行完整启动流程
 #### 引脚管理器设计
 
 ```c
-// 逻辑功能定义
+// 逻辑功能定义（与 robOS/原理图一致）
 typedef enum {
     // LED 系统
-    TS_PIN_FUNC_LED_TOUCH,      // 触摸灯数据线
-    TS_PIN_FUNC_LED_BOARD,      // 板载灯数据线
-    TS_PIN_FUNC_LED_MATRIX,     // 矩阵灯数据线
+    TS_PIN_FUNC_LED_TOUCH,      // GPIO45: 触摸灯数据线 (WS2812)
+    TS_PIN_FUNC_LED_BOARD,      // GPIO42: 板载灯数据线 (WS2812)
+    TS_PIN_FUNC_LED_MATRIX,     // GPIO9: 矩阵灯数据线 (WS2812, 32x32)
     
-    // 风扇系统
-    TS_PIN_FUNC_FAN_PWM_0,      // 风扇0 PWM
-    TS_PIN_FUNC_FAN_PWM_1,      // 风扇1 PWM
-    TS_PIN_FUNC_FAN_TACH_0,     // 风扇0 转速（预留）
+    // 风扇系统（仅一个风扇）
+    TS_PIN_FUNC_FAN_PWM_0,      // GPIO41: 风扇 PWM (25kHz)
     
-    // 以太网
-    TS_PIN_FUNC_ETH_MISO,
-    TS_PIN_FUNC_ETH_MOSI,
-    TS_PIN_FUNC_ETH_SCLK,
-    TS_PIN_FUNC_ETH_CS,
-    TS_PIN_FUNC_ETH_INT,
-    TS_PIN_FUNC_ETH_RST,
+    // 以太网 W5500
+    TS_PIN_FUNC_ETH_MISO,       // GPIO13
+    TS_PIN_FUNC_ETH_MOSI,       // GPIO11
+    TS_PIN_FUNC_ETH_SCLK,       // GPIO12
+    TS_PIN_FUNC_ETH_CS,         // GPIO10
+    TS_PIN_FUNC_ETH_INT,        // GPIO38
+    TS_PIN_FUNC_ETH_RST,        // GPIO39 (LOW=reset, HIGH=normal)
     
     // USB MUX
-    TS_PIN_FUNC_USB_MUX_1,
-    TS_PIN_FUNC_USB_MUX_2,
+    TS_PIN_FUNC_USB_MUX_0,      // GPIO8
+    TS_PIN_FUNC_USB_MUX_1,      // GPIO48
     
     // 设备控制
-    TS_PIN_FUNC_AGX_POWER,
-    TS_PIN_FUNC_LPMU_POWER,
-    TS_PIN_FUNC_LPMU_RESET,
+    TS_PIN_FUNC_AGX_POWER,      // GPIO3: 强制关机 (LOW=force off, HIGH=normal)
+    TS_PIN_FUNC_AGX_RESET,      // GPIO1: 复位 (HIGH=reset, pulse 1000ms)
+    TS_PIN_FUNC_AGX_FORCE_RECOVERY, // GPIO40: 恢复模式 (HIGH=recovery)
+    TS_PIN_FUNC_LPMU_POWER,     // GPIO46: 电源按钮 (pulse HIGH 300ms)
+    TS_PIN_FUNC_LPMU_RESET,     // GPIO2: 复位 (pulse HIGH 300ms)
+    TS_PIN_FUNC_RTL8367_RST,    // GPIO17: RTL8367 交换机复位 (HIGH=reset)
     
-    // 电源监控
-    TS_PIN_FUNC_POWER_ADC,
-    TS_PIN_FUNC_POWER_UART_RX,
+    // 电源监控（待确认）
+    TS_PIN_FUNC_POWER_ADC,      // GPIO18
+    TS_PIN_FUNC_POWER_UART_RX,  // GPIO47
     
-    // SD 卡
-    TS_PIN_FUNC_SD_CMD,
-    TS_PIN_FUNC_SD_CLK,
-    TS_PIN_FUNC_SD_D0,
-    TS_PIN_FUNC_SD_D1,
-    TS_PIN_FUNC_SD_D2,
-    TS_PIN_FUNC_SD_D3,
+    // SD 卡 (SDMMC 4-bit, 40MHz)
+    TS_PIN_FUNC_SD_CMD,         // GPIO4
+    TS_PIN_FUNC_SD_CLK,         // GPIO5
+    TS_PIN_FUNC_SD_D0,          // GPIO6
+    TS_PIN_FUNC_SD_D1,          // GPIO7
+    TS_PIN_FUNC_SD_D2,          // GPIO15
+    TS_PIN_FUNC_SD_D3,          // GPIO16
     
     TS_PIN_FUNC_MAX
 } ts_pin_function_t;

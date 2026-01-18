@@ -17,6 +17,7 @@
 
 #include "ts_console.h"
 #include "ts_log.h"
+#include "ts_config_module.h"
 #include "argtable3/argtable3.h"
 #include "esp_system.h"
 #include "esp_chip_info.h"
@@ -42,6 +43,7 @@ static struct {
     struct arg_lit *memory;
     struct arg_lit *tasks;
     struct arg_lit *reboot;
+    struct arg_lit *save;
     struct arg_int *delay;
     struct arg_lit *json;
     struct arg_lit *help;
@@ -353,6 +355,29 @@ static int do_system_reboot(int delay_sec)
 }
 
 /*===========================================================================*/
+/*                          Command: system --save                            */
+/*===========================================================================*/
+
+static int do_system_save(void)
+{
+    ts_console_printf("Saving system configuration...\n");
+    
+    esp_err_t ret = ts_config_module_persist(TS_CONFIG_MODULE_SYSTEM);
+    if (ret == ESP_OK) {
+        ts_console_success("System configuration saved to NVS");
+        if (ts_config_module_has_pending_sync()) {
+            ts_console_printf(" (SD card sync pending)\n");
+        } else {
+            ts_console_printf(" and SD card\n");
+        }
+        return 0;
+    } else {
+        ts_console_error("Failed to save configuration: %s\n", esp_err_to_name(ret));
+        return 1;
+    }
+}
+
+/*===========================================================================*/
 /*                          Main Command Handler                              */
 /*===========================================================================*/
 
@@ -370,6 +395,7 @@ static int cmd_system(int argc, char **argv)
         ts_console_printf("  -m, --memory        Show memory usage\n");
         ts_console_printf("  -t, --tasks         Show task list\n");
         ts_console_printf("  -r, --reboot        Reboot system\n");
+        ts_console_printf("      --save          Save system config to NVS/SD\n");
         ts_console_printf("      --delay <sec>   Delay before reboot\n");
         ts_console_printf("  -j, --json          JSON output\n");
         ts_console_printf("  -h, --help          Show this help\n\n");
@@ -392,6 +418,10 @@ static int cmd_system(int argc, char **argv)
         int delay = s_system_args.delay->count > 0 ? 
                     s_system_args.delay->ival[0] : 0;
         return do_system_reboot(delay);
+    }
+    
+    if (s_system_args.save->count > 0) {
+        return do_system_save();
     }
     
     if (s_system_args.version->count > 0) {
@@ -426,6 +456,7 @@ esp_err_t ts_cmd_system_register(void)
     s_system_args.memory  = arg_lit0("m", "memory", "Show memory usage");
     s_system_args.tasks   = arg_lit0("t", "tasks", "Show tasks");
     s_system_args.reboot  = arg_lit0("r", "reboot", "Reboot system");
+    s_system_args.save    = arg_lit0(NULL, "save", "Save system config");
     s_system_args.delay   = arg_int0(NULL, "delay", "<sec>", "Delay before reboot");
     s_system_args.json    = arg_lit0("j", "json", "JSON output");
     s_system_args.help    = arg_lit0("h", "help", "Show help");

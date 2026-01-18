@@ -7,6 +7,9 @@ idf_component_register(
         "src/ts_config_nvs.c"
         "src/ts_config_file.c"
         "src/ts_config_json.c"
+        "src/ts_config_meta.c"
+        "src/ts_config_module.c"
+        "src/ts_config_schemas.c"
     INCLUDE_DIRS
         "include"
     REQUIRES
@@ -15,6 +18,7 @@ idf_component_register(
         fatfs
         json
         vfs
+        ts_event
     PRIV_REQUIRES
         esp_system
 )
