@@ -310,6 +310,223 @@ esp_err_t ts_crypto_keypair_export_public(ts_keypair_t keypair, char *pem, size_
     return ESP_OK;
 }
 
+/**
+ * @brief Write SSH-style uint32 in big-endian to buffer
+ */
+static size_t write_ssh_uint32(uint8_t *buf, uint32_t val)
+{
+    buf[0] = (val >> 24) & 0xFF;
+    buf[1] = (val >> 16) & 0xFF;
+    buf[2] = (val >> 8)  & 0xFF;
+    buf[3] = val & 0xFF;
+    return 4;
+}
+
+/**
+ * @brief Write SSH-style string (length + data) to buffer
+ */
+static size_t write_ssh_string(uint8_t *buf, const uint8_t *data, size_t len)
+{
+    size_t pos = write_ssh_uint32(buf, (uint32_t)len);
+    memcpy(buf + pos, data, len);
+    return pos + len;
+}
+
+/**
+ * @brief Write SSH-style mpint (big integer with leading zero if MSB is set)
+ */
+static size_t write_ssh_mpint(uint8_t *buf, const uint8_t *data, size_t len)
+{
+    /* Skip leading zeros except when all zeros */
+    while (len > 1 && data[0] == 0) {
+        data++;
+        len--;
+    }
+    
+    /* Add leading zero if MSB is set (negative in two's complement) */
+    if (data[0] & 0x80) {
+        size_t pos = write_ssh_uint32(buf, (uint32_t)(len + 1));
+        buf[pos] = 0;
+        memcpy(buf + pos + 1, data, len);
+        return pos + 1 + len;
+    } else {
+        return write_ssh_string(buf, data, len);
+    }
+}
+
+esp_err_t ts_crypto_keypair_export_openssh(ts_keypair_t keypair, char *openssh, size_t *openssh_len, const char *comment)
+{
+    if (!keypair || !openssh || !openssh_len) return ESP_ERR_INVALID_ARG;
+    
+    mbedtls_pk_type_t pk_type = mbedtls_pk_get_type(&keypair->pk);
+    const char *key_type_str = NULL;
+    uint8_t *blob = NULL;
+    size_t blob_len = 0;
+    esp_err_t result = ESP_FAIL;
+    
+    /* Allocate temporary buffer for binary blob */
+    blob = malloc(4096);
+    if (!blob) return ESP_ERR_NO_MEM;
+    
+    size_t pos = 0;
+    
+    if (pk_type == MBEDTLS_PK_RSA) {
+        /* RSA public key format:
+         * string    "ssh-rsa"
+         * mpint     e (public exponent)
+         * mpint     n (modulus)
+         */
+        key_type_str = "ssh-rsa";
+        mbedtls_rsa_context *rsa = mbedtls_pk_rsa(keypair->pk);
+        
+        /* Write key type */
+        pos += write_ssh_string(blob + pos, (const uint8_t *)"ssh-rsa", 7);
+        
+        /* Get RSA parameters */
+        size_t n_len = mbedtls_rsa_get_len(rsa);
+        uint8_t *n_buf = malloc(n_len);
+        uint8_t *e_buf = malloc(n_len);  /* e is smaller but reuse buffer size */
+        
+        if (!n_buf || !e_buf) {
+            free(n_buf);
+            free(e_buf);
+            free(blob);
+            return ESP_ERR_NO_MEM;
+        }
+        
+        /* Export N and E */
+        mbedtls_mpi N, E;
+        mbedtls_mpi_init(&N);
+        mbedtls_mpi_init(&E);
+        mbedtls_rsa_export(rsa, &N, NULL, NULL, NULL, &E);
+        
+        size_t e_len = mbedtls_mpi_size(&E);
+        size_t actual_n_len = mbedtls_mpi_size(&N);
+        mbedtls_mpi_write_binary(&E, e_buf, e_len);
+        mbedtls_mpi_write_binary(&N, n_buf, actual_n_len);
+        
+        mbedtls_mpi_free(&N);
+        mbedtls_mpi_free(&E);
+        
+        /* Write E then N (OpenSSH order) */
+        pos += write_ssh_mpint(blob + pos, e_buf, e_len);
+        pos += write_ssh_mpint(blob + pos, n_buf, actual_n_len);
+        
+        free(n_buf);
+        free(e_buf);
+        
+    } else if (pk_type == MBEDTLS_PK_ECKEY || pk_type == MBEDTLS_PK_ECDSA) {
+        /* ECDSA public key format:
+         * string    identifier ("ecdsa-sha2-nistp256" or "ecdsa-sha2-nistp384")
+         * string    curve name ("nistp256" or "nistp384")
+         * string    Q (public point in uncompressed format: 04 || x || y)
+         */
+        mbedtls_ecp_keypair *ec = mbedtls_pk_ec(keypair->pk);
+        mbedtls_ecp_group_id grp_id = ec->private_grp.id;
+        
+        const char *identifier, *curve_name;
+        size_t coord_len;
+        
+        if (grp_id == MBEDTLS_ECP_DP_SECP256R1) {
+            identifier = "ecdsa-sha2-nistp256";
+            curve_name = "nistp256";
+            coord_len = 32;
+        } else if (grp_id == MBEDTLS_ECP_DP_SECP384R1) {
+            identifier = "ecdsa-sha2-nistp384";
+            curve_name = "nistp384";
+            coord_len = 48;
+        } else {
+            free(blob);
+            return ESP_ERR_NOT_SUPPORTED;
+        }
+        
+        key_type_str = identifier;
+        
+        /* Write identifier */
+        pos += write_ssh_string(blob + pos, (const uint8_t *)identifier, strlen(identifier));
+        
+        /* Write curve name */
+        pos += write_ssh_string(blob + pos, (const uint8_t *)curve_name, strlen(curve_name));
+        
+        /* Write public point Q (uncompressed: 0x04 || X || Y) */
+        size_t q_len = 1 + 2 * coord_len;
+        uint8_t *q_buf = malloc(q_len);
+        if (!q_buf) {
+            free(blob);
+            return ESP_ERR_NO_MEM;
+        }
+        
+        size_t olen;
+        int ret = mbedtls_ecp_point_write_binary(&ec->private_grp, &ec->private_Q,
+                                                  MBEDTLS_ECP_PF_UNCOMPRESSED,
+                                                  &olen, q_buf, q_len);
+        if (ret != 0) {
+            free(q_buf);
+            free(blob);
+            return ESP_FAIL;
+        }
+        
+        pos += write_ssh_string(blob + pos, q_buf, olen);
+        free(q_buf);
+        
+    } else {
+        free(blob);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    
+    blob_len = pos;
+    
+    /* Base64 encode the blob */
+    size_t b64_len = ((blob_len + 2) / 3) * 4 + 1;
+    char *b64 = malloc(b64_len);
+    if (!b64) {
+        free(blob);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    size_t actual_b64_len;
+    int ret = mbedtls_base64_encode((unsigned char *)b64, b64_len, &actual_b64_len, blob, blob_len);
+    free(blob);
+    
+    if (ret != 0) {
+        free(b64);
+        return ESP_FAIL;
+    }
+    
+    /* Build final OpenSSH format: <type> <base64> [comment] */
+    size_t type_len = strlen(key_type_str);
+    size_t comment_len = comment ? strlen(comment) : 0;
+    size_t total_len = type_len + 1 + actual_b64_len + (comment_len > 0 ? 1 + comment_len : 0) + 2;
+    
+    if (*openssh_len < total_len) {
+        free(b64);
+        *openssh_len = total_len;
+        return ESP_ERR_INVALID_SIZE;
+    }
+    
+    pos = 0;
+    memcpy(openssh + pos, key_type_str, type_len);
+    pos += type_len;
+    openssh[pos++] = ' ';
+    memcpy(openssh + pos, b64, actual_b64_len);
+    pos += actual_b64_len;
+    
+    if (comment_len > 0) {
+        openssh[pos++] = ' ';
+        memcpy(openssh + pos, comment, comment_len);
+        pos += comment_len;
+    }
+    
+    openssh[pos++] = '\n';
+    openssh[pos] = '\0';
+    *openssh_len = pos + 1;
+    
+    free(b64);
+    result = ESP_OK;
+    
+    return result;
+}
+
 esp_err_t ts_crypto_keypair_export_private(ts_keypair_t keypair, char *pem, size_t *pem_len)
 {
     if (!keypair || !pem || !pem_len) return ESP_ERR_INVALID_ARG;

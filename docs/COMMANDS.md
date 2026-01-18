@@ -1140,7 +1140,7 @@ device --agx --status --json
 
 ## ssh - SSH 客户端
 
-远程 SSH 连接、命令执行、交互式 Shell 和端口转发。
+远程 SSH 连接、命令执行、交互式 Shell、端口转发和密钥管理。
 
 ### 语法
 
@@ -1148,46 +1148,95 @@ device --agx --status --json
 ssh [options]
 ```
 
-### 选项
+### 连接选项
 
-| 选项 | 简写 | 说明 |
-|------|------|------|
-| `--connect <host>` | `-c` | 连接到远程主机 |
-| `--port <port>` | `-p` | SSH 端口（默认 22） |
-| `--user <username>` | `-u` | 用户名 |
-| `--password <pass>` | `-P` | 密码（不推荐明文） |
-| `--key <path>` | `-k` | 私钥文件路径 |
-| `--exec <command>` | `-e` | 执行远程命令 |
-| `--shell` | `-s` | 启动交互式 Shell |
-| `--forward <spec>` | `-f` | 端口转发（格式：`local:remote:port`） |
-| `--timeout <ms>` | `-t` | 连接超时（毫秒） |
-| `--known-hosts <op>` | | 管理已知主机（list/remove/clear） |
-| `--json` | `-j` | JSON 格式输出 |
-| `--help` | `-h` | 显示帮助 |
+| 选项 | 说明 |
+|------|------|
+| `--host <ip>` | 远程主机地址 |
+| `--port <num>` | SSH 端口（默认 22） |
+| `--user <name>` | 用户名 |
+| `--password <pwd>` | 密码（密码认证） |
+| `--key <path>` | 私钥文件路径（公钥认证） |
+| `--exec <cmd>` | 执行远程命令 |
+| `--shell` | 启动交互式 Shell |
+| `--forward <spec>` | 端口转发（格式：`L<local>:<remote_host>:<remote_port>`） |
+| `--test` | 测试 SSH 连接 |
+| `--timeout <sec>` | 连接超时（秒） |
+| `--verbose` | 详细输出 |
 
-### 示例
+### 密钥生成选项
+
+| 选项 | 说明 |
+|------|------|
+| `--keygen` | 生成 SSH 密钥对 |
+| `--type <type>` | 密钥类型：`rsa`, `rsa2048`, `rsa4096`, `ecdsa`, `ec256`, `ec384` |
+| `--output <path>` | 私钥输出路径 |
+| `--comment <text>` | 公钥注释（可选） |
+
+### 密钥部署选项
+
+| 选项 | 说明 |
+|------|------|
+| `--copy-id` | 部署公钥到远程服务器（类似 ssh-copy-id） |
+
+使用 `--copyid` 时需要同时提供：
+- `--host` - 目标服务器
+- `--user` - 用户名
+- `--password` - 密码（用于初始认证）
+- `--key` - 私钥路径（公钥为 `<path>.pub`）
+
+### 密钥生成示例
 
 ```bash
-# 执行远程命令
-ssh --connect 192.168.1.100 --user root --password secret --exec "ls -la"
+# 生成 RSA 2048 位密钥对
+ssh --keygen --type rsa2048 --output /sdcard/id_rsa
 
-# 使用私钥认证
-ssh --connect server.local --user admin --key /sdcard/id_rsa --exec "uptime"
+# 生成 ECDSA P-256 密钥对（推荐，更快更安全）
+ssh --keygen --type ecdsa --output /sdcard/id_ecdsa --comment "TianShanOS AGX key"
+
+# 生成 RSA 4096 位密钥对（最安全，但生成较慢）
+ssh --keygen --type rsa4096 --output /sdcard/id_rsa_4096
+```
+
+生成的文件：
+- 私钥：`<output>` (PEM 格式)
+- 公钥：`<output>.pub` (OpenSSH 格式，可直接添加到 `authorized_keys`)
+
+### 公钥部署示例（ssh-copy-id）
+
+```bash
+# 将公钥部署到远程服务器（使用密码进行初始认证）
+ssh --copyid --host 192.168.1.100 --user nvidia --password secret --key /sdcard/id_ecdsa
+
+# 部署完成后，可以使用公钥认证
+ssh --host 192.168.1.100 --user nvidia --key /sdcard/id_ecdsa --exec "hostname"
+```
+
+`--copyid` 会执行以下操作：
+1. 使用密码连接到远程服务器
+2. 创建 `~/.ssh` 目录（如果不存在）
+3. 将公钥追加到 `~/.ssh/authorized_keys`
+4. 设置正确的目录/文件权限（700/600）
+5. 自动验证公钥认证是否成功
+
+### 连接示例
+
+```bash
+# 使用密码认证执行命令
+ssh --host 192.168.1.100 --user root --password secret --exec "uptime"
+
+# 使用公钥认证（使用生成的密钥）
+ssh --host 192.168.1.100 --user nvidia --key /sdcard/id_ecdsa --exec "nvidia-smi"
+
+# 测试连接
+ssh --test --host 192.168.1.100 --user root --key /sdcard/id_rsa
 
 # 启动交互式 Shell
-ssh --connect 192.168.1.100 --user root --password secret --shell
+ssh --host agx.local --user nvidia --key /sdcard/id_ecdsa --shell
 
 # 本地端口转发（将本地 8080 转发到远程的 localhost:80）
-ssh --connect gateway.local --user admin --password pass \
-    --forward "8080:localhost:80"
-
-# 管理已知主机
-ssh --known-hosts list          # 列出所有已知主机
-ssh --known-hosts remove --connect 192.168.1.100  # 移除指定主机
-ssh --known-hosts clear         # 清除所有
-
-# 自定义端口和超时
-ssh --connect 10.0.0.1 --port 2222 --user root --timeout 5000 --exec "whoami"
+ssh --host gateway.local --user admin --key /sdcard/id_ecdsa \
+    --forward "L8080:localhost:80"
 ```
 
 ### 交互式 Shell
@@ -1196,16 +1245,16 @@ ssh --connect 10.0.0.1 --port 2222 --user root --timeout 5000 --exec "whoami"
 - 支持 PTY（伪终端），完整的终端体验
 - 支持 Ctrl+C 发送中断信号
 - 支持 Ctrl+D 退出 Shell
-- 自动回显远程服务器的输出
+- 实时字符回显
 
 ### 端口转发
 
-端口转发格式：`localport:remotehost:remoteport`
+端口转发格式：`L<localport>:<remotehost>:<remoteport>`
 
 ```bash
 # 将本地 8080 端口转发到远程的 internal.server:3000
-ssh --connect bastion --user admin --key /sdcard/key \
-    --forward "8080:internal.server:3000"
+ssh --host bastion --user admin --key /sdcard/id_ecdsa \
+    --forward "L8080:internal.server:3000"
 ```
 
 转发建立后，访问 ESP32 的 8080 端口等同于访问远程的 internal.server:3000。
@@ -1219,6 +1268,25 @@ Trust this host? (yes/no):
 ```
 
 输入 `yes` 后密钥会保存到 NVS，后续连接自动验证。
+
+### 典型工作流
+
+1. **在 TianShanOS 上生成密钥对**：
+   ```bash
+   ssh --keygen --type ecdsa --output /sdcard/id_ecdsa --comment "TianShanOS"
+   ```
+
+2. **查看生成的公钥**（输出中已显示，或使用 `fs --cat /sdcard/id_ecdsa.pub`）
+
+3. **部署公钥到目标服务器**（使用 --copyid 自动部署）：
+   ```bash
+   ssh --copyid --host 192.168.1.100 --user nvidia --password secret --key /sdcard/id_ecdsa
+   ```
+
+4. **使用私钥连接**：
+   ```bash
+   ssh --host 192.168.1.100 --user nvidia --key /sdcard/id_ecdsa --exec "hostname"
+   ```
 
 ---
 
@@ -1237,7 +1305,7 @@ Trust this host? (yes/no):
 | `wifi` | ✅ 可用 | AP/STA 模式，扫描、连接、热点 |
 | `fs` | ✅ 可用 | 文件系统操作（ls/cat/rm/mkdir 等） |
 | `device` | ⚠️ 模拟 | 未接入真实驱动 |
-| `ssh` | ✅ 可用 | 命令执行、Shell、端口转发 |
+| `ssh` | ✅ 可用 | 命令执行、Shell、端口转发、密钥生成、公钥部署 |
 
 ---
 

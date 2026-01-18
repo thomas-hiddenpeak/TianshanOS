@@ -44,8 +44,9 @@ typedef struct {
     union {
         const char *password;       /**< Password (for PASSWORD auth) */
         struct {
-            const uint8_t *private_key;     /**< Private key (PEM format) */
+            const uint8_t *private_key;     /**< Private key (PEM format, memory) */
             size_t private_key_len;         /**< Private key length */
+            const char *private_key_path;   /**< Private key file path (alternative) */
             const char *passphrase;         /**< Key passphrase (optional) */
         } key;
     } auth;

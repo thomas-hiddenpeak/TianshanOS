@@ -289,7 +289,89 @@ while (running) {
 
 ---
 
+## 5. SSH 公钥认证失败问题 (libssh2 + mbedTLS)
+
+### 问题描述
+
+**症状**：使用 RSA 私钥进行公钥认证时，`libssh2_userauth_publickey_fromfile_ex()` 返回 `rc=-1`，错误信息为空或不相关。
+
+**环境**：
+- libssh2 1.10.1_DEV (ESP-IDF 移植版，mbedTLS 后端)
+- ESP32-S3
+- RSA-2048 密钥（传统 PEM 格式：`-----BEGIN RSA PRIVATE KEY-----`）
+
+**错误日志**：
+```
+I (8848) ts_ssh: Authenticating with public key from file: /sdcard/id_rsa
+I (8863) ts_ssh: Key file size: 1675 bytes, header: -----BEGIN RSA PRIVATE KEY-----
+E (9004) ts_ssh: libssh2_userauth_publickey_fromfile_ex failed: rc=-1, err_code=0, err=
+```
+
+### 调试过程
+
+1. **验证密钥格式**：确认是传统 RSA PEM 格式（mbedTLS 不支持 OpenSSH 新格式）
+2. **验证公钥部署**：通过密码认证确认服务器 `~/.ssh/authorized_keys` 包含正确公钥
+3. **验证服务器配置**：确认服务器支持 `publickey` 认证方法
+4. **尝试内存加载**：`libssh2_userauth_publickey_frommemory()` 同样失败
+
+### 根本原因
+
+**libssh2 的 mbedTLS 后端在某些情况下需要显式提供公钥文件路径**。
+
+当 `libssh2_userauth_publickey_fromfile_ex()` 的 `publickey` 参数为 `NULL` 时，libssh2 应该从私钥推导公钥，但 mbedTLS 后端可能无法正确处理这种情况。
+
+### 解决方案
+
+**显式提供公钥文件路径**：
+
+```c
+/* 构造公钥文件路径 (私钥路径 + ".pub") */
+char pubkey_path[128];
+snprintf(pubkey_path, sizeof(pubkey_path), "%s.pub", private_key_path);
+
+/* 检查公钥文件是否存在 */
+const char *pubkey_ptr = NULL;
+FILE *pub_f = fopen(pubkey_path, "r");
+if (pub_f) {
+    fclose(pub_f);
+    pubkey_ptr = pubkey_path;
+    ESP_LOGI(TAG, "Using public key file: %s", pubkey_path);
+}
+
+/* 使用显式公钥路径调用认证 */
+rc = libssh2_userauth_publickey_fromfile_ex(
+    session,
+    username, strlen(username),
+    pubkey_ptr,  /* 必须提供公钥文件路径！ */
+    private_key_path,
+    passphrase);
+```
+
+### 其他注意事项
+
+1. **ECDSA 不支持**：libssh2 的 mbedTLS 后端不支持 ECDSA 密钥认证（会报 "Key type not supported"）
+2. **非阻塞模式**：`libssh2_userauth_list()` 也需要处理 `LIBSSH2_ERROR_EAGAIN`
+3. **密钥格式**：必须使用传统 PEM 格式，不支持 OpenSSH 新格式（`-----BEGIN OPENSSH PRIVATE KEY-----`）
+
+### 生成兼容密钥
+
+```bash
+# 生成 RSA-2048 传统 PEM 格式密钥
+ssh-keygen -t rsa -b 2048 -m PEM -f /sdcard/id_rsa
+
+# 或在 TianShanOS 设备上生成
+ssh --keygen --type rsa --bits 2048 --output /sdcard/id_rsa
+```
+
+### 相关文件
+
+- [ts_ssh_client.c](../components/ts_security/src/ts_ssh_client.c) - `ts_ssh_connect()` 认证逻辑
+- [ts_cmd_ssh.c](../components/ts_console/commands/ts_cmd_ssh.c) - CLI 命令实现
+
+---
+
 ## 更新日志
 
+- 2026-01-18: 添加 SSH 公钥认证失败问题（libssh2 mbedTLS 需要显式公钥文件）
 - 2026-01-18: 添加 SSH 交互式 Shell 字符回显延迟问题调试记录
 - 2026-01-17: 初始版本，记录 DHCP 服务器崩溃问题及解决方案

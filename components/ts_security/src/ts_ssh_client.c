@@ -316,16 +316,135 @@ esp_err_t ts_ssh_connect(ts_ssh_session_t session)
             wait_socket(session->sock, session->session, 1000);
         }
     } else {
-        /* 公钥认证 - 从内存加载密钥 */
-        ESP_LOGD(TAG, "Authenticating with public key...");
-        while ((rc = libssh2_userauth_publickey_frommemory(
-                    session->session,
-                    session->config.username, strlen(session->config.username),
-                    NULL, 0,  /* 公钥数据（可选） */
-                    (const char *)session->config.auth.key.private_key,
-                    session->config.auth.key.private_key_len,
-                    session->config.auth.key.passphrase)) == LIBSSH2_ERROR_EAGAIN) {
-            wait_socket(session->sock, session->session, 1000);
+        /* 公钥认证 */
+        
+        /* 首先检查服务器支持的认证方法（需要处理 EAGAIN） */
+        char *userauthlist = NULL;
+        do {
+            userauthlist = libssh2_userauth_list(session->session, 
+                                                  session->config.username,
+                                                  strlen(session->config.username));
+            if (!userauthlist) {
+                int err = libssh2_session_last_errno(session->session);
+                if (err == LIBSSH2_ERROR_EAGAIN) {
+                    wait_socket(session->sock, session->session, 1000);
+                    continue;
+                }
+                /* 其他错误或已认证 */
+                break;
+            }
+        } while (!userauthlist);
+        
+        if (userauthlist) {
+            ESP_LOGI(TAG, "Server authentication methods: %s", userauthlist);
+            if (!strstr(userauthlist, "publickey")) {
+                ESP_LOGW(TAG, "Server does not support publickey authentication!");
+            }
+        }
+        
+        /* 优先使用文件路径方式（更可靠） */
+        if (session->config.auth.key.private_key_path) {
+            const char *key_path = session->config.auth.key.private_key_path;
+            ESP_LOGI(TAG, "Authenticating with public key from file: %s", key_path);
+            
+            /* 验证文件存在且可读 */
+            FILE *f = fopen(key_path, "r");
+            if (!f) {
+                ESP_LOGE(TAG, "Cannot open private key file: %s (errno=%d)", key_path, errno);
+                set_error(session, "Cannot open private key file");
+                libssh2_session_disconnect(session->session, "Key file error");
+                libssh2_session_free(session->session);
+                session->session = NULL;
+                close(session->sock);
+                session->sock = -1;
+                session->state = TS_SSH_STATE_ERROR;
+                return ESP_ERR_NOT_FOUND;
+            }
+            
+            /* 读取并打印前 64 字节用于调试 */
+            char header[65] = {0};
+            size_t read_len = fread(header, 1, 64, f);
+            fseek(f, 0, SEEK_END);
+            long file_size = ftell(f);
+            fclose(f);
+            (void)read_len;  /* 抑制未使用警告 */
+            
+            ESP_LOGI(TAG, "Key file size: %ld bytes, header: %.40s...", file_size, header);
+            
+            /* 构造公钥文件路径 (私钥路径 + ".pub") */
+            char pubkey_path[128];
+            snprintf(pubkey_path, sizeof(pubkey_path), "%s.pub", key_path);
+            
+            /* 检查公钥文件是否存在 */
+            const char *pubkey_ptr = NULL;
+            FILE *pub_f = fopen(pubkey_path, "r");
+            if (pub_f) {
+                fclose(pub_f);
+                pubkey_ptr = pubkey_path;
+                ESP_LOGI(TAG, "Using public key file: %s", pubkey_path);
+            } else {
+                ESP_LOGW(TAG, "Public key file not found: %s (will derive from private key)", pubkey_path);
+            }
+            
+            /* 清除之前的错误状态 */
+            libssh2_session_set_last_error(session->session, 0, NULL);
+            
+            while ((rc = libssh2_userauth_publickey_fromfile_ex(
+                        session->session,
+                        session->config.username, strlen(session->config.username),
+                        pubkey_ptr,  /* 公钥路径（如果存在） */
+                        key_path,
+                        session->config.auth.key.passphrase)) == LIBSSH2_ERROR_EAGAIN) {
+                wait_socket(session->sock, session->session, 1000);
+            }
+            
+            if (rc != 0) {
+                char *err_msg = NULL;
+                int err_len = 0;
+                int err_code = libssh2_session_last_error(session->session, &err_msg, &err_len, 0);
+                ESP_LOGE(TAG, "libssh2_userauth_publickey_fromfile_ex failed: rc=%d, err_code=%d, err=%s", 
+                         rc, err_code, err_msg ? err_msg : "(null)");
+                
+                /* 尝试使用 libssh2_userauth_publickey 回调方式 */
+                ESP_LOGI(TAG, "Trying alternative authentication method...");
+            }
+        } 
+        /* 回退到内存方式 */
+        else if (session->config.auth.key.private_key && 
+                 session->config.auth.key.private_key_len > 0) {
+            ESP_LOGI(TAG, "Authenticating with public key from memory (key_len=%zu)...", 
+                     session->config.auth.key.private_key_len);
+            
+            /* 打印私钥头部用于调试 */
+            ESP_LOGD(TAG, "Private key starts with: %.30s", 
+                     (const char *)session->config.auth.key.private_key);
+            
+            while ((rc = libssh2_userauth_publickey_frommemory(
+                        session->session,
+                        session->config.username, strlen(session->config.username),
+                        NULL, 0,  /* 公钥数据（可选） */
+                        (const char *)session->config.auth.key.private_key,
+                        session->config.auth.key.private_key_len,
+                        session->config.auth.key.passphrase)) == LIBSSH2_ERROR_EAGAIN) {
+                wait_socket(session->sock, session->session, 1000);
+            }
+            
+            if (rc != 0) {
+                char *err_msg = NULL;
+                int err_len = 0;
+                libssh2_session_last_error(session->session, &err_msg, &err_len, 0);
+                ESP_LOGE(TAG, "libssh2_userauth_publickey_frommemory failed: rc=%d, err=%s", 
+                         rc, err_msg ? err_msg : "(null)");
+            }
+        } else {
+            set_error(session, "No private key provided (path or memory)");
+            libssh2_session_disconnect(session->session, "No key data");
+            libssh2_session_free(session->session);
+            session->session = NULL;
+            close(session->sock);
+            session->sock = -1;
+            session->state = TS_SSH_STATE_ERROR;
+            return ESP_ERR_INVALID_ARG;
         }
     }
 

@@ -110,6 +110,17 @@ void ts_crypto_keypair_free(ts_keypair_t keypair);
 esp_err_t ts_crypto_keypair_export_public(ts_keypair_t keypair, char *pem, size_t *pem_len);
 
 /**
+ * @brief Export public key in OpenSSH format (ssh-rsa, ecdsa-sha2-nistp256, etc.)
+ * 
+ * @param keypair Keypair handle
+ * @param openssh Output buffer for OpenSSH format public key
+ * @param openssh_len Input: buffer size; Output: actual length
+ * @param comment Optional comment appended to the key (can be NULL)
+ * @return ESP_OK on success
+ */
+esp_err_t ts_crypto_keypair_export_openssh(ts_keypair_t keypair, char *openssh, size_t *openssh_len, const char *comment);
+
+/**
  * @brief Export private key in PEM format
  */
 esp_err_t ts_crypto_keypair_export_private(ts_keypair_t keypair, char *pem, size_t *pem_len);

@@ -222,6 +222,10 @@
 - [x] SSH Known Hosts (ts_ssh_known_hosts - 主机密钥验证, SHA256指纹, TOFU策略, NVS存储)
 - [x] SSH 端口转发 (ts_port_forward - 本地转发, 多并发连接, libssh2隧道)
 - [x] SSH 交互式 Shell (ts_ssh_shell - PTY分配, 多终端类型, 双向I/O, 信号处理)
+- [x] SSH 密钥生成 (CLI --keygen - RSA/ECDSA生成, PEM私钥导出, OpenSSH公钥格式)
+- [x] SSH 公钥部署 (CLI --copyid - 自动部署公钥到远程服务器, 权限设置, 验证)
+- [ ] SSH 安全存储 (将私钥存储在 ESP32 安全 Flash 区域)
+- [ ] SSH 密钥轮换 (密钥更新和旧密钥废弃机制)
 
 ---
 
@@ -356,6 +360,11 @@
   - 实现 ts_security（会话管理, 权限检查, Token认证）
   - 实现 ts_crypto（SHA哈希, HMAC, AES-GCM, Base64/Hex）
   - 实现 ts_auth（登录/登出, 密码验证）
+  - 实现 ts_ssh_client（SSH-2.0协议, 密码/公钥认证, 远程命令执行）
+  - 实现 ts_ssh_known_hosts（主机密钥验证, SHA256指纹, TOFU策略, NVS存储）
+  - 实现 ts_port_forward（本地端口转发, 多并发连接, libssh2隧道）
+  - 实现 ts_ssh_shell（PTY分配, 多终端类型, 双向I/O, 信号处理）
+  - 实现 SSH 密钥生成（RSA/ECDSA生成, PEM私钥导出, OpenSSH公钥格式）
 - **Phase 7 完成**：
   - 实现 ts_webui 主模块（初始化/启动/停止）
   - 实现 ts_webui_api（REST API网关, 登录/登出, Token认证）
