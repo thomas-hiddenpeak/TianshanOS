@@ -28,7 +28,34 @@ CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=4096
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
 
-# NVS 配置
+# ============================================================================
+# NVS 安全配置
+# ============================================================================
+# 安全等级：
+#   L1（开发）: CONFIG_NVS_ENCRYPTION=n
+#   L2（预生产）: CONFIG_NVS_ENCRYPTION=y + HMAC 方案
+#   L3（生产）: CONFIG_NVS_ENCRYPTION=y + Flash Encryption
+#
+# HMAC 方案说明：
+#   - 使用 eFuse HMAC 密钥派生 NVS 加密密钥
+#   - 无需启用 Flash 加密即可保护 NVS 数据
+#   - 首次启动会自动在 eFuse BLOCK4 生成 HMAC 密钥
+#   - 启用后旧的 NVS 数据将丢失，需要重新配置
+#
+# 生产环境还应启用：
+#   CONFIG_SECURE_BOOT=y
+#   CONFIG_FLASH_ENCRYPTION_ENABLED=y
+#   CONFIG_SECURE_BOOT_DISABLE_JTAG=y
+# ============================================================================
+
+# === L2 NVS 加密配置（HMAC 方案）===
+# 取消注释以下行以启用 NVS 加密
+#CONFIG_NVS_ENCRYPTION=y
+#CONFIG_NVS_SEC_KEY_PROTECTION_SCHEME=1
+#CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC=y
+#CONFIG_NVS_SEC_HMAC_EFUSE_KEY_ID=4
+
+# 当前：L1 开发模式（NVS 不加密）
 CONFIG_NVS_ENCRYPTION=n
 
 # WiFi 配置

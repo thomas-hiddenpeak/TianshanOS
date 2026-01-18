@@ -6,15 +6,36 @@
  * Keys are encrypted at rest using the HMAC-based NVS encryption scheme,
  * which derives encryption keys from an HMAC key stored in eFuse.
  * 
- * Features:
- * - AES-XTS encryption for keys stored in NVS
- * - Multiple key support with unique key IDs
- * - Key metadata (type, creation time, comment)
- * - Integration with SSH client for seamless authentication
+ * SECURITY PRINCIPLES:
+ * ====================
+ * 1. Private keys NEVER leave secure storage (no export API)
+ * 2. Memory is securely zeroed after use (prevents RAM dump attacks)
+ * 3. Only public keys can be exported to files
+ * 4. NVS encryption protects keys at rest (when enabled)
  * 
- * @note This module requires NVS encryption to be configured:
- *       - CONFIG_NVS_ENCRYPTION=y
- *       - CONFIG_NVS_SEC_KEY_PROTECT_USING_HMAC=y
+ * STORAGE CAPACITY:
+ * =================
+ * - NVS partition: 48KB (0xC000)
+ * - Max keys: 8 (TS_KEYSTORE_MAX_KEYS)
+ * - RSA-4096: ~4.2KB per key (private + public + metadata)
+ * - ECDSA P-256: ~0.6KB per key
+ * - Total capacity: 8x RSA-4096 or 50+ ECDSA keys
+ * 
+ * CONFIGURATION:
+ * ==============
+ * Development:
+ *   - CONFIG_NVS_ENCRYPTION=n (easier debugging)
+ * 
+ * Pre-production:
+ *   - CONFIG_NVS_ENCRYPTION=y (encrypted key storage)
+ * 
+ * Production:
+ *   - CONFIG_NVS_ENCRYPTION=y
+ *   - CONFIG_SECURE_BOOT=y
+ *   - CONFIG_FLASH_ENCRYPTION_ENABLED=y
+ *   - CONFIG_SECURE_BOOT_DISABLE_JTAG=y
+ * 
+ * @see docs/SECURITY_IMPLEMENTATION.md for full security documentation
  * 
  * @copyright Copyright (c) 2026 TianShanOS Project
  */
@@ -76,7 +97,21 @@ typedef struct {
     uint32_t created_at;                       /**< Creation timestamp (Unix epoch) */
     uint32_t last_used;                        /**< Last used timestamp */
     bool has_public_key;                       /**< Whether public key is stored */
+    bool exportable;                           /**< Whether private key can be exported */
 } ts_keystore_key_info_t;
+
+/**
+ * @brief Key generation options
+ */
+typedef struct {
+    bool exportable;                /**< Allow private key export (default: false) */
+    const char *comment;            /**< Key comment (optional) */
+} ts_keystore_gen_opts_t;
+
+/**
+ * @brief Default generation options (not exportable)
+ */
+#define TS_KEYSTORE_GEN_OPTS_DEFAULT { .exportable = false, .comment = NULL }
 
 /**
  * @brief Key pair structure for import/export
@@ -268,23 +303,42 @@ esp_err_t ts_keystore_import_from_file(const char *id,
                                         const char *comment);
 
 /**
- * @brief Export a key to file
+ * @brief Export public key to file (SECURITY: Private keys NEVER exported)
  * 
- * Exports a key pair to SD card or SPIFFS.
+ * Exports ONLY the public key to a file. Private keys are stored securely
+ * in NVS and can never be exported - this is a core security principle.
  * 
  * @param[in] id    Key identifier
- * @param[in] path  Path for private key file
+ * @param[in] path  Path for public key file (OpenSSH format)
+ * 
+ * @return
+ *      - ESP_OK on success
+ *      - ESP_ERR_NOT_FOUND if key doesn't exist or has no public key
+ *      - ESP_ERR_INVALID_STATE if keystore not initialized
+ */
+esp_err_t ts_keystore_export_public_key_to_file(const char *id, const char *path);
+
+/**
+ * @brief Export a key to file (DEPRECATED)
+ * 
+ * @deprecated Use ts_keystore_export_public_key_to_file() instead.
+ *             This function now only exports the public key for security.
+ * 
+ * @param[in] id    Key identifier
+ * @param[in] path  Path for public key file
  * 
  * @return
  *      - ESP_OK on success
  *      - ESP_ERR_NOT_FOUND if key doesn't exist
  */
+__attribute__((deprecated("Use ts_keystore_export_public_key_to_file() instead")))
 esp_err_t ts_keystore_export_to_file(const char *id, const char *path);
 
 /**
  * @brief Generate a new key pair and store it
  * 
  * Generates a new key pair and stores it in the keystore.
+ * The key is NOT exportable by default.
  * 
  * @param[in] id       Key identifier
  * @param[in] type     Key type to generate
@@ -298,6 +352,41 @@ esp_err_t ts_keystore_export_to_file(const char *id, const char *path);
 esp_err_t ts_keystore_generate_key(const char *id,
                                     ts_keystore_key_type_t type,
                                     const char *comment);
+
+/**
+ * @brief Generate a new key pair with options
+ * 
+ * Extended version allowing control over exportability.
+ * Use opts.exportable = true to allow later private key export.
+ * 
+ * @param[in] id       Key identifier
+ * @param[in] type     Key type to generate
+ * @param[in] opts     Generation options (NULL for defaults)
+ * 
+ * @return
+ *      - ESP_OK on success
+ *      - ESP_ERR_INVALID_ARG if type is invalid
+ *      - ESP_ERR_NO_MEM if out of memory
+ */
+esp_err_t ts_keystore_generate_key_ex(const char *id,
+                                       ts_keystore_key_type_t type,
+                                       const ts_keystore_gen_opts_t *opts);
+
+/**
+ * @brief Export private key to file (requires exportable flag)
+ * 
+ * Exports private key ONLY if the key was generated with exportable=true.
+ * This is a security-controlled operation.
+ * 
+ * @param[in] id    Key identifier
+ * @param[in] path  Path for private key file (PEM format)
+ * 
+ * @return
+ *      - ESP_OK on success
+ *      - ESP_ERR_NOT_ALLOWED if key is not exportable
+ *      - ESP_ERR_NOT_FOUND if key doesn't exist
+ */
+esp_err_t ts_keystore_export_private_key_to_file(const char *id, const char *path);
 
 /**
  * @brief Get key type name string

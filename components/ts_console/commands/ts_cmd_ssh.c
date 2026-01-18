@@ -6,7 +6,9 @@
  * - ssh --host <ip> --user <user> --password <pwd> --exec <cmd>
  * - ssh --test --host <ip> --user <user> --password <pwd>
  * - ssh --keygen --type rsa2048 --output /sdcard/id_rsa
- * - ssh --keys --list/--import/--delete 管理安全存储的密钥
+ * - ssh --keyid <id> 使用安全存储的密钥连接
+ * 
+ * 注意：密钥管理已移至独立的 key 命令
  * 
  * @author TianShanOS Team
  * @version 1.0.0
@@ -20,6 +22,7 @@
 #include "ts_port_forward.h"
 #include "ts_crypto.h"
 #include "ts_keystore.h"
+#include "ts_known_hosts.h"
 #include "argtable3/argtable3.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -28,7 +31,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
-#include <unistd.h>
 
 #define TAG "cmd_ssh"
 
@@ -49,21 +51,61 @@ static struct {
     struct arg_str *forward;    /**< 端口转发 L<local>:<remote_host>:<remote_port> */
     struct arg_lit *keygen;     /**< 生成密钥对 */
     struct arg_lit *copyid;     /**< 部署公钥到远程服务器 */
+    struct arg_lit *revoke;     /**< 从远程服务器撤销公钥 */
     struct arg_str *type;       /**< 密钥类型 (rsa2048, rsa4096, ec256, ec384) */
     struct arg_str *output;     /**< 密钥输出路径 */
     struct arg_str *comment;    /**< 密钥注释 */
-    /* Keystore 管理选项 */
-    struct arg_lit *keys;       /**< 显示密钥管理帮助 */
-    struct arg_lit *list;       /**< 列出所有存储的密钥 */
-    struct arg_lit *import;     /**< 导入密钥到安全存储 */
-    struct arg_lit *delete;     /**< 从安全存储删除密钥 */
-    struct arg_lit *export;     /**< 导出公钥到文件 */
-    struct arg_str *id;         /**< 密钥 ID */
     struct arg_int *timeout;    /**< 超时时间（秒） */
     struct arg_lit *verbose;    /**< 详细输出 */
     struct arg_lit *help;
     struct arg_end *end;
 } s_ssh_args;
+
+/*===========================================================================*/
+/*                          认证信息结构                                      */
+/*===========================================================================*/
+
+/**
+ * @brief SSH 认证信息（统一传递认证参数）
+ * 
+ * 支持三种认证方式：
+ * 1. 密码认证：只设置 password
+ * 2. 密钥文件认证：只设置 key_path  
+ * 3. 内存密钥认证：设置 key_data 和 key_len（安全存储密钥）
+ */
+typedef struct {
+    const char *password;       /**< 密码（密码认证） */
+    const char *key_path;       /**< 私钥文件路径（文件认证） */
+    const uint8_t *key_data;    /**< 私钥数据（内存认证，安全存储） */
+    size_t key_len;             /**< 私钥数据长度 */
+    const char *passphrase;     /**< 私钥密码（可选） */
+} ssh_auth_info_t;
+
+/**
+ * @brief 根据认证信息配置 SSH config
+ */
+static void config_ssh_auth(ts_ssh_config_t *config, const ssh_auth_info_t *auth)
+{
+    if (auth->key_data && auth->key_len > 0) {
+        /* 优先使用内存中的密钥（安全存储） */
+        config->auth_method = TS_SSH_AUTH_PUBLICKEY;
+        config->auth.key.private_key = auth->key_data;
+        config->auth.key.private_key_len = auth->key_len;
+        config->auth.key.private_key_path = NULL;
+        config->auth.key.passphrase = auth->passphrase;
+    } else if (auth->key_path) {
+        /* 使用文件路径 */
+        config->auth_method = TS_SSH_AUTH_PUBLICKEY;
+        config->auth.key.private_key_path = auth->key_path;
+        config->auth.key.private_key = NULL;
+        config->auth.key.private_key_len = 0;
+        config->auth.key.passphrase = auth->passphrase;
+    } else {
+        /* 密码认证 */
+        config->auth_method = TS_SSH_AUTH_PASSWORD;
+        config->auth.password = auth->password;
+    }
+}
 
 /*===========================================================================*/
 /*                          流式输出回调                                      */
@@ -98,6 +140,110 @@ static void stream_output_callback(const char *data, size_t len, bool is_stderr,
     if (is_stderr && ctx->verbose) {
         ts_console_printf("\033[0m");   /* 重置颜色 */
     }
+}
+
+/*===========================================================================*/
+/*                          主机密钥验证                                      */
+/*===========================================================================*/
+
+/**
+ * @brief 主机密钥验证提示回调
+ * 
+ * 当主机未知或密钥变化时，提示用户确认
+ */
+static bool host_verify_prompt(const ts_known_host_t *host, 
+                               ts_host_verify_result_t result,
+                               void *user_data)
+{
+    (void)user_data;
+    
+    if (result == TS_HOST_VERIFY_NOT_FOUND) {
+        ts_console_printf("\n");
+        ts_console_printf("┌─────────────────────────────────────────────────────────────┐\n");
+        ts_console_printf("│  The authenticity of host '%s' can't be established.        \n", host->host);
+        ts_console_printf("│  %s key fingerprint is:                                      \n", ts_host_key_type_str(host->type));
+        ts_console_printf("│    SHA256:%s\n", host->fingerprint);
+        ts_console_printf("└─────────────────────────────────────────────────────────────┘\n");
+        ts_console_printf("\nAre you sure you want to continue connecting? (yes/no): ");
+        fflush(stdout);
+        
+    } else if (result == TS_HOST_VERIFY_MISMATCH) {
+        ts_console_printf("\n");
+        ts_console_printf("╔═══════════════════════════════════════════════════════════════╗\n");
+        ts_console_printf("║  @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@  ║\n");
+        ts_console_printf("║  @    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @  ║\n");
+        ts_console_printf("║  @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@  ║\n");
+        ts_console_printf("╠═══════════════════════════════════════════════════════════════╣\n");
+        ts_console_printf("║  IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!        ║\n");
+        ts_console_printf("║  Someone could be eavesdropping on you right now              ║\n");
+        ts_console_printf("║  (man-in-the-middle attack)!                                  ║\n");
+        ts_console_printf("╠═══════════════════════════════════════════════════════════════╣\n");
+        ts_console_printf("║  Host: %-50s     ║\n", host->host);
+        ts_console_printf("║  New fingerprint: SHA256:%.40s...                             \n", host->fingerprint);
+        ts_console_printf("╚═══════════════════════════════════════════════════════════════╝\n");
+        ts_console_printf("\nAre you ABSOLUTELY sure you want to continue? (yes/no): ");
+        fflush(stdout);
+    } else {
+        return false;
+    }
+    
+    /* 读取用户输入 */
+    char input[16] = {0};
+    int idx = 0;
+    
+    while (idx < (int)sizeof(input) - 1) {
+        uint8_t ch;
+        int len = uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM, &ch, 1, pdMS_TO_TICKS(30000));
+        if (len <= 0) {
+            ts_console_printf("\nTimeout - aborting connection.\n");
+            return false;
+        }
+        
+        if (ch == '\r' || ch == '\n') {
+            ts_console_printf("\n");
+            break;
+        } else if (ch == 0x03) {  /* Ctrl+C */
+            ts_console_printf("\n^C\n");
+            return false;
+        } else if (ch == 0x7f || ch == 0x08) {  /* Backspace */
+            if (idx > 0) {
+                idx--;
+                ts_console_printf("\b \b");
+            }
+        } else if (ch >= 32 && ch < 127) {
+            input[idx++] = ch;
+            ts_console_printf("%c", ch);
+        }
+    }
+    input[idx] = '\0';
+    
+    if (strcmp(input, "yes") == 0) {
+        ts_console_printf("Host key accepted and saved.\n\n");
+        return true;
+    } else {
+        ts_console_printf("Host key verification failed.\n");
+        return false;
+    }
+}
+
+/**
+ * @brief 验证主机密钥（连接后调用）
+ * 
+ * @return ESP_OK 验证通过或用户接受，其他表示拒绝
+ */
+static esp_err_t verify_host_key(ts_ssh_session_t session, bool verbose)
+{
+    if (verbose) {
+        ts_console_printf("Verifying host key...\n");
+    }
+    
+    esp_err_t ret = ts_known_hosts_verify_interactive(session, host_verify_prompt, NULL);
+    
+    if (ret == ESP_OK && verbose) {
+        ts_console_printf("Host key verified.\n");
+    }
+    
+    return ret;
 }
 
 /*===========================================================================*/
@@ -140,7 +286,7 @@ static void interrupt_monitor_task(void *arg)
 /*===========================================================================*/
 
 static int do_ssh_exec(const char *host, int port, const char *user, 
-                       const char *password, const char *key_path, 
+                       const ssh_auth_info_t *auth,
                        const char *command, int timeout_sec, bool verbose)
 {
     ts_ssh_session_t session = NULL;
@@ -153,23 +299,16 @@ static int do_ssh_exec(const char *host, int port, const char *user,
     config.username = user;
     config.timeout_ms = timeout_sec * 1000;
     
-    /* 选择认证方式 */
-    if (key_path) {
-        /* 公钥认证 - 使用文件路径（更可靠） */
-        config.auth_method = TS_SSH_AUTH_PUBLICKEY;
-        config.auth.key.private_key_path = key_path;
-        config.auth.key.private_key = NULL;
-        config.auth.key.private_key_len = 0;
-        config.auth.key.passphrase = NULL;  /* TODO: 支持加密私钥 */
-        
-        if (verbose) {
+    /* 配置认证方式 */
+    config_ssh_auth(&config, auth);
+    
+    if (verbose) {
+        if (auth->key_data) {
+            ts_console_printf("Using public key authentication (secure storage)\n");
+        } else if (auth->key_path) {
             ts_console_printf("Using public key authentication\n");
-            ts_console_printf("Key file: %s\n", key_path);
+            ts_console_printf("Key file: %s\n", auth->key_path);
         }
-    } else {
-        /* 密码认证 */
-        config.auth_method = TS_SSH_AUTH_PASSWORD;
-        config.auth.password = password;
     }
     
     if (verbose) {
@@ -187,6 +326,15 @@ static int do_ssh_exec(const char *host, int port, const char *user,
     ret = ts_ssh_connect(session);
     if (ret != ESP_OK) {
         ts_console_printf("Error: %s\n", ts_ssh_get_error(session));
+        ts_ssh_session_destroy(session);
+        return 1;
+    }
+    
+    /* 验证主机密钥 */
+    ret = verify_host_key(session, verbose);
+    if (ret != ESP_OK) {
+        ts_console_printf("Error: Host key verification failed\n");
+        ts_ssh_disconnect(session);
         ts_ssh_session_destroy(session);
         return 1;
     }
@@ -281,7 +429,7 @@ static const char *shell_input_callback(size_t *out_len, void *user_data)
 }
 
 static int do_ssh_shell(const char *host, int port, const char *user,
-                        const char *password, const char *key_path,
+                        const ssh_auth_info_t *auth,
                         int timeout_sec, bool verbose)
 {
     ts_ssh_session_t session = NULL;
@@ -295,20 +443,15 @@ static int do_ssh_shell(const char *host, int port, const char *user,
     config.username = user;
     config.timeout_ms = timeout_sec * 1000;
     
-    /* 选择认证方式 */
-    if (key_path) {
-        config.auth_method = TS_SSH_AUTH_PUBLICKEY;
-        config.auth.key.private_key_path = key_path;
-        config.auth.key.private_key = NULL;
-        config.auth.key.private_key_len = 0;
-        config.auth.key.passphrase = NULL;
-        
-        if (verbose) {
+    /* 配置认证方式 */
+    config_ssh_auth(&config, auth);
+    
+    if (verbose) {
+        if (auth->key_data) {
+            ts_console_printf("Using public key authentication (secure storage)\n");
+        } else if (auth->key_path) {
             ts_console_printf("Using public key authentication\n");
         }
-    } else {
-        config.auth_method = TS_SSH_AUTH_PASSWORD;
-        config.auth.password = password;
     }
     
     ts_console_printf("Connecting to %s@%s:%d...\n", user, host, port);
@@ -324,6 +467,15 @@ static int do_ssh_shell(const char *host, int port, const char *user,
     ret = ts_ssh_connect(session);
     if (ret != ESP_OK) {
         ts_console_printf("Error: %s\n", ts_ssh_get_error(session));
+        ts_ssh_session_destroy(session);
+        return 1;
+    }
+    
+    /* 验证主机密钥 */
+    ret = verify_host_key(session, verbose);
+    if (ret != ESP_OK) {
+        ts_console_printf("Error: Host key verification failed\n");
+        ts_ssh_disconnect(session);
         ts_ssh_session_destroy(session);
         return 1;
     }
@@ -367,13 +519,15 @@ static int do_ssh_shell(const char *host, int port, const char *user,
 /*===========================================================================*/
 
 static int do_ssh_forward(const char *host, int port, const char *user,
-                          const char *password, const char *key_path,
+                          const ssh_auth_info_t *auth,
                           const char *forward_spec,
                           int timeout_sec, bool verbose)
 {
     ts_ssh_session_t session = NULL;
     ts_port_forward_t forward = NULL;
     esp_err_t ret;
+    
+    (void)verbose;  /* 暂未使用 */
     
     /* 解析端口转发规格: L<local_port>:<remote_host>:<remote_port> */
     if (forward_spec[0] != 'L' && forward_spec[0] != 'l') {
@@ -406,17 +560,8 @@ static int do_ssh_forward(const char *host, int port, const char *user,
     config.username = user;
     config.timeout_ms = timeout_sec * 1000;
     
-    /* 选择认证方式 */
-    if (key_path) {
-        config.auth_method = TS_SSH_AUTH_PUBLICKEY;
-        config.auth.key.private_key_path = key_path;
-        config.auth.key.private_key = NULL;
-        config.auth.key.private_key_len = 0;
-        config.auth.key.passphrase = NULL;
-    } else {
-        config.auth_method = TS_SSH_AUTH_PASSWORD;
-        config.auth.password = password;
-    }
+    /* 配置认证方式 */
+    config_ssh_auth(&config, auth);
     
     ts_console_printf("Connecting to %s@%s:%d...\n", user, host, port);
     
@@ -431,6 +576,15 @@ static int do_ssh_forward(const char *host, int port, const char *user,
     ret = ts_ssh_connect(session);
     if (ret != ESP_OK) {
         ts_console_printf("Error: %s\n", ts_ssh_get_error(session));
+        ts_ssh_session_destroy(session);
+        return 1;
+    }
+    
+    /* 验证主机密钥 */
+    ret = verify_host_key(session, verbose);
+    if (ret != ESP_OK) {
+        ts_console_printf("Error: Host key verification failed\n");
+        ts_ssh_disconnect(session);
         ts_ssh_session_destroy(session);
         return 1;
     }
@@ -519,17 +673,24 @@ static int do_ssh_forward(const char *host, int port, const char *user,
 /*===========================================================================*/
 
 static int do_ssh_test(const char *host, int port, const char *user, 
-                       const char *password, const char *key_path, int timeout_sec)
+                       const ssh_auth_info_t *auth, int timeout_sec)
 {
     ts_ssh_session_t session = NULL;
     esp_err_t ret;
+    
+    const char *auth_type = "Password";
+    if (auth->key_data) {
+        auth_type = "Public Key (secure storage)";
+    } else if (auth->key_path) {
+        auth_type = "Public Key";
+    }
     
     ts_console_printf("\nSSH Connection Test\n");
     ts_console_printf("═══════════════════════════════════════\n");
     ts_console_printf("  Host:     %s\n", host);
     ts_console_printf("  Port:     %d\n", port);
     ts_console_printf("  User:     %s\n", user);
-    ts_console_printf("  Auth:     %s\n", key_path ? "Public Key" : "Password");
+    ts_console_printf("  Auth:     %s\n", auth_type);
     ts_console_printf("  Timeout:  %d seconds\n", timeout_sec);
     ts_console_printf("═══════════════════════════════════════\n\n");
     
@@ -540,17 +701,8 @@ static int do_ssh_test(const char *host, int port, const char *user,
     config.username = user;
     config.timeout_ms = timeout_sec * 1000;
     
-    /* 选择认证方式 */
-    if (key_path) {
-        config.auth_method = TS_SSH_AUTH_PUBLICKEY;
-        config.auth.key.private_key_path = key_path;
-        config.auth.key.private_key = NULL;
-        config.auth.key.private_key_len = 0;
-        config.auth.key.passphrase = NULL;
-    } else {
-        config.auth_method = TS_SSH_AUTH_PASSWORD;
-        config.auth.password = password;
-    }
+    /* 配置认证方式 */
+    config_ssh_auth(&config, auth);
     
     ts_console_printf("[1/3] Creating session... ");
     ret = ts_ssh_session_create(&config, &session);
@@ -569,6 +721,15 @@ static int do_ssh_test(const char *host, int port, const char *user,
         return 1;
     }
     ts_console_printf("OK\n");
+    
+    /* 验证主机密钥（在测试模式下总是验证） */
+    ret = verify_host_key(session, false);
+    if (ret != ESP_OK) {
+        ts_console_printf("  Host key verification failed\n");
+        ts_ssh_disconnect(session);
+        ts_ssh_session_destroy(session);
+        return 1;
+    }
     
     ts_console_printf("[3/3] Testing command execution... ");
     ts_ssh_exec_result_t result;
@@ -666,26 +827,44 @@ static esp_err_t load_public_key(const char *path, char **pubkey_data)
 }
 
 static int do_ssh_copy_id(const char *host, int port, const char *user, 
-                          const char *password, const char *key_path, int timeout_sec)
+                          const char *password, const char *key_path, 
+                          const char *keyid, int timeout_sec)
 {
     ts_ssh_session_t session = NULL;
     esp_err_t ret;
     char *pubkey_data = NULL;
+    char *privkey_data = NULL;
+    size_t privkey_len = 0;
+    bool use_keystore = (keyid != NULL);
     
     ts_console_printf("\nSSH Public Key Deployment\n");
     ts_console_printf("═══════════════════════════════════════\n");
     ts_console_printf("  Host:     %s\n", host);
     ts_console_printf("  Port:     %d\n", port);
     ts_console_printf("  User:     %s\n", user);
-    ts_console_printf("  Key:      %s.pub\n", key_path);
+    if (use_keystore) {
+        ts_console_printf("  Key:      [secure storage] %s\n", keyid);
+    } else {
+        ts_console_printf("  Key:      %s.pub\n", key_path);
+    }
     ts_console_printf("═══════════════════════════════════════\n\n");
     
-    /* 读取公钥文件 */
+    /* 读取公钥 */
     ts_console_printf("[1/4] Reading public key... ");
-    ret = load_public_key(key_path, &pubkey_data);
-    if (ret != ESP_OK) {
-        ts_console_printf("FAILED\n");
-        return 1;
+    if (use_keystore) {
+        size_t pubkey_len = 0;
+        ret = ts_keystore_load_public_key(keyid, &pubkey_data, &pubkey_len);
+        if (ret != ESP_OK) {
+            ts_console_printf("FAILED\n");
+            ts_console_printf("  Error: Cannot load public key '%s' from secure storage\n", keyid);
+            return 1;
+        }
+    } else {
+        ret = load_public_key(key_path, &pubkey_data);
+        if (ret != ESP_OK) {
+            ts_console_printf("FAILED\n");
+            return 1;
+        }
     }
     ts_console_printf("OK\n");
     
@@ -710,6 +889,17 @@ static int do_ssh_copy_id(const char *host, int port, const char *user,
     if (ret != ESP_OK) {
         ts_console_printf("FAILED\n");
         ts_console_printf("  Error: %s\n", ts_ssh_get_error(session));
+        ts_ssh_session_destroy(session);
+        free(pubkey_data);
+        return 1;
+    }
+    
+    /* 验证主机密钥 */
+    ret = verify_host_key(session, false);
+    if (ret != ESP_OK) {
+        ts_console_printf("FAILED\n");
+        ts_console_printf("  Host key verification failed\n");
+        ts_ssh_disconnect(session);
         ts_ssh_session_destroy(session);
         free(pubkey_data);
         return 1;
@@ -772,22 +962,50 @@ static int do_ssh_copy_id(const char *host, int port, const char *user,
     /* 验证公钥认证 */
     ts_console_printf("[4/4] Verifying public key auth... ");
     
-    /* 使用公钥认证重新连接（使用文件路径方式） */
+    /* 加载私钥用于验证 */
+    if (use_keystore) {
+        ret = ts_keystore_load_private_key(keyid, &privkey_data, &privkey_len);
+        if (ret != ESP_OK) {
+            ts_console_printf("SKIPPED\n");
+            ts_console_printf("  Note: Cannot load private key for verification\n");
+            free(pubkey_data);
+            ts_console_printf("\n✓ Public key deployed successfully!\n");
+            ts_console_printf("\nYou can now connect without password:\n");
+            ts_console_printf("  ssh --host %s --user %s --keyid %s --shell\n", host, user, keyid);
+            return 0;
+        }
+    }
+    
+    /* 使用公钥认证重新连接 */
     ts_ssh_config_t verify_config = TS_SSH_DEFAULT_CONFIG();
     verify_config.host = host;
     verify_config.port = port;
     verify_config.username = user;
     verify_config.timeout_ms = timeout_sec * 1000;
     verify_config.auth_method = TS_SSH_AUTH_PUBLICKEY;
-    verify_config.auth.key.private_key_path = key_path;
-    verify_config.auth.key.private_key = NULL;
-    verify_config.auth.key.private_key_len = 0;
+    
+    /* 配置认证方式 */
+    if (use_keystore && privkey_data) {
+        /* 使用内存中的密钥（安全，不写入临时文件） */
+        verify_config.auth.key.private_key = (const uint8_t *)privkey_data;
+        verify_config.auth.key.private_key_len = privkey_len;
+        verify_config.auth.key.private_key_path = NULL;
+    } else {
+        /* 使用文件路径 */
+        verify_config.auth.key.private_key_path = key_path;
+        verify_config.auth.key.private_key = NULL;
+        verify_config.auth.key.private_key_len = 0;
+    }
     verify_config.auth.key.passphrase = NULL;
     
     ret = ts_ssh_session_create(&verify_config, &session);
     if (ret != ESP_OK) {
         ts_console_printf("FAILED (session)\n");
         free(pubkey_data);
+        if (privkey_data) {
+            memset(privkey_data, 0, privkey_len);  /* 安全清零 */
+            free(privkey_data);
+        }
         return 1;
     }
     
@@ -796,24 +1014,52 @@ static int do_ssh_copy_id(const char *host, int port, const char *user,
     if (ret != ESP_OK) {
         const char *error_msg = ts_ssh_get_error(session);
         
-        /* 检查是否是密钥类型不支持的错误（libssh2 mbedTLS 只支持 RSA） */
-        if (error_msg && strstr(error_msg, "Key type not supported")) {
+        /* 检查是否是密钥类型不支持的错误 */
+        if (error_msg && (strstr(error_msg, "Key type not supported") || 
+                          strstr(error_msg, "Method unimplemented") ||
+                          strstr(error_msg, "Method not supported"))) {
             ts_console_printf("SKIPPED\n");
-            ts_console_printf("  Note: libssh2 only supports RSA keys for authentication\n");
+            ts_console_printf("  Note: Key type may not be fully supported for verification\n");
             ts_ssh_session_destroy(session);
             free(pubkey_data);
+            if (privkey_data) {
+                memset(privkey_data, 0, privkey_len);
+                free(privkey_data);
+            }
             ts_console_printf("\n✓ Public key deployed successfully!\n");
-            ts_console_printf("\n⚠ Verification skipped (ECDSA not supported by libssh2)\n");
+            ts_console_printf("\n⚠ Verification skipped (may be ECDSA or memory auth limitation)\n");
             ts_console_printf("  The key has been added to authorized_keys.\n");
-            ts_console_printf("  For full TianShanOS SSH client support, use RSA keys:\n");
-            ts_console_printf("    ssh --keygen --type rsa2048 --output /sdcard/id_rsa\n");
+            ts_console_printf("  Try connecting with:\n");
+            if (use_keystore) {
+                ts_console_printf("    ssh --host %s --user %s --keyid %s --shell\n", host, user, keyid);
+            } else {
+                ts_console_printf("    ssh --host %s --user %s --key %s --shell\n", host, user, key_path);
+            }
+            return 0;
+        }
+        
+        /* 检查是否是 ECDSA 不支持 */
+        if (privkey_data && strstr(privkey_data, "BEGIN EC PRIVATE KEY")) {
+            ts_console_printf("SKIPPED\n");
+            ts_console_printf("  Note: ECDSA keys may not be fully supported by libssh2 mbedTLS backend\n");
+            ts_ssh_session_destroy(session);
+            free(pubkey_data);
+            memset(privkey_data, 0, privkey_len);
+            free(privkey_data);
+            ts_console_printf("\n✓ Public key deployed successfully!\n");
+            ts_console_printf("\nYou can now connect. If authentication fails, try using RSA keys:\n");
+            ts_console_printf("    key --generate --id mykey --type rsa\n");
             return 0;
         }
         
         ts_console_printf("FAILED\n");
-        ts_console_printf("  Error: %s\n", error_msg);
+        ts_console_printf("  Error: %s\n", error_msg ? error_msg : "Unknown error");
         ts_ssh_session_destroy(session);
         free(pubkey_data);
+        if (privkey_data) {
+            memset(privkey_data, 0, privkey_len);
+            free(privkey_data);
+        }
         ts_console_printf("\n⚠ Key deployed but verification failed\n");
         return 1;
     }
@@ -822,10 +1068,295 @@ static int do_ssh_copy_id(const char *host, int port, const char *user,
     ts_ssh_disconnect(session);
     ts_ssh_session_destroy(session);
     free(pubkey_data);
+    if (privkey_data) {
+        memset(privkey_data, 0, privkey_len);
+        free(privkey_data);
+    }
     
     ts_console_printf("\n✓ Public key authentication configured successfully!\n");
     ts_console_printf("\nYou can now connect without password:\n");
-    ts_console_printf("  ssh --host %s --user %s --key %s --exec <cmd>\n", host, user, key_path);
+    if (use_keystore) {
+        ts_console_printf("  ssh --host %s --user %s --keyid %s --shell\n", host, user, keyid);
+    } else {
+        ts_console_printf("  ssh --host %s --user %s --key %s --shell\n", host, user, key_path);
+    }
+    
+    return 0;
+}
+
+/*===========================================================================*/
+/*                          Command: ssh --revoke                             */
+/*===========================================================================*/
+
+/**
+ * @brief 从远程服务器撤销已部署的公钥
+ * 
+ * 使用密码认证连接到远程服务器，然后从 authorized_keys 中移除匹配的公钥。
+ * 支持两种方式指定要撤销的密钥：
+ * 1. --keyid：从安全存储获取公钥
+ * 2. --key：从文件读取公钥
+ * 
+ * @param host 远程主机地址
+ * @param port SSH 端口
+ * @param user 用户名
+ * @param password 密码（用于认证）
+ * @param key_path 私钥文件路径（用于定位公钥）
+ * @param keyid 密钥 ID（从安全存储）
+ * @param timeout_sec 超时时间（秒）
+ * @return 0 成功，非 0 失败
+ */
+static int do_ssh_revoke(const char *host, int port, const char *user, 
+                         const char *password, const char *key_path, 
+                         const char *keyid, int timeout_sec)
+{
+    ts_console_printf("\n══════════════════════════════════════════════════════════════════\n");
+    ts_console_printf("  SSH Public Key Revocation\n");
+    ts_console_printf("══════════════════════════════════════════════════════════════════\n\n");
+    
+    ts_ssh_session_t session = NULL;
+    esp_err_t ret;
+    char *pubkey_data = NULL;
+    size_t pubkey_len = 0;
+    bool use_keystore = (keyid != NULL && key_path == NULL);
+    
+    /* 获取公钥数据（用于匹配要删除的密钥） */
+    if (use_keystore) {
+        ts_console_printf("Loading public key '%s' from secure storage... ", keyid);
+        ret = ts_keystore_load_public_key(keyid, &pubkey_data, &pubkey_len);
+        if (ret != ESP_OK) {
+            ts_console_printf("FAILED\n");
+            ts_console_printf("Error: Failed to load public key: %s\n", esp_err_to_name(ret));
+            return 1;
+        }
+        ts_console_printf("OK\n");
+    } else {
+        /* 从文件读取公钥 */
+        char pubkey_path[256];
+        snprintf(pubkey_path, sizeof(pubkey_path), "%s.pub", key_path);
+        
+        ts_console_printf("Reading public key from %s... ", pubkey_path);
+        
+        FILE *f = fopen(pubkey_path, "r");
+        if (!f) {
+            ts_console_printf("FAILED\n");
+            ts_console_printf("Error: Cannot open public key file\n");
+            return 1;
+        }
+        
+        fseek(f, 0, SEEK_END);
+        pubkey_len = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        
+        pubkey_data = malloc(pubkey_len + 1);
+        if (!pubkey_data) {
+            fclose(f);
+            ts_console_printf("FAILED\n");
+            ts_console_printf("Error: Memory allocation failed\n");
+            return 1;
+        }
+        
+        fread(pubkey_data, 1, pubkey_len, f);
+        fclose(f);
+        pubkey_data[pubkey_len] = '\0';
+        ts_console_printf("OK\n");
+    }
+    
+    /* 提取公钥的 key type 和 key data 部分（忽略 comment）
+     * 格式: "ssh-rsa AAAAB3Nza... comment"
+     * 我们需要 "ssh-rsa AAAAB3Nza..." 部分来匹配 */
+    char *key_type = NULL;
+    char *key_data = NULL;
+    char *pubkey_copy = strdup(pubkey_data);
+    if (!pubkey_copy) {
+        free(pubkey_data);
+        ts_console_printf("Error: Memory allocation failed\n");
+        return 1;
+    }
+    
+    /* 解析公钥格式 */
+    key_type = strtok(pubkey_copy, " ");
+    key_data = strtok(NULL, " ");
+    
+    if (!key_type || !key_data) {
+        ts_console_printf("Error: Invalid public key format\n");
+        free(pubkey_data);
+        free(pubkey_copy);
+        return 1;
+    }
+    
+    ts_console_printf("\nKey to revoke:\n");
+    ts_console_printf("  Type: %s\n", key_type);
+    ts_console_printf("  Data: %.40s...\n", key_data);
+    
+    /* 显示警告 */
+    ts_console_printf("\n");
+    ts_console_printf("┌─────────────────────────────────────────────────────────────┐\n");
+    ts_console_printf("│  WARNING: This will remove the public key from the remote   │\n");
+    ts_console_printf("│  server's authorized_keys file.                             │\n");
+    ts_console_printf("└─────────────────────────────────────────────────────────────┘\n");
+    ts_console_printf("\nTarget: %s@%s:%d\n\n", user, host, port);
+    
+    /* 配置 SSH 连接（使用密码认证） */
+    ts_ssh_config_t config = TS_SSH_DEFAULT_CONFIG();
+    config.host = host;
+    config.port = port;
+    config.username = user;
+    config.timeout_ms = timeout_sec * 1000;
+    config.auth_method = TS_SSH_AUTH_PASSWORD;
+    config.auth.password = password;
+    
+    /* 创建会话 */
+    ts_console_printf("Connecting with password authentication... ");
+    ret = ts_ssh_session_create(&config, &session);
+    if (ret != ESP_OK) {
+        ts_console_printf("FAILED\n");
+        ts_console_printf("Error: Failed to create SSH session\n");
+        free(pubkey_data);
+        free(pubkey_copy);
+        return 1;
+    }
+    
+    /* 连接 */
+    ret = ts_ssh_connect(session);
+    if (ret != ESP_OK) {
+        ts_console_printf("FAILED\n");
+        ts_console_printf("Error: %s\n", ts_ssh_get_error(session));
+        ts_ssh_session_destroy(session);
+        free(pubkey_data);
+        free(pubkey_copy);
+        return 1;
+    }
+    ts_console_printf("OK\n");
+    
+    /* 验证主机密钥 */
+    ret = verify_host_key(session, false);
+    if (ret != ESP_OK) {
+        ts_console_printf("  Host key verification failed\n");
+        ts_ssh_disconnect(session);
+        ts_ssh_session_destroy(session);
+        free(pubkey_data);
+        free(pubkey_copy);
+        return 1;
+    }
+    
+    /* 构建检查命令 - 使用 grep -F 进行固定字符串匹配
+     * 只取 key_data 的前 100 字符作为匹配特征，避免命令行过长
+     * 同时需要检查完整密钥类型前缀以确保唯一性 */
+    char key_signature[128];
+    size_t sig_len = strlen(key_data) > 100 ? 100 : strlen(key_data);
+    snprintf(key_signature, sizeof(key_signature), "%s %.*s", key_type, (int)sig_len, key_data);
+    
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd),
+        "if [ -f ~/.ssh/authorized_keys ]; then "
+        "  grep -cF '%s' ~/.ssh/authorized_keys 2>/dev/null || echo '0'; "
+        "else "
+        "  echo '0'; "
+        "fi",
+        key_signature);
+    
+    /* 先检查密钥是否存在 */
+    ts_console_printf("Checking if key exists on remote... ");
+    
+    ts_ssh_exec_result_t result;
+    ret = ts_ssh_exec(session, cmd, &result);
+    if (ret != ESP_OK) {
+        ts_console_printf("FAILED\n");
+        ts_console_printf("Error: Failed to check key: %s\n", ts_ssh_get_error(session));
+        ts_ssh_disconnect(session);
+        ts_ssh_session_destroy(session);
+        free(pubkey_data);
+        free(pubkey_copy);
+        return 1;
+    }
+    
+    int key_count = 0;
+    if (result.stdout_data) {
+        key_count = atoi(result.stdout_data);
+    }
+    ts_ssh_exec_result_free(&result);
+    
+    if (key_count == 0) {
+        ts_console_printf("NOT FOUND\n");
+        ts_console_printf("\n⚠ The specified public key was not found on the remote server.\n");
+        ts_ssh_disconnect(session);
+        ts_ssh_session_destroy(session);
+        free(pubkey_data);
+        free(pubkey_copy);
+        return 0;  /* 不视为错误 */
+    }
+    
+    ts_console_printf("FOUND (%d match%s)\n", key_count, key_count > 1 ? "es" : "");
+    
+    /* 执行删除操作 - 使用 grep -vF 进行固定字符串排除 */
+    ts_console_printf("Removing key from authorized_keys... ");
+    
+    snprintf(cmd, sizeof(cmd),
+        "cp ~/.ssh/authorized_keys ~/.ssh/authorized_keys.bak 2>/dev/null; "
+        "grep -vF '%s' ~/.ssh/authorized_keys > ~/.ssh/authorized_keys.tmp 2>/dev/null && "
+        "mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys && "
+        "chmod 600 ~/.ssh/authorized_keys && "
+        "echo 'OK'",
+        key_signature);
+    
+    ret = ts_ssh_exec(session, cmd, &result);
+    if (ret != ESP_OK) {
+        ts_console_printf("FAILED\n");
+        ts_console_printf("Error: Failed to remove key: %s\n", ts_ssh_get_error(session));
+        ts_ssh_disconnect(session);
+        ts_ssh_session_destroy(session);
+        free(pubkey_data);
+        free(pubkey_copy);
+        return 1;
+    }
+    
+    bool remove_ok = (result.stdout_data && strstr(result.stdout_data, "OK") != NULL);
+    ts_ssh_exec_result_free(&result);
+    
+    if (!remove_ok) {
+        ts_console_printf("FAILED\n");
+        ts_console_printf("Error: Failed to remove key\n");
+        ts_ssh_disconnect(session);
+        ts_ssh_session_destroy(session);
+        free(pubkey_data);
+        free(pubkey_copy);
+        return 1;
+    }
+    ts_console_printf("OK\n");
+    
+    /* 验证删除成功 */
+    ts_console_printf("Verifying removal... ");
+    
+    snprintf(cmd, sizeof(cmd),
+        "grep -cF '%s' ~/.ssh/authorized_keys 2>/dev/null || echo '0'",
+        key_signature);
+    
+    ret = ts_ssh_exec(session, cmd, &result);
+    if (ret == ESP_OK && result.stdout_data) {
+        int remaining = atoi(result.stdout_data);
+        if (remaining == 0) {
+            ts_console_printf("OK\n");
+        } else {
+            ts_console_printf("WARNING (%d keys still match)\n", remaining);
+        }
+    } else {
+        ts_console_printf("SKIPPED\n");
+    }
+    ts_ssh_exec_result_free(&result);
+    
+    ts_ssh_disconnect(session);
+    ts_ssh_session_destroy(session);
+    free(pubkey_data);
+    free(pubkey_copy);
+    
+    ts_console_printf("\n✓ Public key revoked successfully!\n");
+    ts_console_printf("\n  A backup was saved to ~/.ssh/authorized_keys.bak on the remote server.\n");
+    
+    /* 如果是 keystore 密钥，提示可以删除本地密钥 */
+    if (use_keystore) {
+        ts_console_printf("\n  To also delete the local key:\n");
+        ts_console_printf("    key --delete --id %s\n", keyid);
+    }
     
     return 0;
 }
@@ -871,344 +1402,9 @@ static const char *get_key_type_desc(ts_crypto_key_type_t type)
     }
 }
 
-/**
- * @brief 获取 keystore 密钥类型描述
- */
-static const char *get_keystore_type_desc(ts_keystore_key_type_t type)
-{
-    switch (type) {
-        case TS_KEYSTORE_TYPE_RSA_2048:  return "RSA 2048-bit";
-        case TS_KEYSTORE_TYPE_RSA_4096:  return "RSA 4096-bit";
-        case TS_KEYSTORE_TYPE_ECDSA_P256: return "ECDSA P-256";
-        case TS_KEYSTORE_TYPE_ECDSA_P384: return "ECDSA P-384";
-        default: return "Unknown";
-    }
-}
-
-/**
- * @brief 转换密钥类型：字符串 -> ts_keystore_key_type_t
- */
-static bool parse_keystore_key_type(const char *type_str, ts_keystore_key_type_t *type)
-{
-    if (!type_str || !type) return false;
-    
-    if (strcmp(type_str, "rsa") == 0 || strcmp(type_str, "rsa2048") == 0) {
-        *type = TS_KEYSTORE_TYPE_RSA_2048;
-        return true;
-    } else if (strcmp(type_str, "rsa4096") == 0) {
-        *type = TS_KEYSTORE_TYPE_RSA_4096;
-        return true;
-    } else if (strcmp(type_str, "ec256") == 0 || strcmp(type_str, "ecdsa") == 0) {
-        *type = TS_KEYSTORE_TYPE_ECDSA_P256;
-        return true;
-    } else if (strcmp(type_str, "ec384") == 0) {
-        *type = TS_KEYSTORE_TYPE_ECDSA_P384;
-        return true;
-    }
-    return false;
-}
-
 /*===========================================================================*/
-/*                      Keystore 管理命令处理函数                             */
+/*                          Command: ssh --keygen                             */
 /*===========================================================================*/
-
-/**
- * @brief 列出所有存储的密钥
- */
-static int do_ssh_keys_list(void)
-{
-    ts_keystore_key_info_t keys[TS_KEYSTORE_MAX_KEYS];
-    size_t count = TS_KEYSTORE_MAX_KEYS;
-    
-    esp_err_t ret = ts_keystore_list_keys(keys, &count);
-    if (ret != ESP_OK) {
-        ts_console_printf("Error: Failed to list keys (%s)\n", esp_err_to_name(ret));
-        return 1;
-    }
-    
-    ts_console_printf("\n");
-    ts_console_printf("Secure Key Storage\n");
-    ts_console_printf("══════════════════════════════════════════════════════════════════\n");
-    
-    if (count == 0) {
-        ts_console_printf("  No keys stored.\n");
-        ts_console_printf("\n  To import a key: ssh --keys --import --id <name> --key <path>\n");
-        ts_console_printf("  To generate a key: ssh --keys --import --id <name> --type <type>\n");
-    } else {
-        ts_console_printf("  %-16s %-14s %-20s %s\n", "ID", "Type", "Created", "Comment");
-        ts_console_printf("  ────────────────────────────────────────────────────────────────\n");
-        
-        for (size_t i = 0; i < count; i++) {
-            /* 格式化时间 */
-            char time_str[20] = "Unknown";
-            if (keys[i].created_at > 0) {
-                time_t t = (time_t)keys[i].created_at;
-                struct tm *tm_info = localtime(&t);
-                if (tm_info) {
-                    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M", tm_info);
-                }
-            }
-            
-            ts_console_printf("  %-16s %-14s %-20s %s\n",
-                keys[i].id,
-                get_keystore_type_desc(keys[i].type),
-                time_str,
-                keys[i].comment[0] ? keys[i].comment : "-");
-        }
-    }
-    
-    ts_console_printf("══════════════════════════════════════════════════════════════════\n");
-    ts_console_printf("  Total: %zu / %d keys\n\n", count, TS_KEYSTORE_MAX_KEYS);
-    
-    return 0;
-}
-
-/**
- * @brief 导入密钥到安全存储或生成新密钥
- */
-static int do_ssh_keys_import(const char *key_id, const char *key_path, 
-                              const char *type_str, const char *comment)
-{
-    if (!key_id || strlen(key_id) == 0) {
-        ts_console_printf("Error: --id is required for import\n");
-        return 1;
-    }
-    
-    /* 检查 ID 长度 */
-    if (strlen(key_id) >= TS_KEYSTORE_ID_MAX_LEN) {
-        ts_console_printf("Error: Key ID too long (max %d chars)\n", TS_KEYSTORE_ID_MAX_LEN - 1);
-        return 1;
-    }
-    
-    esp_err_t ret;
-    
-    ts_console_printf("\n");
-    ts_console_printf("Import/Generate Key to Secure Storage\n");
-    ts_console_printf("═══════════════════════════════════════\n");
-    
-    if (key_path) {
-        /* 从文件导入 */
-        ts_console_printf("  Mode:    Import from file\n");
-        ts_console_printf("  ID:      %s\n", key_id);
-        ts_console_printf("  File:    %s\n", key_path);
-        if (comment) {
-            ts_console_printf("  Comment: %s\n", comment);
-        }
-        ts_console_printf("═══════════════════════════════════════\n\n");
-        
-        ts_console_printf("[1/2] Reading key file... ");
-        
-        /* 导入密钥 */
-        ret = ts_keystore_import_from_file(key_id, key_path, comment);
-        if (ret == ESP_ERR_INVALID_STATE) {
-            ts_console_printf("FAILED\n");
-            ts_console_printf("  Error: Key ID '%s' already exists. Delete it first.\n", key_id);
-            return 1;
-        } else if (ret != ESP_OK) {
-            ts_console_printf("FAILED\n");
-            ts_console_printf("  Error: %s\n", esp_err_to_name(ret));
-            return 1;
-        }
-        ts_console_printf("OK\n");
-        
-        ts_console_printf("[2/2] Storing to secure storage... OK\n\n");
-        
-    } else if (type_str) {
-        /* 生成新密钥 */
-        ts_keystore_key_type_t key_type;
-        if (!parse_keystore_key_type(type_str, &key_type)) {
-            ts_console_printf("Error: Invalid key type '%s'\n", type_str);
-            ts_console_printf("Supported types: rsa, rsa2048, rsa4096, ecdsa, ec256, ec384\n");
-            return 1;
-        }
-        
-        ts_console_printf("  Mode:    Generate new key\n");
-        ts_console_printf("  ID:      %s\n", key_id);
-        ts_console_printf("  Type:    %s\n", get_keystore_type_desc(key_type));
-        if (comment) {
-            ts_console_printf("  Comment: %s\n", comment);
-        }
-        ts_console_printf("═══════════════════════════════════════\n\n");
-        
-        if (key_type == TS_KEYSTORE_TYPE_RSA_4096) {
-            ts_console_printf("[1/2] Generating key pair (this may take 30-60 seconds)... ");
-        } else {
-            ts_console_printf("[1/2] Generating key pair... ");
-        }
-        
-        ret = ts_keystore_generate_key(key_id, key_type, comment);
-        if (ret == ESP_ERR_INVALID_STATE) {
-            ts_console_printf("FAILED\n");
-            ts_console_printf("  Error: Key ID '%s' already exists. Delete it first.\n", key_id);
-            return 1;
-        } else if (ret != ESP_OK) {
-            ts_console_printf("FAILED\n");
-            ts_console_printf("  Error: %s\n", esp_err_to_name(ret));
-            return 1;
-        }
-        ts_console_printf("OK\n");
-        
-        ts_console_printf("[2/2] Storing to secure storage... OK\n\n");
-        
-    } else {
-        ts_console_printf("Error: Specify --key <path> to import or --type <type> to generate\n");
-        return 1;
-    }
-    
-    ts_console_printf("✓ Key '%s' stored successfully\n", key_id);
-    ts_console_printf("\n");
-    ts_console_printf("Usage:\n");
-    ts_console_printf("  ssh --host <ip> --user <name> --keyid %s --exec <cmd>\n", key_id);
-    ts_console_printf("  ssh --host <ip> --user <name> --keyid %s --shell\n\n", key_id);
-    
-    return 0;
-}
-
-/**
- * @brief 从安全存储删除密钥
- */
-static int do_ssh_keys_delete(const char *key_id)
-{
-    if (!key_id || strlen(key_id) == 0) {
-        ts_console_printf("Error: --id is required for delete\n");
-        return 1;
-    }
-    
-    ts_console_printf("\n");
-    ts_console_printf("Delete Key from Secure Storage\n");
-    ts_console_printf("═══════════════════════════════════════\n");
-    ts_console_printf("  Key ID: %s\n", key_id);
-    ts_console_printf("═══════════════════════════════════════\n\n");
-    
-    ts_console_printf("Deleting key... ");
-    
-    esp_err_t ret = ts_keystore_delete_key(key_id);
-    if (ret == ESP_ERR_NOT_FOUND) {
-        ts_console_printf("FAILED\n");
-        ts_console_printf("  Error: Key '%s' not found\n", key_id);
-        return 1;
-    } else if (ret != ESP_OK) {
-        ts_console_printf("FAILED\n");
-        ts_console_printf("  Error: %s\n", esp_err_to_name(ret));
-        return 1;
-    }
-    
-    ts_console_printf("OK\n\n");
-    ts_console_printf("✓ Key '%s' deleted from secure storage\n\n", key_id);
-    
-    return 0;
-}
-
-/**
- * @brief 导出公钥到文件
- */
-static int do_ssh_keys_export(const char *key_id, const char *output_path)
-{
-    if (!key_id || strlen(key_id) == 0) {
-        ts_console_printf("Error: --id is required for export\n");
-        return 1;
-    }
-    
-    if (!output_path || strlen(output_path) == 0) {
-        ts_console_printf("Error: --output is required for export\n");
-        return 1;
-    }
-    
-    ts_console_printf("\n");
-    ts_console_printf("Export Public Key\n");
-    ts_console_printf("═══════════════════════════════════════\n");
-    ts_console_printf("  Key ID: %s\n", key_id);
-    ts_console_printf("  Output: %s\n", output_path);
-    ts_console_printf("═══════════════════════════════════════\n\n");
-    
-    ts_console_printf("[1/2] Loading public key... ");
-    
-    /* 加载公钥 */
-    char *public_key = NULL;
-    size_t public_key_len = 0;
-    esp_err_t ret = ts_keystore_load_public_key(key_id, &public_key, &public_key_len);
-    if (ret == ESP_ERR_NOT_FOUND) {
-        ts_console_printf("FAILED\n");
-        ts_console_printf("  Error: Key '%s' not found\n", key_id);
-        return 1;
-    } else if (ret != ESP_OK || !public_key) {
-        ts_console_printf("FAILED\n");
-        ts_console_printf("  Error: %s\n", esp_err_to_name(ret));
-        return 1;
-    }
-    ts_console_printf("OK\n");
-    
-    ts_console_printf("[2/2] Writing to file... ");
-    
-    /* 写入文件 */
-    FILE *fp = fopen(output_path, "w");
-    if (!fp) {
-        ts_console_printf("FAILED\n");
-        ts_console_printf("  Error: Cannot create file %s\n", output_path);
-        free(public_key);
-        return 1;
-    }
-    
-    size_t written = fwrite(public_key, 1, public_key_len, fp);
-    fclose(fp);
-    free(public_key);
-    
-    if (written != public_key_len) {
-        ts_console_printf("FAILED\n");
-        ts_console_printf("  Error: Write incomplete\n");
-        return 1;
-    }
-    
-    ts_console_printf("OK\n\n");
-    ts_console_printf("✓ Public key exported to: %s\n\n", output_path);
-    
-    return 0;
-}
-
-/**
- * @brief 显示密钥管理帮助
- */
-static int do_ssh_keys_help(void)
-{
-    ts_console_printf("\n");
-    ts_console_printf("SSH Key Management (Secure Storage)\n");
-    ts_console_printf("════════════════════════════════════════════════════════════════\n");
-    ts_console_printf("\n");
-    ts_console_printf("Commands:\n");
-    ts_console_printf("  --keys --list                          List all stored keys\n");
-    ts_console_printf("  --keys --import --id <name> --key <f>  Import key from file\n");
-    ts_console_printf("  --keys --import --id <name> --type <t> Generate & store new key\n");
-    ts_console_printf("  --keys --delete --id <name>            Delete stored key\n");
-    ts_console_printf("  --keys --export --id <name> --output <f> Export public key\n");
-    ts_console_printf("\n");
-    ts_console_printf("Key Types (for --type):\n");
-    ts_console_printf("  rsa, rsa2048   RSA 2048-bit (recommended for compatibility)\n");
-    ts_console_printf("  rsa4096        RSA 4096-bit (slower generation, ~60s)\n");
-    ts_console_printf("  ecdsa, ec256   ECDSA P-256 (fast, secure)\n");
-    ts_console_printf("  ec384          ECDSA P-384 (high security)\n");
-    ts_console_printf("\n");
-    ts_console_printf("Examples:\n");
-    ts_console_printf("  # Import existing key to secure storage\n");
-    ts_console_printf("  ssh --keys --import --id agx --key /sdcard/id_rsa\n");
-    ts_console_printf("\n");
-    ts_console_printf("  # Generate new ECDSA key and store securely\n");
-    ts_console_printf("  ssh --keys --import --id mykey --type ecdsa --comment \"My AGX key\"\n");
-    ts_console_printf("\n");
-    ts_console_printf("  # Use stored key for SSH connection\n");
-    ts_console_printf("  ssh --host 10.10.99.100 --user nvidia --keyid agx --shell\n");
-    ts_console_printf("\n");
-    ts_console_printf("  # Export public key for deployment\n");
-    ts_console_printf("  ssh --keys --export --id agx --output /sdcard/agx.pub\n");
-    ts_console_printf("  ssh --copyid --host 10.10.99.100 --user nvidia --password pw --key /sdcard/agx\n");
-    ts_console_printf("\n");
-    ts_console_printf("Security Notes:\n");
-    ts_console_printf("  - Private keys stored in ESP32 encrypted NVS (flash-based)\n");
-    ts_console_printf("  - Keys protected by hardware-derived encryption key\n");
-    ts_console_printf("  - Max %d keys supported\n", TS_KEYSTORE_MAX_KEYS);
-    ts_console_printf("════════════════════════════════════════════════════════════════\n\n");
-    
-    return 0;
-}
 
 static int do_ssh_keygen(const char *type_str, const char *output_path, const char *comment)
 {
@@ -1352,14 +1548,14 @@ static int ssh_cmd_handler(int argc, char **argv)
     /* 显示帮助 */
     if (s_ssh_args.help->count > 0) {
         ts_console_printf("\nUsage: ssh [options]\n\n");
-        ts_console_printf("SSH client for remote operations and key management\n\n");
+        ts_console_printf("SSH client for remote operations\n\n");
         ts_console_printf("Connection Options:\n");
         ts_console_printf("  --host <ip>       Remote host address\n");
         ts_console_printf("  --port <num>      SSH port (default: 22)\n");
         ts_console_printf("  --user <name>     Username\n");
         ts_console_printf("  --password <pwd>  Password (for password auth)\n");
         ts_console_printf("  --key <path>      Private key file (for public key auth)\n");
-        ts_console_printf("  --keyid <id>      Use key from secure storage\n");
+        ts_console_printf("  --keyid <id>      Use key from secure storage (see 'key' command)\n");
         ts_console_printf("  --exec <cmd>      Execute command on remote host\n");
         ts_console_printf("  --shell           Open interactive shell\n");
         ts_console_printf("  --forward <spec>  Port forwarding: L<local>:<remote_host>:<remote_port>\n");
@@ -1369,32 +1565,31 @@ static int ssh_cmd_handler(int argc, char **argv)
         ts_console_printf("\nKey File Management:\n");
         ts_console_printf("  --keygen          Generate SSH key pair to file\n");
         ts_console_printf("  --copyid          Deploy public key to remote server\n");
+        ts_console_printf("  --revoke          Remove public key from remote server\n");
         ts_console_printf("  --type <type>     Key type: rsa, rsa2048, rsa4096, ecdsa, ec256, ec384\n");
         ts_console_printf("  --output <path>   Output file path for private key\n");
         ts_console_printf("  --comment <text>  Comment for the public key\n");
-        ts_console_printf("\nSecure Key Storage:\n");
-        ts_console_printf("  --keys            Enter key management mode (use 'ssh --keys' for help)\n");
-        ts_console_printf("  --keys --list     List all stored keys\n");
-        ts_console_printf("  --keys --import   Import key to secure storage\n");
-        ts_console_printf("  --keys --delete   Delete key from secure storage\n");
-        ts_console_printf("  --keys --export   Export public key to file\n");
-        ts_console_printf("  --id <name>       Key ID for secure storage operations\n");
         ts_console_printf("\nGeneral:\n");
         ts_console_printf("  --help            Show this help\n");
         ts_console_printf("\nExamples:\n");
         ts_console_printf("  # Generate RSA key pair to file\n");
         ts_console_printf("  ssh --keygen --type rsa2048 --output /sdcard/id_rsa\n");
         ts_console_printf("  \n");
-        ts_console_printf("  # Import key to secure storage & use it\n");
-        ts_console_printf("  ssh --keys --import --id agx --key /sdcard/id_rsa\n");
+        ts_console_printf("  # Connect using stored key (manage keys with 'key' command)\n");
+        ts_console_printf("  key --list                                          # List stored keys\n");
+        ts_console_printf("  key --generate --id agx --type rsa                  # Generate RSA key\n");
         ts_console_printf("  ssh --host 192.168.1.100 --user nvidia --keyid agx --shell\n");
         ts_console_printf("  \n");
-        ts_console_printf("  # Generate key directly to secure storage\n");
-        ts_console_printf("  ssh --keys --import --id mykey --type ecdsa\n");
+        ts_console_printf("  # Deploy public key to remote server (using secure storage key)\n");
+        ts_console_printf("  ssh --copyid --host 192.168.1.100 --user nvidia --password pw --keyid agx\n");
         ts_console_printf("  \n");
-        ts_console_printf("  # Deploy public key from secure storage\n");
-        ts_console_printf("  ssh --keys --export --id agx --output /sdcard/agx.pub\n");
-        ts_console_printf("  ssh --copyid --host 192.168.1.100 --user nvidia --password pw --key /sdcard/agx\n");
+        ts_console_printf("  # Revoke (remove) deployed public key from remote server\n");
+        ts_console_printf("  ssh --revoke --host 192.168.1.100 --user nvidia --password pw --keyid agx\n");
+        ts_console_printf("  \n");
+        ts_console_printf("  # Or deploy using file-based key\n");
+        ts_console_printf("  ssh --copyid --host 192.168.1.100 --user nvidia --password pw --key /sdcard/id_rsa\n");
+        ts_console_printf("\nNote: Key management has moved to the 'key' command. Use 'key --help' for details.\n");
+        ts_console_printf("      Use 'hosts' command to manage known hosts.\n");
         return 0;
     }
     
@@ -1423,58 +1618,68 @@ static int ssh_cmd_handler(int argc, char **argv)
         return do_ssh_keygen(s_ssh_args.type->sval[0], s_ssh_args.output->sval[0], comment);
     }
     
-    /* 检查是否是 Keystore 管理模式 */
-    if (s_ssh_args.keys->count > 0) {
-        const char *key_id = (s_ssh_args.id->count > 0) ? s_ssh_args.id->sval[0] : NULL;
-        const char *key_path = (s_ssh_args.key->count > 0) ? s_ssh_args.key->sval[0] : NULL;
-        const char *type_str = (s_ssh_args.type->count > 0) ? s_ssh_args.type->sval[0] : NULL;
-        const char *comment = (s_ssh_args.comment->count > 0) ? s_ssh_args.comment->sval[0] : NULL;
-        const char *output = (s_ssh_args.output->count > 0) ? s_ssh_args.output->sval[0] : NULL;
-        
-        if (s_ssh_args.list->count > 0) {
-            /* --keys --list: 列出所有密钥 */
-            return do_ssh_keys_list();
-        } else if (s_ssh_args.import->count > 0) {
-            /* --keys --import: 导入或生成密钥 */
-            return do_ssh_keys_import(key_id, key_path, type_str, comment);
-        } else if (s_ssh_args.delete->count > 0) {
-            /* --keys --delete: 删除密钥 */
-            return do_ssh_keys_delete(key_id);
-        } else if (s_ssh_args.export->count > 0) {
-            /* --keys --export: 导出公钥 */
-            return do_ssh_keys_export(key_id, output);
-        } else {
-            /* --keys 无子命令：显示帮助 */
-            return do_ssh_keys_help();
-        }
-    }
-    
     /* 检查是否是公钥部署模式 */
     if (s_ssh_args.copyid->count > 0) {
-        /* --copy-id 模式：必须指定 --host, --user, --password, --key */
+        /* --copyid 模式：必须指定 --host, --user, --password, 以及 --key 或 --keyid */
         if (s_ssh_args.host->count == 0) {
-            ts_console_printf("Error: --host is required for --copy-id\n");
+            ts_console_printf("Error: --host is required for --copyid\n");
             return 1;
         }
         if (s_ssh_args.user->count == 0) {
-            ts_console_printf("Error: --user is required for --copy-id\n");
+            ts_console_printf("Error: --user is required for --copyid\n");
             return 1;
         }
         if (s_ssh_args.password->count == 0) {
-            ts_console_printf("Error: --password is required for --copy-id (initial auth)\n");
+            ts_console_printf("Error: --password is required for --copyid (initial auth)\n");
             return 1;
         }
-        if (s_ssh_args.key->count == 0) {
-            ts_console_printf("Error: --key is required for --copy-id (public key path without .pub)\n");
+        if (s_ssh_args.key->count == 0 && s_ssh_args.keyid->count == 0) {
+            ts_console_printf("Error: --key or --keyid is required for --copyid\n");
+            ts_console_printf("  --key <path>   Use key file (public key at <path>.pub)\n");
+            ts_console_printf("  --keyid <id>   Use key from secure storage\n");
             return 1;
         }
         
         int port = (s_ssh_args.port->count > 0) ? s_ssh_args.port->ival[0] : 22;
         int timeout = (s_ssh_args.timeout->count > 0) ? s_ssh_args.timeout->ival[0] : 10;
+        const char *key_path = (s_ssh_args.key->count > 0) ? s_ssh_args.key->sval[0] : NULL;
+        const char *keyid = (s_ssh_args.keyid->count > 0) ? s_ssh_args.keyid->sval[0] : NULL;
         
         return do_ssh_copy_id(s_ssh_args.host->sval[0], port, 
                               s_ssh_args.user->sval[0], s_ssh_args.password->sval[0],
-                              s_ssh_args.key->sval[0], timeout);
+                              key_path, keyid, timeout);
+    }
+    
+    /* 检查是否是公钥撤销模式 */
+    if (s_ssh_args.revoke->count > 0) {
+        /* --revoke 模式：必须指定 --host, --user, --password, 以及 --key 或 --keyid */
+        if (s_ssh_args.host->count == 0) {
+            ts_console_printf("Error: --host is required for --revoke\n");
+            return 1;
+        }
+        if (s_ssh_args.user->count == 0) {
+            ts_console_printf("Error: --user is required for --revoke\n");
+            return 1;
+        }
+        if (s_ssh_args.password->count == 0) {
+            ts_console_printf("Error: --password is required for --revoke (auth to remove key)\n");
+            return 1;
+        }
+        if (s_ssh_args.key->count == 0 && s_ssh_args.keyid->count == 0) {
+            ts_console_printf("Error: --key or --keyid is required for --revoke\n");
+            ts_console_printf("  --key <path>   Revoke key file (public key at <path>.pub)\n");
+            ts_console_printf("  --keyid <id>   Revoke key from secure storage\n");
+            return 1;
+        }
+        
+        int port = (s_ssh_args.port->count > 0) ? s_ssh_args.port->ival[0] : 22;
+        int timeout = (s_ssh_args.timeout->count > 0) ? s_ssh_args.timeout->ival[0] : 10;
+        const char *key_path = (s_ssh_args.key->count > 0) ? s_ssh_args.key->sval[0] : NULL;
+        const char *keyid = (s_ssh_args.keyid->count > 0) ? s_ssh_args.keyid->sval[0] : NULL;
+        
+        return do_ssh_revoke(s_ssh_args.host->sval[0], port, 
+                             s_ssh_args.user->sval[0], s_ssh_args.password->sval[0],
+                             key_path, keyid, timeout);
     }
     
     /* 连接模式：必需参数检查 */
@@ -1504,12 +1709,13 @@ static int ssh_cmd_handler(int argc, char **argv)
     int timeout = (s_ssh_args.timeout->count > 0) ? s_ssh_args.timeout->ival[0] : 10;
     bool verbose = (s_ssh_args.verbose->count > 0);
     
-    /* 如果使用 keyid，从安全存储加载密钥 */
+    /* 构建认证信息 */
+    ssh_auth_info_t auth = {0};
     char *loaded_key_data = NULL;
     size_t loaded_key_len = 0;
-    char temp_key_path[64] = {0};
     
     if (keyid && !key_path) {
+        /* 从安全存储加载密钥到内存（不写入临时文件） */
         if (verbose) {
             ts_console_printf("Loading key '%s' from secure storage...\n", keyid);
         }
@@ -1521,38 +1727,29 @@ static int ssh_cmd_handler(int argc, char **argv)
             return 1;
         }
         
-        /* 将密钥写入临时文件（libssh2 需要文件路径） */
-        snprintf(temp_key_path, sizeof(temp_key_path), "/tmp/.ssh_key_%s", keyid);
-        FILE *fp = fopen(temp_key_path, "w");
-        if (!fp) {
-            ts_console_printf("Error: Cannot create temp key file\n");
-            free(loaded_key_data);
-            return 1;
-        }
-        fwrite(loaded_key_data, 1, loaded_key_len, fp);
-        fclose(fp);
-        free(loaded_key_data);
-        
-        /* 加载公钥 */
-        char *pub_key_data = NULL;
-        size_t pub_key_len = 0;
-        ret = ts_keystore_load_public_key(keyid, &pub_key_data, &pub_key_len);
-        if (ret == ESP_OK && pub_key_data) {
-            char pub_path[80];
-            snprintf(pub_path, sizeof(pub_path), "%s.pub", temp_key_path);
-            fp = fopen(pub_path, "w");
-            if (fp) {
-                fwrite(pub_key_data, 1, pub_key_len, fp);
-                fclose(fp);
-            }
-            free(pub_key_data);
-        }
-        
-        key_path = temp_key_path;
+        /* 使用内存中的密钥（不暴露到文件系统） */
+        auth.key_data = (const uint8_t *)loaded_key_data;
+        auth.key_len = loaded_key_len;
+        auth.passphrase = NULL;  /* TODO: 支持加密密钥 */
         
         if (verbose) {
-            ts_console_printf("Key loaded successfully\n");
+            ts_console_printf("Key loaded: %zu bytes\n", loaded_key_len);
+            /* 显示密钥类型 */
+            if (strstr(loaded_key_data, "BEGIN RSA PRIVATE KEY")) {
+                ts_console_printf("Key type: RSA (PKCS#1)\n");
+            } else if (strstr(loaded_key_data, "BEGIN EC PRIVATE KEY")) {
+                ts_console_printf("Key type: ECDSA\n");
+                ts_console_printf("  Warning: ECDSA key authentication from memory may not work\n");
+                ts_console_printf("           with libssh2 mbedTLS backend. Use RSA keys if possible.\n");
+            }
         }
+    } else if (key_path) {
+        /* 使用文件路径 */
+        auth.key_path = key_path;
+        auth.passphrase = NULL;
+    } else {
+        /* 密码认证 */
+        auth.password = password;
     }
     
     int result = 0;
@@ -1560,30 +1757,29 @@ static int ssh_cmd_handler(int argc, char **argv)
     /* 执行操作（按优先级） */
     if (s_ssh_args.shell->count > 0) {
         /* 交互式 Shell */
-        result = do_ssh_shell(host, port, user, password, key_path, timeout, verbose);
+        result = do_ssh_shell(host, port, user, &auth, timeout, verbose);
     } else if (s_ssh_args.forward->count > 0) {
         /* 端口转发 */
-        result = do_ssh_forward(host, port, user, password, key_path,
+        result = do_ssh_forward(host, port, user, &auth,
                               s_ssh_args.forward->sval[0], timeout, verbose);
     } else if (s_ssh_args.exec->count > 0) {
         /* 执行命令 */
         const char *command = s_ssh_args.exec->sval[0];
-        result = do_ssh_exec(host, port, user, password, key_path, command, timeout, verbose);
+        result = do_ssh_exec(host, port, user, &auth, command, timeout, verbose);
     } else if (s_ssh_args.test->count > 0) {
         /* 测试连接 */
-        result = do_ssh_test(host, port, user, password, key_path, timeout);
+        result = do_ssh_test(host, port, user, &auth, timeout);
     } else {
         ts_console_printf("Error: Specify --exec, --shell, --forward, --test, or --keygen\n");
         ts_console_printf("Use 'ssh --help' for usage information\n");
         result = 1;
     }
     
-    /* 清理临时密钥文件 */
-    if (temp_key_path[0]) {
-        unlink(temp_key_path);
-        char pub_path[80];
-        snprintf(pub_path, sizeof(pub_path), "%s.pub", temp_key_path);
-        unlink(pub_path);
+    /* 清理内存中的密钥数据 */
+    if (loaded_key_data) {
+        /* 安全清零内存 */
+        memset(loaded_key_data, 0, loaded_key_len);
+        free(loaded_key_data);
     }
     
     return result;
@@ -1612,17 +1808,10 @@ esp_err_t ts_cmd_ssh_register(void)
     /* 密钥生成参数 */
     s_ssh_args.keygen = arg_lit0(NULL, "keygen", "Generate SSH key pair");
     s_ssh_args.copyid = arg_lit0(NULL, "copyid", "Deploy public key to remote server");
+    s_ssh_args.revoke = arg_lit0(NULL, "revoke", "Remove public key from remote server");
     s_ssh_args.type = arg_str0(NULL, "type", "<type>", "Key type: rsa, rsa2048, rsa4096, ecdsa, ec256, ec384");
     s_ssh_args.output = arg_str0(NULL, "output", "<path>", "Output file path for private key");
     s_ssh_args.comment = arg_str0(NULL, "comment", "<text>", "Comment for the public key");
-    
-    /* Keystore 管理参数 */
-    s_ssh_args.keys = arg_lit0(NULL, "keys", "Key management mode");
-    s_ssh_args.list = arg_lit0(NULL, "list", "List stored keys");
-    s_ssh_args.import = arg_lit0(NULL, "import", "Import key to secure storage");
-    s_ssh_args.delete = arg_lit0(NULL, "delete", "Delete key from secure storage");
-    s_ssh_args.export = arg_lit0(NULL, "export", "Export public key to file");
-    s_ssh_args.id = arg_str0(NULL, "id", "<name>", "Key ID for secure storage");
     
     /* 通用参数 */
     s_ssh_args.help = arg_lit0("h", "help", "Show help");
@@ -1631,7 +1820,7 @@ esp_err_t ts_cmd_ssh_register(void)
     /* 注册命令 */
     const esp_console_cmd_t cmd = {
         .command = "ssh",
-        .help = "SSH client and key management. Use 'ssh --help' for details.",
+        .help = "SSH client. Use 'ssh --help' for details. Key management: use 'key' command.",
         .hint = NULL,
         .func = ssh_cmd_handler,
         .argtable = &s_ssh_args,

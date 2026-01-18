@@ -46,6 +46,29 @@ static struct {
 /* ========== 内部辅助函数 ========== */
 
 /**
+ * @brief 安全释放私钥内存（清零后释放）
+ * 
+ * 安全策略：私钥在释放前必须清零，防止内存残留被攻击者利用
+ * 注意：使用 memset_s 风格的实现，确保不会被编译器优化掉
+ */
+static void secure_free_key(char *key, size_t len)
+{
+    if (key == NULL) {
+        return;  /* 空指针，安全返回 */
+    }
+    
+    if (len > 0 && len < 0x100000) {  /* 合理性检查：<1MB */
+        /* 使用 volatile 防止编译器优化掉清零操作 */
+        volatile unsigned char *p = (volatile unsigned char *)key;
+        for (size_t i = 0; i < len; i++) {
+            p[i] = 0;
+        }
+    }
+    
+    free(key);
+}
+
+/**
  * @brief 构造 NVS 键名
  */
 static void make_nvs_key(char *buf, size_t buf_len, const char *id, const char *suffix)
@@ -150,6 +173,7 @@ static esp_err_t store_metadata(const char *id, const ts_keystore_key_info_t *in
     cJSON_AddNumberToObject(json, "created_at", info->created_at);
     cJSON_AddNumberToObject(json, "last_used", info->last_used);
     cJSON_AddBoolToObject(json, "has_pubkey", info->has_public_key);
+    cJSON_AddBoolToObject(json, "exportable", info->exportable);
     
     char *str = cJSON_PrintUnformatted(json);
     cJSON_Delete(json);
@@ -212,12 +236,104 @@ static esp_err_t load_metadata(const char *id, ts_keystore_key_info_t *info)
     if ((item = cJSON_GetObjectItem(json, "has_pubkey"))) {
         info->has_public_key = cJSON_IsTrue(item);
     }
+    if ((item = cJSON_GetObjectItem(json, "exportable"))) {
+        info->exportable = cJSON_IsTrue(item);
+    } else {
+        info->exportable = false;  /* 旧密钥默认不可导出 */
+    }
     
     cJSON_Delete(json);
     return ESP_OK;
 }
 
 /* ========== 公开 API ========== */
+
+/* 内部函数：带选项的密钥存储 */
+static esp_err_t ts_keystore_store_key_ex(const char *id, 
+                                          const ts_keystore_keypair_t *keypair,
+                                          ts_keystore_key_type_t type,
+                                          const ts_keystore_gen_opts_t *opts)
+{
+    if (!s_keystore.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (!id || strlen(id) == 0 || strlen(id) >= TS_KEYSTORE_ID_MAX_LEN) {
+        ESP_LOGE(TAG, "Invalid key ID");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (!keypair || !keypair->private_key || keypair->private_key_len == 0) {
+        ESP_LOGE(TAG, "Invalid keypair");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    bool exportable = opts ? opts->exportable : false;
+    const char *comment = opts ? opts->comment : NULL;
+    
+    ESP_LOGI(TAG, "Storing key '%s' (type=%s, privkey_len=%zu, exportable=%d)", 
+             id, ts_keystore_type_to_string(type), keypair->private_key_len, exportable);
+    
+    char nvs_key[TS_KEYSTORE_ID_MAX_LEN + 8];
+    esp_err_t ret;
+    
+    /* 存储私钥 */
+    make_nvs_key(nvs_key, sizeof(nvs_key), id, "_priv");
+    ret = nvs_set_blob(s_keystore.nvs_handle, nvs_key, 
+                       keypair->private_key, keypair->private_key_len);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to store private key: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* 存储公钥（如果有） */
+    bool has_pubkey = false;
+    if (keypair->public_key && keypair->public_key_len > 0) {
+        make_nvs_key(nvs_key, sizeof(nvs_key), id, "_pub");
+        ret = nvs_set_blob(s_keystore.nvs_handle, nvs_key,
+                           keypair->public_key, keypair->public_key_len);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to store public key: %s", esp_err_to_name(ret));
+            /* 继续，公钥是可选的 */
+        } else {
+            has_pubkey = true;
+        }
+    }
+    
+    /* 存储元数据 */
+    ts_keystore_key_info_t info = {
+        .type = type,
+        .created_at = (uint32_t)time(NULL),
+        .last_used = 0,
+        .has_public_key = has_pubkey,
+        .exportable = exportable,
+    };
+    strncpy(info.id, id, sizeof(info.id) - 1);
+    if (comment) {
+        strncpy(info.comment, comment, sizeof(info.comment) - 1);
+    }
+    
+    ret = store_metadata(id, &info);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to store metadata: %s", esp_err_to_name(ret));
+    }
+    
+    /* 添加到索引 */
+    ret = add_to_index(id);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to update index: %s", esp_err_to_name(ret));
+    }
+    
+    /* 提交更改 */
+    ret = nvs_commit(s_keystore.nvs_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to commit NVS: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    ESP_LOGI(TAG, "Key '%s' stored successfully", id);
+    return ESP_OK;
+}
 
 esp_err_t ts_keystore_init(void)
 {
@@ -264,81 +380,11 @@ esp_err_t ts_keystore_store_key(const char *id,
                                  ts_keystore_key_type_t type,
                                  const char *comment)
 {
-    if (!s_keystore.initialized) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    
-    if (!id || strlen(id) == 0 || strlen(id) >= TS_KEYSTORE_ID_MAX_LEN) {
-        ESP_LOGE(TAG, "Invalid key ID");
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    if (!keypair || !keypair->private_key || keypair->private_key_len == 0) {
-        ESP_LOGE(TAG, "Invalid keypair");
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    ESP_LOGI(TAG, "Storing key '%s' (type=%s, privkey_len=%zu)", 
-             id, ts_keystore_type_to_string(type), keypair->private_key_len);
-    
-    char nvs_key[TS_KEYSTORE_ID_MAX_LEN + 8];
-    esp_err_t ret;
-    
-    /* 存储私钥 */
-    make_nvs_key(nvs_key, sizeof(nvs_key), id, "_priv");
-    ret = nvs_set_blob(s_keystore.nvs_handle, nvs_key, 
-                       keypair->private_key, keypair->private_key_len);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to store private key: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    
-    /* 存储公钥（如果有） */
-    bool has_pubkey = false;
-    if (keypair->public_key && keypair->public_key_len > 0) {
-        make_nvs_key(nvs_key, sizeof(nvs_key), id, "_pub");
-        ret = nvs_set_blob(s_keystore.nvs_handle, nvs_key,
-                           keypair->public_key, keypair->public_key_len);
-        if (ret != ESP_OK) {
-            ESP_LOGW(TAG, "Failed to store public key: %s", esp_err_to_name(ret));
-            /* 继续，公钥是可选的 */
-        } else {
-            has_pubkey = true;
-        }
-    }
-    
-    /* 存储元数据 */
-    ts_keystore_key_info_t info = {
-        .type = type,
-        .created_at = (uint32_t)time(NULL),
-        .last_used = 0,
-        .has_public_key = has_pubkey,
+    ts_keystore_gen_opts_t opts = {
+        .exportable = false,
+        .comment = comment,
     };
-    strncpy(info.id, id, sizeof(info.id) - 1);
-    if (comment) {
-        strncpy(info.comment, comment, sizeof(info.comment) - 1);
-    }
-    
-    ret = store_metadata(id, &info);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to store metadata: %s", esp_err_to_name(ret));
-    }
-    
-    /* 添加到索引 */
-    ret = add_to_index(id);
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to update index: %s", esp_err_to_name(ret));
-    }
-    
-    /* 提交更改 */
-    ret = nvs_commit(s_keystore.nvs_handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to commit NVS: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    
-    ESP_LOGI(TAG, "Key '%s' stored successfully", id);
-    return ESP_OK;
+    return ts_keystore_store_key_ex(id, keypair, type, &opts);
 }
 
 esp_err_t ts_keystore_load_private_key(const char *id,
@@ -375,14 +421,20 @@ esp_err_t ts_keystore_load_private_key(const char *id,
         return ret;
     }
     
-    buf[len] = '\0';  /* Null terminate for PEM string */
+    buf[len] = '\0';  /* Ensure null termination for PEM string */
     *private_key = buf;
-    *private_key_len = len;
+    
+    /* 
+     * 返回字符串长度（不含 null 终止符）
+     * libssh2_userauth_publickey_frommemory 期望的长度不包含 null
+     * 它内部会自己添加 null 并传递 len+1 给 mbedTLS
+     */
+    *private_key_len = strlen(buf);
     
     /* 更新使用时间 */
     ts_keystore_touch_key(id);
     
-    ESP_LOGI(TAG, "Loaded private key '%s' (%zu bytes)", id, len);
+    ESP_LOGI(TAG, "Loaded private key '%s' (%zu bytes)", id, *private_key_len);
     return ESP_OK;
 }
 
@@ -422,9 +474,10 @@ esp_err_t ts_keystore_load_public_key(const char *id,
     
     buf[len] = '\0';
     *public_key = buf;
-    *public_key_len = len;
+    /* 返回字符串长度（不含 null 终止符） */
+    *public_key_len = strlen(buf);
     
-    ESP_LOGI(TAG, "Loaded public key '%s' (%zu bytes)", id, len);
+    ESP_LOGI(TAG, "Loaded public key '%s' (%zu bytes)", id, *public_key_len);
     return ESP_OK;
 }
 
@@ -634,13 +687,14 @@ esp_err_t ts_keystore_import_from_file(const char *id,
     
     esp_err_t ret = ts_keystore_store_key(id, &keypair, type, comment);
     
-    free(priv_key);
+    /* 安全清零私钥内存 */
+    secure_free_key(priv_key, read_len);
     if (pub_key) free(pub_key);
     
     return ret;
 }
 
-esp_err_t ts_keystore_export_to_file(const char *id, const char *path)
+esp_err_t ts_keystore_export_public_key_to_file(const char *id, const char *path)
 {
     if (!s_keystore.initialized) {
         return ESP_ERR_INVALID_STATE;
@@ -650,52 +704,128 @@ esp_err_t ts_keystore_export_to_file(const char *id, const char *path)
         return ESP_ERR_INVALID_ARG;
     }
     
-    ESP_LOGI(TAG, "Exporting key '%s' to %s", id, path);
+    ESP_LOGI(TAG, "Exporting public key '%s' to %s", id, path);
+    
+    /*
+     * 安全策略：只允许导出公钥，私钥永不离开安全存储
+     * 这是 TianShanOS 安全模型的核心原则
+     */
+    
+    /* 加载公钥 */
+    char *pub_key = NULL;
+    size_t pub_len = 0;
+    
+    esp_err_t ret = ts_keystore_load_public_key(id, &pub_key, &pub_len);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load public key '%s': %s", id, esp_err_to_name(ret));
+        return ret;
+    }
+    
+    if (!pub_key || pub_len == 0) {
+        ESP_LOGE(TAG, "Key '%s' has no public key", id);
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    /* 写入公钥文件 */
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        ESP_LOGE(TAG, "Cannot create file: %s", path);
+        free(pub_key);
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    size_t written = fwrite(pub_key, 1, pub_len, f);
+    fclose(f);
+    free(pub_key);
+    
+    if (written != pub_len) {
+        ESP_LOGE(TAG, "Write incomplete: %zu/%zu bytes", written, pub_len);
+        return ESP_FAIL;
+    }
+    
+    ESP_LOGI(TAG, "Public key '%s' exported to %s", id, path);
+    return ESP_OK;
+}
+
+/* 
+ * 兼容性包装器 - 已废弃，仅导出公钥
+ * @deprecated 使用 ts_keystore_export_public_key_to_file() 替代
+ */
+esp_err_t ts_keystore_export_to_file(const char *id, const char *path)
+{
+    ESP_LOGW(TAG, "ts_keystore_export_to_file() is deprecated, use ts_keystore_export_public_key_to_file()");
+    ESP_LOGW(TAG, "Security policy: Private keys NEVER leave secure storage unless exportable=true");
+    return ts_keystore_export_public_key_to_file(id, path);
+}
+
+esp_err_t ts_keystore_export_private_key_to_file(const char *id, const char *path)
+{
+    if (!s_keystore.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (!id || !path) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    /* 检查密钥是否存在并获取元数据 */
+    ts_keystore_key_info_t info;
+    esp_err_t ret = ts_keystore_get_key_info(id, &info);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Key '%s' not found", id);
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    /* 安全检查：只有 exportable=true 的密钥才能导出 */
+    if (!info.exportable) {
+        ESP_LOGE(TAG, "Key '%s' is not exportable (security policy)", id);
+        ESP_LOGW(TAG, "To export private keys, generate with --exportable flag");
+        return ESP_ERR_NOT_ALLOWED;
+    }
+    
+    ESP_LOGW(TAG, "Exporting private key '%s' to %s (exportable=true)", id, path);
     
     /* 加载私钥 */
     char *priv_key = NULL;
     size_t priv_len = 0;
     
-    esp_err_t ret = ts_keystore_load_private_key(id, &priv_key, &priv_len);
+    ret = ts_keystore_load_private_key(id, &priv_key, &priv_len);
     if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to load private key '%s': %s", id, esp_err_to_name(ret));
         return ret;
     }
     
     /* 写入私钥文件 */
     FILE *f = fopen(path, "w");
     if (!f) {
-        free(priv_key);
+        ESP_LOGE(TAG, "Cannot create file: %s", path);
+        secure_free_key(priv_key, priv_len);
         return ESP_ERR_NOT_FOUND;
     }
     
-    fwrite(priv_key, 1, priv_len, f);
+    /* 设置文件权限为 600（仅所有者可读写）- 如果支持 */
+#ifdef __unix__
+    chmod(path, 0600);
+#endif
+    
+    size_t written = fwrite(priv_key, 1, priv_len, f);
     fclose(f);
-    free(priv_key);
     
-    /* 尝试导出公钥 */
-    char *pub_key = NULL;
-    size_t pub_len = 0;
+    /* 安全清零内存 */
+    secure_free_key(priv_key, priv_len);
     
-    ret = ts_keystore_load_public_key(id, &pub_key, &pub_len);
-    if (ret == ESP_OK && pub_key) {
-        char pub_path[256];
-        snprintf(pub_path, sizeof(pub_path), "%s.pub", path);
-        
-        f = fopen(pub_path, "w");
-        if (f) {
-            fwrite(pub_key, 1, pub_len, f);
-            fclose(f);
-        }
-        free(pub_key);
+    if (written != priv_len) {
+        ESP_LOGE(TAG, "Write incomplete: %zu/%zu bytes", written, priv_len);
+        return ESP_FAIL;
     }
     
-    ESP_LOGI(TAG, "Key '%s' exported to %s", id, path);
+    ESP_LOGI(TAG, "Private key '%s' exported to %s", id, path);
     return ESP_OK;
 }
 
-esp_err_t ts_keystore_generate_key(const char *id,
-                                    ts_keystore_key_type_t type,
-                                    const char *comment)
+esp_err_t ts_keystore_generate_key_ex(const char *id,
+                                       ts_keystore_key_type_t type,
+                                       const ts_keystore_gen_opts_t *opts)
 {
     if (!s_keystore.initialized) {
         return ESP_ERR_INVALID_STATE;
@@ -705,7 +835,14 @@ esp_err_t ts_keystore_generate_key(const char *id,
         return ESP_ERR_INVALID_ARG;
     }
     
-    ESP_LOGI(TAG, "Generating %s key as '%s'", ts_keystore_type_to_string(type), id);
+    /* 使用默认选项 */
+    ts_keystore_gen_opts_t default_opts = TS_KEYSTORE_GEN_OPTS_DEFAULT;
+    if (!opts) {
+        opts = &default_opts;
+    }
+    
+    ESP_LOGI(TAG, "Generating %s key as '%s' (exportable=%d)", 
+             ts_keystore_type_to_string(type), id, opts->exportable);
     
     /* 映射 keystore 类型到 crypto 类型 */
     ts_crypto_key_type_t crypto_type;
@@ -744,7 +881,7 @@ esp_err_t ts_keystore_generate_key(const char *id,
     ret = ts_crypto_keypair_export_private(keypair, priv_key, &priv_len);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to export private key: %s", esp_err_to_name(ret));
-        free(priv_key);
+        secure_free_key(priv_key, TS_KEYSTORE_PRIVKEY_MAX_LEN);
         ts_crypto_keypair_free(keypair);
         return ret;
     }
@@ -754,7 +891,7 @@ esp_err_t ts_keystore_generate_key(const char *id,
     size_t pub_len = 0;
     if (pub_key) {
         pub_len = TS_KEYSTORE_PUBKEY_MAX_LEN;
-        ret = ts_crypto_keypair_export_openssh(keypair, pub_key, &pub_len, comment);
+        ret = ts_crypto_keypair_export_openssh(keypair, pub_key, &pub_len, opts->comment);
         if (ret != ESP_OK) {
             ESP_LOGW(TAG, "Failed to export public key: %s", esp_err_to_name(ret));
             free(pub_key);
@@ -773,12 +910,24 @@ esp_err_t ts_keystore_generate_key(const char *id,
         .public_key_len = pub_len,
     };
     
-    ret = ts_keystore_store_key(id, &kp, type, comment);
+    ret = ts_keystore_store_key_ex(id, &kp, type, opts);
     
-    free(priv_key);
+    /* 安全清零私钥内存 */
+    secure_free_key(priv_key, priv_len);
     if (pub_key) free(pub_key);
     
     return ret;
+}
+
+esp_err_t ts_keystore_generate_key(const char *id,
+                                    ts_keystore_key_type_t type,
+                                    const char *comment)
+{
+    ts_keystore_gen_opts_t opts = {
+        .exportable = false,
+        .comment = comment,
+    };
+    return ts_keystore_generate_key_ex(id, type, &opts);
 }
 
 const char *ts_keystore_type_to_string(ts_keystore_key_type_t type)

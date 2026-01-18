@@ -15,6 +15,7 @@
 #include "mbedtls/entropy.h"
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/pem.h"
+#include "esp_log.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -411,6 +412,11 @@ esp_err_t ts_crypto_keypair_export_openssh(ts_keypair_t keypair, char *openssh, 
         /* Write E then N (OpenSSH order) */
         pos += write_ssh_mpint(blob + pos, e_buf, e_len);
         pos += write_ssh_mpint(blob + pos, n_buf, actual_n_len);
+        
+        ESP_LOGI("ts_crypto", "OpenSSH RSA: e_len=%zu, n_len=%zu, blob_len=%zu", e_len, actual_n_len, pos);
+        ESP_LOGI("ts_crypto", "OpenSSH blob[0..19] = %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+                  blob[0], blob[1], blob[2], blob[3], blob[4], blob[5], blob[6], blob[7], blob[8], blob[9],
+                  blob[10], blob[11], blob[12], blob[13], blob[14], blob[15], blob[16], blob[17], blob[18], blob[19]);
         
         free(n_buf);
         free(e_buf);

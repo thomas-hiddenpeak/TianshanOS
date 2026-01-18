@@ -1,9 +1,15 @@
 # TianShanOS Partition Table
 # Name,   Type, SubType, Offset,  Size, Flags
 # Note: if you have increased the bootloader size, make sure to update the offsets to avoid overlap
-nvs,      data, nvs,     0x9000,  0x6000,
-phy_init, data, phy,     0xf000,  0x1000,
-factory,  app,  factory, 0x10000, 0x300000,
+#
+# Security Configuration:
+#   - nvs: 48KB for keystore (8x RSA-4096 + system config)
+#   - nvs_keys: 4KB for NVS encryption keys (requires CONFIG_NVS_ENCRYPTION=y)
+#
+nvs,      data, nvs,     0x9000,  0xC000,
+nvs_keys, data, nvs_keys,0x15000, 0x1000,
+phy_init, data, phy,     0x16000, 0x1000,
+factory,  app,  factory, 0x20000, 0x2F0000,
 storage,  data, spiffs,  0x310000,0xA0000,
 www,      data, spiffs,  0x3B0000,0x40000,
 fatfs,    data, fat,     0x3F0000,0x10000,

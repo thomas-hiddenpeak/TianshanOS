@@ -39,6 +39,17 @@
 
 #ifdef LIBSSH2_MBEDTLS /* compile only if we build with mbedtls */
 
+/* ESP-IDF debug logging */
+#ifdef ESP_PLATFORM
+#include "esp_log.h"
+#define MBEDTLS_DEBUG_TAG "libssh2_mbedtls"
+#define MBEDTLS_DEBUG(fmt, ...) ESP_LOGI(MBEDTLS_DEBUG_TAG, fmt, ##__VA_ARGS__)
+#define MBEDTLS_ERROR(fmt, ...) ESP_LOGE(MBEDTLS_DEBUG_TAG, fmt, ##__VA_ARGS__)
+#else
+#define MBEDTLS_DEBUG(fmt, ...) 
+#define MBEDTLS_ERROR(fmt, ...)
+#endif
+
 #if MBEDTLS_VERSION_NUMBER < 0x03000000
 #define mbedtls_cipher_info_get_key_bitlen(c) (c->key_bitlen)
 #define mbedtls_cipher_info_get_iv_size(c)    (c->iv_size)
@@ -452,6 +463,8 @@ _libssh2_mbedtls_rsa_new_private_frommemory(libssh2_rsa_ctx **rsa,
     void *filedata_nullterm;
     size_t pwd_len;
 
+    MBEDTLS_DEBUG("rsa_new_private_frommemory: filedata_len=%zu", filedata_len);
+
     *rsa = (libssh2_rsa_ctx *) mbedtls_calloc(1, sizeof(libssh2_rsa_ctx));
     if(*rsa == NULL)
         return -1;
@@ -462,9 +475,13 @@ _libssh2_mbedtls_rsa_new_private_frommemory(libssh2_rsa_ctx **rsa,
     */
     filedata_nullterm = mbedtls_calloc(filedata_len + 1, 1);
     if(filedata_nullterm == NULL) {
+        mbedtls_free(*rsa);
+        *rsa = NULL;
         return -1;
     }
     memcpy(filedata_nullterm, filedata, filedata_len);
+
+    MBEDTLS_DEBUG("calling mbedtls_pk_parse_key with len=%zu", filedata_len + 1);
 
     mbedtls_pk_init(&pkey);
 
@@ -480,6 +497,14 @@ _libssh2_mbedtls_rsa_new_private_frommemory(libssh2_rsa_ctx **rsa,
                                filedata_len + 1,
                                passphrase, pwd_len);
 #endif
+
+    if(ret != 0) {
+        MBEDTLS_ERROR("mbedtls_pk_parse_key failed: ret=%d (0x%04x)", ret, (unsigned int)-ret);
+    } else {
+        MBEDTLS_DEBUG("mbedtls_pk_parse_key success, type=%d (RSA=%d)", 
+                mbedtls_pk_get_type(&pkey), MBEDTLS_PK_RSA);
+    }
+
     _libssh2_mbedtls_safe_free(filedata_nullterm, filedata_len);
 
     if(ret != 0 || mbedtls_pk_get_type(&pkey) != MBEDTLS_PK_RSA) {
@@ -636,6 +661,7 @@ gen_publickey_from_rsa(LIBSSH2_SESSION *session,
                       size_t *keylen)
 {
     int            e_bytes, n_bytes;
+    int            e_pad = 0, n_pad = 0;
     unsigned long  len;
     unsigned char *key;
     unsigned char *p;
@@ -643,8 +669,28 @@ gen_publickey_from_rsa(LIBSSH2_SESSION *session,
     e_bytes = mbedtls_mpi_size(&rsa->MBEDTLS_PRIVATE(E));
     n_bytes = mbedtls_mpi_size(&rsa->MBEDTLS_PRIVATE(N));
 
+    /* SSH mpint format requires a leading zero byte if the high bit is set
+     * (to indicate a positive number in two's complement).
+     * 
+     * Use mbedtls_mpi_bitlen to check if the MSB is set:
+     * If bitlen == bytes * 8, then the MSB of the highest byte is set.
+     */
+    if(e_bytes > 0) {
+        size_t e_bitlen = mbedtls_mpi_bitlen(&rsa->MBEDTLS_PRIVATE(E));
+        if(e_bitlen == (size_t)e_bytes * 8)
+            e_pad = 1;
+    }
+    if(n_bytes > 0) {
+        size_t n_bitlen = mbedtls_mpi_bitlen(&rsa->MBEDTLS_PRIVATE(N));
+        if(n_bitlen == (size_t)n_bytes * 8)
+            n_pad = 1;
+    }
+
+    MBEDTLS_DEBUG("gen_publickey_from_rsa: e_bytes=%d, n_bytes=%d, e_pad=%d, n_pad=%d",
+                  e_bytes, n_bytes, e_pad, n_pad);
+
     /* Key form is "ssh-rsa" + e + n. */
-    len = 4 + 7 + 4 + e_bytes + 4 + n_bytes;
+    len = 4 + 7 + 4 + e_pad + e_bytes + 4 + n_pad + n_bytes;
 
     key = LIBSSH2_ALLOC(session, len);
     if(!key) {
@@ -659,15 +705,32 @@ gen_publickey_from_rsa(LIBSSH2_SESSION *session,
     memcpy(p, "ssh-rsa", 7);
     p += 7;
 
-    _libssh2_htonu32(p, e_bytes);
+    /* Write E with padding if needed */
+    _libssh2_htonu32(p, e_bytes + e_pad);
     p += 4;
+    if(e_pad) {
+        *p++ = 0;
+    }
     mbedtls_mpi_write_binary(&rsa->MBEDTLS_PRIVATE(E), p, e_bytes);
+    p += e_bytes;
 
-    _libssh2_htonu32(p, n_bytes);
+    /* Write N with padding if needed */
+    _libssh2_htonu32(p, n_bytes + n_pad);
     p += 4;
+    if(n_pad) {
+        *p++ = 0;
+    }
     mbedtls_mpi_write_binary(&rsa->MBEDTLS_PRIVATE(N), p, n_bytes);
+    p += n_bytes;
 
     *keylen = (size_t)(p - key);
+    MBEDTLS_DEBUG("gen_publickey_from_rsa: total keylen=%zu (expected len=%lu)", *keylen, len);
+    
+    /* Debug: print first 20 bytes of generated key */
+    MBEDTLS_DEBUG("gen_publickey_from_rsa: key[0..19] = %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
+                  key[0], key[1], key[2], key[3], key[4], key[5], key[6], key[7], key[8], key[9],
+                  key[10], key[11], key[12], key[13], key[14], key[15], key[16], key[17], key[18], key[19]);
+    
     return key;
 }
 
@@ -681,11 +744,15 @@ _libssh2_mbedtls_pub_priv_key(LIBSSH2_SESSION *session,
 {
     unsigned char *key = NULL, *mth = NULL;
     size_t keylen = 0, mthlen = 0;
-    int ret;
+    int ret = 0;  /* BUG FIX: initialize ret to 0 */
     mbedtls_rsa_context *rsa;
+
+    MBEDTLS_DEBUG("pub_priv_key: pk_type=%d (RSA=%d)", 
+                  mbedtls_pk_get_type(pkey), MBEDTLS_PK_RSA);
 
     if(mbedtls_pk_get_type(pkey) != MBEDTLS_PK_RSA) {
         mbedtls_pk_free(pkey);
+        MBEDTLS_ERROR("pub_priv_key: Key type not supported");
         return _libssh2_error(session, LIBSSH2_ERROR_FILE,
                               "Key type not supported");
     }
@@ -703,17 +770,23 @@ _libssh2_mbedtls_pub_priv_key(LIBSSH2_SESSION *session,
     rsa = mbedtls_pk_rsa(*pkey);
     key = gen_publickey_from_rsa(session, rsa, &keylen);
     if(key == NULL) {
+        MBEDTLS_ERROR("pub_priv_key: gen_publickey_from_rsa failed");
         ret = -1;
+    } else {
+        MBEDTLS_DEBUG("pub_priv_key: generated pubkey, keylen=%zu", keylen);
     }
 
     /* write output */
     if(ret) {
+        MBEDTLS_ERROR("pub_priv_key: returning error ret=%d", ret);
         if(mth)
             LIBSSH2_FREE(session, mth);
         if(key)
             LIBSSH2_FREE(session, key);
     }
     else {
+        MBEDTLS_DEBUG("pub_priv_key: success, method=%.*s, keylen=%zu", 
+                      (int)mthlen, mth, keylen);
         *method = mth;
         *method_len = mthlen;
         *pubkeydata = key;
@@ -774,12 +847,15 @@ _libssh2_mbedtls_pub_priv_keyfilememory(LIBSSH2_SESSION *session,
     void *privatekeydata_nullterm;
     size_t pwd_len;
 
+    MBEDTLS_DEBUG("pub_priv_keyfilememory: privatekeydata_len=%zu", privatekeydata_len);
+
     /*
     mbedtls checks in "mbedtls/pkparse.c:1184" if "key[keylen - 1] != '\0'"
     private-key from memory will fail if the last byte is not a null byte
     */
     privatekeydata_nullterm = mbedtls_calloc(privatekeydata_len + 1, 1);
     if(privatekeydata_nullterm == NULL) {
+        MBEDTLS_ERROR("pub_priv_keyfilememory: calloc failed");
         return -1;
     }
     memcpy(privatekeydata_nullterm, privatekeydata, privatekeydata_len);
@@ -787,6 +863,8 @@ _libssh2_mbedtls_pub_priv_keyfilememory(LIBSSH2_SESSION *session,
     mbedtls_pk_init(&pkey);
 
     pwd_len = passphrase != NULL ? strlen((const char *)passphrase) : 0;
+    MBEDTLS_DEBUG("calling mbedtls_pk_parse_key with total_len=%zu", privatekeydata_len + 1);
+    
 #if MBEDTLS_VERSION_NUMBER >= 0x03000000
     ret = mbedtls_pk_parse_key(&pkey,
                                (unsigned char *)privatekeydata_nullterm,
@@ -800,6 +878,13 @@ _libssh2_mbedtls_pub_priv_keyfilememory(LIBSSH2_SESSION *session,
                                privatekeydata_len + 1,
                                (const unsigned char *)passphrase, pwd_len);
 #endif
+
+    if(ret != 0) {
+        MBEDTLS_ERROR("mbedtls_pk_parse_key failed: ret=%d (0x%04x)", ret, (unsigned int)-ret);
+    } else {
+        MBEDTLS_DEBUG("mbedtls_pk_parse_key success, pk_type=%d", mbedtls_pk_get_type(&pkey));
+    }
+
     _libssh2_mbedtls_safe_free(privatekeydata_nullterm, privatekeydata_len);
 
     if(ret != 0) {

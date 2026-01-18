@@ -370,8 +370,122 @@ ssh --keygen --type rsa --bits 2048 --output /sdcard/id_rsa
 
 ---
 
+## 6. SSH 内存密钥认证失败 (libssh2 mbedTLS mpint padding bug)
+
+### 问题描述
+
+**症状**：使用 `--keyid` 从安全存储加载私钥进行 SSH 公钥认证，服务器返回 `PUBLICKEY_UNVERIFIED`（rc=-18），错误信息："Username/PublicKey combination invalid"。
+
+**环境**：
+- libssh2 1.10.1_DEV (ch405labs_esp_libssh2，mbedTLS 后端)
+- ESP32-S3
+- RSA-2048 密钥
+
+**关键观察**：
+- 从私钥提取公钥成功（`keylen=278`）
+- 公钥 blob 前 20 字节看起来正确
+- 但 `n_pad` 值不稳定（有时 0，有时 1）
+- 服务器拒绝公钥（与 `authorized_keys` 中的不匹配）
+
+### 调试过程
+
+**第一步：添加详细日志**
+
+在 `gen_publickey_from_rsa()` 中添加日志：
+```c
+MBEDTLS_DEBUG("e_bytes=%d, n_bytes=%d, e_pad=%d, n_pad=%d, n_buf[0]=0x%02x",
+              e_bytes, n_bytes, e_pad, n_pad, n_buf[0]);
+```
+
+**第二步：发现异常**
+
+对于同一个密钥，不同次调用 `n_buf[0]` 的值不同：
+- 首次：`n_buf[0]=0x80` → `n_pad=1`
+- 再次：`n_buf[0]=0x30` → `n_pad=0`
+
+### 根本原因
+
+**Bug 位置**：`libssh2/src/mbedtls.c` 的 `gen_publickey_from_rsa()` 函数
+
+```c
+// 有 bug 的代码：
+unsigned char n_buf[1];  // 只有 1 字节的 buffer！
+mbedtls_mpi_write_binary(&rsa->N, n_buf, 1);  // N 有 256 字节，buffer 太小！
+if(n_buf[0] & 0x80)  // n_buf[0] 是未初始化的随机值！
+    n_pad = 1;
+```
+
+**问题机制**：
+1. `mbedtls_mpi_write_binary()` 需要足够大的 buffer 存储整个 MPI
+2. 传入 1 字节的 buffer 存储 256 字节的 N，函数返回 `MBEDTLS_ERR_MPI_BUFFER_TOO_SMALL`
+3. 代码没有检查返回值，`n_buf[0]` 保持未初始化状态（栈上随机值）
+4. 导致 `n_pad` 的计算结果随机
+5. 生成的公钥 blob 可能与 `ts_crypto` 生成的不一致（部署到服务器的是 ts_crypto 版本）
+
+### 解决方案
+
+使用 `mbedtls_mpi_bitlen()` 正确判断 MSB：
+
+```c
+// 修复后的代码：
+if(n_bytes > 0) {
+    size_t n_bitlen = mbedtls_mpi_bitlen(&rsa->MBEDTLS_PRIVATE(N));
+    // 如果 bitlen == bytes * 8，说明最高位 byte 的 MSB 为 1
+    if(n_bitlen == (size_t)n_bytes * 8)
+        n_pad = 1;
+}
+```
+
+**原理**：
+- `mbedtls_mpi_size()` 返回存储 MPI 所需的最小字节数
+- `mbedtls_mpi_bitlen()` 返回 MPI 的实际位数
+- 如果 `bitlen == bytes * 8`，说明最高字节的最高位是 1，需要 padding
+
+### 修改的文件
+
+- `components/ch405labs_esp_libssh2/libssh2/src/mbedtls.c`
+  - `gen_publickey_from_rsa()` - 修复 mpint padding 计算
+
+### SSH mpint 格式说明
+
+SSH 协议中的 mpint（多精度整数）格式：
+- 大端序存储
+- 如果最高字节的 MSB 为 1，需要添加前导 0x00（表示正数）
+- 长度前缀包含 padding 字节
+
+```
+// 示例：N = 0x80... (MSB=1)
+// 编码为：
+00 00 01 01    // 长度 = 257 (256 + 1 padding)
+00             // padding byte
+80 xx xx ...   // N 的 256 字节数据
+```
+
+### 验证修复
+
+```bash
+# 1. 生成新密钥
+key --generate --id test_new --type rsa
+
+# 2. 部署到服务器
+ssh --copyid --host 10.10.99.100 --user thomas --password cdromdir --keyid test_new
+
+# 3. 使用密钥连接（成功！）
+ssh --host 10.10.99.100 --user thomas --keyid test_new --exec "uname -a"
+```
+
+### 经验教训
+
+1. **始终检查 mbedTLS 函数返回值**
+2. **使用正确的 API 获取 MPI 属性**：`mbedtls_mpi_bitlen()` 比手动读取字节更可靠
+3. **栈上变量未初始化可能导致随机行为**
+4. **详细日志对于调试密码学问题至关重要**
+
+---
+
 ## 更新日志
 
+- 2026-01-18: 添加 SSH 内存密钥认证 mpint padding bug 修复记录（libssh2 mbedTLS 后端）
 - 2026-01-18: 添加 SSH 公钥认证失败问题（libssh2 mbedTLS 需要显式公钥文件）
 - 2026-01-18: 添加 SSH 交互式 Shell 字符回显延迟问题调试记录
 - 2026-01-17: 初始版本，记录 DHCP 服务器崩溃问题及解决方案

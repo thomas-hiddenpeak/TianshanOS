@@ -17,7 +17,9 @@
 - [dhcp - DHCP 服务器管理](#dhcp---dhcp-服务器管理)
 - [wifi - WiFi 管理](#wifi---wifi-管理)
 - [device - 设备控制](#device---设备控制)
+- [key - 安全密钥存储](#key---安全密钥存储)
 - [ssh - SSH 客户端](#ssh---ssh-客户端)
+- [hosts - SSH Known Hosts 管理](#hosts---ssh-known-hosts-管理)
 
 ---
 
@@ -1138,9 +1140,106 @@ device --agx --status --json
 
 ---
 
+## key - 安全密钥存储
+
+管理存储在 ESP32 NVS 加密分区中的密钥。密钥不仅用于 SSH，还可用于 HTTPS/TLS 证书、API 签名、设备认证等场景。
+
+### 语法
+
+```
+key [options]
+```
+
+### 选项
+
+| 选项 | 说明 |
+|------|------|
+| `--list` | 列出所有存储的密钥 |
+| `--info --id <name>` | 查看密钥详情 |
+| `--import --id <name> --file <path>` | 从文件导入密钥 |
+| `--generate --id <name> --type <type>` | 生成新密钥并存储 |
+| `--delete --id <name>` | 删除密钥 |
+| `--export --id <name> --output <path>` | 导出公钥到文件 |
+| `--export-priv --id <name> --output <path>` | 导出私钥到文件（仅限可导出密钥） |
+| `--exportable` | 允许私钥导出（与 --generate/--import 配合使用） |
+| `--comment <text>` | 密钥注释（用于 generate/import） |
+| `--json` | JSON 格式输出 |
+| `--help` | 显示帮助 |
+
+### 密钥类型
+
+| 类型 | 说明 |
+|------|------|
+| `rsa`, `rsa2048` | RSA 2048 位（兼容性好） |
+| `rsa4096` | RSA 4096 位（最安全，生成较慢 ~60s） |
+| `ecdsa`, `ec256` | ECDSA P-256（快速、安全，推荐） |
+| `ec384` | ECDSA P-384（高安全性） |
+
+### 示例
+
+```bash
+# 列出所有密钥
+key --list
+
+# 生成 ECDSA 密钥并存储（默认不可导出私钥）
+key --generate --id agx --type ecdsa --comment "AGX production key"
+
+# 生成可导出的密钥（允许后续导出私钥用于备份）
+key --generate --id backup_key --type rsa --exportable --comment "Backup key"
+
+# 生成 RSA 4096 密钥（需要等待约 60 秒）
+key --generate --id secure --type rsa4096
+
+# 从文件导入已有密钥（默认不可再导出）
+key --import --id legacy --file /sdcard/id_rsa
+
+# 导入并保持可导出（用于密钥迁移场景）
+key --import --id migrate --file /sdcard/id_rsa --exportable
+
+# 查看密钥详情（显示是否可导出）
+key --info --id agx
+
+# 导出公钥（用于部署到远程服务器）
+key --export --id agx --output /sdcard/agx.pub
+
+# 导出私钥（仅限可导出密钥）
+key --export-priv --id backup_key --output /sdcard/backup_key.pem
+
+# 删除密钥
+key --delete --id old_key
+
+# JSON 格式输出
+key --list --json
+```
+
+### 安全存储优势
+
+- **硬件保护**：密钥存储在 ESP32 的 NVS 加密分区
+- **无需文件**：避免私钥文件泄露风险
+- **通用用途**：SSH、HTTPS、API 签名等均可使用
+- **使用方便**：SSH 通过 `--keyid` 直接引用密钥
+
+### 与 SSH 命令配合使用
+
+```bash
+# 1. 生成密钥
+key --generate --id agx --type ecdsa
+
+# 2. 导出公钥用于部署
+key --export --id agx --output /sdcard/agx.pub
+
+# 3. 部署公钥到远程服务器
+ssh --copyid --host 192.168.1.100 --user nvidia --password secret --key /sdcard/agx
+
+# 4. 使用密钥连接
+ssh --host 192.168.1.100 --user nvidia --keyid agx --shell
+```
+
+---
+
 ## ssh - SSH 客户端
 
-远程 SSH 连接、命令执行、交互式 Shell、端口转发和密钥管理。
+远程 SSH 连接、命令执行、交互式 Shell 和端口转发。密钥管理请使用 `key` 命令。
 
 ### 语法
 
@@ -1157,7 +1256,7 @@ ssh [options]
 | `--user <name>` | 用户名 |
 | `--password <pwd>` | 密码（密码认证） |
 | `--key <path>` | 私钥文件路径（公钥认证） |
-| `--keyid <id>` | 使用安全存储中的密钥（公钥认证） |
+| `--keyid <id>` | 使用安全存储中的密钥（参见 `key` 命令） |
 | `--exec <cmd>` | 执行远程命令 |
 | `--shell` | 启动交互式 Shell |
 | `--forward <spec>` | 端口转发（格式：`L<local>:<remote_host>:<remote_port>`） |
@@ -1174,94 +1273,29 @@ ssh [options]
 | `--output <path>` | 私钥输出路径 |
 | `--comment <text>` | 公钥注释（可选） |
 
-### 安全密钥存储选项（推荐）
-
-密钥存储在 ESP32 的 NVS 加密分区中，比文件存储更安全。
-
-| 选项 | 说明 |
-|------|------|
-| `--keys` | 进入密钥管理模式 |
-| `--keys --list` | 列出所有存储的密钥 |
-| `--keys --import --id <name> --key <path>` | 从文件导入密钥到安全存储 |
-| `--keys --import --id <name> --type <type>` | 生成密钥并存储到安全存储 |
-| `--keys --delete --id <name>` | 删除存储的密钥 |
-| `--keys --export --id <name> --output <path>` | 导出公钥到文件 |
-| `--id <name>` | 密钥 ID（用于安全存储操作） |
-
 ### 密钥部署选项
 
 | 选项 | 说明 |
 |------|------|
-| `--copy-id` | 部署公钥到远程服务器（类似 ssh-copy-id） |
+| `--copyid` | 部署公钥到远程服务器（类似 ssh-copy-id） |
 
 使用 `--copyid` 时需要同时提供：
 - `--host` - 目标服务器
 - `--user` - 用户名
 - `--password` - 密码（用于初始认证）
-- `--key` - 私钥路径（公钥为 `<path>.pub`）
+- `--key` 或 `--keyid` - 密钥来源
 
-### 安全密钥存储示例（推荐）
+### 公钥撤销选项
 
-```bash
-# 查看存储的密钥
-ssh --keys --list
+| 选项 | 说明 |
+|------|------|
+| `--revoke` | 从远程服务器撤销（删除）已部署的公钥 |
 
-# 生成 ECDSA 密钥并存储到安全存储（推荐）
-ssh --keys --import --id agx --type ecdsa --comment "AGX production key"
-
-# 从 SD 卡导入已有密钥到安全存储
-ssh --keys --import --id backup --key /sdcard/id_rsa
-
-# 使用安全存储的密钥连接
-ssh --host 192.168.1.100 --user nvidia --keyid agx --shell
-ssh --host 192.168.1.100 --user nvidia --keyid agx --exec "nvidia-smi"
-
-# 导出公钥用于部署
-ssh --keys --export --id agx --output /sdcard/agx.pub
-
-# 删除不需要的密钥
-ssh --keys --delete --id old_key
-```
-
-安全密钥存储的优势：
-- **硬件保护**：密钥存储在 ESP32 的 NVS 加密分区
-- **无需文件**：避免私钥文件泄露风险
-- **使用方便**：通过 `--keyid` 直接引用密钥
-- **支持旋转**：可随时删除旧密钥、添加新密钥
-
-### 密钥文件生成示例
-
-```bash
-# 生成 RSA 2048 位密钥对（保存到文件）
-ssh --keygen --type rsa2048 --output /sdcard/id_rsa
-
-# 生成 ECDSA P-256 密钥对（推荐，更快更安全）
-ssh --keygen --type ecdsa --output /sdcard/id_ecdsa --comment "TianShanOS AGX key"
-
-# 生成 RSA 4096 位密钥对（最安全，但生成较慢）
-ssh --keygen --type rsa4096 --output /sdcard/id_rsa_4096
-```
-
-生成的文件：
-- 私钥：`<output>` (PEM 格式)
-- 公钥：`<output>.pub` (OpenSSH 格式，可直接添加到 `authorized_keys`)
-
-### 公钥部署示例（ssh-copy-id）
-
-```bash
-# 将公钥部署到远程服务器（使用密码进行初始认证）
-ssh --copyid --host 192.168.1.100 --user nvidia --password secret --key /sdcard/id_ecdsa
-
-# 部署完成后，可以使用公钥认证
-ssh --host 192.168.1.100 --user nvidia --key /sdcard/id_ecdsa --exec "hostname"
-```
-
-`--copyid` 会执行以下操作：
-1. 使用密码连接到远程服务器
-2. 创建 `~/.ssh` 目录（如果不存在）
-3. 将公钥追加到 `~/.ssh/authorized_keys`
-4. 设置正确的目录/文件权限（700/600）
-5. 自动验证公钥认证是否成功
+使用 `--revoke` 时需要同时提供：
+- `--host` - 目标服务器
+- `--user` - 用户名
+- `--password` - 密码（用于认证，因为要删除的密钥可能已失效）
+- `--key` 或 `--keyid` - 要撤销的密钥
 
 ### 连接示例
 
@@ -1269,18 +1303,39 @@ ssh --host 192.168.1.100 --user nvidia --key /sdcard/id_ecdsa --exec "hostname"
 # 使用密码认证执行命令
 ssh --host 192.168.1.100 --user root --password secret --exec "uptime"
 
-# 使用公钥认证（使用生成的密钥）
-ssh --host 192.168.1.100 --user nvidia --key /sdcard/id_ecdsa --exec "nvidia-smi"
+# 使用安全存储的密钥连接（推荐）
+ssh --host 192.168.1.100 --user nvidia --keyid agx --shell
+ssh --host 192.168.1.100 --user nvidia --keyid agx --exec "nvidia-smi"
+
+# 使用文件密钥连接
+ssh --host 192.168.1.100 --user nvidia --key /sdcard/id_ecdsa --exec "hostname"
 
 # 测试连接
-ssh --test --host 192.168.1.100 --user root --key /sdcard/id_rsa
+ssh --test --host 192.168.1.100 --user root --keyid agx
 
-# 启动交互式 Shell
-ssh --host agx.local --user nvidia --key /sdcard/id_ecdsa --shell
+# 本地端口转发
+ssh --host gateway.local --user admin --keyid agx --forward "L8080:localhost:80"
+```
 
-# 本地端口转发（将本地 8080 转发到远程的 localhost:80）
-ssh --host gateway.local --user admin --key /sdcard/id_ecdsa \
-    --forward "L8080:localhost:80"
+### 密钥文件生成示例
+
+```bash
+# 生成 ECDSA 密钥对到文件（推荐）
+ssh --keygen --type ecdsa --output /sdcard/id_ecdsa --comment "TianShanOS"
+
+# 生成 RSA 4096 位密钥对
+ssh --keygen --type rsa4096 --output /sdcard/id_rsa
+```
+
+生成的文件：
+- 私钥：`<output>` (PEM 格式)
+- 公钥：`<output>.pub` (OpenSSH 格式)
+
+### 公钥部署示例
+
+```bash
+# 部署公钥到远程服务器（使用密码进行初始认证）
+ssh --copyid --host 192.168.1.100 --user nvidia --password secret --key /sdcard/id_ecdsa
 ```
 
 ### 交互式 Shell
@@ -1297,79 +1352,222 @@ ssh --host gateway.local --user admin --key /sdcard/id_ecdsa \
 
 ```bash
 # 将本地 8080 端口转发到远程的 internal.server:3000
-ssh --host bastion --user admin --key /sdcard/id_ecdsa \
-    --forward "L8080:internal.server:3000"
+ssh --host bastion --user admin --keyid agx --forward "L8080:internal.server:3000"
 ```
-
-转发建立后，访问 ESP32 的 8080 端口等同于访问远程的 internal.server:3000。
 
 ### Known Hosts 验证
 
-首次连接新主机时会显示指纹并询问是否信任：
+SSH 连接会自动验证远程主机的身份，防止中间人攻击。
+
+**首次连接**（TOFU - Trust On First Use）：
 ```
-Host key fingerprint: SHA256:AAAA...
-Trust this host? (yes/no):
+┌─────────────────────────────────────────────────────────────┐
+│  NEW HOST - First time connecting to this server           │
+└─────────────────────────────────────────────────────────────┘
+
+Host: 10.10.99.100:22
+Fingerprint: SHA256:xYzAbC123...
+
+Trust this host and continue? (yes/no):
 ```
 
-输入 `yes` 后密钥会保存到 NVS，后续连接自动验证。
+输入 `yes` 后指纹保存到 NVS，后续连接自动验证。
 
-### 典型工作流
+**指纹变化警告**（可能的中间人攻击）：
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ⚠️  WARNING: HOST KEY MISMATCH - POSSIBLE MITM ATTACK!    │
+└─────────────────────────────────────────────────────────────┘
 
-#### 方式一：使用安全存储（推荐）
+The host key for 10.10.99.100 has changed!
+Stored:  SHA256:OldKey...
+Current: SHA256:NewKey...
+
+Accept new key? (yes/no):
+```
+
+> **提示**：使用 `hosts` 命令管理已保存的主机指纹。参见 [hosts 命令](#hosts---ssh-known-hosts-管理)。
+
+### 典型工作流（推荐使用安全存储）
 
 1. **生成密钥并存储到安全区域**：
    ```bash
-   ssh --keys --import --id agx --type ecdsa --comment "TianShanOS AGX"
+   key --generate --id agx --type rsa --comment "AGX production key"
    ```
+   > 提示：密钥生成需要几秒钟，RSA-4096 可能需要 60 秒以上
 
-2. **导出公钥用于部署**：
+2. **部署公钥到目标服务器**（使用密码进行初始认证）：
    ```bash
-   ssh --keys --export --id agx --output /sdcard/agx.pub
+   ssh --copyid --host 192.168.1.100 --user nvidia --password secret --keyid agx
    ```
+   > 这一步会将安全存储中的公钥部署到服务器的 `~/.ssh/authorized_keys`
 
-3. **部署公钥到目标服务器**：
+3. **使用安全存储的密钥连接**（无需密码）：
    ```bash
-   ssh --copyid --host 192.168.1.100 --user nvidia --password secret --key /sdcard/agx
-   ```
-
-4. **使用安全存储的密钥连接**：
-   ```bash
+   # 执行单条命令
+   ssh --host 192.168.1.100 --user nvidia --keyid agx --exec "nvidia-smi"
+   
+   # 启动交互式 Shell
    ssh --host 192.168.1.100 --user nvidia --keyid agx --shell
    ```
 
-#### 方式二：使用文件存储
+### 完整命令示例
 
-1. **在 TianShanOS 上生成密钥对**：
-   ```bash
-   ssh --keygen --type ecdsa --output /sdcard/id_ecdsa --comment "TianShanOS"
-   ```
-
-2. **查看生成的公钥**（输出中已显示，或使用 `fs --cat /sdcard/id_ecdsa.pub`）
-
-3. **部署公钥到目标服务器**（使用 --copyid 自动部署）：
-   ```bash
-   ssh --copyid --host 192.168.1.100 --user nvidia --password secret --key /sdcard/id_ecdsa
-   ```
-
-4. **使用私钥连接**：
-   ```bash
-   ssh --host 192.168.1.100 --user nvidia --key /sdcard/id_ecdsa --exec "hostname"
-   ```
-
-#### 密钥迁移：文件 → 安全存储
-
-已有密钥文件的用户可以迁移到安全存储：
 ```bash
-# 导入已有密钥
-ssh --keys --import --id mykey --key /sdcard/id_rsa
+# ========== 密钥管理 ==========
 
-# 验证导入成功
-ssh --keys --list
+# 列出所有存储的密钥
+key --list
 
-# 删除原文件（可选，确保安全）
-fs --rm /sdcard/id_rsa
-fs --rm /sdcard/id_rsa.pub
+# 生成 RSA 2048 密钥（推荐，兼容性好）
+key --generate --id my_server --type rsa --comment "Server access key"
+
+# 生成 ECDSA P-256 密钥（更快，但某些旧服务器不支持）
+key --generate --id fast_key --type ecdsa
+
+# 查看密钥详情
+key --info --id my_server
+
+# 导出公钥到文件（可用于手动部署）
+key --export --id my_server --output /sdcard/my_server.pub
+
+# 删除不需要的密钥
+key --delete --id old_key
+
+# ========== SSH 连接 ==========
+
+# 使用安全存储的密钥连接（推荐）
+ssh --host 10.10.99.100 --user thomas --keyid my_server --shell
+ssh --host 10.10.99.100 --user thomas --keyid my_server --exec "uptime"
+
+# 使用密码连接（不推荐，仅用于初始配置）
+ssh --host 10.10.99.100 --user thomas --password secret --exec "whoami"
+
+# 使用文件密钥连接
+ssh --host 10.10.99.100 --user thomas --key /sdcard/id_rsa --shell
+
+# 测试连接
+ssh --test --host 10.10.99.100 --user thomas --keyid my_server
+
+# ========== 密钥部署 ==========
+
+# 从安全存储部署密钥（推荐）
+ssh --copyid --host 10.10.99.100 --user thomas --password cdromdir --keyid my_server
+
+# 从文件部署密钥
+ssh --copyid --host 10.10.99.100 --user thomas --password cdromdir --key /sdcard/id_rsa
+
+# ========== 公钥撤销 ==========
+
+# 撤销已部署的公钥（从服务器的 authorized_keys 中删除）
+ssh --revoke --host 10.10.99.100 --user thomas --password cdromdir --keyid my_server
+
+# ========== 端口转发 ==========
+
+# 本地端口转发：访问本机 8080 → 转发到远程 localhost:80
+ssh --host gateway --user admin --keyid gw_key --forward "L8080:localhost:80"
 ```
+
+### 安全存储 vs 文件密钥
+
+| 特性 | 安全存储 (`--keyid`) | 文件密钥 (`--key`) |
+|------|---------------------|-------------------|
+| 私钥保护 | ✅ NVS 加密分区 | ⚠️ 明文存储在 SD 卡 |
+| 使用便捷性 | ✅ 只需记住 ID | 需要管理文件路径 |
+| 密钥备份 | ⚠️ 需标记 `--exportable` | ✅ 可以复制文件 |
+| 推荐场景 | 生产环境、安全敏感场景 | 临时使用、密钥迁移 |
+
+---
+
+## hosts - SSH Known Hosts 管理
+
+管理 SSH 连接的已知主机指纹（Known Hosts），用于验证远程服务器身份，防止中间人攻击。
+
+### 语法
+
+```
+hosts [options]
+```
+
+### 选项
+
+| 选项 | 说明 |
+|------|------|
+| `--list` | 列出所有已保存的主机指纹 |
+| `--info --host <host>` | 查看特定主机的详细信息 |
+| `--remove --host <host>` | 删除特定主机的指纹记录 |
+| `--clear` | 清除所有主机指纹（需确认） |
+| `--port <num>` | 指定端口（与 --info/--remove 配合，默认 22） |
+| `--force` | 跳过确认提示（与 --clear 配合） |
+| `--json` | JSON 格式输出 |
+| `--help` | 显示帮助 |
+
+### 示例
+
+```bash
+# 列出所有已知主机
+hosts --list
+
+# 列出已知主机（JSON 格式）
+hosts --list --json
+
+# 查看特定主机信息
+hosts --info --host 10.10.99.100
+
+# 查看非默认端口的主机
+hosts --info --host 10.10.99.100 --port 2222
+
+# 删除特定主机记录（服务器重装后需要）
+hosts --remove --host 10.10.99.100
+
+# 删除非默认端口的主机记录
+hosts --remove --host 10.10.99.100 --port 2222
+
+# 清除所有主机记录（需要确认）
+hosts --clear
+
+# 强制清除所有主机记录（跳过确认）
+hosts --clear --force
+```
+
+### 输出示例
+
+**列出所有主机**：
+```
+Known Hosts (3 entries):
+────────────────────────────────────────────────────────────────
+  Host                  Port   Fingerprint (SHA256)
+────────────────────────────────────────────────────────────────
+  10.10.99.100          22     xYzAbC123...
+  192.168.1.50          22     DefGhI456...
+  gateway.local         2222   JklMnO789...
+────────────────────────────────────────────────────────────────
+```
+
+**查看主机详情**：
+```
+Host: 10.10.99.100:22
+Fingerprint: SHA256:xYzAbCdEfGhIjKlMnOpQrStUvWxYz0123456789ABCDEF
+Added: 2026-01-19
+```
+
+### 使用场景
+
+1. **服务器重装后**：删除旧指纹，允许接受新指纹
+   ```bash
+   hosts --remove --host 10.10.99.100
+   ssh --host 10.10.99.100 --user nvidia --keyid agx --shell
+   ```
+
+2. **排查连接问题**：查看已存储的指纹
+   ```bash
+   hosts --info --host 10.10.99.100
+   ```
+
+3. **批量清理**：测试环境重置
+   ```bash
+   hosts --clear --force
+   ```
 
 ---
 
@@ -1388,7 +1586,9 @@ fs --rm /sdcard/id_rsa.pub
 | `wifi` | ✅ 可用 | AP/STA 模式，扫描、连接、热点 |
 | `fs` | ✅ 可用 | 文件系统操作（ls/cat/rm/mkdir 等） |
 | `device` | ⚠️ 模拟 | 未接入真实驱动 |
-| `ssh` | ✅ 可用 | 命令执行、Shell、端口转发、密钥生成、公钥部署 |
+| `key` | ✅ 可用 | 安全密钥存储（NVS 加密分区），支持 exportable 标记 |
+| `ssh` | ✅ 可用 | 命令执行、Shell、端口转发、密钥部署、公钥撤销 |
+| `hosts` | ✅ 可用 | SSH Known Hosts 管理（TOFU 验证） |
 
 ---
 
@@ -1420,6 +1620,9 @@ fan set speed 75
 
 ## 版本信息
 
-- **文档版本**: 1.2.0
+- **文档版本**: 1.4.0
 - **适用版本**: TianShanOS v0.1.0+
-- **最后更新**: 2026-01-18
+- **最后更新**: 2026-01-19
+- **变更记录**:
+  - v1.4.0: 新增 `hosts` 命令、`ssh --revoke` 公钥撤销、`key --exportable` 私钥导出控制
+  - v1.3.0: 新增独立的 `key` 命令用于密钥管理（从 `ssh --keys` 分离）

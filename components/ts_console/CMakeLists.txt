@@ -20,8 +20,10 @@ set(TS_CONSOLE_SRCS
     "commands/ts_cmd_wifi.c"
     "commands/ts_cmd_nat.c"
     "commands/ts_cmd_fs.c"
+    "commands/ts_cmd_key.c"
     "commands/ts_cmd_ssh.c"
     "commands/ts_cmd_sftp.c"
+    "commands/ts_cmd_hosts.c"
     "commands/ts_cmd_register.c"
 )
 

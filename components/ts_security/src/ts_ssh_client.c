@@ -416,8 +416,51 @@ esp_err_t ts_ssh_connect(ts_ssh_session_t session)
                      session->config.auth.key.private_key_len);
             
             /* 打印私钥头部用于调试 */
-            ESP_LOGD(TAG, "Private key starts with: %.30s", 
-                     (const char *)session->config.auth.key.private_key);
+            const char *key_data = (const char *)session->config.auth.key.private_key;
+            size_t key_len = session->config.auth.key.private_key_len;
+            ESP_LOGI(TAG, "Private key header: %.50s", key_data);
+            ESP_LOGI(TAG, "Private key length: %zu", key_len);
+            
+            /* 检查 PEM 格式 */
+            if (strstr(key_data, "-----BEGIN RSA PRIVATE KEY-----")) {
+                ESP_LOGI(TAG, "Key type: RSA (PKCS#1)");
+            } else if (strstr(key_data, "-----BEGIN EC PRIVATE KEY-----")) {
+                ESP_LOGI(TAG, "Key type: EC (ECDSA) - Note: libssh2 mbedTLS backend may not support ECDSA frommemory");
+            } else if (strstr(key_data, "-----BEGIN PRIVATE KEY-----")) {
+                ESP_LOGI(TAG, "Key type: PKCS#8 - May require conversion to PKCS#1");
+            } else if (strstr(key_data, "-----BEGIN OPENSSH PRIVATE KEY-----")) {
+                ESP_LOGE(TAG, "Key type: OpenSSH - NOT SUPPORTED! Please use PEM format (ssh-keygen -m PEM)");
+            } else {
+                ESP_LOGW(TAG, "Key type: Unknown format");
+            }
+            
+            /* 
+             * libssh2_userauth_publickey_frommemory 内部需要获取认证方法列表
+             * 如果之前没有调用过 libssh2_userauth_list，需要先调用一次
+             * 确保 session 处于正确的状态
+             */
+            if (!userauthlist) {
+                do {
+                    userauthlist = libssh2_userauth_list(session->session, 
+                                                          session->config.username,
+                                                          strlen(session->config.username));
+                    if (!userauthlist) {
+                        int err = libssh2_session_last_errno(session->session);
+                        if (err == LIBSSH2_ERROR_EAGAIN) {
+                            wait_socket(session->sock, session->session, 1000);
+                            continue;
+                        }
+                        break;
+                    }
+                } while (!userauthlist);
+                
+                if (userauthlist) {
+                    ESP_LOGI(TAG, "Server authentication methods: %s", userauthlist);
+                }
+            }
+            
+            /* 清除之前的错误状态 */
+            libssh2_session_set_last_error(session->session, 0, NULL);
             
             while ((rc = libssh2_userauth_publickey_frommemory(
                         session->session,
@@ -432,9 +475,24 @@ esp_err_t ts_ssh_connect(ts_ssh_session_t session)
             if (rc != 0) {
                 char *err_msg = NULL;
                 int err_len = 0;
-                libssh2_session_last_error(session->session, &err_msg, &err_len, 0);
-                ESP_LOGE(TAG, "libssh2_userauth_publickey_frommemory failed: rc=%d, err=%s", 
-                         rc, err_msg ? err_msg : "(null)");
+                int err_code = libssh2_session_last_error(session->session, &err_msg, &err_len, 0);
+                ESP_LOGE(TAG, "libssh2_userauth_publickey_frommemory failed:");
+                ESP_LOGE(TAG, "  rc=%d, err_code=%d, err_msg=%s", 
+                         rc, err_code, err_msg ? err_msg : "(null)");
+                
+                /* 提供更友好的错误提示 */
+                if (rc == LIBSSH2_ERROR_PUBLICKEY_UNVERIFIED) {
+                    ESP_LOGE(TAG, "  Hint: Server rejected the public key. Check if key is authorized on server.");
+                } else if (rc == LIBSSH2_ERROR_FILE) {
+                    ESP_LOGE(TAG, "  Hint: Key format error. Make sure key is in PEM format (not OpenSSH format).");
+                } else if (rc == LIBSSH2_ERROR_METHOD_NONE) {
+                    ESP_LOGE(TAG, "  Hint: No handler for this key type. Try RSA key instead of ECDSA.");
+                } else if (rc == -1 && (!err_msg || strlen(err_msg) == 0)) {
+                    ESP_LOGE(TAG, "  Hint: Unknown error (-1). Possible causes:");
+                    ESP_LOGE(TAG, "    1. Key format not supported (try RSA instead of ECDSA)");
+                    ESP_LOGE(TAG, "    2. Key parsing failed (check PEM format)");
+                    ESP_LOGE(TAG, "    3. mbedTLS backend limitation");
+                }
             }
         } else {
             set_error(session, "No private key provided (path or memory)");

@@ -2,7 +2,7 @@
 
 > **项目**：TianShanOS（天山操作系统）  
 > **版本**：0.1.0-dev  
-> **最后更新**：2026年1月18日  
+> **最后更新**：2026年1月19日  
 > **代码统计**：78 个 C 源文件，52 个头文件
 
 ---
@@ -226,6 +226,12 @@
 - [x] SSH 公钥部署 (CLI --copyid - 自动部署公钥到远程服务器, 权限设置, 验证)
 - [x] SSH 安全密钥存储 (ts_keystore - NVS加密存储私钥, 支持导入/生成/删除/列表)
 - [x] SSH 使用安全存储密钥 (--keyid 选项从安全存储加载密钥进行认证)
+- [x] 安全加固 L1 (私钥内存清零, 禁止私钥导出, exportable标记, NVS 48KB扩容)
+- [x] SSH 主机密钥验证 (TOFU策略, 指纹变化警告, NVS存储)
+- [x] SSH 公钥撤销 (ssh --revoke 从远程删除已部署公钥)
+- [x] Known Hosts 管理 (hosts命令 - list/info/remove/clear)
+- [ ] 安全加固 L2 (NVS 加密) - 配置已就绪，待功能开发完成后测试
+- [ ] 安全加固 L3/L4 (Secure Boot, Flash 加密) - 生产阶段
 
 ---
 
@@ -305,6 +311,41 @@
   - 生成测试字库：boutique9x9.fnt (ASCII), cjk.fnt (GB2312)
   - CLI命令：--draw-text, --stop-text, --font, --scroll, --align, --invert, --loop
   - 更新 COMMANDS.md 文档
+
+### 2026-01-18
+
+- **安全加固（L1 软件层）**：
+  - 创建生产安全实现进度文档 (docs/SECURITY_IMPLEMENTATION.md)
+    - 定义 L1-L4 四级安全层次（开发→预生产→生产→高安全）
+    - 攻击向量与防御策略分析
+    - 实现清单与状态跟踪
+  - **私钥保护**：
+    - 移除 `ts_keystore_export_to_file()` 私钥导出能力
+    - 新增 `ts_keystore_export_public_key_to_file()` 仅导出公钥
+    - 旧 API 标记为 deprecated，调用时自动转为公钥导出
+  - **内存安全**：
+    - 新增 `secure_free_key()` 函数，使用 volatile 指针防止编译器优化
+    - `ts_keystore_import_from_file()` 导入后立即清零内存
+    - `ts_keystore_generate_key()` 生成后立即清零临时缓冲区
+  - **分区表扩容**：
+    - NVS 分区：24KB → 48KB（支持 8 个 RSA-4096 密钥）
+    - 新增 nvs_keys 分区（4KB，NVS 加密支持）
+    - factory 分区偏移调整：0x10000 → 0x20000（64KB 对齐）
+  - **配置文件更新**：
+    - sdkconfig.defaults 添加安全配置注释（开发/生产区分）
+    - ts_keystore.h 更新头文件文档和安全原则说明
+
+- **SSH 内存密钥认证修复**：
+  - 修复 libssh2 mbedTLS 后端 `gen_publickey_from_rsa()` 中的 mpint padding bug
+  - 问题：检查 N 的 MSB 时使用 1 字节 buffer 调用 `mbedtls_mpi_write_binary()` 导致未定义行为
+  - 解决：使用 `mbedtls_mpi_bitlen()` 正确判断是否需要 padding
+  - 文件：`components/ch405labs_esp_libssh2/libssh2/src/mbedtls.c`
+- **ts_keystore 安全密钥存储完善**：
+  - 实现 `--keyid` 参数支持从 NVS 加密分区加载私钥
+  - 私钥永不写入临时文件，直接在内存中使用
+  - 完整工作流：`key --generate` → `ssh --copyid --keyid` → `ssh --keyid --shell`
+- 更新 TROUBLESHOOTING.md 文档（记录 SSH mpint padding bug）
+- 更新 COMMANDS.md 文档（完善 SSH/key 命令示例）
 
 ### 2026-01-15
 - 完成项目规划与设计阶段

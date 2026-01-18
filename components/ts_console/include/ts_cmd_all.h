@@ -85,6 +85,12 @@ esp_err_t ts_cmd_wifi_register(void);
 void ts_cmd_nat_register(void);
 
 /**
+ * @brief 注册 Key 命令（安全密钥存储管理）
+ * key --list/--info/--import/--generate/--delete/--export
+ */
+esp_err_t ts_cmd_key_register(void);
+
+/**
  * @brief 注册 SSH 命令
  * ssh --host/--user/--password/--exec/--test
  */
@@ -95,6 +101,12 @@ esp_err_t ts_cmd_ssh_register(void);
  * sftp --ls/--get/--put/--rm/--mkdir
  */
 esp_err_t ts_cmd_sftp_register(void);
+
+/**
+ * @brief 注册 hosts 命令（SSH 已知主机管理）
+ * hosts --list/--info/--remove/--clear
+ */
+esp_err_t ts_cmd_hosts_register(void);
 
 /**
  * @brief 注册文件系统命令

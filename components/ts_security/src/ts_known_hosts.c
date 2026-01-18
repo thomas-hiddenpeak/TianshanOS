@@ -28,13 +28,16 @@ static const char *TAG = "ts_known_hosts";
 #define NVS_NAMESPACE       "ts_ssh_hosts"
 #define MAX_KNOWN_HOSTS     32
 #define HOST_KEY_PREFIX     "host_"
+#define MAX_HOST_LEN        64
+#define MAX_FINGERPRINT_LEN 65  /* SHA256 hex = 64 chars + null terminator */
 
-/** 内部存储格式 */
+/** 内部存储格式（包含原始主机名以便列表显示） */
 typedef struct {
+    char host[MAX_HOST_LEN];        /**< 原始主机名/IP */
     uint16_t port;
     uint8_t type;
     uint32_t added_time;
-    char fingerprint[64];
+    char fingerprint[MAX_FINGERPRINT_LEN];  /**< SHA256 fingerprint (64 hex + \0) */
 } stored_host_t;
 
 /** 模块状态 */
@@ -55,23 +58,34 @@ extern LIBSSH2_SESSION *ts_ssh_get_libssh2_session(ts_ssh_session_t session);
  * ============================================================================ */
 
 /**
+ * @brief 简单哈希函数（djb2 算法）
+ */
+static uint32_t simple_hash(const char *str)
+{
+    uint32_t hash = 5381;
+    int c;
+    while ((c = *str++)) {
+        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+    }
+    return hash;
+}
+
+/**
  * @brief 生成 NVS 键名
+ * 
+ * NVS 键名最大 15 字符，使用 "h_" 前缀 + 哈希值
+ * 格式: h_XXXXXXXX (10 字符)
  */
 static void make_nvs_key(const char *host, uint16_t port, char *key, size_t key_size)
 {
-    /* 简化主机名（移除特殊字符，限制长度） */
-    char safe_host[16];
-    size_t j = 0;
-    for (size_t i = 0; host[i] && j < sizeof(safe_host) - 1; i++) {
-        char c = host[i];
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || 
-            (c >= '0' && c <= '9')) {
-            safe_host[j++] = c;
-        }
-    }
-    safe_host[j] = '\0';
+    /* 组合主机名和端口生成哈希 */
+    char combined[128];
+    snprintf(combined, sizeof(combined), "%s:%u", host, port);
     
-    snprintf(key, key_size, "%s%s_%u", HOST_KEY_PREFIX, safe_host, port);
+    uint32_t hash = simple_hash(combined);
+    
+    /* 生成短键名: h_XXXXXXXX (10字符，符合NVS 15字符限制) */
+    snprintf(key, key_size, "h_%08lx", (unsigned long)hash);
 }
 
 /**
@@ -370,7 +384,10 @@ esp_err_t ts_known_hosts_add_manual(const char *host, uint16_t port,
         .type = (uint8_t)type,
         .added_time = (uint32_t)time(NULL)
     };
+    strncpy(stored.host, host, sizeof(stored.host) - 1);
+    stored.host[sizeof(stored.host) - 1] = '\0';
     strncpy(stored.fingerprint, fingerprint, sizeof(stored.fingerprint) - 1);
+    stored.fingerprint[sizeof(stored.fingerprint) - 1] = '\0';
     
     /* 生成键名 */
     char nvs_key[32];
@@ -481,27 +498,21 @@ esp_err_t ts_known_hosts_list(ts_known_host_t *hosts, size_t max_hosts,
         nvs_entry_info_t info;
         nvs_entry_info(iter, &info);
         
-        /* 检查是否是主机密钥条目 */
-        if (strncmp(info.key, HOST_KEY_PREFIX, strlen(HOST_KEY_PREFIX)) == 0) {
+        /* 检查是否是主机密钥条目（键名以 "h_" 开头） */
+        if (strncmp(info.key, "h_", 2) == 0) {
             stored_host_t stored;
             size_t len = sizeof(stored);
             
             if (nvs_get_blob(s_state.nvs, info.key, &stored, &len) == ESP_OK) {
-                /* 从键名解析主机（简化处理） */
+                /* 从存储的数据中读取主机信息 */
+                strncpy(hosts[*count].host, stored.host, sizeof(hosts[*count].host) - 1);
+                hosts[*count].host[sizeof(hosts[*count].host) - 1] = '\0';
                 hosts[*count].port = stored.port;
                 hosts[*count].type = (ts_host_key_type_t)stored.type;
                 strncpy(hosts[*count].fingerprint, stored.fingerprint,
                         sizeof(hosts[*count].fingerprint) - 1);
+                hosts[*count].fingerprint[sizeof(hosts[*count].fingerprint) - 1] = '\0';
                 hosts[*count].added_time = stored.added_time;
-                
-                /* 键名格式: host_<hostname>_<port> */
-                const char *key_body = info.key + strlen(HOST_KEY_PREFIX);
-                strncpy(hosts[*count].host, key_body, sizeof(hosts[*count].host) - 1);
-                /* 移除端口部分 */
-                char *underscore = strrchr(hosts[*count].host, '_');
-                if (underscore) {
-                    *underscore = '\0';
-                }
                 
                 (*count)++;
             }

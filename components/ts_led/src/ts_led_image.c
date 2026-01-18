@@ -1107,7 +1107,8 @@ static bool get_content_bounds(ts_led_image_t image,
     *x1 = max_x;
     *y1 = max_y;
     
-    TS_LOGD(TAG, "Content bounds: (%u,%u) - (%u,%u), size: %ux%u",
+    // 使用 VERBOSE 级别避免动画时刷屏
+    TS_LOGV(TAG, "Content bounds: (%u,%u) - (%u,%u), size: %ux%u",
             min_x, min_y, max_x, max_y, max_x - min_x, max_y - min_y);
     
     return true;
@@ -1231,7 +1232,8 @@ esp_err_t ts_led_image_display(ts_led_layer_t layer, ts_led_image_t image,
             src_y0 = cy0;
             src_w = cx1 - cx0;
             src_h = cy1 - cy0;
-            TS_LOGD(TAG, "Content region: origin=(%u,%u) size=%ux%u", 
+            // 使用 VERBOSE 级别避免动画时刷屏
+            TS_LOGV(TAG, "Content region: origin=(%u,%u) size=%ux%u", 
                     src_x0, src_y0, src_w, src_h);
         }
     }
@@ -1300,7 +1302,8 @@ esp_err_t ts_led_image_display(ts_led_layer_t layer, ts_led_image_t image,
             break;
     }
     
-    TS_LOGD(TAG, "Display: src=%ux%u -> dst=%ux%u (scale: %.2f x %.2f, offset: %d,%d)",
+    // 使用 VERBOSE 级别避免动画时刷屏
+    TS_LOGV(TAG, "Display: src=%ux%u -> dst=%ux%u (scale: %.2f x %.2f, offset: %d,%d)",
             src_w, src_h, dst_w, dst_h, scale_x, scale_y, offset_x, offset_y);
     
     // 缩小时使用区域平均，放大时使用双线性插值

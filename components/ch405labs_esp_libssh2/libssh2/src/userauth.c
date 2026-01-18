@@ -44,6 +44,16 @@
 
 #include <assert.h>
 
+/* ESP-IDF logging for debugging */
+#ifdef ESP_PLATFORM
+#include "esp_log.h"
+#define USERAUTH_DEBUG(fmt, ...) ESP_LOGI("libssh2_userauth", fmt, ##__VA_ARGS__)
+#define USERAUTH_ERROR(fmt, ...) ESP_LOGE("libssh2_userauth", fmt, ##__VA_ARGS__)
+#else
+#define USERAUTH_DEBUG(fmt, ...) 
+#define USERAUTH_ERROR(fmt, ...)
+#endif
+
 /* Needed for struct iovec on some platforms */
 #ifdef HAVE_SYS_UIO_H
 #include <sys/uio.h>
@@ -744,6 +754,9 @@ memory_read_privatekey(LIBSSH2_SESSION * session,
     const LIBSSH2_HOSTKEY_METHOD **hostkey_methods_avail =
         libssh2_hostkey_methods();
 
+    USERAUTH_DEBUG("memory_read_privatekey: method=%.*s, data_len=%zu", 
+                   method_len, method, privkeyfiledata_len);
+
     *hostkey_method = NULL;
     *hostkey_abstract = NULL;
     while(*hostkey_methods_avail && (*hostkey_methods_avail)->name) {
@@ -751,23 +764,29 @@ memory_read_privatekey(LIBSSH2_SESSION * session,
              && strncmp((*hostkey_methods_avail)->name, (const char *) method,
                         method_len) == 0) {
             *hostkey_method = *hostkey_methods_avail;
+            USERAUTH_DEBUG("Found matching hostkey method: %s", 
+                           (*hostkey_methods_avail)->name);
             break;
         }
         hostkey_methods_avail++;
     }
     if(!*hostkey_method) {
+        USERAUTH_ERROR("No handler for method: %.*s", method_len, method);
         return _libssh2_error(session, LIBSSH2_ERROR_METHOD_NONE,
                               "No handler for specified private key");
     }
 
+    USERAUTH_DEBUG("Calling initPEMFromMemory...");
     if((*hostkey_method)->
         initPEMFromMemory(session, privkeyfiledata, privkeyfiledata_len,
                           (unsigned char *) passphrase,
                           hostkey_abstract)) {
+        USERAUTH_ERROR("initPEMFromMemory failed!");
         return _libssh2_error(session, LIBSSH2_ERROR_FILE,
                               "Unable to initialize private key from memory");
     }
 
+    USERAUTH_DEBUG("initPEMFromMemory succeeded");
     return 0;
 }
 
@@ -826,28 +845,41 @@ sign_frommemory(LIBSSH2_SESSION *session, unsigned char **sig, size_t *sig_len,
     void *hostkey_abstract;
     struct iovec datavec;
     int rc;
+    size_t privkey_len;
+
+    privkey_len = strlen(pk_file->filename);
+    USERAUTH_DEBUG("sign_frommemory: method=%.*s method_len=%lu privkey_len=%zu", 
+                   (int)session->userauth_pblc_method_len,
+                   session->userauth_pblc_method,
+                   (unsigned long)session->userauth_pblc_method_len, 
+                   privkey_len);
 
     rc = memory_read_privatekey(session, &privkeyobj, &hostkey_abstract,
                                 session->userauth_pblc_method,
                                 session->userauth_pblc_method_len,
                                 pk_file->filename,
-                                strlen(pk_file->filename),
+                                privkey_len,
                                 pk_file->passphrase);
-    if(rc)
+    if(rc) {
+        USERAUTH_ERROR("sign_frommemory: memory_read_privatekey failed rc=%d", rc);
         return rc;
+    }
 
     libssh2_prepare_iovec(&datavec, 1);
     datavec.iov_base = (void *)data;
     datavec.iov_len  = data_len;
 
+    USERAUTH_DEBUG("sign_frommemory: calling signv...");
     if(privkeyobj->signv(session, sig, sig_len, 1, &datavec,
                           &hostkey_abstract)) {
+        USERAUTH_ERROR("sign_frommemory: signv failed!");
         if(privkeyobj->dtor) {
             privkeyobj->dtor(session, &hostkey_abstract);
         }
         return -1;
     }
 
+    USERAUTH_DEBUG("sign_frommemory: signv succeeded, sig_len=%zu", *sig_len);
     if(privkeyobj->dtor) {
         privkeyobj->dtor(session, &hostkey_abstract);
     }

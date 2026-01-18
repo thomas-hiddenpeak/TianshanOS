@@ -23,6 +23,8 @@
 #include "ts_fan.h"
 #include "ts_net_manager.h"
 #include "ts_dhcp_server.h"
+#include "ts_security.h"
+#include "ts_keystore.h"
 #include "esp_log.h"
 
 static const char *TAG = "ts_services";
@@ -36,6 +38,7 @@ static ts_service_handle_t s_storage_handle = NULL;
 static ts_service_handle_t s_led_handle = NULL;
 static ts_service_handle_t s_drivers_handle = NULL;
 static ts_service_handle_t s_network_handle = NULL;
+static ts_service_handle_t s_security_handle = NULL;
 static ts_service_handle_t s_console_handle = NULL;
 
 /* ============================================================================
@@ -319,6 +322,59 @@ static bool network_service_health(ts_service_handle_t handle, void *user_data)
 }
 
 /* ============================================================================
+ * Security 服务回调
+ * ========================================================================== */
+
+static esp_err_t security_service_init(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Initializing security service...");
+    
+    /* 初始化安全子系统 */
+    esp_err_t ret = ts_security_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init security: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* 初始化密钥存储 */
+    ret = ts_keystore_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to init keystore: %s", esp_err_to_name(ret));
+        /* 不是致命错误，继续 */
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t security_service_start(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    return ESP_OK;  /* Security 在 init 时已启动 */
+}
+
+static esp_err_t security_service_stop(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ts_keystore_deinit();
+    ts_security_deinit();
+    
+    return ESP_OK;
+}
+
+static bool security_service_health(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    return ts_keystore_is_initialized();
+}
+
+/* ============================================================================
  * Console 服务回调
  * ========================================================================== */
 
@@ -452,11 +508,23 @@ static const ts_service_def_t s_network_service_def = {
     .user_data = NULL,
 };
 
+static const ts_service_def_t s_security_service_def = {
+    .name = "security",
+    .phase = TS_SERVICE_PHASE_SECURITY,
+    .capabilities = 0,
+    .dependencies = {"storage", NULL},  /* 依赖 storage（密钥可能从 SD 卡导入） */
+    .init = security_service_init,
+    .start = security_service_start,
+    .stop = security_service_stop,
+    .health_check = security_service_health,
+    .user_data = NULL,
+};
+
 static const ts_service_def_t s_console_service_def = {
     .name = "console",
     .phase = TS_SERVICE_PHASE_UI,
     .capabilities = TS_SERVICE_CAP_RESTARTABLE,
-    .dependencies = {"storage", "led", "drivers", "network", NULL},  // 依赖所有硬件服务和网络
+    .dependencies = {"storage", "led", "drivers", "network", "security", NULL},  // 依赖所有硬件服务和网络
     .init = console_service_init,
     .start = console_service_start,
     .stop = console_service_stop,
@@ -513,6 +581,14 @@ esp_err_t ts_services_register_all(void)
         return ret;
     }
     ESP_LOGI(TAG, "  - network service registered");
+    
+    // 注册 security 服务
+    ret = ts_service_register(&s_security_service_def, &s_security_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register security service: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  - security service registered");
     
     // 注册 console 服务 (最后)
     ret = ts_service_register(&s_console_service_def, &s_console_handle);
