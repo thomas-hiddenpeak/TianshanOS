@@ -142,6 +142,13 @@ idf_component_register(
 | 设备驱动框架 | `components/ts_drivers/` |
 | 分区表 | `partitions.csv`（factory 3MB / storage SPIFFS / www WebUI）|
 
+## 参考项目
+
+robOS 是 TianShanOS 的前身项目，包含已验证的硬件驱动和控制逻辑：
+- **仓库地址**：https://github.com/thomas-hiddenpeak/robOS
+- **主要分支**：`ThorPlusBattery`（电池/电压保护功能）
+- **本地路径**：`/Users/thomas/rm01/robOS`
+
 ## 开发路线图（当前阶段）
 
 | 优先级 | 任务 | 状态 | 关键文件 |
@@ -165,8 +172,30 @@ idf_component_register(
 |-----------|------|----------------|
 | `device_controller` | AGX/LPMU 电源控制 | `ts_device_ctrl` ✅ 已有框架 |
 | `agx_monitor` | WebSocket 实时监控 | `ts_device_monitor` 待实现 |
-| `power_monitor` | ADC/UART 电源监测 | `ts_power_monitor` 待实现 |
+| `power_monitor` | ADC/UART 电源监测 | `ts_power_monitor` ✅ 已移植 |
+| `voltage_protection` | 低电压保护/自动恢复 | `ts_power_policy` 待实现 |
 | `usb_mux_controller` | USB 切换 | `ts_usb_mux` 待实现 |
+
+### 电压保护逻辑（robOS voltage_protection）
+
+**状态机**：
+```
+NORMAL → LOW_VOLTAGE → SHUTDOWN → PROTECTED → RECOVERY → NORMAL
+         (倒计时)      (执行关机)   (等待恢复)   (重启ESP32)
+```
+
+**阈值配置**：
+- `low_voltage_threshold`: 12.6V（进入 LOW_VOLTAGE 状态）
+- `recovery_voltage_threshold`: 18.0V（允许恢复）
+- `shutdown_delay_sec`: 60s（关机前倒计时）
+- `recovery_hold_sec`: 5s（电压恢复后稳定等待）
+
+**关键行为**：
+1. 电压 < 12.6V → 开始 60s 倒计时
+2. 倒计时期间电压恢复 ≥ 18V → 取消关机，回到 NORMAL
+3. 倒计时归零 → 执行关机（AGX reset HIGH，LPMU toggle）
+4. PROTECTED 状态下电压恢复 ≥ 18V → 等待 5s 稳定
+5. 稳定后 → **重启 ESP32**（esp_restart）恢复系统
 
 ### AGX Monitor 规格（WebSocket）
 - 协议：Socket.IO over WebSocket

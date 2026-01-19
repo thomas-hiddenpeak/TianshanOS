@@ -204,6 +204,27 @@ typedef struct {
 #define TS_EVT_STORAGE_SD_UNMOUNTED         0x0204
 
 /* ============================================================================
+ * 电源策略事件 ID
+ * ========================================================================== */
+
+/** 电压读取更新 */
+#define TS_EVT_POWER_VOLTAGE_UPDATE         0x0301
+/** 低电压警告触发 */
+#define TS_EVT_POWER_LOW_VOLTAGE            0x0302
+/** 状态变更 */
+#define TS_EVT_POWER_STATE_CHANGED          0x0303
+/** 倒计时更新 */
+#define TS_EVT_POWER_COUNTDOWN_TICK         0x0304
+/** 开始关机 */
+#define TS_EVT_POWER_SHUTDOWN_START         0x0305
+/** 进入保护状态 */
+#define TS_EVT_POWER_PROTECTED              0x0306
+/** 开始恢复 */
+#define TS_EVT_POWER_RECOVERY_START         0x0307
+/** 恢复完成 */
+#define TS_EVT_POWER_RECOVERY_COMPLETE      0x0308
+
+/* ============================================================================
  * 事件基础别名（兼容旧代码）
  * ========================================================================== */
 

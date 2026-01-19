@@ -14,7 +14,7 @@
 | 0 | (保留) | - | - | - | Strapping pin |
 | 1 | AGX_RESET | OUT | HIGH=复位 | LOW | 脉冲 1000ms |
 | 2 | LPMU_RESET | OUT | HIGH=复位 | LOW | 脉冲 300ms |
-| 3 | AGX_FORCE_SHUTDOWN | OUT | LOW=强制关机 | HIGH | Strapping pin |
+| 3 | AGX_FORCE_SHUTDOWN | OUT | LOW=开机, HIGH=关机 | LOW | Strapping pin |
 | 4 | SD_D0 | IO | - | - | SDMMC |
 | 5 | SD_D1 | IO | - | - | SDMMC |
 | 6 | SD_D2 | IO | - | - | SDMMC |
@@ -53,21 +53,21 @@
 |------|------|----------|------|
 | 1 | AGX_RESET | HIGH=复位, LOW=正常 | 脉冲 1000ms |
 | 2 | LPMU_RESET | HIGH=复位, LOW=正常 | 脉冲 300ms |
-| 3 | AGX_FORCE_SHUTDOWN | LOW=强制关机, HIGH=正常 | 持续 LOW |
+| 3 | AGX_FORCE_SHUTDOWN | LOW=开机, HIGH=关机 | 持续 HIGH |
 | 40 | AGX_RECOVERY | HIGH=恢复模式, LOW=正常 | 持续 HIGH |
 | 46 | LPMU_POWER | HIGH=按下电源键 | 脉冲 300ms |
 
 **操作示例**:
 ```c
 // AGX 复位
-gpio_set_level(1, 1);  // HIGH = reset
+ gpio_set_level(1, 1);  // HIGH = reset
 vTaskDelay(pdMS_TO_TICKS(1000));
 gpio_set_level(1, 0);  // LOW = normal
 
 // AGX 强制关机
-gpio_set_level(3, 0);  // LOW = force off
+gpio_set_level(3, 1);  // HIGH = force off
 vTaskDelay(pdMS_TO_TICKS(8000));
-gpio_set_level(3, 1);  // HIGH = release
+gpio_set_level(3, 0);  // LOW = allow boot
 ```
 
 ### 2. SD 卡 (SDMMC 4-bit)
@@ -156,7 +156,7 @@ CONFIG_TS_STORAGE_SD_D3_GPIO=7
 | GPIO | 功能 | 启动影响 | 使用建议 |
 |------|------|----------|----------|
 | 0 | Boot mode | 下拉=下载模式 | 避免使用 |
-| 3 | AGX_FORCE_SHUTDOWN | - | 初始 HIGH |
+| 3 | AGX_FORCE_SHUTDOWN | - | 初始 LOW |
 | 45 | LED_TOUCH | VDD_SPI | 初始不驱动 |
 | 46 | LPMU_POWER | Boot mode | 初始 LOW |
 

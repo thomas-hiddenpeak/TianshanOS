@@ -17,6 +17,8 @@
 - [dhcp - DHCP 服务器管理](#dhcp---dhcp-服务器管理)
 - [wifi - WiFi 管理](#wifi---wifi-管理)
 - [device - 设备控制](#device---设备控制)
+- [gpio - GPIO 直接控制](#gpio---gpio-直接控制)
+- [power - 电源管理](#power---电源管理)
 - [key - 安全密钥存储](#key---安全密钥存储)
 - [ssh - SSH 客户端](#ssh---ssh-客户端)
 - [hosts - SSH Known Hosts 管理](#hosts---ssh-known-hosts-管理)
@@ -1140,6 +1142,218 @@ device --agx --status --json
 
 ---
 
+## gpio - GPIO 直接控制
+
+底层 GPIO 引脚直接控制，用于调试和硬件测试。此命令优先级高于其他驱动程序，可直接覆盖 GPIO 状态。
+
+> **⚠️ 警告**：此命令直接操作硬件，不当使用可能导致设备损坏或系统不稳定。仅限调试和紧急情况使用。
+
+### 语法
+
+```
+gpio <pin> <action> [options]
+gpio --list
+gpio --info <pin>
+```
+
+### 操作
+
+| 动作 | 说明 |
+|------|------|
+| `high [ms]` | 设置高电平（可选保持时间后恢复） |
+| `low [ms]` | 设置低电平（可选保持时间后恢复） |
+| `pulse <ms>` | 输出正脉冲（HIGH 持续 ms 后恢复 LOW） |
+| `pulse <ms> -n` | 输出负脉冲（LOW 持续 ms 后恢复 HIGH） |
+| `toggle` | 切换当前电平 |
+| `input` | 切换为输入模式并读取 |
+| `reset` | 重置引脚到默认状态 |
+
+### 选项
+
+| 选项 | 简写 | 说明 |
+|------|------|------|
+| `--list` | | 列出所有可控引脚 |
+| `--info <pin>` | | 显示引脚详情 |
+| `--negative` | `-n` | 负脉冲模式（pulse 时先 LOW 后 HIGH） |
+| `--no-restore` | | 不恢复原电平 |
+| `--json` | `-j` | JSON 格式输出 |
+| `--help` | `-h` | 显示帮助 |
+
+### 可控引脚
+
+出于安全考虑，仅以下设备控制引脚可通过 `gpio` 命令操作：
+
+| GPIO | 名称 | 说明 | 默认电平 |
+|------|------|------|----------|
+| 1 | AGX_RESET | AGX 复位 (HIGH=复位) | LOW |
+| 2 | LPMU_RESET | LPMU 复位 (HIGH=复位) | LOW |
+| 3 | AGX_FORCE_SHUTDOWN | AGX 强制关机 (LOW=开机, HIGH=关机) | LOW |
+| 8 | USB_MUX_0 | USB MUX 选择位0 | LOW |
+| 17 | RTL8367_RST | 网络交换机复位 (HIGH=复位) | LOW |
+| 39 | ETH_RST | W5500 以太网复位 (LOW=复位) | HIGH |
+| 40 | AGX_RECOVERY | AGX 恢复模式 (HIGH=恢复) | LOW |
+| 46 | LPMU_POWER | LPMU 电源键 (HIGH=按下) | LOW |
+| 48 | USB_MUX_1 | USB MUX 选择位1 | LOW |
+
+### 示例
+
+```bash
+# 列出所有可控引脚
+gpio --list
+
+# 查看引脚详情
+gpio --info 3
+
+# 设置高电平
+gpio 1 high
+
+# 设置低电平
+gpio 3 low
+
+# 输出 500ms 正脉冲（常用于复位）
+gpio 1 pulse 500
+
+# 输出 100ms 负脉冲
+gpio 39 pulse 100 -n
+
+# 设置高电平并保持 2 秒后恢复
+gpio 1 high 2000
+
+# 切换电平
+gpio 46 toggle
+
+# 读取引脚状态（切换为输入模式）
+gpio 3 input
+
+# 重置引脚到默认状态
+gpio 1 reset
+
+# JSON 格式输出
+gpio --list --json
+gpio --info 3 --json
+```
+
+### 典型用例
+
+**AGX 复位**（发送 500ms 复位脉冲）：
+```bash
+gpio 1 pulse 500
+```
+
+**AGX 强制关机**（拉高 GPIO3）：
+```bash
+gpio 3 high
+```
+
+**AGX 允许开机**（拉低 GPIO3）：
+```bash
+gpio 3 low
+```
+
+**LPMU 电源键模拟按下**（500ms 脉冲）：
+```bash
+gpio 46 pulse 500
+```
+
+**W5500 复位**（负脉冲，LOW 有效）：
+```bash
+gpio 39 pulse 100 -n
+```
+
+---
+
+## power - 电源管理
+
+查看电源监控数据和管理低电压保护功能。
+
+### 语法
+
+```
+power [options]
+```
+
+### 选项
+
+| 选项 | 简写 | 说明 |
+|------|------|------|
+| `--status` | `-s` | 显示电源状态 |
+| `--voltage` | | 显示当前电压 |
+| `--current` | | 显示当前电流 |
+| `--power` | | 显示当前功率 |
+| `--json` | `-j` | JSON 格式输出 |
+| `--help` | `-h` | 显示帮助 |
+
+### 示例
+
+```bash
+# 显示电源状态
+power --status
+
+# 显示当前电压
+power --voltage
+
+# JSON 格式输出
+power --status --json
+```
+
+---
+
+## voltprot - 低电压保护
+
+管理低电压保护系统，当输入电压低于阈值时自动执行保护性关机。
+
+### 语法
+
+```
+voltprot <command>
+```
+
+### 命令
+
+| 命令 | 说明 |
+|------|------|
+| `status` | 显示保护状态 |
+| `test` | 触发测试（模拟低电压） |
+| `reset` | 重置状态（将重启 ESP32） |
+| `debug` | 显示调试信息 |
+
+### 保护阈值
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| 低电压阈值 | 12.6V | 触发保护 |
+| 恢复电压阈值 | 18.0V | 允许恢复 |
+| 关机延时 | 60秒 | 低电压倒计时 |
+| 恢复稳定时间 | 5秒 | 恢复前等待 |
+
+### 状态说明
+
+| 状态 | 说明 |
+|------|------|
+| 正常运行 | 电压正常 |
+| 低电压保护 | 电压低于阈值，倒计时中 |
+| 关机中 | 正在执行保护性关机 |
+| 保护状态 | 设备已关机，等待恢复 |
+| 电压恢复中 | 电压恢复，等待稳定 |
+
+### 示例
+
+```bash
+# 查看保护状态
+voltprot status
+
+# 触发测试（模拟低电压）
+voltprot test
+
+# 重置保护状态（将重启系统）
+voltprot reset
+
+# 显示调试信息
+voltprot debug
+```
+
+---
+
 ## key - 安全密钥存储
 
 管理存储在 ESP32 NVS 加密分区中的密钥。密钥不仅用于 SSH，还可用于 HTTPS/TLS 证书、API 签名、设备认证等场景。
@@ -1586,6 +1800,9 @@ Added: 2026-01-19
 | `wifi` | ✅ 可用 | AP/STA 模式，扫描、连接、热点 |
 | `fs` | ✅ 可用 | 文件系统操作（ls/cat/rm/mkdir 等） |
 | `device` | ⚠️ 模拟 | 未接入真实驱动 |
+| `gpio` | ✅ 可用 | GPIO 直接控制（9 个设备控制引脚） |
+| `power` | ✅ 可用 | 电源监控（电压/电流/功率） |
+| `voltprot` | ✅ 可用 | 低电压保护系统 |
 | `key` | ✅ 可用 | 安全密钥存储（NVS 加密分区），支持 exportable 标记 |
 | `ssh` | ✅ 可用 | 命令执行、Shell、端口转发、密钥部署、公钥撤销 |
 | `hosts` | ✅ 可用 | SSH Known Hosts 管理（TOFU 验证） |
@@ -1620,9 +1837,10 @@ fan set speed 75
 
 ## 版本信息
 
-- **文档版本**: 1.4.0
+- **文档版本**: 1.5.0
 - **适用版本**: TianShanOS v0.1.0+
-- **最后更新**: 2026-01-19
+- **最后更新**: 2026-01-20
 - **变更记录**:
+  - v1.5.0: 新增 `gpio` 命令（GPIO 直接控制）、`power` 命令（电源监控）、`voltprot` 命令（低电压保护）
   - v1.4.0: 新增 `hosts` 命令、`ssh --revoke` 公钥撤销、`key --exportable` 私钥导出控制
   - v1.3.0: 新增独立的 `key` 命令用于密钥管理（从 `ssh --keys` 分离）

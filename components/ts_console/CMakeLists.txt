@@ -24,6 +24,9 @@ set(TS_CONSOLE_SRCS
     "commands/ts_cmd_ssh.c"
     "commands/ts_cmd_sftp.c"
     "commands/ts_cmd_hosts.c"
+    "commands/ts_cmd_power.c"
+    "commands/ts_cmd_voltprot.c"
+    "commands/ts_cmd_gpio.c"
     "commands/ts_cmd_register.c"
 )
 

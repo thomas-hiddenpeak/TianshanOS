@@ -14,10 +14,62 @@
 #include "esp_system.h"
 #include "esp_chip_info.h"
 #include "esp_log.h"
+#include "driver/gpio.h"
 #include "ts_core.h"
 #include "ts_services.h"
 
 static const char *TAG = "main";
+
+/*
+ * 极早期 GPIO 初始化（在 app_main 之前执行）
+ * 
+ * 使用 __attribute__((constructor)) 确保在 main 函数之前执行。
+ * 这是确保关键 GPIO 引脚从上电开始就处于正确状态的最早时机。
+ * 
+ * 关键引脚:
+ * - GPIO3 (AGX_FORCE_SHUTDOWN): LOW=允许开机, HIGH=强制关机
+ *   必须保持 LOW，否则 AGX 无法启动
+ * 
+ * - GPIO1 (AGX_RESET): HIGH=复位, LOW=正常
+ *   必须保持 LOW，避免意外复位
+ * 
+ * 注意: 这里只做最小初始化，完整的 GPIO 配置由 ts_hal 处理
+ */
+__attribute__((constructor(101)))
+static void early_critical_gpio_init(void)
+{
+    /*
+     * GPIO3: AGX_FORCE_SHUTDOWN
+     * LOW = 允许 AGX 开机
+     * HIGH = 强制关闭 AGX
+     * 
+     * 先设置电平再配置方向，避免毛刺
+     */
+    gpio_set_level(GPIO_NUM_3, 0);  // LOW = allow AGX boot
+    gpio_config_t io_conf_gpio3 = {
+        .pin_bit_mask = (1ULL << GPIO_NUM_3),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf_gpio3);
+    
+    /*
+     * GPIO1: AGX_RESET
+     * HIGH = 复位 AGX
+     * LOW = 正常运行
+     */
+    gpio_set_level(GPIO_NUM_1, 0);  // LOW = normal (no reset)
+    gpio_config_t io_conf_gpio1 = {
+        .pin_bit_mask = (1ULL << GPIO_NUM_1),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf_gpio1);
+}
 
 /**
  * @brief 打印启动横幅

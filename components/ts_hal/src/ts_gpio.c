@@ -287,6 +287,20 @@ esp_err_t ts_gpio_configure(ts_gpio_handle_t handle, const ts_gpio_config_t *con
         return ESP_ERR_INVALID_ARG;
     }
     
+    bool is_output = (config->direction == TS_GPIO_DIR_OUTPUT || 
+                      config->direction == TS_GPIO_DIR_OUTPUT_OD ||
+                      config->direction == TS_GPIO_DIR_BIDIRECTIONAL);
+    
+    /*
+     * 关键：对于输出 GPIO，必须先设置电平，再配置为输出模式！
+     * 这样可以确保 GPIO 从输入切换到输出的瞬间就是正确的电平，
+     * 避免产生毛刺（glitch）影响外部设备。
+     */
+    if (is_output && config->initial_level >= 0) {
+        int level = config->invert ? !config->initial_level : config->initial_level;
+        gpio_set_level(handle->gpio_num, level);  // 先设置电平
+    }
+    
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << handle->gpio_num),
         .mode = convert_direction(config->direction),
@@ -297,7 +311,7 @@ esp_err_t ts_gpio_configure(ts_gpio_handle_t handle, const ts_gpio_config_t *con
         .intr_type = convert_intr(config->intr_type),
     };
     
-    esp_err_t ret = gpio_config(&io_conf);
+    esp_err_t ret = gpio_config(&io_conf);  // 再配置方向
     if (ret != ESP_OK) {
         TS_LOGE(TAG, "GPIO%d config failed: %s", handle->gpio_num, esp_err_to_name(ret));
         return ret;
@@ -305,16 +319,6 @@ esp_err_t ts_gpio_configure(ts_gpio_handle_t handle, const ts_gpio_config_t *con
     
     /* Set drive strength */
     gpio_set_drive_capability(handle->gpio_num, (gpio_drive_cap_t)config->drive);
-    
-    /* Set initial level if output */
-    if (config->direction == TS_GPIO_DIR_OUTPUT || 
-        config->direction == TS_GPIO_DIR_OUTPUT_OD ||
-        config->direction == TS_GPIO_DIR_BIDIRECTIONAL) {
-        if (config->initial_level >= 0) {
-            int level = config->invert ? !config->initial_level : config->initial_level;
-            gpio_set_level(handle->gpio_num, level);
-        }
-    }
     
     handle->config = *config;
     handle->configured = true;

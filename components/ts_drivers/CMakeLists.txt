@@ -3,6 +3,8 @@ idf_component_register(
         "src/ts_drivers.c"
         "src/ts_fan.c"
         "src/ts_power.c"
+        "src/ts_power_monitor.c"
+        "src/ts_power_policy.c"
         "src/ts_device_ctrl.c"
         "src/ts_usb_mux.c"
     INCLUDE_DIRS

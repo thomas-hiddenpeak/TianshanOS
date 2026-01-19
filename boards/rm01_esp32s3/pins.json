@@ -63,9 +63,9 @@
         },
         "AGX_FORCE_SHUTDOWN": {
             "gpio": 3,
-            "active_low": true,
-            "initial_state": "high",
-            "description": "AGX force shutdown (LOW=force off, HIGH=normal)"
+            "active_high": true,
+            "initial_state": "low",
+            "description": "AGX force shutdown (LOW=allow boot, HIGH=force off)"
         },
         "AGX_RESET": {
             "gpio": 1,

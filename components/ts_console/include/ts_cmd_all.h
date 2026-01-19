@@ -115,6 +115,25 @@ esp_err_t ts_cmd_hosts_register(void);
 esp_err_t ts_cmd_fs_register(void);
 
 /**
+ * @brief 注册 power 命令（电源监控）
+ * power status/voltage/chip/start/stop/threshold/interval/stats/reset/debug/test/help
+ */
+esp_err_t ts_cmd_power_register(void);
+
+/**
+ * @brief 注册 voltprot 命令（电压保护策略）
+ * voltprot --status/--test/--reset/--config/--debug
+ */
+esp_err_t ts_cmd_voltprot_register(void);
+
+/**
+ * @brief 注册 gpio 命令（GPIO 直接控制）
+ * gpio <pin> high|low|input|reset
+ * gpio --list/--info
+ */
+esp_err_t ts_cmd_gpio_register(void);
+
+/**
  * @brief 注册所有扩展命令
  * 一次性注册所有非内置命令
  */

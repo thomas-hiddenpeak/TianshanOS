@@ -43,7 +43,10 @@ static ts_hal_config_t s_hal_config;
  * 引脚逻辑（与 robOS 一致）：
  * - W5500_RST (GPIO39):  LOW=复位, HIGH=正常 → 初始化为 HIGH
  * - AGX_RESET (GPIO1):   HIGH=复位, LOW=正常 → 初始化为 LOW
- * - AGX_POWER (GPIO3):   LOW=开机, HIGH=关机 → 初始化为 HIGH（关机）
+ * - AGX_POWER (GPIO3):   LOW=允许开机, HIGH=强制关机 → 初始化为 LOW
+ * 
+ * 注意：main.c 中的 early_critical_gpio_init() 会在 app_main 之前
+ * 更早地初始化 GPIO1 和 GPIO3，这里是冗余保护。
  * 
  * @return ESP_OK on success
  */
@@ -52,12 +55,19 @@ static esp_err_t ts_hal_early_hw_init(void)
     TS_LOGI(TAG, "Early hardware init: setting reset pins to safe state");
     
     /*
+     * 重要：GPIO 初始化顺序
+     * 必须先 gpio_set_level() 设置电平，再 gpio_config() 配置为输出！
+     * 这样可以确保从输入切到输出的瞬间就是正确电平，避免毛刺。
+     */
+    
+    /*
      * W5500 复位引脚 (GPIO39)
      * LOW = 复位状态，HIGH = 正常运行
      * 必须先设置为 HIGH，否则 W5500 无法初始化
      */
     int gpio_w5500_rst = ts_pin_manager_get_gpio(TS_PIN_FUNC_ETH_RST);
     if (gpio_w5500_rst >= 0) {
+        gpio_set_level(gpio_w5500_rst, 1);  // 先设置电平：HIGH = 正常运行
         gpio_config_t io_conf = {
             .pin_bit_mask = (1ULL << gpio_w5500_rst),
             .mode = GPIO_MODE_OUTPUT,
@@ -65,8 +75,7 @@ static esp_err_t ts_hal_early_hw_init(void)
             .pull_down_en = GPIO_PULLDOWN_DISABLE,
             .intr_type = GPIO_INTR_DISABLE,
         };
-        gpio_config(&io_conf);
-        gpio_set_level(gpio_w5500_rst, 1);  // HIGH = 正常运行
+        gpio_config(&io_conf);  // 再配置为输出
         TS_LOGI(TAG, "W5500_RST (GPIO%d) = HIGH (normal)", gpio_w5500_rst);
     }
     
@@ -77,6 +86,7 @@ static esp_err_t ts_hal_early_hw_init(void)
      */
     int gpio_agx_reset = ts_pin_manager_get_gpio(TS_PIN_FUNC_AGX_RESET);
     if (gpio_agx_reset >= 0) {
+        gpio_set_level(gpio_agx_reset, 0);  // 先设置电平：LOW = 正常运行
         gpio_config_t io_conf = {
             .pin_bit_mask = (1ULL << gpio_agx_reset),
             .mode = GPIO_MODE_OUTPUT,
@@ -84,18 +94,21 @@ static esp_err_t ts_hal_early_hw_init(void)
             .pull_down_en = GPIO_PULLDOWN_DISABLE,
             .intr_type = GPIO_INTR_DISABLE,
         };
-        gpio_config(&io_conf);
-        gpio_set_level(gpio_agx_reset, 0);  // LOW = 正常运行
+        gpio_config(&io_conf);  // 再配置为输出
         TS_LOGI(TAG, "AGX_RESET (GPIO%d) = LOW (normal)", gpio_agx_reset);
     }
     
     /*
      * AGX 电源引脚 (GPIO3)
-     * LOW = 开机，HIGH = 关机（反相逻辑）
-     * 初始化为 HIGH（关机状态），由 device 命令显式开机
+     * LOW = 允许开机，HIGH = 强制关机（FORCE_SHUTDOWN）
+     * 
+     * 重要：AGX 是上电自启动设计！
+     * 初始化为 LOW（允许开机），不要阻止 AGX 启动。
+     * 只有在需要保护性关机时才设为 HIGH。
      */
     int gpio_agx_power = ts_pin_manager_get_gpio(TS_PIN_FUNC_AGX_POWER);
     if (gpio_agx_power >= 0) {
+        gpio_set_level(gpio_agx_power, 0);  // 先设置电平：LOW = 允许开机
         gpio_config_t io_conf = {
             .pin_bit_mask = (1ULL << gpio_agx_power),
             .mode = GPIO_MODE_OUTPUT,
@@ -103,9 +116,8 @@ static esp_err_t ts_hal_early_hw_init(void)
             .pull_down_en = GPIO_PULLDOWN_DISABLE,
             .intr_type = GPIO_INTR_DISABLE,
         };
-        gpio_config(&io_conf);
-        gpio_set_level(gpio_agx_power, 1);  // HIGH = 关机
-        TS_LOGI(TAG, "AGX_POWER (GPIO%d) = HIGH (off)", gpio_agx_power);
+        gpio_config(&io_conf);  // 再配置为输出
+        TS_LOGI(TAG, "AGX_POWER (GPIO%d) = LOW (allow boot)", gpio_agx_power);
     }
     
     return ESP_OK;
