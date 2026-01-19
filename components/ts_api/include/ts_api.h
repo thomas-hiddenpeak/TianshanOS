@@ -262,6 +262,16 @@ ts_api_category_t ts_api_category_by_name(const char *name);
 /*===========================================================================*/
 
 /**
+ * @brief Register all API modules
+ * 
+ * This function registers all available API endpoints from all modules.
+ * Should be called after ts_api_init() during system startup.
+ * 
+ * @return ESP_OK on success
+ */
+esp_err_t ts_api_register_all(void);
+
+/**
  * @brief Register system APIs
  */
 esp_err_t ts_api_system_register(void);
@@ -285,6 +295,21 @@ esp_err_t ts_api_led_register(void);
  * @brief Register network APIs
  */
 esp_err_t ts_api_network_register(void);
+
+/**
+ * @brief Register fan APIs
+ */
+esp_err_t ts_api_fan_register(void);
+
+/**
+ * @brief Register power APIs
+ */
+esp_err_t ts_api_power_register(void);
+
+/**
+ * @brief Register temperature APIs
+ */
+esp_err_t ts_api_temp_register(void);
 
 #ifdef __cplusplus
 }

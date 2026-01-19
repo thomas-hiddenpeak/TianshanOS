@@ -507,3 +507,74 @@ ts_api_category_t ts_api_category_by_name(const char *name)
     
     return TS_API_CAT_MAX;
 }
+
+/*===========================================================================*/
+/*                      Register All API Modules                              */
+/*===========================================================================*/
+
+esp_err_t ts_api_register_all(void)
+{
+    esp_err_t ret;
+    
+    TS_LOGI(TAG, "Registering all API modules...");
+    
+    /* System APIs */
+    ret = ts_api_system_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register system APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* Config APIs */
+    ret = ts_api_config_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register config APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* Device APIs */
+    ret = ts_api_device_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register device APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* LED APIs */
+    ret = ts_api_led_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register LED APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* Network APIs */
+    ret = ts_api_network_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register network APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* Fan APIs */
+    ret = ts_api_fan_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register fan APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* Power APIs */
+    ret = ts_api_power_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register power APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* Temperature APIs */
+    ret = ts_api_temp_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register temp APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    TS_LOGI(TAG, "All API modules registered (%zu endpoints)", s_api.endpoint_count);
+    
+    return ESP_OK;
+}

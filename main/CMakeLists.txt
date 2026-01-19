@@ -20,4 +20,5 @@ idf_component_register(
         ts_led
         ts_drivers
         ts_net
+        ts_api
 )

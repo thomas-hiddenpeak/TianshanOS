@@ -199,7 +199,7 @@ static esp_err_t api_config_save(const cJSON *params, ts_api_result_t *result)
 /*                          Registration                                      */
 /*===========================================================================*/
 
-esp_err_t ts_api_register_config_apis(void)
+esp_err_t ts_api_config_register(void)
 {
     static const ts_api_endpoint_t config_apis[] = {
         {

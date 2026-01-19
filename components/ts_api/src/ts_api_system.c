@@ -266,7 +266,7 @@ static esp_err_t api_system_log_level(const cJSON *params, ts_api_result_t *resu
 /*                      Register System APIs                                  */
 /*===========================================================================*/
 
-esp_err_t ts_api_register_system_apis(void)
+esp_err_t ts_api_system_register(void)
 {
     static const ts_api_endpoint_t system_apis[] = {
         {

@@ -25,6 +25,7 @@
 #include "ts_dhcp_server.h"
 #include "ts_security.h"
 #include "ts_keystore.h"
+#include "ts_api.h"
 #include "esp_log.h"
 
 static const char *TAG = "ts_services";
@@ -39,6 +40,7 @@ static ts_service_handle_t s_led_handle = NULL;
 static ts_service_handle_t s_drivers_handle = NULL;
 static ts_service_handle_t s_network_handle = NULL;
 static ts_service_handle_t s_security_handle = NULL;
+static ts_service_handle_t s_api_handle = NULL;
 static ts_service_handle_t s_console_handle = NULL;
 
 /* ============================================================================
@@ -375,6 +377,60 @@ static bool security_service_health(ts_service_handle_t handle, void *user_data)
 }
 
 /* ============================================================================
+ * API 服务回调
+ * ========================================================================== */
+
+static esp_err_t api_service_init(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Initializing API service...");
+    
+    esp_err_t ret = ts_api_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init API layer: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t api_service_start(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Starting API service...");
+    
+    /* 注册所有 API 端点 */
+    esp_err_t ret = ts_api_register_all();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t api_service_stop(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Stopping API service...");
+    return ts_api_deinit();
+}
+
+static bool api_service_health(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    /* API 层只要初始化成功就一直可用 */
+    return true;
+}
+
+/* ============================================================================
  * Console 服务回调
  * ========================================================================== */
 
@@ -520,11 +576,23 @@ static const ts_service_def_t s_security_service_def = {
     .user_data = NULL,
 };
 
+static const ts_service_def_t s_api_service_def = {
+    .name = "api",
+    .phase = TS_SERVICE_PHASE_SERVICE,
+    .capabilities = 0,
+    .dependencies = {"storage", "drivers", "network", "security", NULL},  /* 依赖所有硬件服务 */
+    .init = api_service_init,
+    .start = api_service_start,
+    .stop = api_service_stop,
+    .health_check = api_service_health,
+    .user_data = NULL,
+};
+
 static const ts_service_def_t s_console_service_def = {
     .name = "console",
     .phase = TS_SERVICE_PHASE_UI,
     .capabilities = TS_SERVICE_CAP_RESTARTABLE,
-    .dependencies = {"storage", "led", "drivers", "network", "security", NULL},  // 依赖所有硬件服务和网络
+    .dependencies = {"api", NULL},  /* Console 只依赖 API 服务 */
     .init = console_service_init,
     .start = console_service_start,
     .stop = console_service_stop,
@@ -589,6 +657,14 @@ esp_err_t ts_services_register_all(void)
         return ret;
     }
     ESP_LOGI(TAG, "  - security service registered");
+    
+    // 注册 API 服务
+    ret = ts_service_register(&s_api_service_def, &s_api_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register API service: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  - api service registered");
     
     // 注册 console 服务 (最后)
     ret = ts_service_register(&s_console_service_def, &s_console_handle);

@@ -7,6 +7,9 @@ set(TS_API_SRCS
     "src/ts_api_device.c"
     "src/ts_api_led.c"
     "src/ts_api_network.c"
+    "src/ts_api_fan.c"
+    "src/ts_api_power.c"
+    "src/ts_api_temp.c"
 )
 
 idf_component_register(
