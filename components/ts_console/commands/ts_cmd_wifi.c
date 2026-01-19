@@ -12,13 +12,14 @@
  * - wifi --save             保存配置
  * 
  * @author TianShanOS Team
- * @version 1.0.0
+ * @version 2.0.0
  * @date 2026-01-17
  */
 
 #include "ts_console.h"
 #include "ts_net_manager.h"
 #include "ts_wifi.h"
+#include "ts_api.h"
 #include "ts_config_module.h"
 #include "ts_log.h"
 #include "esp_wifi.h"

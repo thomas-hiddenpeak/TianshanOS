@@ -9,11 +9,12 @@
  * - temp --providers        列出所有温度提供者
  * 
  * @author TianShanOS Team
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 #include "ts_console.h"
 #include "ts_temp_source.h"
+#include "ts_api.h"
 #include "ts_log.h"
 #include "esp_console.h"
 #include "esp_timer.h"
@@ -61,10 +62,29 @@ static const char *source_to_str(ts_temp_source_type_t source)
 
 static int do_temp_status(bool json)
 {
+    /* JSON 模式通过 API 获取 */
+    if (json) {
+        ts_api_result_t result;
+        esp_err_t ret = ts_api_call("temp.status", NULL, &result);
+        
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_error("Failed to get temperature status\n");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK && result.code == TS_API_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出：直接调用底层 */
     ts_temp_data_t data;
     int16_t temp = ts_temp_get_effective(&data);
+    (void)temp;  /* 避免未使用警告 */
     
-    /* ts_temp_get_effective 返回温度值，检查是否初始化 */
     if (!ts_temp_source_is_initialized()) {
         ts_console_error("Temperature source not initialized\n");
         return 1;
@@ -72,25 +92,14 @@ static int do_temp_status(bool json)
     
     bool manual_mode = ts_temp_is_manual_mode();
     
-    if (json) {
-        ts_console_printf(
-            "{\"temp\":%.1f,\"source\":\"%s\",\"manual_mode\":%s,"
-            "\"valid\":%s,\"age_ms\":%lu}\n",
-            data.value / 10.0f,
-            source_to_str(data.source),
-            manual_mode ? "true" : "false",
-            data.valid ? "true" : "false",
-            data.timestamp_ms);
-    } else {
-        ts_console_printf("Temperature Status:\n");
-        ts_console_printf("  Current:     %.1f°C\n", data.value / 10.0f);
-        ts_console_printf("  Source:      %s\n", source_to_str(data.source));
-        ts_console_printf("  Mode:        %s\n", manual_mode ? "manual" : "auto");
-        ts_console_printf("  Valid:       %s\n", data.valid ? "Yes" : "No");
-        
-        if (data.valid && data.timestamp_ms > 0) {
-            ts_console_printf("  Updated:     %lu ms ago\n", data.timestamp_ms);
-        }
+    ts_console_printf("Temperature Status:\n");
+    ts_console_printf("  Current:     %.1f°C\n", data.value / 10.0f);
+    ts_console_printf("  Source:      %s\n", source_to_str(data.source));
+    ts_console_printf("  Mode:        %s\n", manual_mode ? "manual" : "auto");
+    ts_console_printf("  Valid:       %s\n", data.valid ? "Yes" : "No");
+    
+    if (data.valid && data.timestamp_ms > 0) {
+        ts_console_printf("  Updated:     %lu ms ago\n", data.timestamp_ms);
     }
     
     return 0;
@@ -102,6 +111,25 @@ static int do_temp_status(bool json)
 
 static int do_temp_providers(bool json)
 {
+    /* JSON 模式通过 API 获取 */
+    if (json) {
+        ts_api_result_t result;
+        esp_err_t ret = ts_api_call("temp.providers", NULL, &result);
+        
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_error("Failed to get temperature providers\n");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK && result.code == TS_API_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出：直接调用底层 */
     ts_temp_source_type_t sources[] = {
         TS_TEMP_SOURCE_DEFAULT,
         TS_TEMP_SOURCE_SENSOR_LOCAL,
@@ -111,38 +139,18 @@ static int do_temp_providers(bool json)
     
     int count = sizeof(sources) / sizeof(sources[0]);
     
-    if (json) {
-        ts_console_printf("[");
-        bool first = true;
-        
-        for (int i = 0; i < count; i++) {
-            ts_temp_data_t data;
-            if (ts_temp_get_by_source(sources[i], &data) == ESP_OK) {
-                if (!first) ts_console_printf(",");
-                ts_console_printf(
-                    "{\"source\":\"%s\",\"priority\":%d,\"temp\":%.1f,\"valid\":%s}",
-                    source_to_str(sources[i]),
-                    sources[i],
-                    data.value / 10.0f,
-                    data.valid ? "true" : "false");
-                first = false;
-            }
-        }
-        ts_console_printf("]\n");
-    } else {
-        ts_console_printf("Temperature Providers:\n");
-        ts_console_printf("  %-15s %-10s %-12s %s\n", "Source", "Priority", "Temperature", "Valid");
-        ts_console_printf("  %-15s %-10s %-12s %s\n", "------", "--------", "-----------", "-----");
-        
-        for (int i = 0; i < count; i++) {
-            ts_temp_data_t data;
-            if (ts_temp_get_by_source(sources[i], &data) == ESP_OK) {
-                ts_console_printf("  %-15s %-10d %-12.1f %s\n",
-                    source_to_str(sources[i]),
-                    sources[i],
-                    data.value / 10.0f,
-                    data.valid ? "Yes" : "No");
-            }
+    ts_console_printf("Temperature Providers:\n");
+    ts_console_printf("  %-15s %-10s %-12s %s\n", "Source", "Priority", "Temperature", "Valid");
+    ts_console_printf("  %-15s %-10s %-12s %s\n", "------", "--------", "-----------", "-----");
+    
+    for (int i = 0; i < count; i++) {
+        ts_temp_data_t data;
+        if (ts_temp_get_by_source(sources[i], &data) == ESP_OK) {
+            ts_console_printf("  %-15s %-10d %-12.1f %s\n",
+                source_to_str(sources[i]),
+                sources[i],
+                data.value / 10.0f,
+                data.valid ? "Yes" : "No");
         }
     }
     
@@ -155,14 +163,22 @@ static int do_temp_providers(bool json)
 
 static int do_temp_set(double temp_c)
 {
-    int16_t temp_value = (int16_t)(temp_c * 10);
+    /* 通过 API 设置温度 */
+    cJSON *params = cJSON_CreateObject();
+    cJSON_AddNumberToObject(params, "value", temp_c);
     
-    esp_err_t ret = ts_temp_set_manual(temp_value);
-    if (ret != ESP_OK) {
-        ts_console_error("Failed to set temperature: %s\n", esp_err_to_name(ret));
+    ts_api_result_t result;
+    esp_err_t ret = ts_api_call("temp.set", params, &result);
+    cJSON_Delete(params);
+    
+    if (ret != ESP_OK || result.code != TS_API_OK) {
+        ts_console_error("Failed to set temperature: %s\n", 
+            result.message ? result.message : "API error");
+        ts_api_result_free(&result);
         return 1;
     }
     
+    ts_api_result_free(&result);
     ts_console_printf("Temperature set to %.1f°C (manual mode enabled)\n", temp_c);
     return 0;
 }
@@ -173,23 +189,27 @@ static int do_temp_set(double temp_c)
 
 static int do_temp_mode(const char *mode_str)
 {
-    bool manual = false;
-    
-    if (strcmp(mode_str, "manual") == 0) {
-        manual = true;
-    } else if (strcmp(mode_str, "auto") == 0) {
-        manual = false;
-    } else {
+    if (strcmp(mode_str, "manual") != 0 && strcmp(mode_str, "auto") != 0) {
         ts_console_error("Invalid mode: %s (use 'auto' or 'manual')\n", mode_str);
         return 1;
     }
     
-    esp_err_t ret = ts_temp_set_manual_mode(manual);
-    if (ret != ESP_OK) {
-        ts_console_error("Failed to set mode: %s\n", esp_err_to_name(ret));
+    /* 通过 API 设置模式 */
+    cJSON *params = cJSON_CreateObject();
+    cJSON_AddStringToObject(params, "mode", mode_str);
+    
+    ts_api_result_t result;
+    esp_err_t ret = ts_api_call("temp.mode", params, &result);
+    cJSON_Delete(params);
+    
+    if (ret != ESP_OK || result.code != TS_API_OK) {
+        ts_console_error("Failed to set mode: %s\n", 
+            result.message ? result.message : "API error");
+        ts_api_result_free(&result);
         return 1;
     }
     
+    ts_api_result_free(&result);
     ts_console_printf("Temperature mode set to %s\n", mode_str);
     return 0;
 }

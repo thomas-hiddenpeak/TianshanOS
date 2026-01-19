@@ -10,10 +10,11 @@
  * - sftp --mkdir  创建目录
  * 
  * @author TianShanOS Team
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 #include "ts_console.h"
+#include "ts_api.h"
 #include "ts_log.h"
 #include "ts_ssh_client.h"
 #include "ts_sftp.h"

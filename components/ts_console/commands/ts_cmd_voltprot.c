@@ -20,6 +20,8 @@
 #include "argtable3/argtable3.h"
 #include "ts_power_policy.h"
 #include "ts_power_monitor.h"
+#include "ts_api.h"
+#include "cJSON.h"
 
 #define TAG "cmd_voltprot"
 
@@ -65,6 +67,25 @@ static const char *get_state_emoji(ts_power_policy_state_t state)
  */
 static void print_status(bool json_format)
 {
+    /* JSON 模式通过 API 获取 */
+    if (json_format) {
+        ts_api_result_t result;
+        esp_err_t ret = ts_api_call("power.protection_status", NULL, &result);
+        
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_Print(result.data);
+            if (json_str) {
+                printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            printf("错误: 无法获取保护状态\n");
+        }
+        ts_api_result_free(&result);
+        return;
+    }
+    
+    /* 格式化输出：直接调用底层 */
     ts_power_policy_status_t status;
     
     if (ts_power_policy_get_status(&status) != ESP_OK) {
@@ -90,68 +111,45 @@ static void print_status(bool json_format)
     float low_threshold, recovery_threshold;
     ts_power_policy_get_thresholds(&low_threshold, &recovery_threshold);
     
-    if (json_format) {
-        printf("{\n");
-        printf("  \"initialized\": %s,\n", status.initialized ? "true" : "false");
-        printf("  \"running\": %s,\n", status.running ? "true" : "false");
-        printf("  \"state\": \"%s\",\n", ts_power_policy_get_state_name(status.state));
-        printf("  \"state_code\": %d,\n", status.state);
-        printf("  \"voltage\": %.2f,\n", display_voltage);
-        printf("  \"countdown_sec\": %lu,\n", (unsigned long)status.countdown_remaining_sec);
-        printf("  \"recovery_timer_sec\": %lu,\n", (unsigned long)status.recovery_timer_sec);
-        printf("  \"protection_count\": %lu,\n", (unsigned long)status.protection_count);
-        printf("  \"uptime_ms\": %lu,\n", (unsigned long)status.uptime_ms);
-        printf("  \"thresholds\": {\n");
-        printf("    \"low_voltage\": %.2f,\n", low_threshold);
-        printf("    \"recovery_voltage\": %.2f\n", recovery_threshold);
-        printf("  },\n");
-        printf("  \"devices\": {\n");
-        printf("    \"agx_powered\": %s,\n", status.device_status.agx_powered ? "true" : "false");
-        printf("    \"lpmu_powered\": %s,\n", status.device_status.lpmu_powered ? "true" : "false");
-        printf("    \"agx_connected\": %s\n", status.device_status.agx_connected ? "true" : "false");
-        printf("  }\n");
-        printf("}\n");
-    } else {
-        printf("\n╔══════════════════════════════════════════════════════════════╗\n");
-        printf("║            ⚡ 电压保护状态 (Voltage Protection)              ║\n");
-        printf("╠══════════════════════════════════════════════════════════════╣\n");
-        
-        printf("║ 状态:  %s %-20s                           ║\n",
-               get_state_emoji(status.state),
-               ts_power_policy_get_state_name(status.state));
-        printf("║ 电压:  %.2f V                                               ║\n",
-               display_voltage);
-        printf("╠══════════════════════════════════════════════════════════════╣\n");
-        printf("║ 阈值配置:                                                    ║\n");
-        printf("║   低电压阈值:   %.1f V                                      ║\n",
-               low_threshold);
-        printf("║   恢复电压阈值: %.1f V                                      ║\n",
-               recovery_threshold);
-        printf("╠══════════════════════════════════════════════════════════════╣\n");
-        
-        if (status.state == TS_POWER_POLICY_STATE_LOW_VOLTAGE) {
-            printf("║ ⏳ 关机倒计时: %lu 秒                                       ║\n",
-                   (unsigned long)status.countdown_remaining_sec);
-        }
-        
-        if (status.state == TS_POWER_POLICY_STATE_RECOVERY) {
-            printf("║ 🔄 恢复计时器: %lu 秒                                       ║\n",
-                   (unsigned long)status.recovery_timer_sec);
-        }
-        
-        printf("║ 统计:                                                        ║\n");
-        printf("║   保护触发次数: %lu                                          ║\n",
-               (unsigned long)status.protection_count);
-        printf("║   运行时间: %lu ms                                           ║\n",
-               (unsigned long)status.uptime_ms);
-        printf("╠══════════════════════════════════════════════════════════════╣\n");
-        printf("║ 设备状态:                                                    ║\n");
-        printf("║   AGX 电源:  %s    LPMU 电源:  %s    AGX 连接:  %s       ║\n",
-               status.device_status.agx_powered ? "✅" : "❌",
-               status.device_status.lpmu_powered ? "✅" : "❌",
-               status.device_status.agx_connected ? "✅" : "❌");
-        printf("╚══════════════════════════════════════════════════════════════╝\n");
+    printf("\n╔══════════════════════════════════════════════════════════════╗\n");
+    printf("║            ⚡ 电压保护状态 (Voltage Protection)              ║\n");
+    printf("╠══════════════════════════════════════════════════════════════╣\n");
+    
+    printf("║ 状态:  %s %-20s                           ║\n",
+           get_state_emoji(status.state),
+           ts_power_policy_get_state_name(status.state));
+    printf("║ 电压:  %.2f V                                               ║\n",
+           display_voltage);
+    printf("╠══════════════════════════════════════════════════════════════╣\n");
+    printf("║ 阈值配置:                                                    ║\n");
+    printf("║   低电压阈值:   %.1f V                                      ║\n",
+           low_threshold);
+    printf("║   恢复电压阈值: %.1f V                                      ║\n",
+           recovery_threshold);
+    printf("╠══════════════════════════════════════════════════════════════╣\n");
+    
+    if (status.state == TS_POWER_POLICY_STATE_LOW_VOLTAGE) {
+        printf("║ ⏳ 关机倒计时: %lu 秒                                       ║\n",
+               (unsigned long)status.countdown_remaining_sec);
     }
+    
+    if (status.state == TS_POWER_POLICY_STATE_RECOVERY) {
+        printf("║ 🔄 恢复计时器: %lu 秒                                       ║\n",
+               (unsigned long)status.recovery_timer_sec);
+    }
+    
+    printf("║ 统计:                                                        ║\n");
+    printf("║   保护触发次数: %lu                                          ║\n",
+           (unsigned long)status.protection_count);
+    printf("║   运行时间: %lu ms                                           ║\n",
+           (unsigned long)status.uptime_ms);
+    printf("╠══════════════════════════════════════════════════════════════╣\n");
+    printf("║ 设备状态:                                                    ║\n");
+    printf("║   AGX 电源:  %s    LPMU 电源:  %s    AGX 连接:  %s       ║\n",
+           status.device_status.agx_powered ? "✅" : "❌",
+           status.device_status.lpmu_powered ? "✅" : "❌",
+           status.device_status.agx_connected ? "✅" : "❌");
+    printf("╚══════════════════════════════════════════════════════════════╝\n");
 }
 
 /**

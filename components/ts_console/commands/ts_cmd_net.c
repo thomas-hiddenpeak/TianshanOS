@@ -19,6 +19,7 @@
 #include "ts_console.h"
 #include "ts_net_manager.h"
 #include "ts_config_module.h"
+#include "ts_api.h"
 #include "ts_log.h"
 #include "argtable3/argtable3.h"
 #include <string.h>

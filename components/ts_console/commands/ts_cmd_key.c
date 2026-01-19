@@ -11,11 +11,12 @@
  * - key --export --id <name> --output <path> 导出公钥
  * 
  * @author TianShanOS Team
- * @version 1.0.0
+ * @version 2.0.0
  * @date 2026-01-18
  */
 
 #include "ts_console.h"
+#include "ts_api.h"
 #include "ts_log.h"
 #include "ts_keystore.h"
 #include "argtable3/argtable3.h"

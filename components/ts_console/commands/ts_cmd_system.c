@@ -1,8 +1,8 @@
 /**
  * @file ts_cmd_system.c
- * @brief System Console Commands
+ * @brief System Console Commands (API Layer)
  * 
- * 实现 system 命令族：
+ * 实现 system 命令族（通过 ts_api 调用）：
  * - system --info        显示系统信息
  * - system --version     显示版本
  * - system --uptime      显示运行时间
@@ -10,12 +10,15 @@
  * - system --tasks       显示任务列表
  * - system --reboot      重启系统
  * 
+ * @note JSON 输出模式使用 ts_api_call() 统一接口
+ * 
  * @author TianShanOS Team
- * @version 1.0.0
- * @date 2026-01-15
+ * @version 2.0.0
+ * @date 2026-01-20
  */
 
 #include "ts_console.h"
+#include "ts_api.h"
 #include "ts_log.h"
 #include "ts_config_module.h"
 #include "argtable3/argtable3.h"
@@ -89,6 +92,25 @@ static void format_size(size_t bytes, char *buf, size_t len)
 
 static int do_system_info(bool json)
 {
+    /* JSON 模式使用 API */
+    if (json) {
+        ts_api_result_t result;
+        esp_err_t ret = ts_api_call("system.info", NULL, &result);
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_error("API call failed: %s\n", 
+                result.message ? result.message : esp_err_to_name(ret));
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 非 JSON 模式直接获取数据（格式化输出） */
     esp_chip_info_t chip;
     esp_chip_info(&chip);
     
@@ -119,44 +141,31 @@ static int do_system_info(bool json)
         default:           chip_model = "Unknown"; break;
     }
     
-    if (json) {
-        ts_console_printf(
-            "{\"app\":{\"name\":\"%s\",\"version\":\"%s\",\"idf\":\"%s\"},"
-            "\"chip\":{\"model\":\"%s\",\"cores\":%d,\"revision\":%d},"
-            "\"flash_size\":%lu,"
-            "\"heap\":{\"free\":%zu,\"min\":%zu},"
-            "\"uptime_us\":%llu}\n",
-            app->project_name, app->version, app->idf_ver,
-            chip_model, chip.cores, chip.revision,
-            (unsigned long)flash_size,
-            free_heap, min_heap,
-            (unsigned long long)uptime_us);
-    } else {
-        ts_console_printf("\n");
-        ts_console_printf("╔══════════════════════════════════════════════════╗\n");
-        ts_console_printf("║           TianShanOS System Information          ║\n");
-        ts_console_printf("╚══════════════════════════════════════════════════╝\n\n");
-        
-        ts_console_printf("Application:\n");
-        ts_console_printf("  Name:      %s\n", app->project_name);
-        ts_console_printf("  Version:   %s\n", app->version);
-        ts_console_printf("  IDF Ver:   %s\n", app->idf_ver);
-        ts_console_printf("  Compiled:  %s %s\n", app->date, app->time);
-        ts_console_printf("\n");
-        
-        ts_console_printf("Hardware:\n");
-        ts_console_printf("  Chip:      %s\n", chip_model);
-        ts_console_printf("  Cores:     %d\n", chip.cores);
-        ts_console_printf("  Revision:  %d\n", chip.revision);
-        ts_console_printf("  Flash:     %s\n", flash_str);
-        ts_console_printf("\n");
-        
-        ts_console_printf("Runtime:\n");
-        ts_console_printf("  Uptime:    %s\n", uptime_str);
-        ts_console_printf("  Free Heap: %s\n", free_heap_str);
-        ts_console_printf("  Min Heap:  %s\n", min_heap_str);
-        ts_console_printf("\n");
-    }
+    /* 格式化输出 */
+    ts_console_printf("\n");
+    ts_console_printf("╔══════════════════════════════════════════════════╗\n");
+    ts_console_printf("║           TianShanOS System Information          ║\n");
+    ts_console_printf("╚══════════════════════════════════════════════════╝\n\n");
+    
+    ts_console_printf("Application:\n");
+    ts_console_printf("  Name:      %s\n", app->project_name);
+    ts_console_printf("  Version:   %s\n", app->version);
+    ts_console_printf("  IDF Ver:   %s\n", app->idf_ver);
+    ts_console_printf("  Compiled:  %s %s\n", app->date, app->time);
+    ts_console_printf("\n");
+    
+    ts_console_printf("Hardware:\n");
+    ts_console_printf("  Chip:      %s\n", chip_model);
+    ts_console_printf("  Cores:     %d\n", chip.cores);
+    ts_console_printf("  Revision:  %d\n", chip.revision);
+    ts_console_printf("  Flash:     %s\n", flash_str);
+    ts_console_printf("\n");
+    
+    ts_console_printf("Runtime:\n");
+    ts_console_printf("  Uptime:    %s\n", uptime_str);
+    ts_console_printf("  Free Heap: %s\n", free_heap_str);
+    ts_console_printf("  Min Heap:  %s\n", min_heap_str);
+    ts_console_printf("\n");
     
     return 0;
 }
@@ -167,15 +176,27 @@ static int do_system_info(bool json)
 
 static int do_system_version(bool json)
 {
-    const esp_app_desc_t *app = esp_app_get_description();
-    
+    /* JSON 模式使用 API */
     if (json) {
-        ts_console_printf("{\"name\":\"%s\",\"version\":\"%s\",\"idf\":\"%s\"}\n",
-            app->project_name, app->version, app->idf_ver);
-    } else {
-        ts_console_printf("%s v%s (ESP-IDF %s)\n", 
-            app->project_name, app->version, app->idf_ver);
+        ts_api_result_t result;
+        esp_err_t ret = ts_api_call("system.info", NULL, &result);
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            cJSON *app = cJSON_GetObjectItem(result.data, "app");
+            if (app) {
+                char *json_str = cJSON_PrintUnformatted(app);
+                if (json_str) {
+                    ts_console_printf("%s\n", json_str);
+                    free(json_str);
+                }
+            }
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
     }
+    
+    const esp_app_desc_t *app = esp_app_get_description();
+    ts_console_printf("%s v%s (ESP-IDF %s)\n", 
+        app->project_name, app->version, app->idf_ver);
     
     return 0;
 }
@@ -206,6 +227,25 @@ static int do_system_uptime(bool json)
 
 static int do_system_memory(bool json)
 {
+    /* JSON 模式使用 API */
+    if (json) {
+        ts_api_result_t result;
+        esp_err_t ret = ts_api_call("system.memory", NULL, &result);
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_error("API call failed: %s\n", 
+                result.message ? result.message : esp_err_to_name(ret));
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     size_t free_heap = esp_get_free_heap_size();
     size_t min_heap = esp_get_minimum_free_heap_size();
     size_t total_heap = heap_caps_get_total_size(MALLOC_CAP_DEFAULT);
@@ -218,49 +258,39 @@ static int do_system_memory(bool json)
     size_t free_dma = heap_caps_get_free_size(MALLOC_CAP_DMA);
     size_t total_dma = heap_caps_get_total_size(MALLOC_CAP_DMA);
     
-    if (json) {
-        ts_console_printf(
-            "{\"heap\":{\"free\":%zu,\"min\":%zu,\"total\":%zu},"
-            "\"psram\":{\"free\":%zu,\"total\":%zu},"
-            "\"dma\":{\"free\":%zu,\"total\":%zu}}\n",
-            free_heap, min_heap, total_heap,
-            free_psram, total_psram,
-            free_dma, total_dma);
-    } else {
-        char buf1[16], buf2[16], buf3[16];
-        
-        ts_console_printf("Memory Usage:\n\n");
-        ts_console_printf("%-10s  %12s  %12s  %8s\n", 
-            "TYPE", "FREE", "TOTAL", "USED%");
-        ts_console_printf("────────────────────────────────────────────────\n");
-        
-        if (total_heap > 0) {
-            format_size(free_heap, buf1, sizeof(buf1));
-            format_size(total_heap, buf2, sizeof(buf2));
-            int used_pct = 100 - (free_heap * 100 / total_heap);
-            ts_console_printf("%-10s  %12s  %12s  %7d%%\n", 
-                "Heap", buf1, buf2, used_pct);
-        }
-        
-        if (total_psram > 0) {
-            format_size(free_psram, buf1, sizeof(buf1));
-            format_size(total_psram, buf2, sizeof(buf2));
-            int used_pct = 100 - (free_psram * 100 / total_psram);
-            ts_console_printf("%-10s  %12s  %12s  %7d%%\n", 
-                "PSRAM", buf1, buf2, used_pct);
-        }
-        
-        if (total_dma > 0) {
-            format_size(free_dma, buf1, sizeof(buf1));
-            format_size(total_dma, buf2, sizeof(buf2));
-            int used_pct = 100 - (free_dma * 100 / total_dma);
-            ts_console_printf("%-10s  %12s  %12s  %7d%%\n", 
-                "DMA", buf1, buf2, used_pct);
-        }
-        
-        format_size(min_heap, buf1, sizeof(buf1));
-        ts_console_printf("\nMinimum free heap ever: %s\n", buf1);
+    char buf1[16], buf2[16];
+    
+    ts_console_printf("Memory Usage:\n\n");
+    ts_console_printf("%-10s  %12s  %12s  %8s\n", 
+        "TYPE", "FREE", "TOTAL", "USED%");
+    ts_console_printf("────────────────────────────────────────────────\n");
+    
+    if (total_heap > 0) {
+        format_size(free_heap, buf1, sizeof(buf1));
+        format_size(total_heap, buf2, sizeof(buf2));
+        int used_pct = 100 - (free_heap * 100 / total_heap);
+        ts_console_printf("%-10s  %12s  %12s  %7d%%\n", 
+            "Heap", buf1, buf2, used_pct);
     }
+    
+    if (total_psram > 0) {
+        format_size(free_psram, buf1, sizeof(buf1));
+        format_size(total_psram, buf2, sizeof(buf2));
+        int used_pct = 100 - (free_psram * 100 / total_psram);
+        ts_console_printf("%-10s  %12s  %12s  %7d%%\n", 
+            "PSRAM", buf1, buf2, used_pct);
+    }
+    
+    if (total_dma > 0) {
+        format_size(free_dma, buf1, sizeof(buf1));
+        format_size(total_dma, buf2, sizeof(buf2));
+        int used_pct = 100 - (free_dma * 100 / total_dma);
+        ts_console_printf("%-10s  %12s  %12s  %7d%%\n", 
+            "DMA", buf1, buf2, used_pct);
+    }
+    
+    format_size(min_heap, buf1, sizeof(buf1));
+    ts_console_printf("\nMinimum free heap ever: %s\n", buf1);
     
     return 0;
 }
@@ -271,16 +301,31 @@ static int do_system_memory(bool json)
 
 static int do_system_tasks(bool json)
 {
+    /* JSON 模式使用 API */
+    if (json) {
+        ts_api_result_t result;
+        esp_err_t ret = ts_api_call("system.tasks", NULL, &result);
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_error("API call failed: %s\n", 
+                result.message ? result.message : esp_err_to_name(ret));
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     uint32_t num_tasks = uxTaskGetNumberOfTasks();
     
-    if (json) {
-        ts_console_printf("{\"task_count\":%lu,\"tasks\":[", (unsigned long)num_tasks);
-    } else {
-        ts_console_printf("Tasks (%lu total):\n\n", (unsigned long)num_tasks);
-        ts_console_printf("%-20s  %5s  %6s  %10s\n", 
-            "NAME", "PRI", "STATE", "STACK");
-        ts_console_printf("──────────────────────────────────────────────\n");
-    }
+    ts_console_printf("Tasks (%lu total):\n\n", (unsigned long)num_tasks);
+    ts_console_printf("%-20s  %5s  %6s  %10s\n", 
+        "NAME", "PRI", "STATE", "STACK");
+    ts_console_printf("──────────────────────────────────────────────\n");
     
 #if configUSE_TRACE_FACILITY
     TaskStatus_t *tasks = malloc(num_tasks * sizeof(TaskStatus_t));
@@ -292,7 +337,6 @@ static int do_system_tasks(bool json)
     uint32_t total_runtime;
     uint32_t count = uxTaskGetSystemState(tasks, num_tasks, &total_runtime);
     
-    bool first = true;
     for (uint32_t i = 0; i < count; i++) {
         const char *state_str;
         switch (tasks[i].eCurrentState) {
@@ -304,32 +348,17 @@ static int do_system_tasks(bool json)
             default:         state_str = "?"; break;
         }
         
-        if (json) {
-            if (!first) ts_console_printf(",");
-            ts_console_printf("{\"name\":\"%s\",\"priority\":%lu,\"state\":\"%s\",\"stack\":%lu}",
-                tasks[i].pcTaskName,
-                (unsigned long)tasks[i].uxCurrentPriority,
-                state_str,
-                (unsigned long)tasks[i].usStackHighWaterMark);
-            first = false;
-        } else {
-            ts_console_printf("%-20s  %5lu  %6s  %10lu\n",
-                tasks[i].pcTaskName,
-                (unsigned long)tasks[i].uxCurrentPriority,
-                state_str,
-                (unsigned long)tasks[i].usStackHighWaterMark);
-        }
+        ts_console_printf("%-20s  %5lu  %6s  %10lu\n",
+            tasks[i].pcTaskName,
+            (unsigned long)tasks[i].uxCurrentPriority,
+            state_str,
+            (unsigned long)tasks[i].usStackHighWaterMark);
     }
     
     free(tasks);
 #else
-    (void)num_tasks;
     ts_console_printf("Task tracing not enabled\n");
 #endif
-    
-    if (json) {
-        ts_console_printf("]}\n");
-    }
     
     return 0;
 }
@@ -342,13 +371,22 @@ static int do_system_reboot(int delay_sec)
 {
     if (delay_sec > 0) {
         ts_console_printf("System will reboot in %d seconds...\n", delay_sec);
-        vTaskDelay(pdMS_TO_TICKS(delay_sec * 1000));
     } else {
         ts_console_printf("Rebooting...\n");
-        vTaskDelay(pdMS_TO_TICKS(100));  // 让消息打印出来
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));  // 让消息打印出来
+    
+    /* 使用 API 执行重启 */
+    cJSON *params = cJSON_CreateObject();
+    if (params) {
+        cJSON_AddNumberToObject(params, "delay_ms", delay_sec * 1000);
     }
     
-    esp_restart();
+    ts_api_result_t result;
+    ts_api_call("system.reboot", params, &result);
+    
+    if (params) cJSON_Delete(params);
+    ts_api_result_free(&result);
     
     // 不会执行到这里
     return 0;
@@ -464,7 +502,7 @@ esp_err_t ts_cmd_system_register(void)
     
     const ts_console_cmd_t cmd = {
         .command = "system",
-        .help = "System information and control",
+        .help = "System information and control (via API)",
         .hint = NULL,
         .category = TS_CMD_CAT_SYSTEM,
         .func = cmd_system,

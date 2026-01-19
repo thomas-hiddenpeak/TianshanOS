@@ -1,8 +1,8 @@
 /**
  * @file ts_cmd_fan.c
- * @brief Fan Control Console Commands
+ * @brief Fan Control Console Commands (API Layer)
  * 
- * 实现 fan 命令族：
+ * 实现 fan 命令族（通过 ts_api 调用）：
  * - fan --status                显示风扇状态
  * - fan --set --id X -S Y       设置风扇速度
  * - fan --mode --id X --value M 设置风扇模式
@@ -10,12 +10,15 @@
  * - fan --hysteresis --id X     设置迟滞参数
  * - fan --enable/disable        启用/禁用风扇
  * 
+ * @note JSON 输出模式使用 ts_api_call() 统一接口
+ * 
  * @author TianShanOS Team
  * @version 2.0.0
- * @date 2026-01-15
+ * @date 2026-01-20
  */
 
 #include "ts_console.h"
+#include "ts_api.h"
 #include "ts_fan.h"
 #include "ts_config_module.h"
 #include "ts_log.h"
@@ -68,6 +71,33 @@ static struct {
 
 static int do_fan_status(int fan_id, bool json)
 {
+    /* JSON 模式使用 API */
+    if (json) {
+        cJSON *params = NULL;
+        if (fan_id >= 0) {
+            params = cJSON_CreateObject();
+            cJSON_AddNumberToObject(params, "id", fan_id);
+        }
+        
+        ts_api_result_t result;
+        esp_err_t ret = ts_api_call("fan.status", params, &result);
+        if (params) cJSON_Delete(params);
+        
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_error("API call failed: %s\n", 
+                result.message ? result.message : esp_err_to_name(ret));
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     ts_fan_status_t status;
     
     if (fan_id >= 0) {
@@ -83,72 +113,40 @@ static int do_fan_status(int fan_id, bool json)
             return 1;
         }
         
-        if (json) {
-            ts_console_printf(
-                "{\"id\":%d,\"running\":%s,\"enabled\":%s,\"duty\":%d,\"target\":%d,"
-                "\"rpm\":%d,\"mode\":\"%s\",\"temp\":%.1f,\"stable_temp\":%.1f,\"fault\":%s}\n",
-                fan_id, 
-                status.is_running ? "true" : "false",
-                status.enabled ? "true" : "false",
-                status.duty_percent, status.target_duty, status.rpm, 
-                mode_to_str(status.mode),
-                status.temp / 10.0f, status.last_stable_temp / 10.0f,
-                status.fault ? "true" : "false");
-        } else {
-            ts_console_printf("Fan %d:\n", fan_id);
-            ts_console_printf("  Enabled:      %s\n", status.enabled ? "Yes" : "No");
-            ts_console_printf("  Running:      %s\n", status.is_running ? "Yes" : "No");
-            ts_console_printf("  Mode:         %s\n", mode_to_str(status.mode));
-            ts_console_printf("  Duty:         %d%% (target: %d%%)\n", 
-                              status.duty_percent, status.target_duty);
-            ts_console_printf("  RPM:          %d\n", status.rpm);
-            ts_console_printf("  Temperature:  %.1f°C (stable: %.1f°C)\n", 
-                              status.temp / 10.0f, status.last_stable_temp / 10.0f);
-            if (status.fault) {
-                ts_console_printf("  Fault:        Yes\n");
-            }
+        ts_console_printf("Fan %d:\n", fan_id);
+        ts_console_printf("  Enabled:      %s\n", status.enabled ? "Yes" : "No");
+        ts_console_printf("  Running:      %s\n", status.is_running ? "Yes" : "No");
+        ts_console_printf("  Mode:         %s\n", mode_to_str(status.mode));
+        ts_console_printf("  Duty:         %d%% (target: %d%%)\n", 
+                          status.duty_percent, status.target_duty);
+        ts_console_printf("  RPM:          %d\n", status.rpm);
+        ts_console_printf("  Temperature:  %.1f°C (stable: %.1f°C)\n", 
+                          status.temp / 10.0f, status.last_stable_temp / 10.0f);
+        if (status.fault) {
+            ts_console_printf("  Fault:        Yes\n");
         }
     } else {
         // 所有风扇状态
-        if (json) {
-            ts_console_printf("{\"fans\":[");
-            for (int i = 0; i < TS_FAN_MAX; i++) {
-                if (i > 0) ts_console_printf(",");
-                if (ts_fan_get_status(i, &status) == ESP_OK) {
-                    ts_console_printf(
-                        "{\"id\":%d,\"running\":%s,\"enabled\":%s,\"duty\":%d,"
-                        "\"rpm\":%d,\"mode\":\"%s\",\"temp\":%.1f}",
-                        i, status.is_running ? "true" : "false",
-                        status.enabled ? "true" : "false",
-                        status.duty_percent, status.rpm, mode_to_str(status.mode),
-                        status.temp / 10.0f);
-                } else {
-                    ts_console_printf("{\"id\":%d,\"error\":true}", i);
-                }
+        ts_console_printf("Fan Status:\n\n");
+        ts_console_printf("%-4s  %-7s  %-7s  %6s  %6s  %6s  %-6s\n",
+            "ID", "ENABLED", "RUNNING", "DUTY", "RPM", "TEMP", "MODE");
+        ts_console_printf("───────────────────────────────────────────────────\n");
+        
+        for (int i = 0; i < TS_FAN_MAX; i++) {
+            if (ts_fan_get_status(i, &status) == ESP_OK) {
+                ts_console_printf("%-4d  %-7s  %-7s  %5d%%  %6d  %5.1f°  %s\n",
+                    i,
+                    status.enabled ? "Yes" : "No",
+                    status.is_running ? "Yes" : "No",
+                    status.duty_percent,
+                    status.rpm,
+                    status.temp / 10.0f,
+                    mode_to_str(status.mode));
+            } else {
+                ts_console_printf("%-4d  %-7s\n", i, "N/A");
             }
-            ts_console_printf("]}\n");
-        } else {
-            ts_console_printf("Fan Status:\n\n");
-            ts_console_printf("%-4s  %-7s  %-7s  %6s  %6s  %6s  %-6s\n",
-                "ID", "ENABLED", "RUNNING", "DUTY", "RPM", "TEMP", "MODE");
-            ts_console_printf("───────────────────────────────────────────────────\n");
-            
-            for (int i = 0; i < TS_FAN_MAX; i++) {
-                if (ts_fan_get_status(i, &status) == ESP_OK) {
-                    ts_console_printf("%-4d  %-7s  %-7s  %5d%%  %6d  %5.1f°  %s\n",
-                        i,
-                        status.enabled ? "Yes" : "No",
-                        status.is_running ? "Yes" : "No",
-                        status.duty_percent,
-                        status.rpm,
-                        status.temp / 10.0f,
-                        mode_to_str(status.mode));
-                } else {
-                    ts_console_printf("%-4d  %-7s\n", i, "N/A");
-                }
-            }
-            ts_console_printf("\n");
         }
+        ts_console_printf("\n");
     }
     
     return 0;
@@ -170,19 +168,23 @@ static int do_fan_set_speed(int fan_id, int speed)
         return 1;
     }
     
-    // 设置为手动模式并设定占空比
-    esp_err_t ret = ts_fan_set_mode(fan_id, TS_FAN_MODE_MANUAL);
-    if (ret != ESP_OK) {
-        ts_console_error("Failed to set mode: %s\n", esp_err_to_name(ret));
+    /* 使用 API 设置 */
+    cJSON *params = cJSON_CreateObject();
+    cJSON_AddNumberToObject(params, "id", fan_id);
+    cJSON_AddNumberToObject(params, "duty", speed);
+    
+    ts_api_result_t result;
+    esp_err_t ret = ts_api_call("fan.set", params, &result);
+    cJSON_Delete(params);
+    
+    if (ret != ESP_OK || result.code != TS_API_OK) {
+        ts_console_error("Failed to set speed: %s\n", 
+            result.message ? result.message : esp_err_to_name(ret));
+        ts_api_result_free(&result);
         return 1;
     }
     
-    ret = ts_fan_set_duty(fan_id, (uint8_t)speed);
-    if (ret != ESP_OK) {
-        ts_console_error("Failed to set duty: %s\n", esp_err_to_name(ret));
-        return 1;
-    }
-    
+    ts_api_result_free(&result);
     ts_console_success("Fan %d speed set to %d%%\n", fan_id, speed);
     return 0;
 }
@@ -198,26 +200,30 @@ static int do_fan_set_mode_cmd(int fan_id, const char *mode)
         return 1;
     }
     
-    ts_fan_mode_t fan_mode;
-    if (strcmp(mode, "auto") == 0) {
-        fan_mode = TS_FAN_MODE_AUTO;
-    } else if (strcmp(mode, "manual") == 0) {
-        fan_mode = TS_FAN_MODE_MANUAL;
-    } else if (strcmp(mode, "curve") == 0) {
-        fan_mode = TS_FAN_MODE_CURVE;
-    } else if (strcmp(mode, "off") == 0) {
-        fan_mode = TS_FAN_MODE_OFF;
-    } else {
+    /* 验证模式名称 */
+    if (strcmp(mode, "auto") != 0 && strcmp(mode, "manual") != 0 &&
+        strcmp(mode, "curve") != 0 && strcmp(mode, "off") != 0) {
         ts_console_error("Invalid mode: %s (use: auto, manual, curve, off)\n", mode);
         return 1;
     }
     
-    esp_err_t ret = ts_fan_set_mode(fan_id, fan_mode);
-    if (ret != ESP_OK) {
-        ts_console_error("Failed to set mode: %s\n", esp_err_to_name(ret));
+    /* 使用 API 设置 */
+    cJSON *params = cJSON_CreateObject();
+    cJSON_AddNumberToObject(params, "id", fan_id);
+    cJSON_AddStringToObject(params, "mode", mode);
+    
+    ts_api_result_t result;
+    esp_err_t ret = ts_api_call("fan.mode", params, &result);
+    cJSON_Delete(params);
+    
+    if (ret != ESP_OK || result.code != TS_API_OK) {
+        ts_console_error("Failed to set mode: %s\n", 
+            result.message ? result.message : esp_err_to_name(ret));
+        ts_api_result_free(&result);
         return 1;
     }
     
+    ts_api_result_free(&result);
     ts_console_success("Fan %d mode set to %s\n", fan_id, mode);
     return 0;
 }
@@ -314,12 +320,23 @@ static int do_fan_enable(int fan_id, bool enable)
         return 1;
     }
     
-    esp_err_t ret = ts_fan_enable(fan_id, enable);
-    if (ret != ESP_OK) {
-        ts_console_error("Failed: %s\n", esp_err_to_name(ret));
+    /* 使用 API 设置 */
+    cJSON *params = cJSON_CreateObject();
+    cJSON_AddNumberToObject(params, "id", fan_id);
+    cJSON_AddBoolToObject(params, "enable", enable);
+    
+    ts_api_result_t result;
+    esp_err_t ret = ts_api_call("fan.enable", params, &result);
+    cJSON_Delete(params);
+    
+    if (ret != ESP_OK || result.code != TS_API_OK) {
+        ts_console_error("Failed: %s\n", 
+            result.message ? result.message : esp_err_to_name(ret));
+        ts_api_result_free(&result);
         return 1;
     }
     
+    ts_api_result_free(&result);
     ts_console_success("Fan %d %s\n", fan_id, enable ? "enabled" : "disabled");
     return 0;
 }
@@ -498,7 +515,7 @@ esp_err_t ts_cmd_fan_register(void)
     
     const ts_console_cmd_t cmd = {
         .command = "fan",
-        .help = "Fan control and monitoring",
+        .help = "Fan control and monitoring (via API)",
         .hint = NULL,
         .category = TS_CMD_CAT_FAN,
         .func = cmd_fan,
@@ -507,7 +524,7 @@ esp_err_t ts_cmd_fan_register(void)
     
     esp_err_t ret = ts_console_register_cmd(&cmd);
     if (ret == ESP_OK) {
-        TS_LOGI(TAG, "Fan commands registered");
+        TS_LOGI(TAG, "Fan commands registered (API mode)");
     }
     
     return ret;

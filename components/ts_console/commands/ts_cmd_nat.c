@@ -13,6 +13,7 @@
 #include "ts_cmd_all.h"
 #include "ts_nat.h"
 #include "ts_net_manager.h"
+#include "ts_api.h"
 #include "esp_console.h"
 #include "argtable3/argtable3.h"
 #include <stdio.h>

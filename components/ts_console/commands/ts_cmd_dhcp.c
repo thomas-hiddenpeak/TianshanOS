@@ -12,13 +12,14 @@
  * - dhcp --save            保存配置
  * 
  * @author TianShanOS Team
- * @version 1.0.0
+ * @version 2.0.0
  * @date 2026-01-16
  */
 
 #include "ts_console.h"
 #include "ts_dhcp_server.h"
 #include "ts_config_module.h"
+#include "ts_api.h"
 #include "ts_log.h"
 #include "argtable3/argtable3.h"
 #include <string.h>

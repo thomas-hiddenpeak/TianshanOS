@@ -13,12 +13,13 @@
  * - mv <src> <dst>      移动/重命名文件
  * 
  * @author TianShanOS Team
- * @version 1.0.0
+ * @version 2.0.0
  * @date 2026-01-15
  */
 
 #include "ts_console.h"
 #include "ts_storage.h"
+#include "ts_api.h"
 #include "ts_log.h"
 #include "argtable3/argtable3.h"
 #include <string.h>

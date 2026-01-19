@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include "ts_console.h"
 #include "ts_config.h"
+#include "ts_api.h"
 #include "ts_config_module.h"
 #include "ts_config_meta.h"
 #include "ts_log.h"

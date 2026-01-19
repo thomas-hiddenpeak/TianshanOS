@@ -21,6 +21,7 @@
  */
 
 #include "ts_cmd_all.h"
+#include "ts_api.h"
 #include "argtable3/argtable3.h"
 #include "driver/gpio.h"
 #include "esp_console.h"

@@ -10,11 +10,12 @@
  * - agx --config           显示/设置配置
  * 
  * @author TianShanOS Team
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 #include "ts_console.h"
 #include "ts_agx_monitor.h"
+#include "ts_api.h"
 #include "ts_log.h"
 #include "esp_console.h"
 #include "argtable3/argtable3.h"

@@ -1,8 +1,8 @@
 /**
  * @file ts_cmd_led.c
- * @brief LED Console Commands
+ * @brief LED Console Commands (API Layer)
  * 
- * 实现 led 命令族：
+ * 实现 led 命令族（通过 ts_api 调用）：
  * - led --status         显示 LED 设备状态
  * - led --brightness     设置亮度
  * - led --clear          清除 LED
@@ -12,10 +12,11 @@
  * - led --image          显示图像文件
  * 
  * @author TianShanOS Team
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 #include "ts_console.h"
+#include "ts_api.h"
 #include "ts_led.h"
 #include "ts_led_effect.h"
 #include "ts_led_preset.h"

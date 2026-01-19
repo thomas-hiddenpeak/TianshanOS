@@ -35,6 +35,6 @@ set(TS_CONSOLE_SRCS
 idf_component_register(
     SRCS ${TS_CONSOLE_SRCS}
     INCLUDE_DIRS "include" "linenoise"
-    REQUIRES ts_core ts_led ts_storage ts_drivers ts_net ts_security console vfs spi_flash esp_wifi esp_netif esp_app_format
+    REQUIRES ts_core ts_led ts_storage ts_drivers ts_net ts_security ts_api console vfs spi_flash esp_wifi esp_netif esp_app_format
     PRIV_REQUIRES driver esp_vfs_console
 )
