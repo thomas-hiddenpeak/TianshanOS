@@ -2,8 +2,8 @@
 
 > **项目**：TianShanOS（天山操作系统）  
 > **版本**：0.1.0-dev  
-> **最后更新**：2026年1月19日  
-> **代码统计**：85+ 个 C 源文件，60+ 个头文件
+> **最后更新**：2026年1月21日  
+> **代码统计**：95+ 个 C 源文件，70+ 个头文件
 
 ---
 
@@ -21,6 +21,7 @@
 | Phase 7: WebUI | ✅ 完成 | 100% | 2026-01-15 |
 | Phase 8: 文档与测试 | ✅ 完成 | 100% | 2026-01-15 |
 | Phase 9: 统一配置系统 | ✅ 完成 | 100% | 2026-01-19 |
+| Phase 10: WebUI 增强 & SSH Shell | ✅ 完成 | 100% | 2026-01-21 |
 
 ---
 
@@ -231,6 +232,7 @@
 - [x] SSH 主机密钥验证 (TOFU策略, 指纹变化警告, NVS存储)
 - [x] SSH 公钥撤销 (ssh --revoke 从远程删除已部署公钥)
 - [x] Known Hosts 管理 (hosts命令 - list/info/remove/clear)
+- [x] SFTP 文件传输 (ts_sftp - ls/get/put/rm/mkdir/stat)
 - [ ] 安全加固 L2 (NVS 加密) - 配置已就绪，待功能开发完成后测试
 - [ ] 安全加固 L3/L4 (Secure Boot, Flash 加密) - 生产阶段
 
@@ -253,6 +255,20 @@
   - API 客户端库
   - WebSocket 客户端
   - 登录模态框
+- [x] WebUI 服务集成 (ts_services.c)
+- [x] SPA 路由系统 (router.js)
+- [x] Web 终端 (terminal.js + xterm.js)
+- [x] SSH Shell WebSocket 支持 (ts_webui_ws.c)
+- [x] 电压保护事件 WebSocket 广播
+- [x] 完整的 7 个页面：
+  - 仪表盘（系统/内存/网络/电源/设备/温度）
+  - 系统管理（服务列表、重启）
+  - LED 控制（设备/亮度/颜色/特效）
+  - 网络配置（以太网/WiFi/DHCP/NAT）
+  - 设备控制（AGX/LPMU 电源、风扇调速）
+  - 终端（Web CLI + SSH Shell）
+  - 安全（SSH 测试、密钥管理、已知主机）
+  - 配置（配置列表/编辑/删除）
 
 ---
 
@@ -312,7 +328,110 @@
 
 ---
 
+## 📋 Phase 10: WebUI 增强 & SSH Shell ✅
+
+### WebUI SPA 重构
+- [x] SPA 路由器实现 (router.js)
+- [x] Hash 路由 (#/path) 支持
+- [x] 页面懒加载和状态管理
+- [x] WebSocket 连接状态指示器
+
+### Web 终端 (xterm.js)
+- [x] xterm.js 终端集成
+- [x] 本地 CLI 命令执行
+- [x] 命令历史和光标编辑
+- [x] ANSI 颜色支持
+- [x] 心跳保活机制（15秒间隔）
+
+### SSH Shell WebSocket
+- [x] WebSocket SSH 消息协议 (ssh_connect/ssh_input/ssh_output/ssh_status)
+- [x] libssh2 SSH 会话管理
+- [x] PTY 终端分配
+- [x] 双向数据流转发
+- [x] ssh_poll 任务资源清理
+- [x] 远程关闭检测和清理
+
+### Core API 扩展
+- [x] ts_api_wifi.c - WiFi 状态/扫描/连接/断开
+- [x] ts_api_dhcp.c - DHCP 状态/客户端/启动/停止
+- [x] ts_api_nat.c - NAT 状态/启用/禁用/保存
+- [x] ts_api_ssh.c - SSH 执行/测试/密钥生成
+- [x] ts_api_sftp.c - SFTP ls/get/put/rm/mkdir/stat
+- [x] ts_api_key.c - 密钥列表/信息/生成/删除
+- [x] ts_api_hosts.c - Known Hosts 管理
+- [x] ts_api_agx.c - AGX 监控状态/数据/配置/启停
+
+### 电源监控服务
+- [x] Power 服务注册 (ts_services.c)
+- [x] 电源监控初始化和启动
+- [x] 电压保护策略启动
+- [x] WebSocket 电压保护事件广播
+
+### 配置优化
+- [x] CONFIG_LWIP_MAX_SOCKETS=16（解决 socket 用尽问题）
+- [x] ssh_poll 任务栈 8192 字节（解决栈溢出问题）
+
+---
+
 ## 📝 开发日志
+
+### 2026-01-21
+- **SSH Shell WebSocket 修复**：
+  - 修复 "Too many open files in system" 错误
+    - 原因：CONFIG_LWIP_MAX_SOCKETS=10 太小
+    - 解决：增加到 16 (sdkconfig + sdkconfig.defaults)
+  - 修复 ssh_poll 任务栈溢出
+    - 原因：4096 字节栈对 libssh2 不足
+    - 解决：增加到 8192 字节
+  - 修复 ssh_poll_task 资源泄漏
+    - 原因：远程关闭时未清理 shell/session
+    - 解决：添加 need_cleanup 标记和完整清理逻辑
+
+### 2026-01-20
+- **WebUI SPA 重构（Phase 10）**：
+  - 实现 SPA 路由系统 (router.js)
+    - Hash 路由 (#/path) 支持
+    - 页面懒加载
+    - 导航高亮同步
+  - 实现 Web 终端 (terminal.js + xterm.js)
+    - 本地 CLI 命令执行
+    - SSH Shell 支持（通过 WebSocket）
+    - 命令历史、光标编辑、ANSI 颜色
+    - 心跳保活（15秒间隔）
+    - Ctrl+\ 退出 SSH Shell
+  - 实现 7 个完整页面
+    - 仪表盘：系统/内存/网络/电源/设备/温度卡片
+    - 系统管理：服务列表、重启操作
+    - LED 控制：设备列表、亮度滑块、颜色选择、特效
+    - 网络配置：以太网/WiFi/DHCP/NAT 状态和控制
+    - 设备控制：AGX/LPMU 电源、风扇调速
+    - 终端：Web CLI + SSH Shell
+    - 安全：SSH 连接测试、密钥管理、已知主机
+    - 配置：配置列表/筛选/编辑/删除
+  - 扩展 api.js 支持所有 Core API 端点
+  - 添加 WebSocket 连接状态指示器
+  
+- **Core API 扩展**：
+  - ts_api_wifi.c - WiFi 管理 API
+  - ts_api_dhcp.c - DHCP 服务器 API
+  - ts_api_nat.c - NAT 网关 API
+  - ts_api_ssh.c - SSH 执行/测试 API
+  - ts_api_sftp.c - SFTP 文件传输 API
+  - ts_api_key.c - 密钥管理 API
+  - ts_api_hosts.c - Known Hosts API
+  - ts_api_agx.c - AGX 监控 API
+
+- **SSH Shell WebSocket 实现**：
+  - WebSocket 消息协议：ssh_connect, ssh_input, ssh_output, ssh_status
+  - libssh2 SSH 会话和 Shell 管理
+  - PTY 终端分配
+  - 双向数据流转发（poll 任务）
+  - 电压保护事件 WebSocket 广播
+
+- **服务系统扩展**：
+  - 注册 Power 服务（电源监控 + 电压保护）
+  - 注册 WebUI 服务（HTTP + WebSocket + 静态文件）
+  - www SPIFFS 分区挂载
 
 ### 2026-01-19
 - **统一配置系统 (Phase 9) 完成**：

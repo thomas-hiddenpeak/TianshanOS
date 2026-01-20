@@ -6,6 +6,10 @@
     <title>TianShanOS</title>
     <link rel="stylesheet" href="/css/style.css">
     <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <!-- xterm.js -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
 </head>
 <body>
     <div id="app">
@@ -19,8 +23,12 @@
                 <a href="#/system" class="nav-link">系统</a>
                 <a href="#/led" class="nav-link">LED</a>
                 <a href="#/network" class="nav-link">网络</a>
+                <a href="#/device" class="nav-link">设备</a>
+                <a href="#/terminal" class="nav-link">终端</a>
                 <a href="#/config" class="nav-link">配置</a>
+                <a href="#/security" class="nav-link">安全</a>
             </nav>
+            <div class="ws-status" id="ws-status" title="WebSocket 连接状态"></div>
             <div class="user-menu">
                 <span id="user-name">未登录</span>
                 <button id="login-btn" class="btn btn-primary">登录</button>
@@ -29,47 +37,10 @@
         
         <main class="main">
             <div id="page-content">
-                <!-- Dynamic content loaded here -->
-                <div class="dashboard">
-                    <h1>仪表盘</h1>
-                    
-                    <div class="cards">
-                        <div class="card">
-                            <h3>系统信息</h3>
-                            <div class="card-content">
-                                <p><strong>芯片:</strong> <span id="chip-model">-</span></p>
-                                <p><strong>固件:</strong> <span id="firmware-version">-</span></p>
-                                <p><strong>运行时间:</strong> <span id="uptime">-</span></p>
-                            </div>
-                        </div>
-                        
-                        <div class="card">
-                            <h3>内存</h3>
-                            <div class="card-content">
-                                <div class="progress-bar">
-                                    <div class="progress" id="mem-progress" style="width: 0%"></div>
-                                </div>
-                                <p><span id="mem-used">-</span> / <span id="mem-total">-</span></p>
-                            </div>
-                        </div>
-                        
-                        <div class="card">
-                            <h3>网络</h3>
-                            <div class="card-content">
-                                <p><strong>以太网:</strong> <span id="eth-status">-</span></p>
-                                <p><strong>WiFi:</strong> <span id="wifi-status">-</span></p>
-                                <p><strong>IP:</strong> <span id="ip-addr">-</span></p>
-                            </div>
-                        </div>
-                        
-                        <div class="card">
-                            <h3>设备状态</h3>
-                            <div class="card-content">
-                                <p><strong>AGX:</strong> <span id="agx-status">-</span></p>
-                                <p><strong>风扇:</strong> <span id="fan-status">-</span></p>
-                            </div>
-                        </div>
-                    </div>
+                <!-- 动态页面内容由 SPA 路由器加载 -->
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>加载中...</p>
                 </div>
             </div>
         </main>
@@ -101,6 +72,8 @@
     </div>
     
     <script src="/js/api.js"></script>
+    <script src="/js/router.js"></script>
+    <script src="/js/terminal.js"></script>
     <script src="/js/app.js"></script>
 </body>
 </html>

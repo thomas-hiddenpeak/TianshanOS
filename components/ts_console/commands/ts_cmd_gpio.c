@@ -21,16 +21,27 @@
  */
 
 #include "ts_cmd_all.h"
+#include "ts_console.h"
 #include "ts_api.h"
+#include "ts_console.h"
 #include "argtable3/argtable3.h"
+#include "ts_console.h"
 #include "driver/gpio.h"
+#include "ts_console.h"
 #include "esp_console.h"
+#include "ts_console.h"
 #include "esp_log.h"
+#include "ts_console.h"
 #include "freertos/FreeRTOS.h"
+#include "ts_console.h"
 #include "freertos/task.h"
+#include "ts_console.h"
 #include <stdio.h>
+#include "ts_console.h"
 #include <stdlib.h>
+#include "ts_console.h"
 #include <string.h>
+#include "ts_console.h"
 
 static const char *TAG = "cmd_gpio";
 
@@ -227,11 +238,11 @@ static void print_pin_info(int pin, bool json)
         if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
             char *json_str = cJSON_PrintUnformatted(result.data);
             if (json_str) {
-                printf("%s\n", json_str);
+                ts_console_printf("%s\n", json_str);
                 free(json_str);
             }
         } else {
-            printf("{\"gpio\":%d,\"error\":\"%s\"}\n", pin,
+            ts_console_printf("{\"gpio\":%d,\"error\":\"%s\"}\n", pin,
                 result.message ? result.message : esp_err_to_name(ret));
         }
         ts_api_result_free(&result);
@@ -244,14 +255,14 @@ static void print_pin_info(int pin, bool json)
     
     if (info) {
         const char *status = (level == info->default_level) ? "默认" : "已修改";
-        printf("GPIO%d (%s):\n", pin, info->name);
-        printf("  当前电平: %d (%s)\n", level, level ? "HIGH" : "LOW");
-        printf("  默认电平: %d (%s)\n", info->default_level, info->default_level ? "HIGH" : "LOW");
-        printf("  状态: %s\n", status);
-        printf("  说明: %s\n", info->description);
+        ts_console_printf("GPIO%d (%s):\n", pin, info->name);
+        ts_console_printf("  当前电平: %d (%s)\n", level, level ? "HIGH" : "LOW");
+        ts_console_printf("  默认电平: %d (%s)\n", info->default_level, info->default_level ? "HIGH" : "LOW");
+        ts_console_printf("  状态: %s\n", status);
+        ts_console_printf("  说明: %s\n", info->description);
     } else {
-        printf("GPIO%d 不在可控引脚列表中\n", pin);
-        printf("当前电平: %d (%s)\n", level, level ? "HIGH" : "LOW");
+        ts_console_printf("GPIO%d 不在可控引脚列表中\n", pin);
+        ts_console_printf("当前电平: %d (%s)\n", level, level ? "HIGH" : "LOW");
     }
 }
 
@@ -268,11 +279,11 @@ static void print_configured_pins(bool json)
         if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
             char *json_str = cJSON_PrintUnformatted(result.data);
             if (json_str) {
-                printf("%s\n", json_str);
+                ts_console_printf("%s\n", json_str);
                 free(json_str);
             }
         } else {
-            printf("{\"error\":\"%s\"}\n", 
+            ts_console_printf("{\"error\":\"%s\"}\n", 
                 result.message ? result.message : esp_err_to_name(ret));
         }
         ts_api_result_free(&result);
@@ -280,14 +291,14 @@ static void print_configured_pins(bool json)
     }
     
     /* 格式化输出模式 */
-    printf("可控引脚列表:\n");
-    printf("──────────────────────────────────────────────────────────────────────────\n");
-    printf("  GPIO   名称                 当前   默认   说明\n");
-    printf("──────────────────────────────────────────────────────────────────────────\n");
+    ts_console_printf("可控引脚列表:\n");
+    ts_console_printf("──────────────────────────────────────────────────────────────────────────\n");
+    ts_console_printf("  GPIO   名称                 当前   默认   说明\n");
+    ts_console_printf("──────────────────────────────────────────────────────────────────────────\n");
     for (int i = 0; i < NUM_CONTROLLABLE_PINS; i++) {
         int level = gpio_get_level(s_controllable_pins[i].pin);
         const char *status = (level == s_controllable_pins[i].default_level) ? " " : "*";
-        printf("  %2d     %-20s %s%s   %s     %s\n", 
+        ts_console_printf("  %2d     %-20s %s%s   %s     %s\n", 
                s_controllable_pins[i].pin, 
                s_controllable_pins[i].name,
                status,
@@ -295,8 +306,8 @@ static void print_configured_pins(bool json)
                s_controllable_pins[i].default_level ? "HIGH" : "LOW ",
                s_controllable_pins[i].description);
     }
-    printf("──────────────────────────────────────────────────────────────────────────\n");
-    printf("  * 表示当前电平与默认值不同\n");
+    ts_console_printf("──────────────────────────────────────────────────────────────────────────\n");
+    ts_console_printf("  * 表示当前电平与默认值不同\n");
 }
 
 /**
@@ -304,37 +315,37 @@ static void print_configured_pins(bool json)
  */
 static void print_gpio_usage(void)
 {
-    printf("GPIO 直接控制命令（高优先级）\n\n");
-    printf("用法:\n");
-    printf("  gpio <pin|name> high [ms]   - 设置高电平（可选保持时间后恢复）\n");
-    printf("  gpio <pin|name> low [ms]    - 设置低电平（可选保持时间后恢复）\n");
-    printf("  gpio <pin|name> pulse <ms>  - 输出正脉冲 (HIGH 持续 ms 后恢复 LOW)\n");
-    printf("  gpio <pin|name> pulse <ms> -n - 输出负脉冲 (LOW 持续 ms 后恢复 HIGH)\n");
-    printf("  gpio <pin|name> toggle      - 切换当前电平\n");
-    printf("  gpio <pin|name> input       - 读取当前电平（不改变模式）\n");
-    printf("  gpio <pin|name> reset       - 重置引脚到默认电平\n");
-    printf("  gpio --list                 - 列出所有可控引脚\n");
-    printf("  gpio --info <pin>           - 显示引脚详情\n");
-    printf("\n");
-    printf("可控引脚:\n");
-    printf("  GPIO  名称\n");
+    ts_console_printf("GPIO 直接控制命令（高优先级）\n\n");
+    ts_console_printf("用法:\n");
+    ts_console_printf("  gpio <pin|name> high [ms]   - 设置高电平（可选保持时间后恢复）\n");
+    ts_console_printf("  gpio <pin|name> low [ms]    - 设置低电平（可选保持时间后恢复）\n");
+    ts_console_printf("  gpio <pin|name> pulse <ms>  - 输出正脉冲 (HIGH 持续 ms 后恢复 LOW)\n");
+    ts_console_printf("  gpio <pin|name> pulse <ms> -n - 输出负脉冲 (LOW 持续 ms 后恢复 HIGH)\n");
+    ts_console_printf("  gpio <pin|name> toggle      - 切换当前电平\n");
+    ts_console_printf("  gpio <pin|name> input       - 读取当前电平（不改变模式）\n");
+    ts_console_printf("  gpio <pin|name> reset       - 重置引脚到默认电平\n");
+    ts_console_printf("  gpio --list                 - 列出所有可控引脚\n");
+    ts_console_printf("  gpio --info <pin>           - 显示引脚详情\n");
+    ts_console_printf("\n");
+    ts_console_printf("可控引脚:\n");
+    ts_console_printf("  GPIO  名称\n");
     for (int i = 0; i < NUM_CONTROLLABLE_PINS; i++) {
-        printf("   %2d   %s\n", s_controllable_pins[i].pin, s_controllable_pins[i].name);
+        ts_console_printf("   %2d   %s\n", s_controllable_pins[i].pin, s_controllable_pins[i].name);
     }
-    printf("\n");
-    printf("选项:\n");
-    printf("  -n, --negative              - 负脉冲模式（与 pulse 配合使用）\n");
-    printf("  --no-restore                - 不恢复原电平（与 high/low 配合使用）\n");
-    printf("  -j, --json                  - JSON 格式输出\n");
-    printf("\n");
-    printf("示例:\n");
-    printf("  gpio 1 pulse 1000           # AGX_RESET: 1秒正脉冲（复位AGX）\n");
-    printf("  gpio AGX_RESET pulse 1000   # 同上，使用名称\n");
-    printf("  gpio 3 high 8000            # AGX 强制关机 8 秒\n");
-    printf("  gpio 46 high 300            # LPMU 电源键脉冲 300ms\n");
-    printf("  gpio --list                 # 查看所有引脚状态\n");
-    printf("\n");
-    printf("⚠️  警告: 此命令直接操作硬件，优先级高于其他驱动！\n");
+    ts_console_printf("\n");
+    ts_console_printf("选项:\n");
+    ts_console_printf("  -n, --negative              - 负脉冲模式（与 pulse 配合使用）\n");
+    ts_console_printf("  --no-restore                - 不恢复原电平（与 high/low 配合使用）\n");
+    ts_console_printf("  -j, --json                  - JSON 格式输出\n");
+    ts_console_printf("\n");
+    ts_console_printf("示例:\n");
+    ts_console_printf("  gpio 1 pulse 1000           # AGX_RESET: 1秒正脉冲（复位AGX）\n");
+    ts_console_printf("  gpio AGX_RESET pulse 1000   # 同上，使用名称\n");
+    ts_console_printf("  gpio 3 high 8000            # AGX 强制关机 8 秒\n");
+    ts_console_printf("  gpio 46 high 300            # LPMU 电源键脉冲 300ms\n");
+    ts_console_printf("  gpio --list                 # 查看所有引脚状态\n");
+    ts_console_printf("\n");
+    ts_console_printf("⚠️  警告: 此命令直接操作硬件，优先级高于其他驱动！\n");
 }
 
 /* ============================================================================
@@ -384,13 +395,13 @@ static int cmd_gpio_handler(int argc, char **argv)
     // 验证引脚是否在可控列表中
     const controllable_pin_t *pin_info = find_controllable_pin(pin);
     if (!pin_info) {
-        printf("错误: GPIO%d 不在可控引脚列表中\n", pin);
-        printf("可控引脚: ");
+        ts_console_printf("错误: GPIO%d 不在可控引脚列表中\n", pin);
+        ts_console_printf("可控引脚: ");
         for (int i = 0; i < NUM_CONTROLLABLE_PINS; i++) {
-            printf("%d", s_controllable_pins[i].pin);
+            ts_console_printf("%d", s_controllable_pins[i].pin);
             if (i < NUM_CONTROLLABLE_PINS - 1) printf(", ");
         }
-        printf("\n使用 'gpio --list' 查看完整列表\n");
+        ts_console_printf("\n使用 'gpio --list' 查看完整列表\n");
         return 1;
     }
     
@@ -406,9 +417,9 @@ static int cmd_gpio_handler(int argc, char **argv)
             ret = gpio_hold_level(pin, 1, duration_ms, true);
             if (ret == ESP_OK) {
                 if (json) {
-                    printf("{\"gpio\":%d,\"name\":\"%s\",\"action\":\"high\",\"duration_ms\":%d,\"restored\":true}\n", pin, pin_name, duration_ms);
+                    ts_console_printf("{\"gpio\":%d,\"name\":\"%s\",\"action\":\"high\",\"duration_ms\":%d,\"restored\":true}\n", pin, pin_name, duration_ms);
                 } else {
-                    printf("%s (GPIO%d) → HIGH %d ms → 已恢复\n", pin_name, pin, duration_ms);
+                    ts_console_printf("%s (GPIO%d) → HIGH %d ms → 已恢复\n", pin_name, pin, duration_ms);
                 }
             }
         } else {
@@ -416,9 +427,9 @@ static int cmd_gpio_handler(int argc, char **argv)
             ret = gpio_set_output_level(pin, 1);
             if (ret == ESP_OK) {
                 if (json) {
-                    printf("{\"gpio\":%d,\"name\":\"%s\",\"action\":\"high\",\"hold\":true}\n", pin, pin_name);
+                    ts_console_printf("{\"gpio\":%d,\"name\":\"%s\",\"action\":\"high\",\"hold\":true}\n", pin, pin_name);
                 } else {
-                    printf("%s (GPIO%d) → HIGH (保持)\n", pin_name, pin);
+                    ts_console_printf("%s (GPIO%d) → HIGH (保持)\n", pin_name, pin);
                 }
             }
         }
@@ -428,36 +439,36 @@ static int cmd_gpio_handler(int argc, char **argv)
             ret = gpio_hold_level(pin, 0, duration_ms, true);
             if (ret == ESP_OK) {
                 if (json) {
-                    printf("{\"gpio\":%d,\"name\":\"%s\",\"action\":\"low\",\"duration_ms\":%d,\"restored\":true}\n", pin, pin_name, duration_ms);
+                    ts_console_printf("{\"gpio\":%d,\"name\":\"%s\",\"action\":\"low\",\"duration_ms\":%d,\"restored\":true}\n", pin, pin_name, duration_ms);
                 } else {
-                    printf("%s (GPIO%d) → LOW %d ms → 已恢复\n", pin_name, pin, duration_ms);
+                    ts_console_printf("%s (GPIO%d) → LOW %d ms → 已恢复\n", pin_name, pin, duration_ms);
                 }
             }
         } else {
             ret = gpio_set_output_level(pin, 0);
             if (ret == ESP_OK) {
                 if (json) {
-                    printf("{\"gpio\":%d,\"name\":\"%s\",\"action\":\"low\",\"hold\":true}\n", pin, pin_name);
+                    ts_console_printf("{\"gpio\":%d,\"name\":\"%s\",\"action\":\"low\",\"hold\":true}\n", pin, pin_name);
                 } else {
-                    printf("%s (GPIO%d) → LOW (保持)\n", pin_name, pin);
+                    ts_console_printf("%s (GPIO%d) → LOW (保持)\n", pin_name, pin);
                 }
             }
         }
     } else if (strcmp(action, "pulse") == 0) {
         // 输出脉冲
         if (duration_ms <= 0) {
-            printf("错误: pulse 操作需要指定持续时间（毫秒）\n");
-            printf("用法: gpio %d pulse <ms>\n", pin);
+            ts_console_printf("错误: pulse 操作需要指定持续时间（毫秒）\n");
+            ts_console_printf("用法: gpio %d pulse <ms>\n", pin);
             return 1;
         }
         
         ret = gpio_output_pulse(pin, duration_ms, negative);
         if (ret == ESP_OK) {
             if (json) {
-                printf("{\"gpio\":%d,\"name\":\"%s\",\"action\":\"pulse\",\"duration_ms\":%d,\"negative\":%s}\n", 
+                ts_console_printf("{\"gpio\":%d,\"name\":\"%s\",\"action\":\"pulse\",\"duration_ms\":%d,\"negative\":%s}\n", 
                        pin, pin_name, duration_ms, negative ? "true" : "false");
             } else {
-                printf("%s (GPIO%d) %s脉冲 %d ms 完成\n", pin_name, pin, negative ? "负" : "正", duration_ms);
+                ts_console_printf("%s (GPIO%d) %s脉冲 %d ms 完成\n", pin_name, pin, negative ? "负" : "正", duration_ms);
             }
         }
     } else if (strcmp(action, "toggle") == 0) {
@@ -467,9 +478,9 @@ static int cmd_gpio_handler(int argc, char **argv)
         if (ret == ESP_OK) {
             int new_level = gpio_get_level(pin);
             if (json) {
-                printf("{\"gpio\":%d,\"name\":\"%s\",\"action\":\"toggle\",\"from\":%d,\"to\":%d}\n", pin, pin_name, old_level, new_level);
+                ts_console_printf("{\"gpio\":%d,\"name\":\"%s\",\"action\":\"toggle\",\"from\":%d,\"to\":%d}\n", pin, pin_name, old_level, new_level);
             } else {
-                printf("%s (GPIO%d): %s → %s\n", pin_name, pin, 
+                ts_console_printf("%s (GPIO%d): %s → %s\n", pin_name, pin, 
                        old_level ? "HIGH" : "LOW", new_level ? "HIGH" : "LOW");
             }
         }
@@ -477,9 +488,9 @@ static int cmd_gpio_handler(int argc, char **argv)
         // 读取电平（不改变模式）
         int level = gpio_get_level(pin);
         if (json) {
-            printf("{\"gpio\":%d,\"name\":\"%s\",\"level\":%d}\n", pin, pin_name, level);
+            ts_console_printf("{\"gpio\":%d,\"name\":\"%s\",\"level\":%d}\n", pin, pin_name, level);
         } else {
-            printf("%s (GPIO%d) 当前电平: %s\n", pin_name, pin, level ? "HIGH" : "LOW");
+            ts_console_printf("%s (GPIO%d) 当前电平: %s\n", pin_name, pin, level ? "HIGH" : "LOW");
         }
     } else if (strcmp(action, "reset") == 0) {
         // 重置到默认电平
@@ -487,19 +498,19 @@ static int cmd_gpio_handler(int argc, char **argv)
         ret = gpio_set_output_level(pin, default_level);
         if (ret == ESP_OK) {
             if (json) {
-                printf("{\"gpio\":%d,\"name\":\"%s\",\"action\":\"reset\",\"level\":%d}\n", pin, pin_name, default_level);
+                ts_console_printf("{\"gpio\":%d,\"name\":\"%s\",\"action\":\"reset\",\"level\":%d}\n", pin, pin_name, default_level);
             } else {
-                printf("%s (GPIO%d) 已重置为默认电平: %s\n", pin_name, pin, default_level ? "HIGH" : "LOW");
+                ts_console_printf("%s (GPIO%d) 已重置为默认电平: %s\n", pin_name, pin, default_level ? "HIGH" : "LOW");
             }
         }
     } else {
-        printf("错误: 无效的操作 '%s'\n", action);
-        printf("可用操作: high, low, pulse, toggle, input, reset\n");
+        ts_console_printf("错误: 无效的操作 '%s'\n", action);
+        ts_console_printf("可用操作: high, low, pulse, toggle, input, reset\n");
         return 1;
     }
     
     if (ret != ESP_OK) {
-        printf("错误: GPIO%d 操作失败: %s\n", pin, esp_err_to_name(ret));
+        ts_console_printf("错误: GPIO%d 操作失败: %s\n", pin, esp_err_to_name(ret));
         return 1;
     }
     

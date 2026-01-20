@@ -290,99 +290,76 @@ static int do_ssh_exec(const char *host, int port, const char *user,
                        const ssh_auth_info_t *auth,
                        const char *command, int timeout_sec, bool verbose)
 {
-    ts_ssh_session_t session = NULL;
-    esp_err_t ret;
-    
-    /* 配置 SSH 连接 */
-    ts_ssh_config_t config = TS_SSH_DEFAULT_CONFIG();
-    config.host = host;
-    config.port = port;
-    config.username = user;
-    config.timeout_ms = timeout_sec * 1000;
+    /* 构建 API 参数 */
+    cJSON *params = cJSON_CreateObject();
+    cJSON_AddStringToObject(params, "host", host);
+    cJSON_AddNumberToObject(params, "port", port);
+    cJSON_AddStringToObject(params, "user", user);
+    cJSON_AddStringToObject(params, "command", command);
+    cJSON_AddNumberToObject(params, "timeout_ms", timeout_sec * 1000);
     
     /* 配置认证方式 */
-    config_ssh_auth(&config, auth);
-    
-    if (verbose) {
-        if (auth->key_data) {
-            ts_console_printf("Using public key authentication (secure storage)\n");
-        } else if (auth->key_path) {
-            ts_console_printf("Using public key authentication\n");
-            ts_console_printf("Key file: %s\n", auth->key_path);
-        }
+    if (auth->password) {
+        cJSON_AddStringToObject(params, "password", auth->password);
+    } else if (auth->key_path) {
+        cJSON_AddStringToObject(params, "keypath", auth->key_path);
     }
+    /* 注意：keyid 认证需要 CLI 先加载密钥，API 不直接支持 keyid */
     
     if (verbose) {
         ts_console_printf("Connecting to %s@%s:%d...\n", user, host, port);
-    }
-    
-    /* 创建会话 */
-    ret = ts_ssh_session_create(&config, &session);
-    if (ret != ESP_OK) {
-        ts_console_printf("Error: Failed to create SSH session\n");
-        return 1;
-    }
-    
-    /* 连接 */
-    ret = ts_ssh_connect(session);
-    if (ret != ESP_OK) {
-        ts_console_printf("Error: %s\n", ts_ssh_get_error(session));
-        ts_ssh_session_destroy(session);
-        return 1;
-    }
-    
-    /* 验证主机密钥 */
-    ret = verify_host_key(session, verbose);
-    if (ret != ESP_OK) {
-        ts_console_printf("Error: Host key verification failed\n");
-        ts_ssh_disconnect(session);
-        ts_ssh_session_destroy(session);
-        return 1;
-    }
-    
-    if (verbose) {
-        ts_console_printf("Connected. Executing command: %s\n", command);
+        ts_console_printf("Executing command: %s\n", command);
         ts_console_printf("(Press Ctrl+C to abort)\n\n");
     }
     
-    /* 启动中断监测任务 */
-    interrupt_monitor_t monitor = {
-        .session = session,
-        .running = true
-    };
-    TaskHandle_t monitor_task = NULL;
-    ts_console_clear_interrupt();
+    /* 调用 API */
+    ts_api_result_t result;
+    ts_api_result_init(&result);
     
-    xTaskCreate(interrupt_monitor_task, "ssh_mon", 3072, &monitor, 5, &monitor_task);
+    esp_err_t ret = ts_api_call("ssh.exec", params, &result);
+    cJSON_Delete(params);
     
-    /* 执行命令（流式输出） */
-    int exit_code = -1;
-    stream_context_t ctx = {
-        .session = session,
-        .verbose = verbose
-    };
-    
-    ret = ts_ssh_exec_stream(session, command, stream_output_callback, &ctx, &exit_code);
-    
-    /* 停止监测任务 */
-    monitor.running = false;
-    vTaskDelay(pdMS_TO_TICKS(100));  /* 等待任务退出 */
-    
-    if (ret == ESP_ERR_TIMEOUT) {
-        ts_console_printf("\n--- Command aborted by user ---\n");
-    } else if (ret != ESP_OK) {
-        ts_console_printf("\nError: Failed to execute command - %s\n", 
-                          ts_ssh_get_error(session));
-    } else if (verbose) {
-        ts_console_printf("\n--- Command completed with exit code: %d ---\n", exit_code);
+    if (ret != ESP_OK || result.code != TS_API_OK) {
+        ts_console_printf("Error: %s\n", result.message ? result.message : "SSH command failed");
+        ts_api_result_free(&result);
+        return 1;
     }
     
-    /* 断开连接 */
-    ts_ssh_disconnect(session);
-    ts_ssh_session_destroy(session);
-    ts_console_clear_interrupt();
+    /* 解析结果 */
+    if (result.data) {
+        cJSON *stdout_obj = cJSON_GetObjectItem(result.data, "stdout");
+        cJSON *stderr_obj = cJSON_GetObjectItem(result.data, "stderr");
+        cJSON *exit_code = cJSON_GetObjectItem(result.data, "exit_code");
+        
+        /* 输出 stdout */
+        if (stdout_obj && cJSON_IsString(stdout_obj) && stdout_obj->valuestring[0]) {
+            ts_console_printf("%s", stdout_obj->valuestring);
+            if (stdout_obj->valuestring[strlen(stdout_obj->valuestring)-1] != '\n') {
+                ts_console_printf("\n");
+            }
+        }
+        
+        /* 输出 stderr（红色） */
+        if (stderr_obj && cJSON_IsString(stderr_obj) && stderr_obj->valuestring[0]) {
+            if (verbose) {
+                ts_console_printf("\033[31m%s\033[0m", stderr_obj->valuestring);
+            } else {
+                ts_console_printf("%s", stderr_obj->valuestring);
+            }
+        }
+        
+        if (verbose && exit_code) {
+            ts_console_printf("\n--- Command completed with exit code: %d ---\n", 
+                              exit_code->valueint);
+        }
+        
+        int code = exit_code ? exit_code->valueint : 0;
+        ts_api_result_free(&result);
+        return code;
+    }
     
-    return (ret == ESP_OK) ? exit_code : 1;
+    ts_api_result_free(&result);
+    return 0;
 }
 
 /*===========================================================================*/
@@ -676,9 +653,6 @@ static int do_ssh_forward(const char *host, int port, const char *user,
 static int do_ssh_test(const char *host, int port, const char *user, 
                        const ssh_auth_info_t *auth, int timeout_sec)
 {
-    ts_ssh_session_t session = NULL;
-    esp_err_t ret;
-    
     const char *auth_type = "Password";
     if (auth->key_data) {
         auth_type = "Public Key (secure storage)";
@@ -695,71 +669,63 @@ static int do_ssh_test(const char *host, int port, const char *user,
     ts_console_printf("  Timeout:  %d seconds\n", timeout_sec);
     ts_console_printf("═══════════════════════════════════════\n\n");
     
-    /* 配置 SSH 连接 */
-    ts_ssh_config_t config = TS_SSH_DEFAULT_CONFIG();
-    config.host = host;
-    config.port = port;
-    config.username = user;
-    config.timeout_ms = timeout_sec * 1000;
+    /* 构建 API 参数 */
+    cJSON *params = cJSON_CreateObject();
+    cJSON_AddStringToObject(params, "host", host);
+    cJSON_AddNumberToObject(params, "port", port);
+    cJSON_AddStringToObject(params, "user", user);
     
     /* 配置认证方式 */
-    config_ssh_auth(&config, auth);
+    if (auth->password) {
+        cJSON_AddStringToObject(params, "password", auth->password);
+    } else if (auth->key_path) {
+        cJSON_AddStringToObject(params, "keypath", auth->key_path);
+    }
     
-    ts_console_printf("[1/3] Creating session... ");
-    ret = ts_ssh_session_create(&config, &session);
-    if (ret != ESP_OK) {
+    ts_console_printf("[1/2] Testing connection... ");
+    
+    /* 调用 API */
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    esp_err_t ret = ts_api_call("ssh.test", params, &result);
+    cJSON_Delete(params);
+    
+    if (ret != ESP_OK || result.code != TS_API_OK) {
         ts_console_printf("FAILED\n");
-        return 1;
-    }
-    ts_console_printf("OK\n");
-    
-    ts_console_printf("[2/3] Connecting and authenticating... ");
-    ret = ts_ssh_connect(session);
-    if (ret != ESP_OK) {
-        ts_console_printf("FAILED\n");
-        ts_console_printf("  Error: %s\n", ts_ssh_get_error(session));
-        ts_ssh_session_destroy(session);
-        return 1;
-    }
-    ts_console_printf("OK\n");
-    
-    /* 验证主机密钥（在测试模式下总是验证） */
-    ret = verify_host_key(session, false);
-    if (ret != ESP_OK) {
-        ts_console_printf("  Host key verification failed\n");
-        ts_ssh_disconnect(session);
-        ts_ssh_session_destroy(session);
+        ts_console_printf("  Error: %s\n", result.message ? result.message : "Connection failed");
+        ts_api_result_free(&result);
         return 1;
     }
     
-    ts_console_printf("[3/3] Testing command execution... ");
-    ts_ssh_exec_result_t result;
-    ret = ts_ssh_exec(session, "echo 'TianShanOS SSH test'", &result);
-    if (ret != ESP_OK) {
-        ts_console_printf("FAILED\n");
-        ts_console_printf("  Error: %s\n", ts_ssh_get_error(session));
-        ts_ssh_disconnect(session);
-        ts_ssh_session_destroy(session);
-        return 1;
+    /* 解析结果 */
+    bool success = false;
+    if (result.data) {
+        cJSON *success_obj = cJSON_GetObjectItem(result.data, "success");
+        success = cJSON_IsTrue(success_obj);
+        
+        if (!success) {
+            cJSON *error_obj = cJSON_GetObjectItem(result.data, "error");
+            ts_console_printf("FAILED\n");
+            if (error_obj && cJSON_IsString(error_obj)) {
+                ts_console_printf("  Error: %s\n", error_obj->valuestring);
+            }
+        } else {
+            ts_console_printf("OK\n");
+        }
     }
     
-    bool test_ok = (result.exit_code == 0 && 
-                    result.stdout_data && 
-                    strstr(result.stdout_data, "TianShanOS") != NULL);
-    ts_ssh_exec_result_free(&result);
+    ts_api_result_free(&result);
     
-    if (test_ok) {
+    ts_console_printf("[2/2] Verifying response... ");
+    if (success) {
         ts_console_printf("OK\n");
     } else {
         ts_console_printf("FAILED\n");
     }
     
-    /* 断开连接 */
-    ts_ssh_disconnect(session);
-    ts_ssh_session_destroy(session);
-    
     ts_console_printf("\n");
-    if (test_ok) {
+    if (success) {
         ts_console_printf("✓ SSH connection test PASSED\n");
         return 0;
     } else {
@@ -1404,9 +1370,14 @@ static const char *get_key_type_desc(ts_crypto_key_type_t type)
 }
 
 /*===========================================================================*/
-/*                          Command: ssh --keygen                             */
+/*                          Command: ssh --keygen (file-based)                */
 /*===========================================================================*/
 
+/**
+ * @brief 生成密钥对到文件（保留直接实现，因为需要写入文件系统）
+ * 
+ * 注意：如果要生成到安全存储，应使用 key 命令或 ssh.keygen API
+ */
 static int do_ssh_keygen(const char *type_str, const char *output_path, const char *comment)
 {
     ts_crypto_key_type_t key_type;

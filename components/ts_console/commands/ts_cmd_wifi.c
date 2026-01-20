@@ -78,6 +78,26 @@ static const char *auth_mode_str(int auth_mode)
 
 static int do_wifi_status(bool json_out)
 {
+    /* JSON 模式使用 API */
+    if (json_out) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        esp_err_t ret = ts_api_call("wifi.status", NULL, &result);
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Unknown error");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     ts_net_manager_status_t status;
     esp_err_t ret = ts_net_manager_get_status(&status);
     
@@ -86,67 +106,42 @@ static int do_wifi_status(bool json_out)
         return 1;
     }
     
-    if (json_out) {
-        ts_console_printf("{\n");
+    ts_console_printf("\n");
+    ts_console_printf("╔══════════════════════════════════════════════════════════════╗\n");
+    ts_console_printf("║                       WiFi Status                            ║\n");
+    ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
+    
+    /* AP 状态 */
+    ts_console_printf("║ \033[1mAccess Point (AP)\033[0m                                           ║\n");
+    const char *ap_color = status.wifi_ap.state == TS_NET_STATE_CONNECTED ? "\033[32m" : "\033[90m";
+    ts_console_printf("║   State:    %s%-12s\033[0m                                   ║\n",
+        ap_color, ts_net_state_to_str(status.wifi_ap.state));
+    if (status.wifi_ap.has_ip) {
+        ts_console_printf("║   IP:       %-15s                              ║\n", status.wifi_ap.ip_info.ip);
         
-        /* AP 状态 */
-        ts_console_printf("  \"ap\": {\n");
-        ts_console_printf("    \"state\": \"%s\",\n", ts_net_state_to_str(status.wifi_ap.state));
-        ts_console_printf("    \"has_ip\": %s", status.wifi_ap.has_ip ? "true" : "false");
-        if (status.wifi_ap.has_ip) {
-            ts_console_printf(",\n    \"ip\": \"%s\"", status.wifi_ap.ip_info.ip);
-        }
-        ts_console_printf("\n  },\n");
-        
-        /* STA 状态 */
-        ts_console_printf("  \"sta\": {\n");
-        ts_console_printf("    \"state\": \"%s\",\n", ts_net_state_to_str(status.wifi_sta.state));
-        ts_console_printf("    \"has_ip\": %s", status.wifi_sta.has_ip ? "true" : "false");
-        if (status.wifi_sta.has_ip) {
-            ts_console_printf(",\n    \"ip\": \"%s\",\n", status.wifi_sta.ip_info.ip);
-            ts_console_printf("    \"gateway\": \"%s\"", status.wifi_sta.ip_info.gateway);
-        }
-        ts_console_printf("\n  }\n");
-        
-        ts_console_printf("}\n");
-    } else {
-        ts_console_printf("\n");
-        ts_console_printf("╔══════════════════════════════════════════════════════════════╗\n");
-        ts_console_printf("║                       WiFi Status                            ║\n");
-        ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
-        
-        /* AP 状态 */
-        ts_console_printf("║ \033[1mAccess Point (AP)\033[0m                                           ║\n");
-        const char *ap_color = status.wifi_ap.state == TS_NET_STATE_CONNECTED ? "\033[32m" : "\033[90m";
-        ts_console_printf("║   State:    %s%-12s\033[0m                                   ║\n",
-            ap_color, ts_net_state_to_str(status.wifi_ap.state));
-        if (status.wifi_ap.has_ip) {
-            ts_console_printf("║   IP:       %-15s                              ║\n", status.wifi_ap.ip_info.ip);
-            
-            /* 获取连接的客户端数量 */
-            uint8_t sta_count = ts_wifi_ap_get_sta_count();
-            ts_console_printf("║   Clients:  %-3d                                            ║\n", sta_count);
-        }
-        
-        ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
-        
-        /* STA 状态 */
-        ts_console_printf("║ \033[1mStation (STA)\033[0m                                               ║\n");
-        const char *sta_color = status.wifi_sta.state == TS_NET_STATE_GOT_IP ? "\033[32m" : "\033[90m";
-        ts_console_printf("║   State:    %s%-12s\033[0m                                   ║\n",
-            sta_color, ts_net_state_to_str(status.wifi_sta.state));
-        
-        if (status.wifi_sta.has_ip) {
-            ts_console_printf("║   IP:       %-15s                              ║\n", status.wifi_sta.ip_info.ip);
-            ts_console_printf("║   Gateway:  %-15s                              ║\n", status.wifi_sta.ip_info.gateway);
-            
-            int8_t rssi = ts_wifi_sta_get_rssi();
-            ts_console_printf("║   RSSI:     %d dBm                                          ║\n", rssi);
-        }
-        
-        ts_console_printf("╚══════════════════════════════════════════════════════════════╝\n");
-        ts_console_printf("\n");
+        /* 获取连接的客户端数量 */
+        uint8_t sta_count = ts_wifi_ap_get_sta_count();
+        ts_console_printf("║   Clients:  %-3d                                            ║\n", sta_count);
     }
+    
+    ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
+    
+    /* STA 状态 */
+    ts_console_printf("║ \033[1mStation (STA)\033[0m                                               ║\n");
+    const char *sta_color = status.wifi_sta.state == TS_NET_STATE_GOT_IP ? "\033[32m" : "\033[90m";
+    ts_console_printf("║   State:    %s%-12s\033[0m                                   ║\n",
+        sta_color, ts_net_state_to_str(status.wifi_sta.state));
+    
+    if (status.wifi_sta.has_ip) {
+        ts_console_printf("║   IP:       %-15s                              ║\n", status.wifi_sta.ip_info.ip);
+        ts_console_printf("║   Gateway:  %-15s                              ║\n", status.wifi_sta.ip_info.gateway);
+        
+        int8_t rssi = ts_wifi_sta_get_rssi();
+        ts_console_printf("║   RSSI:     %d dBm                                          ║\n", rssi);
+    }
+    
+    ts_console_printf("╚══════════════════════════════════════════════════════════════╝\n");
+    ts_console_printf("\n");
     
     return 0;
 }
@@ -159,7 +154,26 @@ static int do_wifi_scan(bool json_out)
 {
     ts_console_printf("Scanning for WiFi networks...\n");
     
-    /* 确保 WiFi 已初始化 - 通过 ts_net_manager */
+    /* JSON 模式使用 API */
+    if (json_out) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        esp_err_t ret = ts_api_call("wifi.scan", NULL, &result);
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Scan failed");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 - 需要确保 WiFi 已初始化 */
     ts_net_manager_status_t status;
     ts_net_manager_get_status(&status);
     
@@ -214,36 +228,20 @@ static int do_wifi_scan(bool json_out)
         return 1;
     }
     
-    if (json_out) {
-        ts_console_printf("[\n");
-        for (int i = 0; i < count; i++) {
-            ts_console_printf("  {\n");
-            ts_console_printf("    \"ssid\": \"%s\",\n", results[i].ssid);
-            ts_console_printf("    \"bssid\": \"%02x:%02x:%02x:%02x:%02x:%02x\",\n",
-                results[i].bssid[0], results[i].bssid[1], results[i].bssid[2],
-                results[i].bssid[3], results[i].bssid[4], results[i].bssid[5]);
-            ts_console_printf("    \"rssi\": %d,\n", results[i].rssi);
-            ts_console_printf("    \"channel\": %d,\n", results[i].channel);
-            ts_console_printf("    \"auth\": \"%s\"\n", auth_mode_str(results[i].auth_mode));
-            ts_console_printf("  }%s\n", (i < count - 1) ? "," : "");
-        }
-        ts_console_printf("]\n");
-    } else {
-        ts_console_printf("\nFound %d networks:\n\n", count);
-        ts_console_printf("  %-32s  %6s  %4s  %-15s\n", "SSID", "RSSI", "CH", "Security");
-        ts_console_printf("  %-32s  %6s  %4s  %-15s\n", "--------------------------------", "------", "----", "---------------");
-        
-        for (int i = 0; i < count; i++) {
-            const char *rssi_color = results[i].rssi > -50 ? "\033[32m" :
-                                     results[i].rssi > -70 ? "\033[33m" : "\033[31m";
-            ts_console_printf("  %-32s  %s%4d dB\033[0m  %4d  %-15s\n",
-                results[i].ssid,
-                rssi_color, results[i].rssi,
-                results[i].channel,
-                auth_mode_str(results[i].auth_mode));
-        }
-        ts_console_printf("\n");
+    ts_console_printf("\nFound %d networks:\n\n", count);
+    ts_console_printf("  %-32s  %6s  %4s  %-15s\n", "SSID", "RSSI", "CH", "Security");
+    ts_console_printf("  %-32s  %6s  %4s  %-15s\n", "--------------------------------", "------", "----", "---------------");
+    
+    for (int i = 0; i < count; i++) {
+        const char *rssi_color = results[i].rssi > -50 ? "\033[32m" :
+                                 results[i].rssi > -70 ? "\033[33m" : "\033[31m";
+        ts_console_printf("  %-32s  %s%4d dB\033[0m  %4d  %-15s\n",
+            results[i].ssid,
+            rssi_color, results[i].rssi,
+            results[i].channel,
+            auth_mode_str(results[i].auth_mode));
     }
+    ts_console_printf("\n");
     
     /* 如果是临时启动的 WiFi，扫描后停止 */
     if (need_stop_after) {

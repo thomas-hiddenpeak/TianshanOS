@@ -119,42 +119,40 @@ static void format_uptime(uint32_t sec, char *buf, size_t len)
 
 static int do_dhcp_list_all(bool json_output)
 {
+    /* JSON 模式使用 API */
+    if (json_output) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        cJSON *params = cJSON_CreateObject();
+        cJSON_AddStringToObject(params, "interface", "all");
+        
+        esp_err_t ret = ts_api_call("dhcp.status", params, &result);
+        cJSON_Delete(params);
+        
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Unknown error");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     const ts_dhcp_if_t interfaces[] = { TS_DHCP_IF_AP, TS_DHCP_IF_ETH };
     const int num_ifaces = sizeof(interfaces) / sizeof(interfaces[0]);
     
-    if (json_output) {
-        printf("[\n");
-        for (int i = 0; i < num_ifaces; i++) {
-            ts_dhcp_status_t status;
-            ts_dhcp_config_t config;
-            
-            esp_err_t ret = ts_dhcp_server_get_status(interfaces[i], &status);
-            if (ret != ESP_OK) {
-                memset(&status, 0, sizeof(status));
-                status.state = TS_DHCP_STATE_STOPPED;
-            }
-            ts_dhcp_server_get_config(interfaces[i], &config);
-            
-            printf("  {\n");
-            printf("    \"interface\": \"%s\",\n", ts_dhcp_if_to_str(interfaces[i]));
-            printf("    \"display_name\": \"%s\",\n", iface_display_name(interfaces[i]));
-            printf("    \"state\": \"%s\",\n", ts_dhcp_state_to_str(status.state));
-            printf("    \"running\": %s,\n", status.state == TS_DHCP_STATE_RUNNING ? "true" : "false");
-            printf("    \"active_leases\": %lu,\n", (unsigned long)status.active_leases);
-            printf("    \"pool_start\": \"%s\",\n", config.pool.start_ip);
-            printf("    \"pool_end\": \"%s\"\n", config.pool.end_ip);
-            printf("  }%s\n", (i < num_ifaces - 1) ? "," : "");
-        }
-        printf("]\n");
-        return 0;
-    }
-    
-    printf("\n");
-    printf("╔═══════════════════════════════════════════════════════════════════════════╗\n");
-    printf("║                      DHCP Server - All Interfaces                         ║\n");
-    printf("╠═══════════════════════════════════════════════════════════════════════════╣\n");
-    printf("║  Interface      │ State       │ Leases │ Pool Range                       ║\n");
-    printf("╠─────────────────┼─────────────┼────────┼───────────────────────────────────╣\n");
+    ts_console_printf("\n");
+    ts_console_printf("╔═══════════════════════════════════════════════════════════════════════════╗\n");
+    ts_console_printf("║                      DHCP Server - All Interfaces                         ║\n");
+    ts_console_printf("╠═══════════════════════════════════════════════════════════════════════════╣\n");
+    ts_console_printf("║  Interface      │ State       │ Leases │ Pool Range                       ║\n");
+    ts_console_printf("╠─────────────────┼─────────────┼────────┼───────────────────────────────────╣\n");
     
     for (int i = 0; i < num_ifaces; i++) {
         ts_dhcp_status_t status;
@@ -170,7 +168,7 @@ static int do_dhcp_list_all(bool json_output)
         char pool_range[48];
         snprintf(pool_range, sizeof(pool_range), "%s - %s", config.pool.start_ip, config.pool.end_ip);
         
-        printf("║  %-14s │ %s%-11s\033[0m │ %3lu/%-3lu │ %-33s ║\n",
+        ts_console_printf("║  %-14s │ %s%-11s\033[0m │ %3lu/%-3lu │ %-33s ║\n",
                iface_display_name(interfaces[i]),
                state_color(status.state),
                ts_dhcp_state_to_str(status.state),
@@ -179,8 +177,8 @@ static int do_dhcp_list_all(bool json_output)
                pool_range);
     }
     
-    printf("╚═══════════════════════════════════════════════════════════════════════════╝\n");
-    printf("\n  Use 'dhcp --status --iface <ap|eth>' for detailed interface status\n\n");
+    ts_console_printf("╚═══════════════════════════════════════════════════════════════════════════╝\n");
+    ts_console_printf("\n  Use 'dhcp --status --iface <ap|eth>' for detailed interface status\n\n");
     
     return 0;
 }
@@ -196,71 +194,73 @@ static int do_dhcp_status(ts_dhcp_if_t iface, bool json_output)
         return do_dhcp_list_all(json_output);
     }
     
+    /* JSON 模式使用 API */
+    if (json_output) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        cJSON *params = cJSON_CreateObject();
+        cJSON_AddStringToObject(params, "interface", ts_dhcp_if_to_str(iface));
+        
+        esp_err_t ret = ts_api_call("dhcp.status", params, &result);
+        cJSON_Delete(params);
+        
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Unknown error");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     ts_dhcp_status_t status;
     ts_dhcp_config_t config;
     
     esp_err_t ret = ts_dhcp_server_get_status(iface, &status);
     if (ret != ESP_OK) {
-        printf("Error: Failed to get DHCP status for %s\n", iface_display_name(iface));
+        ts_console_printf("Error: Failed to get DHCP status for %s\n", iface_display_name(iface));
         return 1;
     }
     
     ts_dhcp_server_get_config(iface, &config);
     
-    if (json_output) {
-        printf("{\n");
-        printf("  \"interface\": \"%s\",\n", ts_dhcp_if_to_str(iface));
-        printf("  \"display_name\": \"%s\",\n", iface_display_name(iface));
-        printf("  \"state\": \"%s\",\n", ts_dhcp_state_to_str(status.state));
-        printf("  \"running\": %s,\n", status.state == TS_DHCP_STATE_RUNNING ? "true" : "false");
-        printf("  \"active_leases\": %lu,\n", (unsigned long)status.active_leases);
-        printf("  \"total_offers\": %lu,\n", (unsigned long)status.total_offers);
-        printf("  \"pool_size\": %lu,\n", (unsigned long)status.total_pool_size);
-        printf("  \"available\": %lu,\n", (unsigned long)status.available_count);
-        printf("  \"uptime_sec\": %lu,\n", (unsigned long)status.uptime_sec);
-        printf("  \"pool\": {\n");
-        printf("    \"start\": \"%s\",\n", config.pool.start_ip);
-        printf("    \"end\": \"%s\",\n", config.pool.end_ip);
-        printf("    \"gateway\": \"%s\",\n", config.pool.gateway);
-        printf("    \"netmask\": \"%s\",\n", config.pool.netmask);
-        printf("    \"dns\": \"%s\",\n", config.pool.dns1);
-        printf("    \"lease_min\": %lu\n", (unsigned long)config.lease_time_min);
-        printf("  }\n");
-        printf("}\n");
-        return 0;
-    }
-    
     char uptime[32];
     format_uptime(status.uptime_sec, uptime, sizeof(uptime));
     
-    printf("\n");
-    printf("╔═══════════════════════════════════════════════════════════╗\n");
-    printf("║              DHCP Server Status                           ║\n");
-    printf("╠═══════════════════════════════════════════════════════════╣\n");
-    printf("║  Interface:    %-12s                                ║\n", iface_display_name(iface));
-    printf("║  State:        %s%-12s\033[0m                             ║\n", 
+    ts_console_printf("\n");
+    ts_console_printf("╔═══════════════════════════════════════════════════════════╗\n");
+    ts_console_printf("║              DHCP Server Status                           ║\n");
+    ts_console_printf("╠═══════════════════════════════════════════════════════════╣\n");
+    ts_console_printf("║  Interface:    %-12s                                ║\n", iface_display_name(iface));
+    ts_console_printf("║  State:        %s%-12s\033[0m                             ║\n", 
            state_color(status.state), ts_dhcp_state_to_str(status.state));
-    printf("║  Uptime:       %-16s                            ║\n", uptime);
-    printf("╠═══════════════════════════════════════════════════════════╣\n");
-    printf("║  Address Pool                                             ║\n");
-    printf("║    Start:      %-16s                            ║\n", config.pool.start_ip);
-    printf("║    End:        %-16s                            ║\n", config.pool.end_ip);
-    printf("║    Gateway:    %-16s                            ║\n", config.pool.gateway);
-    printf("║    Netmask:    %-16s                            ║\n", config.pool.netmask);
-    printf("║    DNS:        %-16s                            ║\n", config.pool.dns1);
-    printf("║    Lease:      %-5lu minutes                              ║\n", 
+    ts_console_printf("║  Uptime:       %-16s                            ║\n", uptime);
+    ts_console_printf("╠═══════════════════════════════════════════════════════════╣\n");
+    ts_console_printf("║  Address Pool                                             ║\n");
+    ts_console_printf("║    Start:      %-16s                            ║\n", config.pool.start_ip);
+    ts_console_printf("║    End:        %-16s                            ║\n", config.pool.end_ip);
+    ts_console_printf("║    Gateway:    %-16s                            ║\n", config.pool.gateway);
+    ts_console_printf("║    Netmask:    %-16s                            ║\n", config.pool.netmask);
+    ts_console_printf("║    DNS:        %-16s                            ║\n", config.pool.dns1);
+    ts_console_printf("║    Lease:      %-5lu minutes                              ║\n", 
            (unsigned long)config.lease_time_min);
-    printf("╠═══════════════════════════════════════════════════════════╣\n");
-    printf("║  Statistics                                               ║\n");
-    printf("║    Pool Size:     %-5lu                                   ║\n", 
+    ts_console_printf("╠═══════════════════════════════════════════════════════════╣\n");
+    ts_console_printf("║  Statistics                                               ║\n");
+    ts_console_printf("║    Pool Size:     %-5lu                                   ║\n", 
            (unsigned long)status.total_pool_size);
-    printf("║    Active Leases: %-5lu                                   ║\n", 
+    ts_console_printf("║    Active Leases: %-5lu                                   ║\n", 
            (unsigned long)status.active_leases);
-    printf("║    Available:     %-5lu                                   ║\n", 
+    ts_console_printf("║    Available:     %-5lu                                   ║\n", 
            (unsigned long)status.available_count);
-    printf("║    Total Offers:  %-5lu                                   ║\n", 
+    ts_console_printf("║    Total Offers:  %-5lu                                   ║\n", 
            (unsigned long)status.total_offers);
-    printf("╚═══════════════════════════════════════════════════════════╝\n\n");
+    ts_console_printf("╚═══════════════════════════════════════════════════════════╝\n\n");
     
     return 0;
 }
@@ -277,37 +277,37 @@ static int do_dhcp_clients(ts_dhcp_if_t iface, bool json_output)
     const ts_dhcp_if_t interfaces[] = { TS_DHCP_IF_AP, TS_DHCP_IF_ETH };
     const int num_ifaces = sizeof(interfaces) / sizeof(interfaces[0]);
     
-    /* 如果指定 all，显示所有接口的客户端 */
-    if (iface == TS_DHCP_IF_ALL) {
-        if (json_output) {
-            printf("[\n");
-            for (int i = 0; i < num_ifaces; i++) {
-                ts_dhcp_client_t clients[TS_DHCP_MAX_CLIENTS];
-                size_t count = 0;
-                ts_dhcp_server_get_clients(interfaces[i], clients, TS_DHCP_MAX_CLIENTS, &count);
-                
-                printf("  {\n");
-                printf("    \"interface\": \"%s\",\n", ts_dhcp_if_to_str(interfaces[i]));
-                printf("    \"display_name\": \"%s\",\n", iface_display_name(interfaces[i]));
-                printf("    \"count\": %zu,\n", count);
-                printf("    \"clients\": [");
-                for (size_t j = 0; j < count; j++) {
-                    char mac_str[18];
-                    ts_dhcp_mac_array_to_str(clients[j].mac, mac_str, sizeof(mac_str));
-                    printf("%s{\"mac\":\"%s\",\"ip\":\"%s\",\"hostname\":\"%s\"}",
-                           j > 0 ? "," : "", mac_str, clients[j].ip, clients[j].hostname);
-                }
-                printf("]\n");
-                printf("  }%s\n", (i < num_ifaces - 1) ? "," : "");
-            }
-            printf("]\n");
-            return 0;
-        }
+    /* JSON 模式使用 API */
+    if (json_output) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
         
-        printf("\n");
-        printf("╔═══════════════════════════════════════════════════════════════════════════╗\n");
-        printf("║                      DHCP Clients - All Interfaces                        ║\n");
-        printf("╚═══════════════════════════════════════════════════════════════════════════╝\n");
+        cJSON *params = cJSON_CreateObject();
+        cJSON_AddStringToObject(params, "interface", 
+                                iface == TS_DHCP_IF_ALL ? "all" : ts_dhcp_if_to_str(iface));
+        
+        esp_err_t ret = ts_api_call("dhcp.clients", params, &result);
+        cJSON_Delete(params);
+        
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Unknown error");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出：如果指定 all，显示所有接口的客户端 */
+    if (iface == TS_DHCP_IF_ALL) {
+        ts_console_printf("\n");
+        ts_console_printf("╔═══════════════════════════════════════════════════════════════════════════╗\n");
+        ts_console_printf("║                      DHCP Clients - All Interfaces                        ║\n");
+        ts_console_printf("╚═══════════════════════════════════════════════════════════════════════════╝\n");
         
         int total_clients = 0;
         for (int i = 0; i < num_ifaces; i++) {
@@ -316,23 +316,23 @@ static int do_dhcp_clients(ts_dhcp_if_t iface, bool json_output)
             ts_dhcp_server_get_clients(interfaces[i], clients, TS_DHCP_MAX_CLIENTS, &count);
             total_clients += count;
             
-            printf("\n[%s] %zu clients:\n", iface_display_name(interfaces[i]), count);
+            ts_console_printf("\n[%s] %zu clients:\n", iface_display_name(interfaces[i]), count);
             if (count == 0) {
-                printf("  (no clients)\n");
+                ts_console_printf("  (no clients)\n");
             } else {
-                printf("  %-18s  %-16s  %-16s\n", "MAC Address", "IP Address", "Hostname");
-                printf("  ────────────────────────────────────────────────────────\n");
+                ts_console_printf("  %-18s  %-16s  %-16s\n", "MAC Address", "IP Address", "Hostname");
+                ts_console_printf("  ────────────────────────────────────────────────────────\n");
                 for (size_t j = 0; j < count; j++) {
                     char mac_str[18];
                     ts_dhcp_mac_array_to_str(clients[j].mac, mac_str, sizeof(mac_str));
-                    printf("  %-18s  %-16s  %-16s\n",
+                    ts_console_printf("  %-18s  %-16s  %-16s\n",
                            mac_str,
                            clients[j].ip[0] ? clients[j].ip : "(pending)",
                            clients[j].hostname[0] ? clients[j].hostname : "-");
                 }
             }
         }
-        printf("\nTotal: %d clients across all interfaces\n\n", total_clients);
+        ts_console_printf("\nTotal: %d clients across all interfaces\n\n", total_clients);
         return 0;
     }
     
@@ -341,61 +341,40 @@ static int do_dhcp_clients(ts_dhcp_if_t iface, bool json_output)
 
 static int do_dhcp_clients_single(ts_dhcp_if_t iface, bool json_output)
 {
+    /* JSON 模式已在 do_dhcp_clients 中处理 */
     ts_dhcp_client_t clients[TS_DHCP_MAX_CLIENTS];
     size_t count = 0;
     
     esp_err_t ret = ts_dhcp_server_get_clients(iface, clients, TS_DHCP_MAX_CLIENTS, &count);
     if (ret != ESP_OK) {
-        printf("Error: Failed to get DHCP clients\n");
+        ts_console_printf("Error: Failed to get DHCP clients\n");
         return 1;
     }
     
-    if (json_output) {
-        printf("{\n");
-        printf("  \"interface\": \"%s\",\n", ts_dhcp_if_to_str(iface));
-        printf("  \"count\": %zu,\n", count);
-        printf("  \"clients\": [\n");
-        for (size_t i = 0; i < count; i++) {
-            char mac_str[18];
-            ts_dhcp_mac_array_to_str(clients[i].mac, mac_str, sizeof(mac_str));
-            printf("    {\n");
-            printf("      \"mac\": \"%s\",\n", mac_str);
-            printf("      \"ip\": \"%s\",\n", clients[i].ip);
-            printf("      \"hostname\": \"%s\",\n", clients[i].hostname);
-            printf("      \"lease_start\": %lu,\n", (unsigned long)clients[i].lease_start);
-            printf("      \"lease_expire\": %lu,\n", (unsigned long)clients[i].lease_expire);
-            printf("      \"is_static\": %s\n", clients[i].is_static ? "true" : "false");
-            printf("    }%s\n", i < count - 1 ? "," : "");
-        }
-        printf("  ]\n");
-        printf("}\n");
-        return 0;
-    }
-    
     if (count == 0) {
-        printf("No DHCP clients connected.\n");
+        ts_console_printf("No DHCP clients connected.\n");
         return 0;
     }
     
-    printf("\n");
-    printf("DHCP Clients (%s):\n", ts_dhcp_if_to_str(iface));
-    printf("═══════════════════════════════════════════════════════════════════════════\n");
-    printf("%-18s  %-16s  %-16s  %-8s\n", "MAC Address", "IP Address", "Hostname", "Type");
-    printf("───────────────────────────────────────────────────────────────────────────\n");
+    ts_console_printf("\n");
+    ts_console_printf("DHCP Clients (%s):\n", ts_dhcp_if_to_str(iface));
+    ts_console_printf("═══════════════════════════════════════════════════════════════════════════\n");
+    ts_console_printf("%-18s  %-16s  %-16s  %-8s\n", "MAC Address", "IP Address", "Hostname", "Type");
+    ts_console_printf("───────────────────────────────────────────────────────────────────────────\n");
     
     for (size_t i = 0; i < count; i++) {
         char mac_str[18];
         ts_dhcp_mac_array_to_str(clients[i].mac, mac_str, sizeof(mac_str));
         
-        printf("%-18s  %-16s  %-16s  %-8s\n",
+        ts_console_printf("%-18s  %-16s  %-16s  %-8s\n",
                mac_str,
                clients[i].ip[0] ? clients[i].ip : "(pending)",
                clients[i].hostname[0] ? clients[i].hostname : "-",
                clients[i].is_static ? "static" : "dynamic");
     }
     
-    printf("───────────────────────────────────────────────────────────────────────────\n");
-    printf("Total: %zu clients\n\n", count);
+    ts_console_printf("───────────────────────────────────────────────────────────────────────────\n");
+    ts_console_printf("Total: %zu clients\n\n", count);
     
     return 0;
 }
@@ -412,30 +391,30 @@ static int do_dhcp_start(ts_dhcp_if_t iface)
     /* 如果指定 all，对所有接口操作 */
     if (iface == TS_DHCP_IF_ALL) {
         int success = 0, failed = 0;
-        printf("Starting DHCP server on all interfaces...\n");
+        ts_console_printf("Starting DHCP server on all interfaces...\n");
         for (int i = 0; i < num_ifaces; i++) {
             esp_err_t ret = ts_dhcp_server_start(interfaces[i]);
             if (ret == ESP_OK) {
-                printf("  %s: started\n", iface_display_name(interfaces[i]));
+                ts_console_printf("  %s: started\n", iface_display_name(interfaces[i]));
                 success++;
             } else {
-                printf("  %s: failed (%s)\n", iface_display_name(interfaces[i]), esp_err_to_name(ret));
+                ts_console_printf("  %s: failed (%s)\n", iface_display_name(interfaces[i]), esp_err_to_name(ret));
                 failed++;
             }
         }
-        printf("Done. %d started, %d failed.\n", success, failed);
+        ts_console_printf("Done. %d started, %d failed.\n", success, failed);
         return failed > 0 ? 1 : 0;
     }
     
-    printf("Starting DHCP server on %s...\n", iface_display_name(iface));
+    ts_console_printf("Starting DHCP server on %s...\n", iface_display_name(iface));
     
     esp_err_t ret = ts_dhcp_server_start(iface);
     if (ret != ESP_OK) {
-        printf("Error: Failed to start DHCP server: %s\n", esp_err_to_name(ret));
+        ts_console_printf("Error: Failed to start DHCP server: %s\n", esp_err_to_name(ret));
         return 1;
     }
     
-    printf("DHCP server started successfully.\n");
+    ts_console_printf("DHCP server started successfully.\n");
     return 0;
 }
 
@@ -447,30 +426,30 @@ static int do_dhcp_stop(ts_dhcp_if_t iface)
     /* 如果指定 all，对所有接口操作 */
     if (iface == TS_DHCP_IF_ALL) {
         int success = 0, failed = 0;
-        printf("Stopping DHCP server on all interfaces...\n");
+        ts_console_printf("Stopping DHCP server on all interfaces...\n");
         for (int i = 0; i < num_ifaces; i++) {
             esp_err_t ret = ts_dhcp_server_stop(interfaces[i]);
             if (ret == ESP_OK) {
-                printf("  %s: stopped\n", iface_display_name(interfaces[i]));
+                ts_console_printf("  %s: stopped\n", iface_display_name(interfaces[i]));
                 success++;
             } else {
-                printf("  %s: failed (%s)\n", iface_display_name(interfaces[i]), esp_err_to_name(ret));
+                ts_console_printf("  %s: failed (%s)\n", iface_display_name(interfaces[i]), esp_err_to_name(ret));
                 failed++;
             }
         }
-        printf("Done. %d stopped, %d failed.\n", success, failed);
+        ts_console_printf("Done. %d stopped, %d failed.\n", success, failed);
         return failed > 0 ? 1 : 0;
     }
     
-    printf("Stopping DHCP server on %s...\n", iface_display_name(iface));
+    ts_console_printf("Stopping DHCP server on %s...\n", iface_display_name(iface));
     
     esp_err_t ret = ts_dhcp_server_stop(iface);
     if (ret != ESP_OK) {
-        printf("Error: Failed to stop DHCP server: %s\n", esp_err_to_name(ret));
+        ts_console_printf("Error: Failed to stop DHCP server: %s\n", esp_err_to_name(ret));
         return 1;
     }
     
-    printf("DHCP server stopped.\n");
+    ts_console_printf("DHCP server stopped.\n");
     return 0;
 }
 
@@ -482,30 +461,30 @@ static int do_dhcp_restart(ts_dhcp_if_t iface)
     /* 如果指定 all，对所有接口操作 */
     if (iface == TS_DHCP_IF_ALL) {
         int success = 0, failed = 0;
-        printf("Restarting DHCP server on all interfaces...\n");
+        ts_console_printf("Restarting DHCP server on all interfaces...\n");
         for (int i = 0; i < num_ifaces; i++) {
             esp_err_t ret = ts_dhcp_server_restart(interfaces[i]);
             if (ret == ESP_OK) {
-                printf("  %s: restarted\n", iface_display_name(interfaces[i]));
+                ts_console_printf("  %s: restarted\n", iface_display_name(interfaces[i]));
                 success++;
             } else {
-                printf("  %s: failed (%s)\n", iface_display_name(interfaces[i]), esp_err_to_name(ret));
+                ts_console_printf("  %s: failed (%s)\n", iface_display_name(interfaces[i]), esp_err_to_name(ret));
                 failed++;
             }
         }
-        printf("Done. %d restarted, %d failed.\n", success, failed);
+        ts_console_printf("Done. %d restarted, %d failed.\n", success, failed);
         return failed > 0 ? 1 : 0;
     }
     
-    printf("Restarting DHCP server on %s...\n", iface_display_name(iface));
+    ts_console_printf("Restarting DHCP server on %s...\n", iface_display_name(iface));
     
     esp_err_t ret = ts_dhcp_server_restart(iface);
     if (ret != ESP_OK) {
-        printf("Error: Failed to restart DHCP server: %s\n", esp_err_to_name(ret));
+        ts_console_printf("Error: Failed to restart DHCP server: %s\n", esp_err_to_name(ret));
         return 1;
     }
     
-    printf("DHCP server restarted successfully.\n");
+    ts_console_printf("DHCP server restarted successfully.\n");
     return 0;
 }
 
@@ -529,25 +508,25 @@ static int do_dhcp_pool(ts_dhcp_if_t iface,
     /* 如果指定 all 且没有修改参数，显示所有接口配置 */
     if (iface == TS_DHCP_IF_ALL) {
         if (has_modify) {
-            printf("Error: Cannot modify pool for all interfaces at once.\n");
-            printf("       Please specify --iface <ap|eth> to modify a specific interface.\n");
+            ts_console_printf("Error: Cannot modify pool for all interfaces at once.\n");
+            ts_console_printf("       Please specify --iface <ap|eth> to modify a specific interface.\n");
             return 1;
         }
         
-        printf("\nAddress Pool Configuration (All Interfaces):\n");
-        printf("═══════════════════════════════════════════════════════════════════════════\n");
+        ts_console_printf("\nAddress Pool Configuration (All Interfaces):\n");
+        ts_console_printf("═══════════════════════════════════════════════════════════════════════════\n");
         for (int i = 0; i < num_ifaces; i++) {
             ts_dhcp_config_t config;
             ts_dhcp_server_get_config(interfaces[i], &config);
-            printf("\n[%s]\n", iface_display_name(interfaces[i]));
-            printf("  Start IP:  %s\n", config.pool.start_ip);
-            printf("  End IP:    %s\n", config.pool.end_ip);
-            printf("  Gateway:   %s\n", config.pool.gateway);
-            printf("  Netmask:   %s\n", config.pool.netmask);
-            printf("  DNS:       %s\n", config.pool.dns1);
-            printf("  Lease:     %lu minutes\n", (unsigned long)config.lease_time_min);
+            ts_console_printf("\n[%s]\n", iface_display_name(interfaces[i]));
+            ts_console_printf("  Start IP:  %s\n", config.pool.start_ip);
+            ts_console_printf("  End IP:    %s\n", config.pool.end_ip);
+            ts_console_printf("  Gateway:   %s\n", config.pool.gateway);
+            ts_console_printf("  Netmask:   %s\n", config.pool.netmask);
+            ts_console_printf("  DNS:       %s\n", config.pool.dns1);
+            ts_console_printf("  Lease:     %lu minutes\n", (unsigned long)config.lease_time_min);
         }
-        printf("\n");
+        ts_console_printf("\n");
         return 0;
     }
     
@@ -583,23 +562,23 @@ static int do_dhcp_pool(ts_dhcp_if_t iface,
     
     if (!modified) {
         /* 只显示当前配置 */
-        printf("Current address pool configuration:\n");
-        printf("  Start IP:  %s\n", config.pool.start_ip);
-        printf("  End IP:    %s\n", config.pool.end_ip);
-        printf("  Gateway:   %s\n", config.pool.gateway);
-        printf("  Netmask:   %s\n", config.pool.netmask);
-        printf("  DNS:       %s\n", config.pool.dns1);
-        printf("  Lease:     %lu minutes\n", (unsigned long)config.lease_time_min);
+        ts_console_printf("Current address pool configuration:\n");
+        ts_console_printf("  Start IP:  %s\n", config.pool.start_ip);
+        ts_console_printf("  End IP:    %s\n", config.pool.end_ip);
+        ts_console_printf("  Gateway:   %s\n", config.pool.gateway);
+        ts_console_printf("  Netmask:   %s\n", config.pool.netmask);
+        ts_console_printf("  DNS:       %s\n", config.pool.dns1);
+        ts_console_printf("  Lease:     %lu minutes\n", (unsigned long)config.lease_time_min);
         return 0;
     }
     
     esp_err_t ret = ts_dhcp_server_set_config(iface, &config);
     if (ret != ESP_OK) {
-        printf("Error: Failed to set configuration: %s\n", esp_err_to_name(ret));
+        ts_console_printf("Error: Failed to set configuration: %s\n", esp_err_to_name(ret));
         return 1;
     }
     
-    printf("Configuration updated. Use 'dhcp --restart' to apply.\n");
+    ts_console_printf("Configuration updated. Use 'dhcp --restart' to apply.\n");
     return 0;
 }
 
@@ -611,14 +590,14 @@ static int do_dhcp_bind(ts_dhcp_if_t iface, const char *mac, const char *ip, con
 {
     /* 绑定操作必须指定接口 */
     if (iface == TS_DHCP_IF_ALL) {
-        printf("Error: Must specify interface for binding.\n");
-        printf("Usage: dhcp --bind --iface <ap|eth> --mac aa:bb:cc:dd:ee:ff --ip 10.10.99.50\n");
+        ts_console_printf("Error: Must specify interface for binding.\n");
+        ts_console_printf("Usage: dhcp --bind --iface <ap|eth> --mac aa:bb:cc:dd:ee:ff --ip 10.10.99.50\n");
         return 1;
     }
     
     if (!mac || !mac[0] || !ip || !ip[0]) {
-        printf("Error: MAC and IP are required for static binding.\n");
-        printf("Usage: dhcp --bind --iface <ap|eth> --mac aa:bb:cc:dd:ee:ff --ip 10.10.99.50\n");
+        ts_console_printf("Error: MAC and IP are required for static binding.\n");
+        ts_console_printf("Usage: dhcp --bind --iface <ap|eth> --mac aa:bb:cc:dd:ee:ff --ip 10.10.99.50\n");
         return 1;
     }
     
@@ -626,7 +605,7 @@ static int do_dhcp_bind(ts_dhcp_if_t iface, const char *mac, const char *ip, con
     
     esp_err_t ret = ts_dhcp_mac_str_to_array(mac, binding.mac);
     if (ret != ESP_OK) {
-        printf("Error: Invalid MAC address format.\n");
+        ts_console_printf("Error: Invalid MAC address format.\n");
         return 1;
     }
     
@@ -639,11 +618,11 @@ static int do_dhcp_bind(ts_dhcp_if_t iface, const char *mac, const char *ip, con
     
     ret = ts_dhcp_server_add_static_binding(iface, &binding);
     if (ret != ESP_OK) {
-        printf("Error: Failed to add binding: %s\n", esp_err_to_name(ret));
+        ts_console_printf("Error: Failed to add binding: %s\n", esp_err_to_name(ret));
         return 1;
     }
     
-    printf("Static binding added: %s -> %s\n", mac, ip);
+    ts_console_printf("Static binding added: %s -> %s\n", mac, ip);
     return 0;
 }
 
@@ -651,31 +630,31 @@ static int do_dhcp_unbind(ts_dhcp_if_t iface, const char *mac)
 {
     /* 解绑操作必须指定接口 */
     if (iface == TS_DHCP_IF_ALL) {
-        printf("Error: Must specify interface for unbinding.\n");
-        printf("Usage: dhcp --unbind --iface <ap|eth> --mac aa:bb:cc:dd:ee:ff\n");
+        ts_console_printf("Error: Must specify interface for unbinding.\n");
+        ts_console_printf("Usage: dhcp --unbind --iface <ap|eth> --mac aa:bb:cc:dd:ee:ff\n");
         return 1;
     }
     
     if (!mac || !mac[0]) {
-        printf("Error: MAC address is required.\n");
-        printf("Usage: dhcp --unbind --iface <ap|eth> --mac aa:bb:cc:dd:ee:ff\n");
+        ts_console_printf("Error: MAC address is required.\n");
+        ts_console_printf("Usage: dhcp --unbind --iface <ap|eth> --mac aa:bb:cc:dd:ee:ff\n");
         return 1;
     }
     
     uint8_t mac_arr[6];
     esp_err_t ret = ts_dhcp_mac_str_to_array(mac, mac_arr);
     if (ret != ESP_OK) {
-        printf("Error: Invalid MAC address format.\n");
+        ts_console_printf("Error: Invalid MAC address format.\n");
         return 1;
     }
     
     ret = ts_dhcp_server_remove_static_binding(iface, mac_arr);
     if (ret != ESP_OK) {
-        printf("Error: Binding not found.\n");
+        ts_console_printf("Error: Binding not found.\n");
         return 1;
     }
     
-    printf("Static binding removed: %s\n", mac);
+    ts_console_printf("Static binding removed: %s\n", mac);
     return 0;
 }
 
@@ -687,30 +666,30 @@ static int do_dhcp_bindings(ts_dhcp_if_t iface, bool json_output)
     /* 如果指定 all，显示所有接口的绑定 */
     if (iface == TS_DHCP_IF_ALL) {
         if (json_output) {
-            printf("[\n");
+            ts_console_printf("[\n");
             for (int i = 0; i < num_ifaces; i++) {
                 ts_dhcp_static_binding_t bindings[TS_DHCP_MAX_STATIC_BINDINGS];
                 size_t count = 0;
                 ts_dhcp_server_get_static_bindings(interfaces[i], bindings, 
                                                    TS_DHCP_MAX_STATIC_BINDINGS, &count);
-                printf("  {\n");
-                printf("    \"interface\": \"%s\",\n", ts_dhcp_if_to_str(interfaces[i]));
-                printf("    \"count\": %zu,\n", count);
-                printf("    \"bindings\": [");
+                ts_console_printf("  {\n");
+                ts_console_printf("    \"interface\": \"%s\",\n", ts_dhcp_if_to_str(interfaces[i]));
+                ts_console_printf("    \"count\": %zu,\n", count);
+                ts_console_printf("    \"bindings\": [");
                 for (size_t j = 0; j < count; j++) {
                     char mac_str[18];
                     ts_dhcp_mac_array_to_str(bindings[j].mac, mac_str, sizeof(mac_str));
-                    printf("%s{\"mac\":\"%s\",\"ip\":\"%s\"}", j > 0 ? "," : "", mac_str, bindings[j].ip);
+                    ts_console_printf("%s{\"mac\":\"%s\",\"ip\":\"%s\"}", j > 0 ? "," : "", mac_str, bindings[j].ip);
                 }
-                printf("]\n");
-                printf("  }%s\n", (i < num_ifaces - 1) ? "," : "");
+                ts_console_printf("]\n");
+                ts_console_printf("  }%s\n", (i < num_ifaces - 1) ? "," : "");
             }
-            printf("]\n");
+            ts_console_printf("]\n");
             return 0;
         }
         
-        printf("\nStatic Bindings (All Interfaces):\n");
-        printf("═══════════════════════════════════════════════════════════════════════════\n");
+        ts_console_printf("\nStatic Bindings (All Interfaces):\n");
+        ts_console_printf("═══════════════════════════════════════════════════════════════════════════\n");
         int total = 0;
         for (int i = 0; i < num_ifaces; i++) {
             ts_dhcp_static_binding_t bindings[TS_DHCP_MAX_STATIC_BINDINGS];
@@ -718,21 +697,21 @@ static int do_dhcp_bindings(ts_dhcp_if_t iface, bool json_output)
             ts_dhcp_server_get_static_bindings(interfaces[i], bindings, 
                                                TS_DHCP_MAX_STATIC_BINDINGS, &count);
             total += count;
-            printf("\n[%s] %zu bindings:\n", iface_display_name(interfaces[i]), count);
+            ts_console_printf("\n[%s] %zu bindings:\n", iface_display_name(interfaces[i]), count);
             if (count == 0) {
-                printf("  (no bindings)\n");
+                ts_console_printf("  (no bindings)\n");
             } else {
-                printf("  %-18s  %-16s  %-16s\n", "MAC Address", "IP Address", "Hostname");
-                printf("  ────────────────────────────────────────────────────────\n");
+                ts_console_printf("  %-18s  %-16s  %-16s\n", "MAC Address", "IP Address", "Hostname");
+                ts_console_printf("  ────────────────────────────────────────────────────────\n");
                 for (size_t j = 0; j < count; j++) {
                     char mac_str[18];
                     ts_dhcp_mac_array_to_str(bindings[j].mac, mac_str, sizeof(mac_str));
-                    printf("  %-18s  %-16s  %-16s\n", mac_str, bindings[j].ip,
+                    ts_console_printf("  %-18s  %-16s  %-16s\n", mac_str, bindings[j].ip,
                            bindings[j].hostname[0] ? bindings[j].hostname : "-");
                 }
             }
         }
-        printf("\nTotal: %d static bindings\n\n", total);
+        ts_console_printf("\nTotal: %d static bindings\n\n", total);
         return 0;
     }
     
@@ -742,50 +721,50 @@ static int do_dhcp_bindings(ts_dhcp_if_t iface, bool json_output)
     esp_err_t ret = ts_dhcp_server_get_static_bindings(iface, bindings, 
                                                         TS_DHCP_MAX_STATIC_BINDINGS, &count);
     if (ret != ESP_OK) {
-        printf("Error: Failed to get static bindings.\n");
+        ts_console_printf("Error: Failed to get static bindings.\n");
         return 1;
     }
     
     if (json_output) {
-        printf("{\n");
-        printf("  \"count\": %zu,\n", count);
-        printf("  \"bindings\": [\n");
+        ts_console_printf("{\n");
+        ts_console_printf("  \"count\": %zu,\n", count);
+        ts_console_printf("  \"bindings\": [\n");
         for (size_t i = 0; i < count; i++) {
             char mac_str[18];
             ts_dhcp_mac_array_to_str(bindings[i].mac, mac_str, sizeof(mac_str));
-            printf("    {\n");
-            printf("      \"mac\": \"%s\",\n", mac_str);
-            printf("      \"ip\": \"%s\",\n", bindings[i].ip);
-            printf("      \"hostname\": \"%s\",\n", bindings[i].hostname);
-            printf("      \"enabled\": %s\n", bindings[i].enabled ? "true" : "false");
-            printf("    }%s\n", i < count - 1 ? "," : "");
+            ts_console_printf("    {\n");
+            ts_console_printf("      \"mac\": \"%s\",\n", mac_str);
+            ts_console_printf("      \"ip\": \"%s\",\n", bindings[i].ip);
+            ts_console_printf("      \"hostname\": \"%s\",\n", bindings[i].hostname);
+            ts_console_printf("      \"enabled\": %s\n", bindings[i].enabled ? "true" : "false");
+            ts_console_printf("    }%s\n", i < count - 1 ? "," : "");
         }
-        printf("  ]\n");
-        printf("}\n");
+        ts_console_printf("  ]\n");
+        ts_console_printf("}\n");
         return 0;
     }
     
     if (count == 0) {
-        printf("No static bindings configured.\n");
+        ts_console_printf("No static bindings configured.\n");
         return 0;
     }
     
-    printf("\nStatic DHCP Bindings:\n");
-    printf("═══════════════════════════════════════════════════════════════\n");
-    printf("%-18s  %-16s  %-16s  %-8s\n", "MAC Address", "IP Address", "Hostname", "Enabled");
-    printf("───────────────────────────────────────────────────────────────\n");
+    ts_console_printf("\nStatic DHCP Bindings:\n");
+    ts_console_printf("═══════════════════════════════════════════════════════════════\n");
+    ts_console_printf("%-18s  %-16s  %-16s  %-8s\n", "MAC Address", "IP Address", "Hostname", "Enabled");
+    ts_console_printf("───────────────────────────────────────────────────────────────\n");
     
     for (size_t i = 0; i < count; i++) {
         char mac_str[18];
         ts_dhcp_mac_array_to_str(bindings[i].mac, mac_str, sizeof(mac_str));
-        printf("%-18s  %-16s  %-16s  %-8s\n",
+        ts_console_printf("%-18s  %-16s  %-16s  %-8s\n",
                mac_str, bindings[i].ip,
                bindings[i].hostname[0] ? bindings[i].hostname : "-",
                bindings[i].enabled ? "yes" : "no");
     }
     
-    printf("───────────────────────────────────────────────────────────────\n");
-    printf("Total: %zu bindings\n\n", count);
+    ts_console_printf("───────────────────────────────────────────────────────────────\n");
+    ts_console_printf("Total: %zu bindings\n\n", count);
     
     return 0;
 }
@@ -810,12 +789,12 @@ static int do_dhcp_save(void)
     if (ret == ESP_OK) {
         ts_console_success("Configuration saved to NVS");
         if (ts_config_module_has_pending_sync()) {
-            printf(" (SD card sync pending)\n");
+            ts_console_printf(" (SD card sync pending)\n");
         } else {
-            printf(" and SD card\n");
+            ts_console_printf(" and SD card\n");
         }
     } else {
-        printf("Configuration saved to NVS\n");
+        ts_console_printf("Configuration saved to NVS\n");
     }
     
     return 0;
@@ -825,11 +804,11 @@ static int do_dhcp_reset(void)
 {
     esp_err_t ret = ts_dhcp_server_reset_config();
     if (ret != ESP_OK) {
-        printf("Error: Failed to reset configuration: %s\n", esp_err_to_name(ret));
+        ts_console_printf("Error: Failed to reset configuration: %s\n", esp_err_to_name(ret));
         return 1;
     }
     
-    printf("DHCP configuration reset to defaults.\n");
+    ts_console_printf("DHCP configuration reset to defaults.\n");
     return 0;
 }
 
@@ -842,44 +821,44 @@ static int do_cmd_dhcp(int argc, char **argv)
     int nerrors = arg_parse(argc, argv, (void **)&s_dhcp_args);
     
     if (s_dhcp_args.help->count > 0) {
-        printf("Usage: dhcp [OPTIONS]\n\n");
-        printf("DHCP Server Management\n\n");
-        printf("Options:\n");
-        printf("  --status                 Show DHCP server status\n");
-        printf("  --list                   List all interfaces status (same as --status without --iface)\n");
-        printf("  --clients                List connected DHCP clients\n");
-        printf("  --start                  Start DHCP server\n");
-        printf("  --stop                   Stop DHCP server\n");
-        printf("  --restart                Restart DHCP server\n");
-        printf("  --pool                   Show/configure address pool\n");
-        printf("  --bind                   Add static binding (requires --mac, --ip)\n");
-        printf("  --unbind                 Remove static binding (requires --mac)\n");
-        printf("  --bindings               List static bindings\n");
-        printf("  --save                   Save configuration to NVS\n");
-        printf("  --reset                  Reset to default configuration\n");
-        printf("  --iface <ap|eth|all>     Select interface (default: all)\n");
-        printf("                           ap/wifi    - WiFi AP interface\n");
-        printf("                           eth        - Ethernet interface\n");
-        printf("                           all        - All interfaces\n");
-        printf("  --start-ip <ip>          Pool start IP\n");
-        printf("  --end-ip <ip>            Pool end IP\n");
-        printf("  --gateway <ip>           Gateway IP\n");
-        printf("  --netmask <mask>         Subnet mask\n");
-        printf("  --dns <ip>               DNS server IP\n");
-        printf("  --lease <min>            Lease time in minutes\n");
-        printf("  --mac <addr>             MAC address for binding\n");
-        printf("  --ip <addr>              IP address for binding\n");
-        printf("  --hostname <name>        Hostname for binding\n");
-        printf("  --json                   Output in JSON format\n");
-        printf("\nExamples:\n");
-        printf("  dhcp --status                        Show all interfaces status\n");
-        printf("  dhcp --status --iface ap             Show WiFi AP DHCP status\n");
-        printf("  dhcp --status --iface eth            Show Ethernet DHCP status\n");
-        printf("  dhcp --clients --iface ap            List WiFi AP clients\n");
-        printf("  dhcp --start --iface eth             Start Ethernet DHCP server\n");
-        printf("  dhcp --pool --iface ap --start-ip 10.10.99.100 --end-ip 10.10.99.200\n");
-        printf("  dhcp --bind --iface ap --mac aa:bb:cc:dd:ee:ff --ip 10.10.99.50\n");
-        printf("  dhcp --unbind --iface ap --mac aa:bb:cc:dd:ee:ff\n");
+        ts_console_printf("Usage: dhcp [OPTIONS]\n\n");
+        ts_console_printf("DHCP Server Management\n\n");
+        ts_console_printf("Options:\n");
+        ts_console_printf("  --status                 Show DHCP server status\n");
+        ts_console_printf("  --list                   List all interfaces status (same as --status without --iface)\n");
+        ts_console_printf("  --clients                List connected DHCP clients\n");
+        ts_console_printf("  --start                  Start DHCP server\n");
+        ts_console_printf("  --stop                   Stop DHCP server\n");
+        ts_console_printf("  --restart                Restart DHCP server\n");
+        ts_console_printf("  --pool                   Show/configure address pool\n");
+        ts_console_printf("  --bind                   Add static binding (requires --mac, --ip)\n");
+        ts_console_printf("  --unbind                 Remove static binding (requires --mac)\n");
+        ts_console_printf("  --bindings               List static bindings\n");
+        ts_console_printf("  --save                   Save configuration to NVS\n");
+        ts_console_printf("  --reset                  Reset to default configuration\n");
+        ts_console_printf("  --iface <ap|eth|all>     Select interface (default: all)\n");
+        ts_console_printf("                           ap/wifi    - WiFi AP interface\n");
+        ts_console_printf("                           eth        - Ethernet interface\n");
+        ts_console_printf("                           all        - All interfaces\n");
+        ts_console_printf("  --start-ip <ip>          Pool start IP\n");
+        ts_console_printf("  --end-ip <ip>            Pool end IP\n");
+        ts_console_printf("  --gateway <ip>           Gateway IP\n");
+        ts_console_printf("  --netmask <mask>         Subnet mask\n");
+        ts_console_printf("  --dns <ip>               DNS server IP\n");
+        ts_console_printf("  --lease <min>            Lease time in minutes\n");
+        ts_console_printf("  --mac <addr>             MAC address for binding\n");
+        ts_console_printf("  --ip <addr>              IP address for binding\n");
+        ts_console_printf("  --hostname <name>        Hostname for binding\n");
+        ts_console_printf("  --json                   Output in JSON format\n");
+        ts_console_printf("\nExamples:\n");
+        ts_console_printf("  dhcp --status                        Show all interfaces status\n");
+        ts_console_printf("  dhcp --status --iface ap             Show WiFi AP DHCP status\n");
+        ts_console_printf("  dhcp --status --iface eth            Show Ethernet DHCP status\n");
+        ts_console_printf("  dhcp --clients --iface ap            List WiFi AP clients\n");
+        ts_console_printf("  dhcp --start --iface eth             Start Ethernet DHCP server\n");
+        ts_console_printf("  dhcp --pool --iface ap --start-ip 10.10.99.100 --end-ip 10.10.99.200\n");
+        ts_console_printf("  dhcp --bind --iface ap --mac aa:bb:cc:dd:ee:ff --ip 10.10.99.50\n");
+        ts_console_printf("  dhcp --unbind --iface ap --mac aa:bb:cc:dd:ee:ff\n");
         return 0;
     }
     

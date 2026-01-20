@@ -20,6 +20,7 @@
 #include "ts_sftp.h"
 #include "ts_scp.h"
 #include "argtable3/argtable3.h"
+#include "cJSON.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -141,102 +142,115 @@ static esp_err_t connect_ssh(const char *host, int port, const char *user,
 /*===========================================================================*/
 
 /**
- * @brief 列出远程目录
+ * @brief 列出远程目录（通过 API）
+ * 
+ * 使用 ts_api_call("sftp.ls") 实现业务逻辑分离
  */
 static int do_sftp_ls(const char *host, int port, const char *user,
                       const char *password, const char *path, int timeout_sec)
 {
-    ts_ssh_session_t ssh = NULL;
-    ts_sftp_session_t sftp = NULL;
-    ts_sftp_dir_t dir = NULL;
-    esp_err_t ret;
-    
     ts_console_printf("Connecting to %s@%s...\n", user, host);
     
-    ret = connect_ssh(host, port, user, password, timeout_sec, &ssh);
-    if (ret != ESP_OK) {
-        ts_console_printf("Error: SSH connection failed\n");
+    /* 构建 API 参数 */
+    cJSON *params = cJSON_CreateObject();
+    if (!params) {
+        ts_console_printf("Error: Out of memory\n");
         return 1;
     }
     
-    ret = ts_sftp_open(ssh, &sftp);
-    if (ret != ESP_OK) {
-        ts_console_printf("Error: SFTP init failed\n");
-        ts_ssh_disconnect(ssh);
-        ts_ssh_session_destroy(ssh);
+    cJSON_AddStringToObject(params, "host", host);
+    cJSON_AddNumberToObject(params, "port", port);
+    cJSON_AddStringToObject(params, "user", user);
+    cJSON_AddStringToObject(params, "password", password);
+    cJSON_AddNumberToObject(params, "timeout", timeout_sec);
+    cJSON_AddStringToObject(params, "path", path);
+    
+    /* 调用 API */
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    esp_err_t ret = ts_api_call("sftp.ls", params, &result);
+    cJSON_Delete(params);
+    
+    if (ret != ESP_OK || result.code != TS_API_OK) {
+        ts_console_printf("Error: %s\n", result.message ? result.message : "SFTP operation failed");
+        ts_api_result_free(&result);
         return 1;
     }
     
+    /* 格式化输出 */
     ts_console_printf("\nDirectory: %s\n", path);
     ts_console_printf("═══════════════════════════════════════════════════════════════\n");
     
-    ret = ts_sftp_dir_open(sftp, path, &dir);
-    if (ret != ESP_OK) {
-        ts_console_printf("Error: Cannot open directory - %s\n", ts_sftp_get_error(sftp));
-        ts_sftp_close(sftp);
-        ts_ssh_disconnect(ssh);
-        ts_ssh_session_destroy(ssh);
-        return 1;
-    }
-    
-    ts_sftp_dirent_t entry;
+    cJSON *files = cJSON_GetObjectItem(result.data, "files");
     int count = 0;
     
-    while (ts_sftp_dir_read(dir, &entry) == ESP_OK) {
-        char type = '-';
-        if (entry.attrs.is_dir) {
-            type = 'd';
-        } else if (entry.attrs.is_link) {
-            type = 'l';
+    if (files && cJSON_IsArray(files)) {
+        cJSON *file = NULL;
+        cJSON_ArrayForEach(file, files) {
+            cJSON *name = cJSON_GetObjectItem(file, "name");
+            cJSON *is_dir = cJSON_GetObjectItem(file, "is_dir");
+            cJSON *is_link = cJSON_GetObjectItem(file, "is_link");
+            cJSON *size_obj = cJSON_GetObjectItem(file, "size");
+            cJSON *perms = cJSON_GetObjectItem(file, "permissions");
+            cJSON *uid_obj = cJSON_GetObjectItem(file, "uid");
+            cJSON *gid_obj = cJSON_GetObjectItem(file, "gid");
+            
+            char type = '-';
+            if (is_dir && cJSON_IsTrue(is_dir)) {
+                type = 'd';
+            } else if (is_link && cJSON_IsTrue(is_link)) {
+                type = 'l';
+            }
+            
+            /* 格式化权限 */
+            char perms_str[11] = "----------";
+            perms_str[0] = type;
+            uint32_t p = perms ? (uint32_t)cJSON_GetNumberValue(perms) : 0;
+            if (p & 0400) perms_str[1] = 'r';
+            if (p & 0200) perms_str[2] = 'w';
+            if (p & 0100) perms_str[3] = 'x';
+            if (p & 0040) perms_str[4] = 'r';
+            if (p & 0020) perms_str[5] = 'w';
+            if (p & 0010) perms_str[6] = 'x';
+            if (p & 0004) perms_str[7] = 'r';
+            if (p & 0002) perms_str[8] = 'w';
+            if (p & 0001) perms_str[9] = 'x';
+            
+            /* 格式化大小 */
+            char size_str[16];
+            uint64_t sz = size_obj ? (uint64_t)cJSON_GetNumberValue(size_obj) : 0;
+            if (sz >= 1024 * 1024) {
+                snprintf(size_str, sizeof(size_str), "%.1fM", (float)sz / (1024 * 1024));
+            } else if (sz >= 1024) {
+                snprintf(size_str, sizeof(size_str), "%.1fK", (float)sz / 1024);
+            } else {
+                snprintf(size_str, sizeof(size_str), "%llu", (unsigned long long)sz);
+            }
+            
+            uint32_t uid = uid_obj ? (uint32_t)cJSON_GetNumberValue(uid_obj) : 0;
+            uint32_t gid = gid_obj ? (uint32_t)cJSON_GetNumberValue(gid_obj) : 0;
+            const char *fname = name ? cJSON_GetStringValue(name) : "?";
+            
+            ts_console_printf("%s %5u %5u %8s %s%s\n",
+                              perms_str, uid, gid, size_str, fname,
+                              (is_dir && cJSON_IsTrue(is_dir)) ? "/" : "");
+            count++;
         }
-        
-        /* 格式化权限 */
-        char perms[11] = "----------";
-        perms[0] = type;
-        uint32_t p = entry.attrs.permissions;
-        if (p & 0400) perms[1] = 'r';
-        if (p & 0200) perms[2] = 'w';
-        if (p & 0100) perms[3] = 'x';
-        if (p & 0040) perms[4] = 'r';
-        if (p & 0020) perms[5] = 'w';
-        if (p & 0010) perms[6] = 'x';
-        if (p & 0004) perms[7] = 'r';
-        if (p & 0002) perms[8] = 'w';
-        if (p & 0001) perms[9] = 'x';
-        
-        /* 格式化大小 */
-        char size_str[16];
-        if (entry.attrs.size >= 1024 * 1024) {
-            snprintf(size_str, sizeof(size_str), "%.1fM", 
-                     (float)entry.attrs.size / (1024 * 1024));
-        } else if (entry.attrs.size >= 1024) {
-            snprintf(size_str, sizeof(size_str), "%.1fK", 
-                     (float)entry.attrs.size / 1024);
-        } else {
-            snprintf(size_str, sizeof(size_str), "%llu", 
-                     (unsigned long long)entry.attrs.size);
-        }
-        
-        ts_console_printf("%s %5u %5u %8s %s%s\n",
-                          perms, entry.attrs.uid, entry.attrs.gid,
-                          size_str, entry.name,
-                          entry.attrs.is_dir ? "/" : "");
-        count++;
     }
     
     ts_console_printf("═══════════════════════════════════════════════════════════════\n");
     ts_console_printf("Total: %d items\n", count);
     
-    ts_sftp_dir_close(dir);
-    ts_sftp_close(sftp);
-    ts_ssh_disconnect(ssh);
-    ts_ssh_session_destroy(ssh);
-    
+    ts_api_result_free(&result);
     return 0;
 }
 
 /**
  * @brief 下载文件 (SFTP 或 SCP)
+ * 
+ * 注意：保持直接调用底层 SFTP/SCP 函数，不通过 API 层
+ * 原因：需要进度回调实时更新 UI，API 的请求-响应模式不适合
  */
 static int do_file_get(const char *host, int port, const char *user,
                        const char *password, const char *remote_path,
@@ -299,6 +313,9 @@ static int do_file_get(const char *host, int port, const char *user,
 
 /**
  * @brief 上传文件 (SFTP 或 SCP)
+ * 
+ * 注意：保持直接调用底层 SFTP/SCP 函数，不通过 API 层
+ * 原因：需要进度回调实时更新 UI，API 的请求-响应模式不适合
  */
 static int do_file_put(const char *host, int port, const char *user,
                        const char *password, const char *local_path,
@@ -360,128 +377,149 @@ static int do_file_put(const char *host, int port, const char *user,
 }
 
 /**
- * @brief 删除远程文件
+ * @brief 删除远程文件（通过 API）
+ * 
+ * 使用 ts_api_call("sftp.rm") 实现业务逻辑分离
  */
 static int do_sftp_rm(const char *host, int port, const char *user,
                       const char *password, const char *path, int timeout_sec)
 {
-    ts_ssh_session_t ssh = NULL;
-    ts_sftp_session_t sftp = NULL;
-    esp_err_t ret;
-    
-    ret = connect_ssh(host, port, user, password, timeout_sec, &ssh);
-    if (ret != ESP_OK) {
-        ts_console_printf("Error: SSH connection failed\n");
+    /* 构建 API 参数 */
+    cJSON *params = cJSON_CreateObject();
+    if (!params) {
+        ts_console_printf("Error: Out of memory\n");
         return 1;
     }
     
-    ret = ts_sftp_open(ssh, &sftp);
-    if (ret != ESP_OK) {
-        ts_console_printf("Error: SFTP init failed\n");
-        ts_ssh_disconnect(ssh);
-        ts_ssh_session_destroy(ssh);
-        return 1;
-    }
+    cJSON_AddStringToObject(params, "host", host);
+    cJSON_AddNumberToObject(params, "port", port);
+    cJSON_AddStringToObject(params, "user", user);
+    cJSON_AddStringToObject(params, "password", password);
+    cJSON_AddNumberToObject(params, "timeout", timeout_sec);
+    cJSON_AddStringToObject(params, "path", path);
     
-    ret = ts_sftp_unlink(sftp, path);
+    /* 调用 API */
+    ts_api_result_t result;
+    ts_api_result_init(&result);
     
-    ts_sftp_close(sftp);
-    ts_ssh_disconnect(ssh);
-    ts_ssh_session_destroy(ssh);
+    esp_err_t ret = ts_api_call("sftp.rm", params, &result);
+    cJSON_Delete(params);
     
-    if (ret == ESP_OK) {
+    if (ret == ESP_OK && result.code == TS_API_OK) {
         ts_console_printf("✓ Deleted: %s\n", path);
+        ts_api_result_free(&result);
         return 0;
     } else {
         ts_console_printf("✗ Failed to delete: %s\n", path);
+        ts_api_result_free(&result);
         return 1;
     }
 }
 
 /**
- * @brief 创建远程目录
+ * @brief 创建远程目录（通过 API）
+ * 
+ * 使用 ts_api_call("sftp.mkdir") 实现业务逻辑分离
  */
 static int do_sftp_mkdir(const char *host, int port, const char *user,
                          const char *password, const char *path, int timeout_sec)
 {
-    ts_ssh_session_t ssh = NULL;
-    ts_sftp_session_t sftp = NULL;
-    esp_err_t ret;
-    
-    ret = connect_ssh(host, port, user, password, timeout_sec, &ssh);
-    if (ret != ESP_OK) {
-        ts_console_printf("Error: SSH connection failed\n");
+    /* 构建 API 参数 */
+    cJSON *params = cJSON_CreateObject();
+    if (!params) {
+        ts_console_printf("Error: Out of memory\n");
         return 1;
     }
     
-    ret = ts_sftp_open(ssh, &sftp);
-    if (ret != ESP_OK) {
-        ts_console_printf("Error: SFTP init failed\n");
-        ts_ssh_disconnect(ssh);
-        ts_ssh_session_destroy(ssh);
-        return 1;
-    }
+    cJSON_AddStringToObject(params, "host", host);
+    cJSON_AddNumberToObject(params, "port", port);
+    cJSON_AddStringToObject(params, "user", user);
+    cJSON_AddStringToObject(params, "password", password);
+    cJSON_AddNumberToObject(params, "timeout", timeout_sec);
+    cJSON_AddStringToObject(params, "path", path);
     
-    ret = ts_sftp_mkdir(sftp, path, 0755);
+    /* 调用 API */
+    ts_api_result_t result;
+    ts_api_result_init(&result);
     
-    ts_sftp_close(sftp);
-    ts_ssh_disconnect(ssh);
-    ts_ssh_session_destroy(ssh);
+    esp_err_t ret = ts_api_call("sftp.mkdir", params, &result);
+    cJSON_Delete(params);
     
-    if (ret == ESP_OK) {
+    if (ret == ESP_OK && result.code == TS_API_OK) {
         ts_console_printf("✓ Created directory: %s\n", path);
+        ts_api_result_free(&result);
         return 0;
     } else {
         ts_console_printf("✗ Failed to create directory: %s\n", path);
+        ts_api_result_free(&result);
         return 1;
     }
 }
 
 /**
- * @brief 显示文件信息
+ * @brief 显示文件信息（通过 API）
+ * 
+ * 使用 ts_api_call("sftp.stat") 实现业务逻辑分离
  */
 static int do_sftp_stat(const char *host, int port, const char *user,
                         const char *password, const char *path, int timeout_sec)
 {
-    ts_ssh_session_t ssh = NULL;
-    ts_sftp_session_t sftp = NULL;
-    esp_err_t ret;
-    
-    ret = connect_ssh(host, port, user, password, timeout_sec, &ssh);
-    if (ret != ESP_OK) {
-        ts_console_printf("Error: SSH connection failed\n");
+    /* 构建 API 参数 */
+    cJSON *params = cJSON_CreateObject();
+    if (!params) {
+        ts_console_printf("Error: Out of memory\n");
         return 1;
     }
     
-    ret = ts_sftp_open(ssh, &sftp);
-    if (ret != ESP_OK) {
-        ts_console_printf("Error: SFTP init failed\n");
-        ts_ssh_disconnect(ssh);
-        ts_ssh_session_destroy(ssh);
-        return 1;
-    }
+    cJSON_AddStringToObject(params, "host", host);
+    cJSON_AddNumberToObject(params, "port", port);
+    cJSON_AddStringToObject(params, "user", user);
+    cJSON_AddStringToObject(params, "password", password);
+    cJSON_AddNumberToObject(params, "timeout", timeout_sec);
+    cJSON_AddStringToObject(params, "path", path);
     
-    ts_sftp_attr_t attrs;
-    ret = ts_sftp_stat(sftp, path, &attrs);
+    /* 调用 API */
+    ts_api_result_t result;
+    ts_api_result_init(&result);
     
-    ts_sftp_close(sftp);
-    ts_ssh_disconnect(ssh);
-    ts_ssh_session_destroy(ssh);
+    esp_err_t ret = ts_api_call("sftp.stat", params, &result);
+    cJSON_Delete(params);
     
-    if (ret != ESP_OK) {
+    if (ret != ESP_OK || result.code != TS_API_OK) {
         ts_console_printf("Error: Cannot stat file\n");
+        ts_api_result_free(&result);
         return 1;
     }
+    
+    /* 解析结果 */
+    cJSON *is_dir = cJSON_GetObjectItem(result.data, "is_dir");
+    cJSON *is_link = cJSON_GetObjectItem(result.data, "is_link");
+    cJSON *size_obj = cJSON_GetObjectItem(result.data, "size");
+    cJSON *perms = cJSON_GetObjectItem(result.data, "permissions");
+    cJSON *uid_obj = cJSON_GetObjectItem(result.data, "uid");
+    cJSON *gid_obj = cJSON_GetObjectItem(result.data, "gid");
+    
+    const char *type_str = "File";
+    if (is_dir && cJSON_IsTrue(is_dir)) {
+        type_str = "Directory";
+    } else if (is_link && cJSON_IsTrue(is_link)) {
+        type_str = "Symlink";
+    }
+    
+    uint64_t size = size_obj ? (uint64_t)cJSON_GetNumberValue(size_obj) : 0;
+    uint32_t perm = perms ? (uint32_t)cJSON_GetNumberValue(perms) : 0;
+    uint32_t uid = uid_obj ? (uint32_t)cJSON_GetNumberValue(uid_obj) : 0;
+    uint32_t gid = gid_obj ? (uint32_t)cJSON_GetNumberValue(gid_obj) : 0;
     
     ts_console_printf("\nFile: %s\n", path);
     ts_console_printf("═══════════════════════════════════════\n");
-    ts_console_printf("  Type:        %s\n", 
-                      attrs.is_dir ? "Directory" : (attrs.is_link ? "Symlink" : "File"));
-    ts_console_printf("  Size:        %llu bytes\n", (unsigned long long)attrs.size);
-    ts_console_printf("  Permissions: %04o\n", attrs.permissions & 07777);
-    ts_console_printf("  UID/GID:     %u/%u\n", attrs.uid, attrs.gid);
+    ts_console_printf("  Type:        %s\n", type_str);
+    ts_console_printf("  Size:        %llu bytes\n", (unsigned long long)size);
+    ts_console_printf("  Permissions: %04o\n", perm & 07777);
+    ts_console_printf("  UID/GID:     %u/%u\n", uid, gid);
     ts_console_printf("═══════════════════════════════════════\n");
     
+    ts_api_result_free(&result);
     return 0;
 }
 

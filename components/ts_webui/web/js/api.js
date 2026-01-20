@@ -1,5 +1,7 @@
 /**
  * TianShanOS API Client
+ * 
+ * 统一的 Core API 调用客户端，支持所有已注册的 API 端点
  */
 
 const API_BASE = '/api/v1';
@@ -9,6 +11,9 @@ class TianShanAPI {
         this.token = localStorage.getItem('token');
     }
     
+    /**
+     * 通用 API 请求方法
+     */
     async request(endpoint, method = 'GET', data = null) {
         const headers = {
             'Content-Type': 'application/json'
@@ -32,7 +37,7 @@ class TianShanAPI {
             const json = await response.json();
             
             if (!response.ok) {
-                throw new Error(json.error || 'Request failed');
+                throw new Error(json.message || json.error || 'Request failed');
             }
             
             return json;
@@ -41,8 +46,28 @@ class TianShanAPI {
             throw error;
         }
     }
+
+    /**
+     * 调用 Core API（将端点名转为 URL 路径）
+     * 例如: call('system.info') -> GET /api/v1/system/info
+     */
+    async call(apiName, params = null, method = null) {
+        const endpoint = '/' + apiName.replace(/\./g, '/');
+        
+        // 自动判断方法：有参数且非查询类用 POST
+        if (!method) {
+            const isQuery = apiName.includes('.list') || apiName.includes('.status') || 
+                           apiName.includes('.info') || apiName.includes('.get');
+            method = (params && !isQuery) ? 'POST' : 'GET';
+        }
+        
+        return this.request(endpoint, method, params);
+    }
     
-    // Auth
+    // =====================================================================
+    //                         认证 API
+    // =====================================================================
+    
     async login(username, password) {
         const result = await this.request('/auth/login', 'POST', { username, password });
         if (result.token) {
@@ -65,128 +90,162 @@ class TianShanAPI {
         return !!this.token;
     }
     
-    // System
-    async getSystemInfo() {
-        return this.request('/system/info');
-    }
+    // =====================================================================
+    //                         系统 API (system.*)
+    // =====================================================================
     
-    async getMemoryInfo() {
-        return this.request('/system/memory');
-    }
+    async getSystemInfo() { return this.call('system.info'); }
+    async getMemoryInfo() { return this.call('system.memory'); }
+    async getTasks() { return this.call('system.tasks'); }
+    async reboot(delay = 0) { return this.call('system.reboot', { delay }, 'POST'); }
     
-    async getTasks() {
-        return this.request('/system/tasks');
-    }
+    // =====================================================================
+    //                         配置 API (config.*)
+    // =====================================================================
     
-    async reboot() {
-        return this.request('/system/reboot', 'POST');
-    }
+    async configGet(key) { return this.call('config.get', { key }); }
+    async configSet(key, value, persist = false) { return this.call('config.set', { key, value, persist }, 'POST'); }
+    async configDelete(key) { return this.call('config.delete', { key }, 'POST'); }
+    async configList(prefix = '') { return this.call('config.list', prefix ? { prefix } : null); }
     
-    // Config
-    async getConfig(key) {
-        return this.request(`/config/get?key=${encodeURIComponent(key)}`);
-    }
+    // =====================================================================
+    //                         服务 API (service.*)
+    // =====================================================================
     
-    async setConfig(key, value) {
-        return this.request('/config/set', 'POST', { key, value });
-    }
+    async serviceList() { return this.call('service.list'); }
+    async serviceStatus(name) { return this.call('service.status', { name }); }
+    async serviceStart(name) { return this.call('service.start', { name }, 'POST'); }
+    async serviceStop(name) { return this.call('service.stop', { name }, 'POST'); }
+    async serviceRestart(name) { return this.call('service.restart', { name }, 'POST'); }
     
-    async listConfig(prefix = '') {
-        return this.request(`/config/list?prefix=${encodeURIComponent(prefix)}`);
-    }
+    // =====================================================================
+    //                         LED API (led.*)
+    // =====================================================================
     
-    // LED
-    async getLedDevices() {
-        return this.request('/led/devices');
-    }
+    async ledList() { return this.call('led.list'); }
+    async ledBrightness(device, brightness) { return this.call('led.brightness', { device, brightness }, 'POST'); }
+    async ledClear(device) { return this.call('led.clear', { device }, 'POST'); }
+    async ledSet(device, index, color) { return this.call('led.set', { device, index, color }, 'POST'); }
+    async ledFill(device, color) { return this.call('led.fill', { device, color }, 'POST'); }
+    async ledEffectList(device = null) { return this.call('led.effect.list', device ? { device } : null); }
+    async ledEffectStart(device, effect, params = {}) { return this.call('led.effect.start', { device, effect, ...params }, 'POST'); }
+    async ledEffectStop(device) { return this.call('led.effect.stop', { device }, 'POST'); }
+    async ledColorParse(color) { return this.call('led.color.parse', { color }); }
+    async ledFilterList() { return this.call('led.filter.list'); }
     
-    async setLedBrightness(device, brightness) {
-        return this.request('/led/brightness', 'POST', { device, brightness });
-    }
+    // =====================================================================
+    //                         网络 API (network.*, wifi.*, dhcp.*, nat.*)
+    // =====================================================================
     
-    async setLedEffect(device, effect) {
-        return this.request('/led/effect', 'POST', { device, effect });
-    }
+    async networkStatus() { return this.call('network.status'); }
+    async wifiStatus() { return this.call('wifi.status'); }
+    async wifiScan() { return this.call('wifi.scan'); }
+    async wifiConnect(ssid, password) { return this.call('wifi.connect', { ssid, password }, 'POST'); }
+    async wifiDisconnect() { return this.call('wifi.disconnect', null, 'POST'); }
+    async dhcpStatus(iface = null) { return this.call('dhcp.status', iface ? { interface: iface } : null); }
+    async dhcpClients(iface = null) { return this.call('dhcp.clients', iface ? { interface: iface } : null); }
+    async natStatus() { return this.call('nat.status'); }
+    async natEnable() { return this.call('nat.enable', null, 'POST'); }
+    async natDisable() { return this.call('nat.disable', null, 'POST'); }
     
-    async setLedColor(device, color) {
-        return this.request('/led/color', 'POST', { device, color });
-    }
+    // =====================================================================
+    //                         设备 API (device.*, agx.*, fan.*)
+    // =====================================================================
     
-    // Network
-    async getNetworkStatus() {
-        return this.request('/network/status');
-    }
+    async deviceStatus(name = null) { return this.call('device.status', name ? { name } : null); }
+    async devicePower(name, on) { return this.call('device.power', { name, on }, 'POST'); }
+    async deviceReset(name) { return this.call('device.reset', { name }, 'POST'); }
+    async agxStatus() { return this.call('agx.status'); }
+    async agxData() { return this.call('agx.data'); }
+    async fanStatus(id = null) { return this.call('fan.status', id !== null ? { id } : null); }
+    async fanSet(id, speed) { return this.call('fan.set', { id, speed }, 'POST'); }
+    async fanMode(id, mode) { return this.call('fan.mode', { id, mode }, 'POST'); }
     
-    async getWifiNetworks() {
-        return this.request('/network/wifi/scan');
-    }
+    // =====================================================================
+    //                         电源 API (power.*)
+    // =====================================================================
     
-    async connectWifi(ssid, password) {
-        return this.request('/network/wifi/connect', 'POST', { ssid, password });
-    }
+    async powerStatus() { return this.call('power.status'); }
+    async powerVoltage(channel = null) { return this.call('power.voltage', channel !== null ? { channel } : null); }
+    async powerStats() { return this.call('power.stats'); }
+    async powerProtectionStatus() { return this.call('power.protection.status'); }
     
-    // Device
-    async getDeviceStatus() {
-        return this.request('/device/status');
-    }
+    // =====================================================================
+    //                         存储/GPIO/温度 API
+    // =====================================================================
     
-    async setDevicePower(device, on) {
-        return this.request('/device/power', 'POST', { device, on });
-    }
+    async storageStatus() { return this.call('storage.status'); }
+    async storageList(path = '/') { return this.call('storage.list', { path }); }
+    async gpioList() { return this.call('gpio.list'); }
+    async gpioInfo(pin) { return this.call('gpio.info', { pin }); }
+    async tempStatus() { return this.call('temp.status'); }
     
-    async getFanStatus() {
-        return this.request('/device/fan/status');
-    }
+    // =====================================================================
+    //                         SSH/SFTP API
+    // =====================================================================
     
-    async setFanSpeed(fan, speed) {
-        return this.request('/device/fan/speed', 'POST', { fan, speed });
-    }
+    async sshTest(host, user, password, port = 22) { return this.call('ssh.test', { host, user, password, port }, 'POST'); }
+    async sshExec(host, user, password, command, port = 22) { return this.call('ssh.exec', { host, user, password, command, port }, 'POST'); }
+    async sftpLs(host, user, password, path, port = 22) { return this.call('sftp.ls', { host, user, password, path, port }, 'POST'); }
+    async keyList() { return this.call('key.list'); }
+    async hostsList() { return this.call('hosts.list'); }
 }
 
-// WebSocket client
+// =========================================================================
+//                         WebSocket Client
+// =========================================================================
+
 class TianShanWS {
-    constructor(onMessage) {
+    constructor(onMessage, onConnect, onDisconnect) {
         this.ws = null;
         this.onMessage = onMessage;
-        this.reconnectTimer = null;
+        this.onConnect = onConnect;
+        this.onDisconnect = onDisconnect;
+        this.reconnectDelay = 1000;
+        this.shouldReconnect = true;
     }
     
     connect() {
-        const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        this.ws = new WebSocket(`${protocol}//${location.host}/ws`);
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = `${protocol}//${window.location.host}/ws`;
         
-        this.ws.onopen = () => {
-            console.log('WebSocket connected');
-            this.send({ type: 'subscribe' });
-        };
-        
-        this.ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (this.onMessage) {
-                    this.onMessage(data);
+        try {
+            this.ws = new WebSocket(url);
+            
+            this.ws.onopen = () => {
+                console.log('WebSocket connected');
+                this.reconnectDelay = 1000;
+                this.send({ type: 'subscribe', events: ['*'] });
+                if (this.onConnect) this.onConnect();
+            };
+            
+            this.ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (this.onMessage) this.onMessage(msg);
+                } catch (e) {
+                    console.error('WebSocket parse error:', e);
                 }
-            } catch (e) {
-                console.error('WS parse error:', e);
-            }
-        };
-        
-        this.ws.onclose = () => {
-            console.log('WebSocket disconnected');
-            this.reconnect();
-        };
-        
-        this.ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
-        };
+            };
+            
+            this.ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                if (this.onDisconnect) this.onDisconnect();
+                if (this.shouldReconnect) {
+                    setTimeout(() => this.connect(), this.reconnectDelay);
+                    this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+                }
+            };
+            
+            this.ws.onerror = (error) => console.error('WebSocket error:', error);
+        } catch (e) {
+            console.error('WebSocket connect failed:', e);
+        }
     }
     
-    reconnect() {
-        if (this.reconnectTimer) return;
-        this.reconnectTimer = setTimeout(() => {
-            this.reconnectTimer = null;
-            this.connect();
-        }, 5000);
+    disconnect() {
+        this.shouldReconnect = false;
+        if (this.ws) { this.ws.close(); this.ws = null; }
     }
     
     send(data) {
@@ -194,19 +253,7 @@ class TianShanWS {
             this.ws.send(JSON.stringify(data));
         }
     }
-    
-    disconnect() {
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = null;
-        }
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
-        }
-    }
 }
 
-// Export
-window.api = new TianShanAPI();
-window.TianShanWS = TianShanWS;
+// 全局实例
+const api = new TianShanAPI();

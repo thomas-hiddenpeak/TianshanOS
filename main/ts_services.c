@@ -26,6 +26,9 @@
 #include "ts_security.h"
 #include "ts_keystore.h"
 #include "ts_api.h"
+#include "ts_webui.h"
+#include "ts_power_monitor.h"
+#include "ts_power_policy.h"
 #include "esp_log.h"
 
 static const char *TAG = "ts_services";
@@ -38,9 +41,11 @@ static ts_service_handle_t s_hal_handle = NULL;
 static ts_service_handle_t s_storage_handle = NULL;
 static ts_service_handle_t s_led_handle = NULL;
 static ts_service_handle_t s_drivers_handle = NULL;
+static ts_service_handle_t s_power_handle = NULL;
 static ts_service_handle_t s_network_handle = NULL;
 static ts_service_handle_t s_security_handle = NULL;
 static ts_service_handle_t s_api_handle = NULL;
+static ts_service_handle_t s_webui_handle = NULL;
 static ts_service_handle_t s_console_handle = NULL;
 
 /* ============================================================================
@@ -254,6 +259,83 @@ static bool drivers_service_health(ts_service_handle_t handle, void *user_data)
     (void)handle;
     (void)user_data;
     return true;
+}
+
+/* ============================================================================
+ * Power 服务回调 (电源监控 + 电压保护)
+ * ========================================================================== */
+
+static esp_err_t power_service_init(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Initializing power service...");
+    
+    /* 初始化电压保护策略 */
+    esp_err_t ret = ts_power_policy_init(NULL);  // 使用默认配置
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init power policy: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* 初始化电源监控（不自动启动，由 start 阶段启动）*/
+    ts_power_monitor_config_t pm_config;
+    ts_power_monitor_get_default_config(&pm_config);
+    pm_config.auto_start_monitoring = false;  // 禁用自动启动
+    
+    ret = ts_power_monitor_init(&pm_config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init power monitor: %s", esp_err_to_name(ret));
+        /* 电源监控失败不影响系统运行，继续 */
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t power_service_start(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Starting power service...");
+    
+    /* 启动电源监控 */
+    esp_err_t ret = ts_power_monitor_start();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to start power monitor: %s", esp_err_to_name(ret));
+        /* 不是致命错误 */
+    }
+    
+    /* 启动电压保护策略 */
+    ret = ts_power_policy_start();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to start power policy: %s", esp_err_to_name(ret));
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t power_service_stop(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Stopping power service...");
+    
+    ts_power_policy_stop();
+    ts_power_monitor_stop();
+    
+    return ESP_OK;
+}
+
+static bool power_service_health(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    /* 检查电源监控是否正在运行 */
+    return ts_power_policy_is_running();
 }
 
 /* ============================================================================
@@ -501,6 +583,80 @@ static bool console_service_health(ts_service_handle_t handle, void *user_data)
 }
 
 /* ============================================================================
+ * WebUI 服务回调
+ * ========================================================================== */
+
+#include "esp_spiffs.h"
+
+static esp_err_t webui_service_init(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Initializing WebUI service...");
+    
+    /* 挂载 www SPIFFS 分区（WebUI 静态文件） */
+    esp_vfs_spiffs_conf_t www_conf = {
+        .base_path = "/www",
+        .partition_label = "www",
+        .max_files = 5,
+        .format_if_mount_failed = false
+    };
+    esp_err_t ret = esp_vfs_spiffs_register(&www_conf);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to mount www partition: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "WebUI static files will not be available");
+        /* 继续，让 HTTP 服务器启动，API 仍可用 */
+    } else {
+        size_t total = 0, used = 0;
+        esp_spiffs_info("www", &total, &used);
+        ESP_LOGI(TAG, "Mounted www partition at /www (%u/%u bytes)", used, total);
+    }
+    
+    ret = ts_webui_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init WebUI: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    return ESP_OK;
+}
+
+static esp_err_t webui_service_start(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Starting WebUI service...");
+    
+    esp_err_t ret = ts_webui_start();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start WebUI: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    ESP_LOGI(TAG, "WebUI server started on port 80");
+    return ESP_OK;
+}
+
+static esp_err_t webui_service_stop(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "Stopping WebUI service...");
+    return ts_webui_stop();
+}
+
+static bool webui_service_health(ts_service_handle_t handle, void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    
+    return ts_webui_is_running();
+}
+
+/* ============================================================================
  * 服务定义
  * ========================================================================== */
 
@@ -552,6 +708,18 @@ static const ts_service_def_t s_drivers_service_def = {
     .user_data = NULL,
 };
 
+static const ts_service_def_t s_power_service_def = {
+    .name = "power",
+    .phase = TS_SERVICE_PHASE_DRIVER,
+    .capabilities = TS_SERVICE_CAP_RESTARTABLE | TS_SERVICE_CAP_CONFIGURABLE,
+    .dependencies = {"hal", NULL},  // 只依赖 HAL (ADC)
+    .init = power_service_init,
+    .start = power_service_start,
+    .stop = power_service_stop,
+    .health_check = power_service_health,
+    .user_data = NULL,
+};
+
 static const ts_service_def_t s_network_service_def = {
     .name = "network",
     .phase = TS_SERVICE_PHASE_NETWORK,
@@ -585,6 +753,18 @@ static const ts_service_def_t s_api_service_def = {
     .start = api_service_start,
     .stop = api_service_stop,
     .health_check = api_service_health,
+    .user_data = NULL,
+};
+
+static const ts_service_def_t s_webui_service_def = {
+    .name = "webui",
+    .phase = TS_SERVICE_PHASE_UI,
+    .capabilities = TS_SERVICE_CAP_RESTARTABLE,
+    .dependencies = {"api", "network", "storage", NULL},  /* 依赖 API、网络和存储（静态文件） */
+    .init = webui_service_init,
+    .start = webui_service_start,
+    .stop = webui_service_stop,
+    .health_check = webui_service_health,
     .user_data = NULL,
 };
 
@@ -642,6 +822,14 @@ esp_err_t ts_services_register_all(void)
     }
     ESP_LOGI(TAG, "  - drivers service registered");
     
+    // 注册 Power 服务 (电源监控 + 电压保护)
+    ret = ts_service_register(&s_power_service_def, &s_power_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register power service: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  - power service registered");
+    
     // 注册 network 服务
     ret = ts_service_register(&s_network_service_def, &s_network_handle);
     if (ret != ESP_OK) {
@@ -665,6 +853,14 @@ esp_err_t ts_services_register_all(void)
         return ret;
     }
     ESP_LOGI(TAG, "  - api service registered");
+    
+    // 注册 WebUI 服务
+    ret = ts_service_register(&s_webui_service_def, &s_webui_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register WebUI service: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "  - webui service registered");
     
     // 注册 console 服务 (最后)
     ret = ts_service_register(&s_console_service_def, &s_console_handle);

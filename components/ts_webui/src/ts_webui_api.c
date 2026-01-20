@@ -62,17 +62,15 @@ static esp_err_t api_handler(ts_http_request_t *req, void *user_data)
         if (*p == '/') *p = '.';
     }
     
-    // Check authentication for non-public endpoints
+    // Check authentication for write operations only
+    // GET requests (read-only) are allowed without authentication
     uint32_t session_id = 0;
-    ts_perm_level_t required = TS_PERM_READ;
     
     if (req->method == TS_HTTP_POST || req->method == TS_HTTP_PUT || 
         req->method == TS_HTTP_DELETE) {
-        required = TS_PERM_WRITE;
-    }
-    
-    if (check_auth(req, &session_id, required) != ESP_OK) {
-        return ts_http_send_error(req, 401, "Unauthorized");
+        if (check_auth(req, &session_id, TS_PERM_WRITE) != ESP_OK) {
+            return ts_http_send_error(req, 401, "Unauthorized");
+        }
     }
     
     // Build request JSON

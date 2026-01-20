@@ -20,13 +20,23 @@
  */
 
 #include "ts_cmd_all.h"
-#include "ts_power_monitor.h"
+#include "ts_console.h"
 #include "ts_api.h"
+#include "ts_console.h"
 #include "esp_console.h"
+#include "ts_console.h"
 #include "argtable3/argtable3.h"
+#include "ts_console.h"
+#include "freertos/FreeRTOS.h"
+#include "ts_console.h"
+#include "freertos/task.h"
+#include "ts_console.h"
 #include <stdio.h>
+#include "ts_console.h"
 #include <string.h>
+#include "ts_console.h"
 #include <stdlib.h>
+#include "ts_console.h"
 
 static const char *TAG = "cmd_power";
 
@@ -35,28 +45,39 @@ static const char *TAG = "cmd_power";
 /*===========================================================================*/
 
 /**
- * @brief 确保电源监控已初始化
- * @return true 如果已初始化或初始化成功
+ * @brief 从 cJSON 获取 double 值
  */
-static bool ensure_power_monitor_initialized(void)
+static double get_json_double(const cJSON *obj, const char *key, double def)
 {
-    if (ts_power_monitor_is_running()) {
-        return true;
-    }
-    
-    /* 尝试初始化 */
-    esp_err_t ret = ts_power_monitor_init(NULL);
-    if (ret == ESP_OK) {
-        return true;
-    }
-    
-    /* 如果已经初始化过（但未运行），也返回 true */
-    if (ret == ESP_ERR_INVALID_STATE) {
-        return true;
-    }
-    
-    printf("Failed to initialize power monitor: %s\n", esp_err_to_name(ret));
-    return false;
+    const cJSON *item = cJSON_GetObjectItem(obj, key);
+    return cJSON_IsNumber(item) ? item->valuedouble : def;
+}
+
+/**
+ * @brief 从 cJSON 获取 int 值
+ */
+static int get_json_int(const cJSON *obj, const char *key, int def)
+{
+    const cJSON *item = cJSON_GetObjectItem(obj, key);
+    return cJSON_IsNumber(item) ? item->valueint : def;
+}
+
+/**
+ * @brief 从 cJSON 获取 bool 值
+ */
+static bool get_json_bool(const cJSON *obj, const char *key, bool def)
+{
+    const cJSON *item = cJSON_GetObjectItem(obj, key);
+    return cJSON_IsBool(item) ? cJSON_IsTrue(item) : def;
+}
+
+/**
+ * @brief 从 cJSON 获取 string 值
+ */
+static const char *get_json_string(const cJSON *obj, const char *key, const char *def)
+{
+    const cJSON *item = cJSON_GetObjectItem(obj, key);
+    return (cJSON_IsString(item) && item->valuestring) ? item->valuestring : def;
 }
 
 /*===========================================================================*/
@@ -65,268 +86,330 @@ static bool ensure_power_monitor_initialized(void)
 
 static int cmd_power_status(void)
 {
-    if (!ensure_power_monitor_initialized()) {
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    esp_err_t ret = ts_api_call("power.status", NULL, &result);
+    if (ret != ESP_OK || result.code != TS_API_OK || !result.data) {
+        ts_console_printf("Failed to get power status: %s\n", 
+               result.message ? result.message : "Unknown error");
+        ts_api_result_free(&result);
         return 1;
     }
     
-    ts_power_voltage_data_t voltage_data;
-    ts_power_chip_data_t power_data;
-    ts_power_monitor_stats_t stats;
+    cJSON *data = result.data;
     
-    printf("\n");
-    printf("╔══════════════════════════════════════════════════════════════╗\n");
-    printf("║                    Power Monitor Status                       ║\n");
-    printf("╚══════════════════════════════════════════════════════════════╝\n");
-    printf("\n");
+    ts_console_printf("\n");
+    ts_console_printf("╔══════════════════════════════════════════════════════════════╗\n");
+    ts_console_printf("║                    Power Monitor Status                       ║\n");
+    ts_console_printf("╚══════════════════════════════════════════════════════════════╝\n");
+    ts_console_printf("\n");
     
-    printf("Running: %s\n", ts_power_monitor_is_running() ? "Yes" : "No");
-    printf("\n");
+    ts_console_printf("Running: %s\n", get_json_bool(data, "monitoring_active", false) ? "Yes" : "No");
+    ts_console_printf("\n");
     
     /* 电压监控数据 */
-    if (ts_power_monitor_get_voltage_data(&voltage_data) == ESP_OK) {
-        printf("┌─ Voltage Monitoring ─────────────────────────────────────────┐\n");
-        printf("│  Supply Voltage: %.2f V                                      \n", voltage_data.supply_voltage);
-        printf("│  ADC Raw Value:  %d                                          \n", voltage_data.raw_adc);
-        printf("│  ADC Voltage:    %d mV                                       \n", voltage_data.voltage_mv);
-        printf("│  Timestamp:      %lu ms                                      \n", (unsigned long)voltage_data.timestamp);
-        
-        float min_thresh, max_thresh;
-        if (ts_power_monitor_get_voltage_thresholds(&min_thresh, &max_thresh) == ESP_OK) {
-            printf("│  Thresholds:     %.2f V - %.2f V                             \n", min_thresh, max_thresh);
-        }
-        
-        uint32_t interval;
-        if (ts_power_monitor_get_sample_interval(&interval) == ESP_OK) {
-            printf("│  Sample Interval: %lu ms                                     \n", (unsigned long)interval);
-        }
-        printf("└──────────────────────────────────────────────────────────────┘\n");
-        printf("\n");
+    const cJSON *voltage = cJSON_GetObjectItem(data, "voltage");
+    if (voltage) {
+        ts_console_printf("┌─ Voltage Monitoring ─────────────────────────────────────────┐\n");
+        ts_console_printf("│  Supply Voltage: %.2f V                                      \n", get_json_double(voltage, "supply_v", 0));
+        ts_console_printf("│  ADC Raw Value:  %d                                          \n", get_json_int(voltage, "adc_raw", 0));
+        ts_console_printf("│  Timestamp:      %d ms                                       \n", get_json_int(voltage, "timestamp_ms", 0));
+        ts_console_printf("└──────────────────────────────────────────────────────────────┘\n");
+        ts_console_printf("\n");
     }
     
     /* 电源芯片数据 */
-    if (ts_power_monitor_get_power_chip_data(&power_data) == ESP_OK && power_data.timestamp > 0) {
-        printf("┌─ Power Chip Data ────────────────────────────────────────────┐\n");
-        printf("│  Voltage:    %.2f V                                          \n", power_data.voltage);
-        printf("│  Current:    %.3f A                                          \n", power_data.current);
-        printf("│  Power:      %.2f W                                          \n", power_data.power);
-        printf("│  Valid:      %s                                              \n", power_data.valid ? "Yes" : "No");
-        printf("│  CRC:        %s                                              \n", power_data.crc_valid ? "OK" : "FAIL");
-        printf("│  Raw Data:   0x%02X 0x%02X 0x%02X 0x%02X                      \n",
-               power_data.raw_data[0], power_data.raw_data[1],
-               power_data.raw_data[2], power_data.raw_data[3]);
-        printf("│  Timestamp:  %lu ms                                          \n", (unsigned long)power_data.timestamp);
-        printf("└──────────────────────────────────────────────────────────────┘\n");
-        printf("\n");
+    const cJSON *chip = cJSON_GetObjectItem(data, "power_chip");
+    if (chip && get_json_bool(chip, "valid", false)) {
+        ts_console_printf("┌─ Power Chip Data ────────────────────────────────────────────┐\n");
+        ts_console_printf("│  Voltage:    %.2f V                                          \n", get_json_double(chip, "voltage_v", 0));
+        ts_console_printf("│  Current:    %.3f A                                          \n", get_json_double(chip, "current_a", 0));
+        ts_console_printf("│  Power:      %.2f W                                          \n", get_json_double(chip, "power_w", 0));
+        ts_console_printf("│  CRC:        %s                                              \n", get_json_bool(chip, "crc_valid", false) ? "OK" : "FAIL");
+        ts_console_printf("└──────────────────────────────────────────────────────────────┘\n");
+        ts_console_printf("\n");
     } else {
-        printf("┌─ Power Chip Data ────────────────────────────────────────────┐\n");
-        printf("│  No data received from power chip                            \n");
-        printf("│  (Check GPIO47 UART connection)                              \n");
-        printf("└──────────────────────────────────────────────────────────────┘\n");
-        printf("\n");
+        ts_console_printf("┌─ Power Chip Data ────────────────────────────────────────────┐\n");
+        ts_console_printf("│  No data received from power chip                            \n");
+        ts_console_printf("│  (Check GPIO47 UART connection)                              \n");
+        ts_console_printf("└──────────────────────────────────────────────────────────────┘\n");
+        ts_console_printf("\n");
     }
     
     /* 统计信息 */
-    if (ts_power_monitor_get_stats(&stats) == ESP_OK) {
-        printf("┌─ Statistics ─────────────────────────────────────────────────┐\n");
-        printf("│  Uptime:              %llu ms (%.1f hours)                   \n", 
-               stats.uptime_ms, stats.uptime_ms / 3600000.0);
-        printf("│  Voltage Samples:     %lu                                    \n", (unsigned long)stats.voltage_samples);
-        printf("│  Power Chip Packets:  %lu                                    \n", (unsigned long)stats.power_chip_packets);
-        printf("│  CRC Errors:          %lu (%.1f%%)                           \n", 
-               (unsigned long)stats.crc_errors,
-               stats.power_chip_packets > 0 ? (stats.crc_errors * 100.0f / stats.power_chip_packets) : 0.0f);
-        printf("│  Threshold Violations: %lu                                   \n", (unsigned long)stats.threshold_violations);
-        printf("│  Average Voltage:     %.2f V                                 \n", stats.avg_voltage);
-        printf("│  Average Current:     %.3f A                                 \n", stats.avg_current);
-        printf("│  Average Power:       %.2f W                                 \n", stats.avg_power);
-        printf("└──────────────────────────────────────────────────────────────┘\n");
+    const cJSON *stats = cJSON_GetObjectItem(data, "stats");
+    if (stats) {
+        double uptime_ms = get_json_double(stats, "uptime_ms", 0);
+        ts_console_printf("┌─ Statistics ─────────────────────────────────────────────────┐\n");
+        ts_console_printf("│  Uptime:              %.0f ms (%.1f hours)                   \n", 
+               uptime_ms, uptime_ms / 3600000.0);
+        ts_console_printf("│  Voltage Samples:     %d                                     \n", get_json_int(stats, "samples", 0));
+        ts_console_printf("│  Average Voltage:     %.2f V                                 \n", get_json_double(stats, "avg_voltage_v", 0));
+        ts_console_printf("│  Average Current:     %.3f A                                 \n", get_json_double(stats, "avg_current_a", 0));
+        ts_console_printf("│  Average Power:       %.2f W                                 \n", get_json_double(stats, "avg_power_w", 0));
+        ts_console_printf("└──────────────────────────────────────────────────────────────┘\n");
     }
     
+    ts_api_result_free(&result);
     return 0;
 }
 
 static int cmd_power_voltage(void)
 {
-    if (!ensure_power_monitor_initialized()) {
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    cJSON *params = cJSON_CreateObject();
+    cJSON_AddBoolToObject(params, "now", true);
+    
+    esp_err_t ret = ts_api_call("power.voltage", params, &result);
+    cJSON_Delete(params);
+    
+    if (ret != ESP_OK || result.code != TS_API_OK || !result.data) {
+        ts_console_printf("Failed to get voltage data: %s\n", 
+               result.message ? result.message : "Unknown error");
+        ts_api_result_free(&result);
         return 1;
     }
     
-    /* 直接读取一次 ADC */
-    ts_power_voltage_data_t data;
-    esp_err_t ret = ts_power_monitor_read_voltage_now(&data);
-    if (ret != ESP_OK) {
-        /* 回退到缓存数据 */
-        ret = ts_power_monitor_get_voltage_data(&data);
-    }
+    cJSON *data = result.data;
+    ts_console_printf("Supply Voltage: %.2f V\n", get_json_double(data, "voltage_v", 0));
+    ts_console_printf("ADC Raw:        %d\n", get_json_int(data, "adc_raw", 0));
+    ts_console_printf("ADC Voltage:    %d mV\n", get_json_int(data, "voltage_mv", 0));
+    ts_console_printf("Timestamp:      %d ms\n", get_json_int(data, "timestamp_ms", 0));
     
-    if (ret != ESP_OK) {
-        printf("Failed to get voltage data: %s\n", esp_err_to_name(ret));
-        return 1;
-    }
-    
-    printf("Supply Voltage: %.2f V\n", data.supply_voltage);
-    printf("ADC Raw:        %d\n", data.raw_adc);
-    printf("ADC Voltage:    %d mV\n", data.voltage_mv);
-    printf("Timestamp:      %lu ms\n", (unsigned long)data.timestamp);
-    
+    ts_api_result_free(&result);
     return 0;
 }
 
 static int cmd_power_chip(void)
 {
-    if (!ensure_power_monitor_initialized()) {
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    esp_err_t ret = ts_api_call("power.chip", NULL, &result);
+    if (ret != ESP_OK || result.code != TS_API_OK || !result.data) {
+        ts_console_printf("Failed to get power chip data: %s\n", 
+               result.message ? result.message : "Unknown error");
+        ts_api_result_free(&result);
         return 1;
     }
     
-    ts_power_chip_data_t data;
+    cJSON *data = result.data;
     
-    if (ts_power_monitor_get_power_chip_data(&data) != ESP_OK) {
-        printf("Failed to get power chip data\n");
+    if (get_json_int(data, "timestamp_ms", 0) == 0) {
+        ts_console_printf("No power chip data available\n");
+        ts_console_printf("(Check GPIO47 UART connection)\n");
+        ts_api_result_free(&result);
         return 1;
     }
     
-    if (data.timestamp == 0) {
-        printf("No power chip data available\n");
-        printf("(Check GPIO47 UART connection)\n");
-        return 1;
+    ts_console_printf("Power Chip Data:\n");
+    ts_console_printf("  Voltage:   %.2f V\n", get_json_double(data, "voltage_v", 0));
+    ts_console_printf("  Current:   %.3f A\n", get_json_double(data, "current_a", 0));
+    ts_console_printf("  Power:     %.2f W\n", get_json_double(data, "power_w", 0));
+    ts_console_printf("  Valid:     %s\n", get_json_bool(data, "valid", false) ? "Yes" : "No");
+    ts_console_printf("  CRC:       %s\n", get_json_bool(data, "crc_valid", false) ? "OK" : "FAIL");
+    
+    const cJSON *raw = cJSON_GetObjectItem(data, "raw_data");
+    if (cJSON_IsArray(raw) && cJSON_GetArraySize(raw) >= 4) {
+        ts_console_printf("  Raw Data:  0x%02X 0x%02X 0x%02X 0x%02X\n",
+               cJSON_GetArrayItem(raw, 0)->valueint,
+               cJSON_GetArrayItem(raw, 1)->valueint,
+               cJSON_GetArrayItem(raw, 2)->valueint,
+               cJSON_GetArrayItem(raw, 3)->valueint);
     }
+    ts_console_printf("  Timestamp: %d ms\n", get_json_int(data, "timestamp_ms", 0));
     
-    printf("Power Chip Data:\n");
-    printf("  Voltage:   %.2f V\n", data.voltage);
-    printf("  Current:   %.3f A\n", data.current);
-    printf("  Power:     %.2f W\n", data.power);
-    printf("  Valid:     %s\n", data.valid ? "Yes" : "No");
-    printf("  CRC:       %s\n", data.crc_valid ? "OK" : "FAIL");
-    printf("  Raw Data:  0x%02X 0x%02X 0x%02X 0x%02X\n",
-           data.raw_data[0], data.raw_data[1], data.raw_data[2], data.raw_data[3]);
-    printf("  Timestamp: %lu ms\n", (unsigned long)data.timestamp);
-    
+    ts_api_result_free(&result);
     return 0;
 }
 
 static int cmd_power_start(void)
 {
-    if (!ensure_power_monitor_initialized()) {
-        return 1;
-    }
+    ts_api_result_t result;
+    ts_api_result_init(&result);
     
-    esp_err_t ret = ts_power_monitor_start();
-    if (ret == ESP_OK) {
-        printf("Power monitor started\n");
+    esp_err_t ret = ts_api_call("power.monitor.start", NULL, &result);
+    if (ret == ESP_OK && result.code == TS_API_OK) {
+        ts_console_printf("Power monitor started\n");
+        ts_api_result_free(&result);
         return 0;
     } else {
-        printf("Failed to start power monitor: %s\n", esp_err_to_name(ret));
+        ts_console_printf("Failed to start power monitor: %s\n", 
+               result.message ? result.message : "Unknown error");
+        ts_api_result_free(&result);
         return 1;
     }
 }
 
 static int cmd_power_stop(void)
 {
-    esp_err_t ret = ts_power_monitor_stop();
-    if (ret == ESP_OK) {
-        printf("Power monitor stopped\n");
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    esp_err_t ret = ts_api_call("power.monitor.stop", NULL, &result);
+    if (ret == ESP_OK && result.code == TS_API_OK) {
+        ts_console_printf("Power monitor stopped\n");
+        ts_api_result_free(&result);
         return 0;
     } else {
-        printf("Failed to stop power monitor: %s\n", esp_err_to_name(ret));
+        ts_console_printf("Failed to stop power monitor: %s\n", 
+               result.message ? result.message : "Unknown error");
+        ts_api_result_free(&result);
         return 1;
     }
 }
 
 static int cmd_power_threshold(float min_v, float max_v)
 {
-    esp_err_t ret = ts_power_monitor_set_voltage_thresholds(min_v, max_v);
-    if (ret == ESP_OK) {
-        printf("Voltage thresholds set: %.2f V - %.2f V\n", min_v, max_v);
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    cJSON *params = cJSON_CreateObject();
+    cJSON_AddNumberToObject(params, "min_v", min_v);
+    cJSON_AddNumberToObject(params, "max_v", max_v);
+    
+    esp_err_t ret = ts_api_call("power.threshold.set", params, &result);
+    cJSON_Delete(params);
+    
+    if (ret == ESP_OK && result.code == TS_API_OK) {
+        ts_console_printf("Voltage thresholds set: %.2f V - %.2f V\n", min_v, max_v);
+        ts_api_result_free(&result);
         return 0;
     } else {
-        printf("Failed to set thresholds: %s\n", esp_err_to_name(ret));
+        ts_console_printf("Failed to set thresholds: %s\n", 
+               result.message ? result.message : "Unknown error");
+        ts_api_result_free(&result);
         return 1;
     }
 }
 
 static int cmd_power_interval(uint32_t interval_ms)
 {
-    esp_err_t ret = ts_power_monitor_set_sample_interval(interval_ms);
-    if (ret == ESP_OK) {
-        printf("Sample interval set to %lu ms\n", (unsigned long)interval_ms);
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    cJSON *params = cJSON_CreateObject();
+    cJSON_AddNumberToObject(params, "interval_ms", (int)interval_ms);
+    
+    esp_err_t ret = ts_api_call("power.interval.set", params, &result);
+    cJSON_Delete(params);
+    
+    if (ret == ESP_OK && result.code == TS_API_OK) {
+        ts_console_printf("Sample interval set to %lu ms\n", (unsigned long)interval_ms);
+        ts_api_result_free(&result);
         return 0;
     } else {
-        printf("Failed to set interval: %s\n", esp_err_to_name(ret));
+        ts_console_printf("Failed to set interval: %s\n", 
+               result.message ? result.message : "Unknown error");
+        ts_api_result_free(&result);
         return 1;
     }
 }
 
 static int cmd_power_stats(void)
 {
-    if (!ensure_power_monitor_initialized()) {
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    esp_err_t ret = ts_api_call("power.stats", NULL, &result);
+    if (ret != ESP_OK || result.code != TS_API_OK || !result.data) {
+        ts_console_printf("Failed to get statistics: %s\n", 
+               result.message ? result.message : "Unknown error");
+        ts_api_result_free(&result);
         return 1;
     }
     
-    ts_power_monitor_stats_t stats;
+    cJSON *data = result.data;
+    double uptime_ms = get_json_double(data, "uptime_ms", 0);
+    int power_chip_packets = get_json_int(data, "power_chip_packets", 0);
+    int crc_errors = get_json_int(data, "crc_errors", 0);
     
-    if (ts_power_monitor_get_stats(&stats) != ESP_OK) {
-        printf("Failed to get statistics\n");
-        return 1;
-    }
+    ts_console_printf("Power Monitor Statistics:\n");
+    ts_console_printf("=========================\n");
+    ts_console_printf("Uptime:              %.0f ms (%.1f hours)\n", uptime_ms, uptime_ms / 3600000.0);
+    ts_console_printf("Voltage Samples:     %d\n", get_json_int(data, "voltage_samples", 0));
+    ts_console_printf("Power Chip Packets:  %d\n", power_chip_packets);
+    ts_console_printf("CRC Errors:          %d (%.1f%%)\n", crc_errors,
+           power_chip_packets > 0 ? (crc_errors * 100.0f / power_chip_packets) : 0.0f);
+    ts_console_printf("Timeout Errors:      %d\n", get_json_int(data, "timeout_errors", 0));
+    ts_console_printf("Threshold Violations: %d\n", get_json_int(data, "threshold_violations", 0));
+    ts_console_printf("Average Voltage:     %.2f V\n", get_json_double(data, "avg_voltage_v", 0));
+    ts_console_printf("Average Current:     %.3f A\n", get_json_double(data, "avg_current_a", 0));
+    ts_console_printf("Average Power:       %.2f W\n", get_json_double(data, "avg_power_w", 0));
     
-    printf("Power Monitor Statistics:\n");
-    printf("=========================\n");
-    printf("Uptime:              %llu ms (%.1f hours)\n", stats.uptime_ms, stats.uptime_ms / 3600000.0);
-    printf("Voltage Samples:     %lu\n", (unsigned long)stats.voltage_samples);
-    printf("Power Chip Packets:  %lu\n", (unsigned long)stats.power_chip_packets);
-    printf("CRC Errors:          %lu (%.1f%%)\n", (unsigned long)stats.crc_errors,
-           stats.power_chip_packets > 0 ? (stats.crc_errors * 100.0f / stats.power_chip_packets) : 0.0f);
-    printf("Timeout Errors:      %lu\n", (unsigned long)stats.timeout_errors);
-    printf("Threshold Violations: %lu\n", (unsigned long)stats.threshold_violations);
-    printf("Average Voltage:     %.2f V\n", stats.avg_voltage);
-    printf("Average Current:     %.3f A\n", stats.avg_current);
-    printf("Average Power:       %.2f W\n", stats.avg_power);
-    
+    ts_api_result_free(&result);
     return 0;
 }
 
 static int cmd_power_reset(void)
 {
-    esp_err_t ret = ts_power_monitor_reset_stats();
-    if (ret == ESP_OK) {
-        printf("Statistics reset\n");
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    esp_err_t ret = ts_api_call("power.stats.reset", NULL, &result);
+    if (ret == ESP_OK && result.code == TS_API_OK) {
+        ts_console_printf("Statistics reset\n");
+        ts_api_result_free(&result);
         return 0;
     } else {
-        printf("Failed to reset statistics: %s\n", esp_err_to_name(ret));
+        ts_console_printf("Failed to reset statistics: %s\n", 
+               result.message ? result.message : "Unknown error");
+        ts_api_result_free(&result);
         return 1;
     }
 }
 
 static int cmd_power_debug(bool enable)
 {
-    esp_err_t ret = ts_power_monitor_set_debug_mode(enable);
-    if (ret == ESP_OK) {
-        printf("Protocol debug %s\n", enable ? "enabled" : "disabled");
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    cJSON *params = cJSON_CreateObject();
+    cJSON_AddBoolToObject(params, "enable", enable);
+    
+    esp_err_t ret = ts_api_call("power.debug", params, &result);
+    cJSON_Delete(params);
+    
+    if (ret == ESP_OK && result.code == TS_API_OK) {
+        ts_console_printf("Protocol debug %s\n", enable ? "enabled" : "disabled");
+        ts_api_result_free(&result);
         return 0;
     } else {
-        printf("Failed to set debug mode: %s\n", esp_err_to_name(ret));
+        ts_console_printf("Failed to set debug mode: %s\n", 
+               result.message ? result.message : "Unknown error");
+        ts_api_result_free(&result);
         return 1;
     }
 }
 
 static int cmd_power_test(void)
 {
-    if (!ensure_power_monitor_initialized()) {
-        return 1;
-    }
-    
-    printf("Testing ADC reading...\n");
-    printf("======================\n");
-    
-    ts_power_voltage_data_t data;
+    ts_console_printf("Testing ADC reading...\n");
+    ts_console_printf("======================\n");
     
     for (int i = 0; i < 10; i++) {
-        if (ts_power_monitor_read_voltage_now(&data) == ESP_OK) {
-            printf("Reading %d: raw=%d, mv=%d, actual=%.2f V\n",
-                   i + 1, data.raw_adc, data.voltage_mv, data.supply_voltage);
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        cJSON *params = cJSON_CreateObject();
+        cJSON_AddBoolToObject(params, "now", true);
+        
+        esp_err_t ret = ts_api_call("power.voltage", params, &result);
+        cJSON_Delete(params);
+        
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            ts_console_printf("Reading %d: raw=%d, mv=%d, actual=%.2f V\n",
+                   i + 1, 
+                   get_json_int(result.data, "adc_raw", 0),
+                   get_json_int(result.data, "voltage_mv", 0),
+                   get_json_double(result.data, "voltage_v", 0));
         } else {
-            printf("Reading %d: FAILED\n", i + 1);
+            ts_console_printf("Reading %d: FAILED\n", i + 1);
         }
+        ts_api_result_free(&result);
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     
@@ -335,37 +418,37 @@ static int cmd_power_test(void)
 
 static void cmd_power_help(void)
 {
-    printf("\n");
-    printf("==================== Power Monitor Commands ====================\n");
-    printf("\n");
-    printf("Basic Commands:\n");
-    printf("  power status                - Show full power system status\n");
-    printf("  power voltage               - Read supply voltage (GPIO18 ADC)\n");
-    printf("  power chip                  - Read power chip data (GPIO47 UART)\n");
-    printf("\n");
-    printf("Monitoring Control:\n");
-    printf("  power start                 - Start background monitoring task\n");
-    printf("  power stop                  - Stop background monitoring task\n");
-    printf("  power threshold <min> <max> - Set voltage thresholds (V)\n");
-    printf("  power interval <ms>         - Set sampling interval (100-60000 ms)\n");
-    printf("\n");
-    printf("Debug Tools:\n");
-    printf("  power debug enable|disable  - Enable/disable protocol debug\n");
-    printf("  power test                  - Test ADC reading\n");
-    printf("  power stats                 - Show detailed statistics\n");
-    printf("  power reset                 - Reset statistics\n");
-    printf("  power help                  - Show this help\n");
-    printf("\n");
-    printf("Hardware Configuration:\n");
-    printf("  GPIO18: Supply voltage monitor (ADC2_CH7, divider 11.4:1)\n");
-    printf("  GPIO47: Power chip UART RX (9600 8N1, [0xFF][V][I][CRC])\n");
-    printf("\n");
-    printf("Examples:\n");
-    printf("  power voltage               - Read current supply voltage\n");
-    printf("  power threshold 10 28       - Set thresholds to 10V-28V\n");
-    printf("  power interval 2000         - Set 2 second sample interval\n");
-    printf("  power debug enable          - Enable protocol debugging\n");
-    printf("\n");
+    ts_console_printf("\n");
+    ts_console_printf("==================== Power Monitor Commands ====================\n");
+    ts_console_printf("\n");
+    ts_console_printf("Basic Commands:\n");
+    ts_console_printf("  power status                - Show full power system status\n");
+    ts_console_printf("  power voltage               - Read supply voltage (GPIO18 ADC)\n");
+    ts_console_printf("  power chip                  - Read power chip data (GPIO47 UART)\n");
+    ts_console_printf("\n");
+    ts_console_printf("Monitoring Control:\n");
+    ts_console_printf("  power start                 - Start background monitoring task\n");
+    ts_console_printf("  power stop                  - Stop background monitoring task\n");
+    ts_console_printf("  power threshold <min> <max> - Set voltage thresholds (V)\n");
+    ts_console_printf("  power interval <ms>         - Set sampling interval (100-60000 ms)\n");
+    ts_console_printf("\n");
+    ts_console_printf("Debug Tools:\n");
+    ts_console_printf("  power debug enable|disable  - Enable/disable protocol debug\n");
+    ts_console_printf("  power test                  - Test ADC reading\n");
+    ts_console_printf("  power stats                 - Show detailed statistics\n");
+    ts_console_printf("  power reset                 - Reset statistics\n");
+    ts_console_printf("  power help                  - Show this help\n");
+    ts_console_printf("\n");
+    ts_console_printf("Hardware Configuration:\n");
+    ts_console_printf("  GPIO18: Supply voltage monitor (ADC2_CH7, divider 11.4:1)\n");
+    ts_console_printf("  GPIO47: Power chip UART RX (9600 8N1, [0xFF][V][I][CRC])\n");
+    ts_console_printf("\n");
+    ts_console_printf("Examples:\n");
+    ts_console_printf("  power voltage               - Read current supply voltage\n");
+    ts_console_printf("  power threshold 10 28       - Set thresholds to 10V-28V\n");
+    ts_console_printf("  power interval 2000         - Set 2 second sample interval\n");
+    ts_console_printf("  power debug enable          - Enable protocol debugging\n");
+    ts_console_printf("\n");
 }
 
 /*===========================================================================*/
@@ -402,11 +485,17 @@ static int cmd_power_main(int argc, char **argv)
             float max_v = atof(argv[3]);
             return cmd_power_threshold(min_v, max_v);
         } else {
-            float min_v, max_v;
-            if (ts_power_monitor_get_voltage_thresholds(&min_v, &max_v) == ESP_OK) {
-                printf("Current thresholds: %.2f V - %.2f V\n", min_v, max_v);
+            /* 显示当前阈值 - 从 status API 获取 */
+            ts_api_result_t result;
+            ts_api_result_init(&result);
+            if (ts_api_call("power.status", NULL, &result) == ESP_OK && result.data) {
+                const cJSON *voltage = cJSON_GetObjectItem(result.data, "voltage");
+                if (voltage) {
+                    /* 阈值信息从 status 中获取（如果有的话） */
+                }
             }
-            printf("Usage: power threshold <min_voltage> <max_voltage>\n");
+            ts_api_result_free(&result);
+            ts_console_printf("Usage: power threshold <min_voltage> <max_voltage>\n");
             return 1;
         }
     }
@@ -415,11 +504,7 @@ static int cmd_power_main(int argc, char **argv)
             uint32_t interval = atoi(argv[2]);
             return cmd_power_interval(interval);
         } else {
-            uint32_t interval;
-            if (ts_power_monitor_get_sample_interval(&interval) == ESP_OK) {
-                printf("Current interval: %lu ms\n", (unsigned long)interval);
-            }
-            printf("Usage: power interval <milliseconds>\n");
+            ts_console_printf("Usage: power interval <milliseconds>\n");
             return 1;
         }
     }
@@ -434,7 +519,7 @@ static int cmd_power_main(int argc, char **argv)
             bool enable = (strcmp(argv[2], "enable") == 0 || strcmp(argv[2], "on") == 0);
             return cmd_power_debug(enable);
         } else {
-            printf("Usage: power debug enable|disable\n");
+            ts_console_printf("Usage: power debug enable|disable\n");
             return 1;
         }
     }
@@ -446,8 +531,8 @@ static int cmd_power_main(int argc, char **argv)
         return 0;
     }
     else {
-        printf("Unknown command: %s\n", subcmd);
-        printf("Use 'power help' for usage information\n");
+        ts_console_printf("Unknown command: %s\n", subcmd);
+        ts_console_printf("Use 'power help' for usage information\n");
         return 1;
     }
 }
@@ -467,7 +552,7 @@ esp_err_t ts_cmd_power_register(void)
     
     esp_err_t ret = esp_console_cmd_register(&cmd);
     if (ret != ESP_OK) {
-        printf("Failed to register power command: %s\n", esp_err_to_name(ret));
+        ts_console_printf("Failed to register power command: %s\n", esp_err_to_name(ret));
         return ret;
     }
     

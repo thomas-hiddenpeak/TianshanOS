@@ -117,6 +117,7 @@ typedef enum {
     TS_POWER_POLICY_EVENT_RECOVERY_START,   /**< 开始恢复 */
     TS_POWER_POLICY_EVENT_RECOVERY_COMPLETE,/**< 恢复完成（即将重启）*/
     TS_POWER_POLICY_EVENT_COUNTDOWN_TICK,   /**< 倒计时每秒 */
+    TS_POWER_POLICY_EVENT_DEBUG_TICK,       /**< 调试模式每秒更新 */
     TS_POWER_POLICY_EVENT_MAX
 } ts_power_policy_event_t;
 
@@ -239,6 +240,20 @@ esp_err_t ts_power_policy_set_shutdown_delay(uint32_t delay_sec);
  * @return ESP_OK 成功
  */
 esp_err_t ts_power_policy_register_callback(ts_power_policy_callback_t callback, void *user_data);
+
+/**
+ * @brief 启用/禁用调试模式
+ * @param enable true 启用，false 禁用
+ * @param duration_sec 调试模式持续时间（秒），0 表示永久
+ * @return ESP_OK 成功
+ */
+esp_err_t ts_power_policy_set_debug_mode(bool enable, uint32_t duration_sec);
+
+/**
+ * @brief 检查调试模式是否启用
+ * @return true 已启用
+ */
+bool ts_power_policy_is_debug_mode(void);
 
 /**
  * @brief 注册控制台命令

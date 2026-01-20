@@ -57,6 +57,26 @@ static int do_agx_status(bool json)
         return 1;
     }
     
+    /* JSON 模式使用 API */
+    if (json) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        esp_err_t ret = ts_api_call("agx.status", NULL, &result);
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Unknown error");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     ts_agx_status_info_t status;
     esp_err_t ret = ts_agx_monitor_get_status(&status);
     if (ret != ESP_OK) {
@@ -64,41 +84,21 @@ static int do_agx_status(bool json)
         return 1;
     }
     
-    if (json) {
-        ts_console_printf(
-            "{\"initialized\":%s,\"running\":%s,\"connection\":\"%s\","
-            "\"reconnects\":%lu,\"messages\":%lu,\"errors\":%lu,"
-            "\"reliability\":%.1f,\"connected_time_ms\":%llu",
-            status.initialized ? "true" : "false",
-            status.running ? "true" : "false",
-            ts_agx_status_to_str(status.connection_status),
-            status.total_reconnects,
-            status.messages_received,
-            status.parse_errors,
-            status.connection_reliability,
-            status.connected_time_ms);
-        
-        if (status.last_error[0] != '\0') {
-            ts_console_printf(",\"last_error\":\"%s\"", status.last_error);
-        }
-        ts_console_printf("}\n");
-    } else {
-        ts_console_printf("AGX Monitor Status:\n");
-        ts_console_printf("  Initialized:    %s\n", status.initialized ? "Yes" : "No");
-        ts_console_printf("  Running:        %s\n", status.running ? "Yes" : "No");
-        ts_console_printf("  Connection:     %s\n", ts_agx_status_to_str(status.connection_status));
-        ts_console_printf("  Reconnects:     %lu\n", status.total_reconnects);
-        ts_console_printf("  Messages:       %lu\n", status.messages_received);
-        ts_console_printf("  Parse Errors:   %lu\n", status.parse_errors);
-        ts_console_printf("  Reliability:    %.1f%%\n", status.connection_reliability);
-        
-        if (status.connection_status == TS_AGX_STATUS_CONNECTED) {
-            ts_console_printf("  Connected:      %llu ms\n", status.connected_time_ms);
-        }
-        
-        if (status.last_error[0] != '\0') {
-            ts_console_printf("  Last Error:     %s\n", status.last_error);
-        }
+    ts_console_printf("AGX Monitor Status:\n");
+    ts_console_printf("  Initialized:    %s\n", status.initialized ? "Yes" : "No");
+    ts_console_printf("  Running:        %s\n", status.running ? "Yes" : "No");
+    ts_console_printf("  Connection:     %s\n", ts_agx_status_to_str(status.connection_status));
+    ts_console_printf("  Reconnects:     %lu\n", status.total_reconnects);
+    ts_console_printf("  Messages:       %lu\n", status.messages_received);
+    ts_console_printf("  Parse Errors:   %lu\n", status.parse_errors);
+    ts_console_printf("  Reliability:    %.1f%%\n", status.connection_reliability);
+    
+    if (status.connection_status == TS_AGX_STATUS_CONNECTED) {
+        ts_console_printf("  Connected:      %llu ms\n", status.connected_time_ms);
+    }
+    
+    if (status.last_error[0] != '\0') {
+        ts_console_printf("  Last Error:     %s\n", status.last_error);
     }
     
     return 0;
@@ -119,6 +119,26 @@ static int do_agx_data(bool json)
         return 1;
     }
     
+    /* JSON 模式使用 API */
+    if (json) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        esp_err_t ret = ts_api_call("agx.data", NULL, &result);
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Unknown error");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     ts_agx_data_t data;
     esp_err_t ret = ts_agx_monitor_get_data(&data);
     if (ret != ESP_OK) {
@@ -126,79 +146,39 @@ static int do_agx_data(bool json)
         return 1;
     }
     
-    if (json) {
-        ts_console_printf("{\"timestamp\":\"%s\",", data.timestamp);
-        
-        /* CPU */
-        ts_console_printf("\"cpu\":{\"cores\":%d,\"data\":[", data.cpu.core_count);
-        for (int i = 0; i < data.cpu.core_count; i++) {
-            if (i > 0) ts_console_printf(",");
-            ts_console_printf("{\"id\":%d,\"usage\":%d,\"freq\":%d}",
-                data.cpu.cores[i].id,
-                data.cpu.cores[i].usage,
-                data.cpu.cores[i].freq_mhz);
-        }
-        ts_console_printf("]},");
-        
-        /* Memory */
-        ts_console_printf("\"memory\":{\"ram\":{\"used\":%lu,\"total\":%lu},"
-                         "\"swap\":{\"used\":%lu,\"total\":%lu}},",
-            data.memory.ram.used_mb, data.memory.ram.total_mb,
-            data.memory.swap.used_mb, data.memory.swap.total_mb);
-        
-        /* Temperature */
-        ts_console_printf("\"temperature\":{\"cpu\":%.1f,\"soc0\":%.1f,"
-                         "\"soc1\":%.1f,\"soc2\":%.1f,\"tj\":%.1f},",
-            data.temperature.cpu, data.temperature.soc0,
-            data.temperature.soc1, data.temperature.soc2,
-            data.temperature.tj);
-        
-        /* Power */
-        ts_console_printf("\"power\":{\"gpu_soc\":{\"current\":%lu,\"average\":%lu},"
-                         "\"cpu_cv\":{\"current\":%lu,\"average\":%lu},"
-                         "\"sys_5v\":{\"current\":%lu,\"average\":%lu}},",
-            data.power.gpu_soc.current_mw, data.power.gpu_soc.average_mw,
-            data.power.cpu_cv.current_mw, data.power.cpu_cv.average_mw,
-            data.power.sys_5v.current_mw, data.power.sys_5v.average_mw);
-        
-        /* GPU */
-        ts_console_printf("\"gpu\":{\"gr3d_freq_pct\":%d}}\n", data.gpu.gr3d_freq_pct);
-        
-    } else {
-        ts_console_printf("AGX Data:\n");
-        ts_console_printf("  Timestamp:     %s\n", data.timestamp);
-        ts_console_printf("\n  CPU (%d cores):\n", data.cpu.core_count);
-        for (int i = 0; i < data.cpu.core_count; i++) {
-            ts_console_printf("    Core %d: %3d%% @ %4d MHz\n",
-                data.cpu.cores[i].id,
-                data.cpu.cores[i].usage,
-                data.cpu.cores[i].freq_mhz);
-        }
-        
-        ts_console_printf("\n  Memory:\n");
-        ts_console_printf("    RAM:  %lu / %lu MB\n", 
-            data.memory.ram.used_mb, data.memory.ram.total_mb);
-        ts_console_printf("    SWAP: %lu / %lu MB\n",
-            data.memory.swap.used_mb, data.memory.swap.total_mb);
-        
-        ts_console_printf("\n  Temperature:\n");
-        ts_console_printf("    CPU:   %.1f°C\n", data.temperature.cpu);
-        ts_console_printf("    SoC0:  %.1f°C\n", data.temperature.soc0);
-        ts_console_printf("    SoC1:  %.1f°C\n", data.temperature.soc1);
-        ts_console_printf("    SoC2:  %.1f°C\n", data.temperature.soc2);
-        ts_console_printf("    Tj:    %.1f°C\n", data.temperature.tj);
-        
-        ts_console_printf("\n  Power:\n");
-        ts_console_printf("    GPU+SoC: %lu mW (avg: %lu mW)\n",
-            data.power.gpu_soc.current_mw, data.power.gpu_soc.average_mw);
-        ts_console_printf("    CPU:     %lu mW (avg: %lu mW)\n",
-            data.power.cpu_cv.current_mw, data.power.cpu_cv.average_mw);
-        ts_console_printf("    SYS 5V:  %lu mW (avg: %lu mW)\n",
-            data.power.sys_5v.current_mw, data.power.sys_5v.average_mw);
-        
-        ts_console_printf("\n  GPU:\n");
-        ts_console_printf("    GR3D Freq: %d%%\n", data.gpu.gr3d_freq_pct);
+    ts_console_printf("AGX Data:\n");
+    ts_console_printf("  Timestamp:     %s\n", data.timestamp);
+    ts_console_printf("\n  CPU (%d cores):\n", data.cpu.core_count);
+    for (int i = 0; i < data.cpu.core_count; i++) {
+        ts_console_printf("    Core %d: %3d%% @ %4d MHz\n",
+            data.cpu.cores[i].id,
+            data.cpu.cores[i].usage,
+            data.cpu.cores[i].freq_mhz);
     }
+    
+    ts_console_printf("\n  Memory:\n");
+    ts_console_printf("    RAM:  %lu / %lu MB\n", 
+        data.memory.ram.used_mb, data.memory.ram.total_mb);
+    ts_console_printf("    SWAP: %lu / %lu MB\n",
+        data.memory.swap.used_mb, data.memory.swap.total_mb);
+    
+    ts_console_printf("\n  Temperature:\n");
+    ts_console_printf("    CPU:   %.1f°C\n", data.temperature.cpu);
+    ts_console_printf("    SoC0:  %.1f°C\n", data.temperature.soc0);
+    ts_console_printf("    SoC1:  %.1f°C\n", data.temperature.soc1);
+    ts_console_printf("    SoC2:  %.1f°C\n", data.temperature.soc2);
+    ts_console_printf("    Tj:    %.1f°C\n", data.temperature.tj);
+    
+    ts_console_printf("\n  Power:\n");
+    ts_console_printf("    GPU+SoC: %lu mW (avg: %lu mW)\n",
+        data.power.gpu_soc.current_mw, data.power.gpu_soc.average_mw);
+    ts_console_printf("    CPU:     %lu mW (avg: %lu mW)\n",
+        data.power.cpu_cv.current_mw, data.power.cpu_cv.average_mw);
+    ts_console_printf("    SYS 5V:  %lu mW (avg: %lu mW)\n",
+        data.power.sys_5v.current_mw, data.power.sys_5v.average_mw);
+    
+    ts_console_printf("\n  GPU:\n");
+    ts_console_printf("    GR3D Freq: %d%%\n", data.gpu.gr3d_freq_pct);
     
     return 0;
 }
@@ -290,13 +270,19 @@ static int do_agx_config(const char *server, int port, bool json)
     } else {
         /* 显示当前配置 */
         if (json) {
-            ts_console_printf(
-                "{\"server\":\"%s\",\"port\":%d,\"reconnect_ms\":%lu,"
-                "\"startup_delay_ms\":%lu,\"heartbeat_timeout_ms\":%lu}\n",
-                config.server_ip, config.server_port,
-                config.reconnect_interval_ms,
-                config.startup_delay_ms,
-                config.heartbeat_timeout_ms);
+            ts_api_result_t result;
+            ts_api_result_init(&result);
+            
+            esp_err_t ret = ts_api_call("agx.config", NULL, &result);
+            if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+                char *json_str = cJSON_PrintUnformatted(result.data);
+                if (json_str) {
+                    ts_console_printf("%s\n", json_str);
+                    free(json_str);
+                }
+            }
+            ts_api_result_free(&result);
+            return (ret == ESP_OK) ? 0 : 1;
         } else {
             ts_console_printf("AGX Monitor Configuration:\n");
             ts_console_printf("  Server:           %s\n", config.server_ip);

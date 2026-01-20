@@ -15,13 +15,21 @@
  */
 
 #include <stdio.h>
+#include "ts_console.h"
 #include <string.h>
+#include "ts_console.h"
 #include "esp_console.h"
+#include "ts_console.h"
 #include "argtable3/argtable3.h"
+#include "ts_console.h"
 #include "ts_power_policy.h"
+#include "ts_console.h"
 #include "ts_power_monitor.h"
+#include "ts_console.h"
 #include "ts_api.h"
+#include "ts_console.h"
 #include "cJSON.h"
+#include "ts_console.h"
 
 #define TAG "cmd_voltprot"
 
@@ -75,11 +83,11 @@ static void print_status(bool json_format)
         if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
             char *json_str = cJSON_Print(result.data);
             if (json_str) {
-                printf("%s\n", json_str);
+                ts_console_printf("%s\n", json_str);
                 free(json_str);
             }
         } else {
-            printf("错误: 无法获取保护状态\n");
+            ts_console_printf("错误: 无法获取保护状态\n");
         }
         ts_api_result_free(&result);
         return;
@@ -89,7 +97,7 @@ static void print_status(bool json_format)
     ts_power_policy_status_t status;
     
     if (ts_power_policy_get_status(&status) != ESP_OK) {
-        printf("错误: 无法获取保护状态\n");
+        ts_console_printf("错误: 无法获取保护状态\n");
         return;
     }
     
@@ -111,45 +119,45 @@ static void print_status(bool json_format)
     float low_threshold, recovery_threshold;
     ts_power_policy_get_thresholds(&low_threshold, &recovery_threshold);
     
-    printf("\n╔══════════════════════════════════════════════════════════════╗\n");
-    printf("║            ⚡ 电压保护状态 (Voltage Protection)              ║\n");
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
+    ts_console_printf("\n╔══════════════════════════════════════════════════════════════╗\n");
+    ts_console_printf("║            ⚡ 电压保护状态 (Voltage Protection)              ║\n");
+    ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
     
-    printf("║ 状态:  %s %-20s                           ║\n",
+    ts_console_printf("║ 状态:  %s %-20s                           ║\n",
            get_state_emoji(status.state),
            ts_power_policy_get_state_name(status.state));
-    printf("║ 电压:  %.2f V                                               ║\n",
+    ts_console_printf("║ 电压:  %.2f V                                               ║\n",
            display_voltage);
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
-    printf("║ 阈值配置:                                                    ║\n");
-    printf("║   低电压阈值:   %.1f V                                      ║\n",
+    ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
+    ts_console_printf("║ 阈值配置:                                                    ║\n");
+    ts_console_printf("║   低电压阈值:   %.1f V                                      ║\n",
            low_threshold);
-    printf("║   恢复电压阈值: %.1f V                                      ║\n",
+    ts_console_printf("║   恢复电压阈值: %.1f V                                      ║\n",
            recovery_threshold);
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
+    ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
     
     if (status.state == TS_POWER_POLICY_STATE_LOW_VOLTAGE) {
-        printf("║ ⏳ 关机倒计时: %lu 秒                                       ║\n",
+        ts_console_printf("║ ⏳ 关机倒计时: %lu 秒                                       ║\n",
                (unsigned long)status.countdown_remaining_sec);
     }
     
     if (status.state == TS_POWER_POLICY_STATE_RECOVERY) {
-        printf("║ 🔄 恢复计时器: %lu 秒                                       ║\n",
+        ts_console_printf("║ 🔄 恢复计时器: %lu 秒                                       ║\n",
                (unsigned long)status.recovery_timer_sec);
     }
     
-    printf("║ 统计:                                                        ║\n");
-    printf("║   保护触发次数: %lu                                          ║\n",
+    ts_console_printf("║ 统计:                                                        ║\n");
+    ts_console_printf("║   保护触发次数: %lu                                          ║\n",
            (unsigned long)status.protection_count);
-    printf("║   运行时间: %lu ms                                           ║\n",
+    ts_console_printf("║   运行时间: %lu ms                                           ║\n",
            (unsigned long)status.uptime_ms);
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
-    printf("║ 设备状态:                                                    ║\n");
-    printf("║   AGX 电源:  %s    LPMU 电源:  %s    AGX 连接:  %s       ║\n",
+    ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
+    ts_console_printf("║ 设备状态:                                                    ║\n");
+    ts_console_printf("║   AGX 电源:  %s    LPMU 电源:  %s    AGX 连接:  %s       ║\n",
            status.device_status.agx_powered ? "✅" : "❌",
            status.device_status.lpmu_powered ? "✅" : "❌",
            status.device_status.agx_connected ? "✅" : "❌");
-    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    ts_console_printf("╚══════════════════════════════════════════════════════════════╝\n");
 }
 
 /**
@@ -160,23 +168,23 @@ static void print_config(void)
     float low_threshold, recovery_threshold;
     ts_power_policy_get_thresholds(&low_threshold, &recovery_threshold);
     
-    printf("\n╔══════════════════════════════════════════════════════════════╗\n");
-    printf("║              ⚙️  电压保护配置                                 ║\n");
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
-    printf("║ 低电压阈值:       %.2f V  (默认: %.1f V)                    ║\n",
+    ts_console_printf("\n╔══════════════════════════════════════════════════════════════╗\n");
+    ts_console_printf("║              ⚙️  电压保护配置                                 ║\n");
+    ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
+    ts_console_printf("║ 低电压阈值:       %.2f V  (默认: %.1f V)                    ║\n",
            low_threshold, TS_POWER_POLICY_LOW_VOLTAGE_DEFAULT);
-    printf("║ 恢复电压阈值:     %.2f V  (默认: %.1f V)                    ║\n",
+    ts_console_printf("║ 恢复电压阈值:     %.2f V  (默认: %.1f V)                    ║\n",
            recovery_threshold, TS_POWER_POLICY_RECOVERY_VOLTAGE_DEFAULT);
-    printf("║ 关机延迟:         %u 秒   (默认: %u 秒)                       ║\n",
+    ts_console_printf("║ 关机延迟:         %u 秒   (默认: %u 秒)                       ║\n",
            TS_POWER_POLICY_SHUTDOWN_DELAY_DEFAULT, TS_POWER_POLICY_SHUTDOWN_DELAY_DEFAULT);
-    printf("║ 恢复稳定等待:     %u 秒   (默认: %u 秒)                        ║\n",
+    ts_console_printf("║ 恢复稳定等待:     %u 秒   (默认: %u 秒)                        ║\n",
            TS_POWER_POLICY_RECOVERY_HOLD_DEFAULT, TS_POWER_POLICY_RECOVERY_HOLD_DEFAULT);
-    printf("╠══════════════════════════════════════════════════════════════╣\n");
-    printf("║ 修改配置:                                                    ║\n");
-    printf("║   voltprot --config --low <V>        设置低电压阈值          ║\n");
-    printf("║   voltprot --config --recovery <V>   设置恢复电压阈值        ║\n");
-    printf("║   voltprot --config --delay <sec>    设置关机延迟            ║\n");
-    printf("╚══════════════════════════════════════════════════════════════╝\n");
+    ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
+    ts_console_printf("║ 修改配置:                                                    ║\n");
+    ts_console_printf("║   voltprot --config --low <V>        设置低电压阈值          ║\n");
+    ts_console_printf("║   voltprot --config --recovery <V>   设置恢复电压阈值        ║\n");
+    ts_console_printf("║   voltprot --config --delay <sec>    设置关机延迟            ║\n");
+    ts_console_printf("╚══════════════════════════════════════════════════════════════╝\n");
 }
 
 /*===========================================================================*/
@@ -189,16 +197,16 @@ static int cmd_voltprot_handler(int argc, char **argv)
     
     /* 显示帮助 */
     if (s_voltprot_args.help->count > 0) {
-        printf("\n电压保护策略命令\n\n");
-        printf("用法: voltprot [选项]\n\n");
+        ts_console_printf("\n电压保护策略命令\n\n");
+        ts_console_printf("用法: voltprot [选项]\n\n");
         arg_print_glossary(stdout, (void **)&s_voltprot_args, "  %-25s %s\n");
-        printf("\n示例:\n");
-        printf("  voltprot --status                显示保护状态\n");
-        printf("  voltprot --test                  触发测试模式\n");
-        printf("  voltprot --reset                 复位保护状态\n");
-        printf("  voltprot --config                显示配置\n");
-        printf("  voltprot --config --low 12.0     设置低电压阈值为 12.0V\n");
-        printf("  voltprot --debug                 实时监控模式\n");
+        ts_console_printf("\n示例:\n");
+        ts_console_printf("  voltprot --status                显示保护状态\n");
+        ts_console_printf("  voltprot --test                  触发测试模式\n");
+        ts_console_printf("  voltprot --reset                 复位保护状态\n");
+        ts_console_printf("  voltprot --config                显示配置\n");
+        ts_console_printf("  voltprot --config --low 12.0     设置低电压阈值为 12.0V\n");
+        ts_console_printf("  voltprot --debug                 实时监控模式\n");
         return 0;
     }
     
@@ -214,10 +222,10 @@ static int cmd_voltprot_handler(int argc, char **argv)
         /* 尝试初始化 */
         esp_err_t ret = ts_power_policy_init(NULL);
         if (ret != ESP_OK) {
-            printf("错误: 电压保护未初始化且初始化失败: %s\n", esp_err_to_name(ret));
+            ts_console_printf("错误: 电压保护未初始化且初始化失败: %s\n", esp_err_to_name(ret));
             return 1;
         }
-        printf("电压保护已自动初始化\n");
+        ts_console_printf("电压保护已自动初始化\n");
     }
     
     /* --status: 显示状态 */
@@ -232,22 +240,22 @@ static int cmd_voltprot_handler(int argc, char **argv)
             /* 启动监控 */
             esp_err_t ret = ts_power_policy_start();
             if (ret != ESP_OK) {
-                printf("错误: 无法启动保护监控: %s\n", esp_err_to_name(ret));
+                ts_console_printf("错误: 无法启动保护监控: %s\n", esp_err_to_name(ret));
                 return 1;
             }
-            printf("保护监控已启动\n");
+            ts_console_printf("保护监控已启动\n");
         }
         
-        printf("⚠️  触发测试模式...\n");
-        printf("将模拟低电压状态，开始 %u 秒倒计时\n", TS_POWER_POLICY_SHUTDOWN_DELAY_DEFAULT);
-        printf("使用 'voltprot --reset' 取消测试\n\n");
+        ts_console_printf("⚠️  触发测试模式...\n");
+        ts_console_printf("将模拟低电压状态，开始 %u 秒倒计时\n", TS_POWER_POLICY_SHUTDOWN_DELAY_DEFAULT);
+        ts_console_printf("使用 'voltprot --reset' 取消测试\n\n");
         
         esp_err_t ret = ts_power_policy_trigger_test();
         if (ret == ESP_OK) {
-            printf("✅ 测试已触发\n");
+            ts_console_printf("✅ 测试已触发\n");
             print_status(false);
         } else {
-            printf("❌ 触发失败: %s\n", esp_err_to_name(ret));
+            ts_console_printf("❌ 触发失败: %s\n", esp_err_to_name(ret));
             return 1;
         }
         return 0;
@@ -255,12 +263,12 @@ static int cmd_voltprot_handler(int argc, char **argv)
     
     /* --reset: 复位保护 */
     if (s_voltprot_args.reset->count > 0) {
-        printf("🔄 复位保护状态...\n");
-        printf("⚠️  注意: 这将重启 ESP32\n");
+        ts_console_printf("🔄 复位保护状态...\n");
+        ts_console_printf("⚠️  注意: 这将重启 ESP32\n");
         
         esp_err_t ret = ts_power_policy_reset();
         if (ret != ESP_OK) {
-            printf("❌ 复位失败: %s\n", esp_err_to_name(ret));
+            ts_console_printf("❌ 复位失败: %s\n", esp_err_to_name(ret));
             return 1;
         }
         /* 不会到达这里，因为会重启 */
@@ -279,10 +287,10 @@ static int cmd_voltprot_handler(int argc, char **argv)
             
             esp_err_t ret = ts_power_policy_set_thresholds(low, recovery);
             if (ret == ESP_OK) {
-                printf("✅ 低电压阈值已设置为 %.2f V\n", low);
+                ts_console_printf("✅ 低电压阈值已设置为 %.2f V\n", low);
                 modified = true;
             } else {
-                printf("❌ 设置失败: %s\n", esp_err_to_name(ret));
+                ts_console_printf("❌ 设置失败: %s\n", esp_err_to_name(ret));
             }
         }
         
@@ -294,10 +302,10 @@ static int cmd_voltprot_handler(int argc, char **argv)
             
             esp_err_t ret = ts_power_policy_set_thresholds(low, recovery);
             if (ret == ESP_OK) {
-                printf("✅ 恢复电压阈值已设置为 %.2f V\n", recovery);
+                ts_console_printf("✅ 恢复电压阈值已设置为 %.2f V\n", recovery);
                 modified = true;
             } else {
-                printf("❌ 设置失败: %s\n", esp_err_to_name(ret));
+                ts_console_printf("❌ 设置失败: %s\n", esp_err_to_name(ret));
             }
         }
         
@@ -306,10 +314,10 @@ static int cmd_voltprot_handler(int argc, char **argv)
             uint32_t delay = (uint32_t)s_voltprot_args.delay->ival[0];
             esp_err_t ret = ts_power_policy_set_shutdown_delay(delay);
             if (ret == ESP_OK) {
-                printf("✅ 关机延迟已设置为 %lu 秒\n", (unsigned long)delay);
+                ts_console_printf("✅ 关机延迟已设置为 %lu 秒\n", (unsigned long)delay);
                 modified = true;
             } else {
-                printf("❌ 设置失败: %s\n", esp_err_to_name(ret));
+                ts_console_printf("❌ 设置失败: %s\n", esp_err_to_name(ret));
             }
         }
         
@@ -319,33 +327,28 @@ static int cmd_voltprot_handler(int argc, char **argv)
         return 0;
     }
     
-    /* --debug: 调试模式 */
+    /* --debug: 调试模式（非阻塞，串口通过日志输出，Web 通过 WebSocket 推送）*/
     if (s_voltprot_args.debug->count > 0) {
-        printf("\n🔍 进入调试模式（按 Ctrl+C 退出）\n\n");
-        
         if (!ts_power_policy_is_running()) {
             esp_err_t ret = ts_power_policy_start();
             if (ret != ESP_OK) {
-                printf("错误: 无法启动保护监控: %s\n", esp_err_to_name(ret));
+                ts_console_printf("错误: 无法启动保护监控: %s\n", esp_err_to_name(ret));
                 return 1;
             }
         }
         
-        for (int i = 0; i < 30; i++) {
-            ts_power_policy_status_t status;
-            if (ts_power_policy_get_status(&status) == ESP_OK) {
-                printf("\r[%02d] %s %-12s | V: %6.2f | 倒计时: %3lu | 恢复: %3lu",
-                       i,
-                       get_state_emoji(status.state),
-                       ts_power_policy_get_state_name(status.state),
-                       status.current_voltage,
-                       (unsigned long)status.countdown_remaining_sec,
-                       (unsigned long)status.recovery_timer_sec);
-                fflush(stdout);
-            }
-            vTaskDelay(pdMS_TO_TICKS(1000));
+        if (ts_power_policy_is_debug_mode()) {
+            /* 已在调试模式，关闭它 */
+            ts_power_policy_set_debug_mode(false, 0);
+            ts_console_printf("🔍 调试模式已关闭\n");
+        } else {
+            /* 启用调试模式，30秒后自动关闭 */
+            ts_power_policy_set_debug_mode(true, 30);
+            ts_console_printf("🔍 调试模式已启用（30秒）\n");
+            ts_console_printf("   串口: 通过日志实时输出\n");
+            ts_console_printf("   Web:  通过 WebSocket 实时推送\n");
+            ts_console_printf("   再次执行 voltprot --debug 可提前关闭\n");
         }
-        printf("\n\n调试模式结束\n");
         return 0;
     }
     
@@ -368,7 +371,7 @@ esp_err_t ts_cmd_voltprot_register(void)
     s_voltprot_args.low_threshold = arg_dbln("l", "low", "<V>", 0, 1, "低电压阈值 (V)");
     s_voltprot_args.recovery_threshold = arg_dbln("R", "recovery", "<V>", 0, 1, "恢复电压阈值 (V)");
     s_voltprot_args.delay = arg_intn("d", "delay", "<sec>", 0, 1, "关机延迟 (秒)");
-    s_voltprot_args.debug = arg_litn(NULL, "debug", 0, 1, "调试模式（实时监控）");
+    s_voltprot_args.debug = arg_litn(NULL, "debug", 0, 1, "调试模式（30秒实时监控）");
     s_voltprot_args.json = arg_litn("j", "json", 0, 1, "JSON 格式输出");
     s_voltprot_args.help = arg_litn("h", "help", 0, 1, "显示帮助");
     s_voltprot_args.end = arg_end(5);

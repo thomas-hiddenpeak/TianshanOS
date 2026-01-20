@@ -150,6 +150,26 @@ static int do_net_ip(const char *iface_str, bool json_out)
 
 static int do_net_status(bool json_out)
 {
+    /* JSON 模式使用 API */
+    if (json_out) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        esp_err_t ret = ts_api_call("network.status", NULL, &result);
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Unknown error");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     ts_net_manager_status_t status;
     esp_err_t ret = ts_net_manager_get_status(&status);
     
@@ -158,76 +178,45 @@ static int do_net_status(bool json_out)
         return 1;
     }
     
-    if (json_out) {
-        ts_console_printf("{\n");
-        ts_console_printf("  \"initialized\": %s,\n", status.initialized ? "true" : "false");
-        ts_console_printf("  \"hostname\": \"%s\",\n", status.hostname);
-        
-        /* 以太网 */
-        ts_console_printf("  \"ethernet\": {\n");
-        ts_console_printf("    \"state\": \"%s\",\n", ts_net_state_to_str(status.eth.state));
-        ts_console_printf("    \"link_up\": %s,\n", status.eth.link_up ? "true" : "false");
-        ts_console_printf("    \"has_ip\": %s,\n", status.eth.has_ip ? "true" : "false");
-        if (status.eth.has_ip) {
-            ts_console_printf("    \"ip\": \"%s\",\n", status.eth.ip_info.ip);
-            ts_console_printf("    \"netmask\": \"%s\",\n", status.eth.ip_info.netmask);
-            ts_console_printf("    \"gateway\": \"%s\",\n", status.eth.ip_info.gateway);
-            ts_console_printf("    \"dns\": \"%s\",\n", status.eth.ip_info.dns1);
-        }
-        ts_console_printf("    \"mac\": \"%02x:%02x:%02x:%02x:%02x:%02x\",\n",
-            status.eth.mac[0], status.eth.mac[1], status.eth.mac[2],
-            status.eth.mac[3], status.eth.mac[4], status.eth.mac[5]);
-        ts_console_printf("    \"uptime_sec\": %lu\n", (unsigned long)status.eth.uptime_sec);
-        ts_console_printf("  },\n");
-        
-        /* WiFi STA */
-        ts_console_printf("  \"wifi_sta\": {\n");
-        ts_console_printf("    \"state\": \"%s\",\n", ts_net_state_to_str(status.wifi_sta.state));
-        ts_console_printf("    \"has_ip\": %s\n", status.wifi_sta.has_ip ? "true" : "false");
-        ts_console_printf("  }\n");
-        
-        ts_console_printf("}\n");
-    } else {
-        ts_console_printf("\n");
-        ts_console_printf("╔══════════════════════════════════════════════════════════════╗\n");
-        ts_console_printf("║                      Network Status                          ║\n");
-        ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
-        ts_console_printf("║ Hostname: %-50s ║\n", status.hostname);
-        ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
-        
-        /* 以太网状态 */
-        ts_console_printf("║ \033[1mEthernet (W5500)\033[0m                                            ║\n");
-        ts_console_printf("║   State:    %s%-12s\033[0m                                   ║\n",
-            state_color(status.eth.state), ts_net_state_to_str(status.eth.state));
-        ts_console_printf("║   Link:     %-12s                                   ║\n",
-            status.eth.link_up ? "Up" : "Down");
-        ts_console_printf("║   MAC:      %02x:%02x:%02x:%02x:%02x:%02x                            ║\n",
-            status.eth.mac[0], status.eth.mac[1], status.eth.mac[2],
-            status.eth.mac[3], status.eth.mac[4], status.eth.mac[5]);
-        
-        if (status.eth.has_ip) {
-            ts_console_printf("║   IP:       %-15s                              ║\n", status.eth.ip_info.ip);
-            ts_console_printf("║   Netmask:  %-15s                              ║\n", status.eth.ip_info.netmask);
-            ts_console_printf("║   Gateway:  %-15s                              ║\n", status.eth.ip_info.gateway);
-            ts_console_printf("║   DNS:      %-15s                              ║\n", status.eth.ip_info.dns1);
-            ts_console_printf("║   Uptime:   %lu sec                                         ║\n", 
-                (unsigned long)status.eth.uptime_sec);
-        }
-        
-        ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
-        
-        /* WiFi 状态 */
-        ts_console_printf("║ \033[1mWiFi Station\033[0m                                                ║\n");
-        ts_console_printf("║   State:    %s%-12s\033[0m                                   ║\n",
-            state_color(status.wifi_sta.state), ts_net_state_to_str(status.wifi_sta.state));
-        
-        if (status.wifi_sta.has_ip) {
-            ts_console_printf("║   IP:       %-15s                              ║\n", status.wifi_sta.ip_info.ip);
-        }
-        
-        ts_console_printf("╚══════════════════════════════════════════════════════════════╝\n");
-        ts_console_printf("\n");
+    ts_console_printf("\n");
+    ts_console_printf("╔══════════════════════════════════════════════════════════════╗\n");
+    ts_console_printf("║                      Network Status                          ║\n");
+    ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
+    ts_console_printf("║ Hostname: %-50s ║\n", status.hostname);
+    ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
+    
+    /* 以太网状态 */
+    ts_console_printf("║ \033[1mEthernet (W5500)\033[0m                                            ║\n");
+    ts_console_printf("║   State:    %s%-12s\033[0m                                   ║\n",
+        state_color(status.eth.state), ts_net_state_to_str(status.eth.state));
+    ts_console_printf("║   Link:     %-12s                                   ║\n",
+        status.eth.link_up ? "Up" : "Down");
+    ts_console_printf("║   MAC:      %02x:%02x:%02x:%02x:%02x:%02x                            ║\n",
+        status.eth.mac[0], status.eth.mac[1], status.eth.mac[2],
+        status.eth.mac[3], status.eth.mac[4], status.eth.mac[5]);
+    
+    if (status.eth.has_ip) {
+        ts_console_printf("║   IP:       %-15s                              ║\n", status.eth.ip_info.ip);
+        ts_console_printf("║   Netmask:  %-15s                              ║\n", status.eth.ip_info.netmask);
+        ts_console_printf("║   Gateway:  %-15s                              ║\n", status.eth.ip_info.gateway);
+        ts_console_printf("║   DNS:      %-15s                              ║\n", status.eth.ip_info.dns1);
+        ts_console_printf("║   Uptime:   %lu sec                                         ║\n", 
+            (unsigned long)status.eth.uptime_sec);
     }
+    
+    ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
+    
+    /* WiFi 状态 */
+    ts_console_printf("║ \033[1mWiFi Station\033[0m                                                ║\n");
+    ts_console_printf("║   State:    %s%-12s\033[0m                                   ║\n",
+        state_color(status.wifi_sta.state), ts_net_state_to_str(status.wifi_sta.state));
+    
+    if (status.wifi_sta.has_ip) {
+        ts_console_printf("║   IP:       %-15s                              ║\n", status.wifi_sta.ip_info.ip);
+    }
+    
+    ts_console_printf("╚══════════════════════════════════════════════════════════════╝\n");
+    ts_console_printf("\n");
     
     return 0;
 }

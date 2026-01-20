@@ -274,3 +274,483 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* ============================================================ */
+/*                       新增样式                                */
+/* ============================================================ */
+
+/* WebSocket 状态指示器 */
+.ws-status {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #e74c3c;
+    margin-left: 10px;
+    transition: background 0.3s;
+}
+
+.ws-status.connected {
+    background: #2ecc71;
+}
+
+/* 加载动画 */
+.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px;
+}
+
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid var(--border-color);
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Toast 通知 */
+.toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: #333;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 6px;
+    opacity: 0;
+    transition: all 0.3s;
+    z-index: 9999;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.toast-success {
+    background: var(--secondary-color);
+}
+
+.toast-error {
+    background: var(--danger-color);
+}
+
+.toast-info {
+    background: var(--primary-color);
+}
+
+/* 数据表格 */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card-bg);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.data-table th,
+.data-table td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.data-table th {
+    background: var(--bg-color);
+    font-weight: 600;
+    color: var(--text-light);
+}
+
+.data-table tr:hover {
+    background: rgba(52, 152, 219, 0.05);
+}
+
+.data-table code {
+    background: var(--bg-color);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+/* 状态徽章 */
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.status-badge.status-ok {
+    background: rgba(46, 204, 113, 0.15);
+    color: #27ae60;
+}
+
+.status-badge.status-error {
+    background: rgba(231, 76, 60, 0.15);
+    color: #c0392b;
+}
+
+.status-badge.status-warn {
+    background: rgba(243, 156, 18, 0.15);
+    color: #d35400;
+}
+
+/* 小按钮 */
+.btn-small {
+    padding: 4px 12px;
+    font-size: 0.85rem;
+}
+
+.btn-success {
+    background: var(--secondary-color);
+    color: white;
+}
+
+.btn-warning {
+    background: var(--warning-color);
+    color: white;
+}
+
+/* 按钮组 */
+.button-group {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}
+
+/* Section */
+.section {
+    background: var(--card-bg);
+    border-radius: 8px;
+    padding: 24px;
+    margin-top: 24px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.section h2 {
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-color);
+}
+
+/* 信息网格 */
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.info-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.info-item label {
+    font-size: 0.85rem;
+    color: var(--text-light);
+    margin-bottom: 4px;
+}
+
+.info-item span {
+    font-weight: 500;
+    font-size: 1.1rem;
+}
+
+/* 内存条 */
+.memory-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.memory-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.memory-item label {
+    min-width: 100px;
+    font-weight: 500;
+}
+
+.memory-item .progress-bar {
+    flex: 1;
+    margin: 0;
+}
+
+.memory-item span {
+    min-width: 180px;
+    text-align: right;
+    font-size: 0.9rem;
+    color: var(--text-light);
+}
+
+/* 表单行 */
+.form-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+
+.form-row .form-group {
+    flex: 1;
+    min-width: 150px;
+}
+
+/* LED 控制 */
+.led-devices {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+}
+
+.led-device-card {
+    background: var(--card-bg);
+}
+
+.control-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 0;
+}
+
+.control-row label {
+    min-width: 80px;
+}
+
+.control-row input[type="range"] {
+    flex: 1;
+}
+
+.effects-grid {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.effect-btn {
+    min-width: 100px;
+}
+
+.color-picker {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+
+.color-picker input[type="color"] {
+    width: 60px;
+    height: 40px;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+/* 风扇卡片 */
+.fans-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.fan-card {
+    background: var(--bg-color);
+    padding: 16px;
+    border-radius: 8px;
+}
+
+.fan-card h4 {
+    margin-bottom: 12px;
+}
+
+.fan-card p {
+    margin: 4px 0;
+    font-size: 0.9rem;
+}
+
+.fan-card input[type="range"] {
+    width: 100%;
+    margin-top: 12px;
+}
+
+/* 电源信息 */
+.power-info {
+    display: flex;
+    gap: 20px;
+}
+
+.power-card {
+    background: var(--bg-color);
+    padding: 16px 24px;
+    border-radius: 8px;
+}
+
+.power-card p {
+    margin: 8px 0;
+}
+
+/* 配置表单 */
+.config-filter {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.config-filter input {
+    flex: 1;
+    max-width: 400px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+.config-form {
+    max-width: 800px;
+}
+
+/* SSH 表单 */
+.ssh-form {
+    max-width: 800px;
+    margin-bottom: 20px;
+}
+
+.result-box {
+    padding: 16px;
+    border-radius: 8px;
+    background: var(--bg-color);
+    margin-top: 16px;
+}
+
+.result-box.success {
+    background: rgba(46, 204, 113, 0.15);
+    color: #27ae60;
+}
+
+.result-box.error {
+    background: rgba(231, 76, 60, 0.15);
+    color: #c0392b;
+}
+
+/* Hidden */
+.hidden {
+    display: none !important;
+}
+
+/* 页面标题 */
+.page-system h1,
+.page-led h1,
+.page-network h1,
+.page-device h1,
+.page-config h1,
+.page-security h1,
+.dashboard h1 {
+    font-size: 1.8rem;
+    margin-bottom: 20px;
+}
+
+/* =========================================================================
+   终端页面样式
+   ========================================================================= */
+
+.terminal-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - var(--header-height) - var(--footer-height) - 40px);
+    padding: 0;
+}
+
+.terminal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 10px;
+}
+
+.terminal-header h1 {
+    font-size: 1.5rem;
+    margin: 0;
+}
+
+.terminal-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.terminal-container {
+    flex: 1;
+    background: #1e1e2e;
+    border-radius: 8px;
+    overflow: hidden;
+    min-height: 400px;
+}
+
+.terminal-container .xterm {
+    padding: 10px;
+    height: 100%;
+}
+
+.terminal-container .xterm-viewport {
+    overflow-y: auto !important;
+}
+
+.terminal-help {
+    padding: 10px 0;
+    color: var(--text-light);
+    font-size: 0.85rem;
+}
+
+.terminal-help code {
+    background: var(--bg-color);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+/* 小按钮 */
+.btn-sm {
+    padding: 5px 12px;
+    font-size: 0.85rem;
+}
+
+/* 响应式调整 */
+@media (max-width: 600px) {
+    .form-row {
+        flex-direction: column;
+    }
+    
+    .memory-item {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .memory-item label,
+    .memory-item span {
+        text-align: left;
+        min-width: 0;
+    }
+    
+    .terminal-page {
+        height: calc(100vh - var(--header-height) - var(--footer-height) - 20px);
+    }
+    
+    .terminal-container {
+        min-height: 300px;
+    }
+}

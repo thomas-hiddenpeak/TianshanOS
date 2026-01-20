@@ -6,6 +6,7 @@
 #include "ts_http_server.h"
 #include "ts_log.h"
 #include "ts_storage.h"
+#include "esp_log.h"
 #include <string.h>
 
 #define TAG "ts_http"
@@ -17,6 +18,10 @@ static bool s_initialized = false;
 esp_err_t ts_http_server_init(void)
 {
     if (s_initialized) return ESP_OK;
+    
+    /* 降低 httpd 内部日志级别，避免连接重置警告刷屏 */
+    esp_log_level_set("httpd_txrx", ESP_LOG_ERROR);
+    esp_log_level_set("httpd_uri", ESP_LOG_ERROR);
     
     s_initialized = true;
     TS_LOGI(TAG, "HTTP server initialized");
@@ -40,6 +45,14 @@ esp_err_t ts_http_server_start(void)
 #endif
     config.max_uri_handlers = MAX_ROUTES;
     config.uri_match_fn = httpd_uri_match_wildcard;
+    config.global_user_ctx = NULL;
+    config.global_user_ctx_free_fn = NULL;
+    config.global_transport_ctx = NULL;
+    config.global_transport_ctx_free_fn = NULL;
+    config.lru_purge_enable = true;  // 启用 LRU 清理，处理连接重置
+    config.recv_wait_timeout = 5;    // 接收超时 5 秒
+    config.send_wait_timeout = 5;    // 发送超时 5 秒
+    config.stack_size = 8192;        // 增加栈大小，支持终端命令执行
     
     esp_err_t ret = httpd_start(&s_server, &config);
     if (ret == ESP_OK) {
@@ -229,4 +242,9 @@ esp_err_t ts_http_set_cors(ts_http_request_t *req, const char *origin)
     httpd_resp_set_hdr(req->req, "Access-Control-Allow-Headers", "Content-Type, Authorization");
     
     return ESP_OK;
+}
+
+httpd_handle_t ts_http_server_get_handle(void)
+{
+    return s_server;
 }

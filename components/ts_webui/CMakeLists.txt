@@ -11,6 +11,7 @@ idf_component_register(
         ts_api
         ts_security
         ts_storage
+        ts_console
         esp_http_server
     PRIV_REQUIRES
         json

@@ -10,6 +10,7 @@
 #include "ts_api.h"
 #include "ts_log.h"
 #include "ts_led.h"
+#include "ts_led_preset.h"
 #include <string.h>
 
 #define TAG "api_led"
@@ -447,6 +448,98 @@ static esp_err_t api_led_color_hsv(const cJSON *params, ts_api_result_t *result)
     return ESP_OK;
 }
 
+/**
+ * @brief LED 后处理滤镜类型定义
+ */
+static const struct {
+    const char *name;
+    const char *description;
+} s_filter_types[] = {
+    {"none",        "No effect"},
+    {"brightness",  "Static brightness adjustment"},
+    {"pulse",       "Pulsing brightness (sine wave)"},
+    {"blink",       "On/off blinking"},
+    {"fade-in",     "Fade in (one-shot)"},
+    {"fade-out",    "Fade out (one-shot)"},
+    {"breathing",   "Smooth breathing effect"},
+    {"color-shift", "Hue rotation over time"},
+    {"saturation",  "Saturation adjustment"},
+    {"invert",      "Invert colors"},
+    {"grayscale",   "Convert to grayscale"},
+    {"scanline",    "Horizontal/vertical scanline"},
+    {"wave",        "Brightness wave"},
+    {"glitch",      "Random glitch artifacts"},
+    {NULL, NULL}
+};
+
+/**
+ * @brief led.filter.list - List available post-processing filters
+ */
+static esp_err_t api_led_filter_list(const cJSON *params, ts_api_result_t *result)
+{
+    cJSON *data = cJSON_CreateObject();
+    cJSON *filters = cJSON_AddArrayToObject(data, "filters");
+    
+    for (int i = 0; s_filter_types[i].name; i++) {
+        cJSON *filter = cJSON_CreateObject();
+        cJSON_AddStringToObject(filter, "name", s_filter_types[i].name);
+        cJSON_AddStringToObject(filter, "description", s_filter_types[i].description);
+        cJSON_AddItemToArray(filters, filter);
+    }
+    
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/**
+ * @brief led.boot.config - Get LED boot configuration
+ * @param device: optional device name filter
+ */
+static esp_err_t api_led_boot_config(const cJSON *params, ts_api_result_t *result)
+{
+    const char *device_filter = NULL;
+    if (params) {
+        cJSON *device_param = cJSON_GetObjectItem(params, "device");
+        if (device_param && cJSON_IsString(device_param)) {
+            device_filter = device_param->valuestring;
+        }
+    }
+    
+    const char *devices[] = {"touch", "board", "matrix"};
+    int start = 0, end = 3;
+    
+    if (device_filter) {
+        for (int i = 0; i < 3; i++) {
+            if (strcmp(device_filter, devices[i]) == 0) {
+                start = i;
+                end = i + 1;
+                break;
+            }
+        }
+    }
+    
+    cJSON *data = cJSON_CreateObject();
+    cJSON *configs = cJSON_AddArrayToObject(data, "boot_config");
+    
+    for (int i = start; i < end; i++) {
+        ts_led_boot_config_t cfg;
+        if (ts_led_get_boot_config(devices[i], &cfg) == ESP_OK) {
+            cJSON *config = cJSON_CreateObject();
+            cJSON_AddStringToObject(config, "device", devices[i]);
+            cJSON_AddBoolToObject(config, "enabled", cfg.enabled);
+            cJSON_AddStringToObject(config, "animation", cfg.animation);
+            cJSON_AddStringToObject(config, "filter", cfg.filter);
+            cJSON_AddStringToObject(config, "image_path", cfg.image_path);
+            cJSON_AddNumberToObject(config, "speed", cfg.speed);
+            cJSON_AddNumberToObject(config, "brightness", cfg.brightness);
+            cJSON_AddItemToArray(configs, config);
+        }
+    }
+    
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
 /*===========================================================================*/
 /*                          Registration                                      */
 /*===========================================================================*/
@@ -526,6 +619,20 @@ static const ts_api_endpoint_t led_endpoints[] = {
         .description = "Convert HSV to RGB",
         .category = TS_API_CAT_LED,
         .handler = api_led_color_hsv,
+        .requires_auth = false,
+    },
+    {
+        .name = "led.filter.list",
+        .description = "List available post-processing filters",
+        .category = TS_API_CAT_LED,
+        .handler = api_led_filter_list,
+        .requires_auth = false,
+    },
+    {
+        .name = "led.boot.config",
+        .description = "Get LED boot configuration",
+        .category = TS_API_CAT_LED,
+        .handler = api_led_boot_config,
         .requires_auth = false,
     },
 };

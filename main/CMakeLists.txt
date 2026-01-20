@@ -21,4 +21,6 @@ idf_component_register(
         ts_drivers
         ts_net
         ts_api
+        ts_security
+        ts_webui
 )

@@ -106,9 +106,7 @@ static void net_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data);
 static void ip_event_handler(void *arg, esp_event_base_t event_base,
                               int32_t event_id, void *event_data);
-static void notify_callbacks(ts_net_if_t iface, ts_net_state_t state);
 static esp_err_t load_eth_config_from_pins(ts_eth_config_t *eth_hw_config);
-static void update_ip_info_from_netif(ts_net_if_t iface);
 
 /* ============================================================================
  * 工具函数
@@ -243,6 +241,51 @@ static esp_err_t load_eth_config_from_pins(ts_eth_config_t *eth_hw_config)
  * 事件处理
  * ========================================================================== */
 
+/* 从 netif 更新 IP 信息（用于静态 IP / DHCP 服务器模式） */
+static void update_eth_ip_from_netif(void)
+{
+    esp_netif_t *netif = ts_eth_get_netif();
+    if (!netif) return;
+    
+    esp_netif_ip_info_t ip_info;
+    if (esp_netif_get_ip_info(netif, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
+        s_state.eth_status.has_ip = true;
+        s_state.eth_status.state = TS_NET_STATE_GOT_IP;
+        
+        ts_net_ip_u32_to_str(ip_info.ip.addr, 
+                             s_state.eth_status.ip_info.ip, 
+                             TS_NET_IP_STR_MAX_LEN);
+        ts_net_ip_u32_to_str(ip_info.netmask.addr, 
+                             s_state.eth_status.ip_info.netmask, 
+                             TS_NET_IP_STR_MAX_LEN);
+        ts_net_ip_u32_to_str(ip_info.gw.addr, 
+                             s_state.eth_status.ip_info.gateway, 
+                             TS_NET_IP_STR_MAX_LEN);
+        
+        /* 获取 DNS */
+        esp_netif_dns_info_t dns;
+        if (esp_netif_get_dns_info(netif, ESP_NETIF_DNS_MAIN, &dns) == ESP_OK) {
+            ts_net_ip_u32_to_str(dns.ip.u_addr.ip4.addr,
+                                 s_state.eth_status.ip_info.dns1,
+                                 TS_NET_IP_STR_MAX_LEN);
+        }
+        
+        /* 同步更新 eth_config，确保 net --config 显示正确的运行时配置 */
+        strncpy(s_state.eth_config.static_ip.ip, 
+                s_state.eth_status.ip_info.ip, TS_NET_IP_STR_MAX_LEN - 1);
+        strncpy(s_state.eth_config.static_ip.netmask, 
+                s_state.eth_status.ip_info.netmask, TS_NET_IP_STR_MAX_LEN - 1);
+        strncpy(s_state.eth_config.static_ip.gateway, 
+                s_state.eth_status.ip_info.gateway, TS_NET_IP_STR_MAX_LEN - 1);
+        if (s_state.eth_status.ip_info.dns1[0]) {
+            strncpy(s_state.eth_config.static_ip.dns1, 
+                    s_state.eth_status.ip_info.dns1, TS_NET_IP_STR_MAX_LEN - 1);
+        }
+        
+        TS_LOGI(TAG, "Ethernet IP (static/DHCPS): %s", s_state.eth_status.ip_info.ip);
+    }
+}
+
 static void net_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
@@ -258,7 +301,8 @@ static void net_event_handler(void *arg, esp_event_base_t event_base,
                 s_state.eth_status.link_up = true;
                 s_state.eth_status.state = TS_NET_STATE_CONNECTED;
                 s_state.eth_connect_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
-                /* 不在事件处理器内发布事件，避免队列锁冲突 */
+                /* 对于静态 IP / DHCP 服务器模式，直接从 netif 获取 IP */
+                update_eth_ip_from_netif();
                 break;
                 
             case ETHERNET_EVENT_DISCONNECTED:
@@ -350,17 +394,6 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         ts_net_ip_u32_to_str(event->ip_info.gw.addr, 
                              s_state.wifi_sta_status.ip_info.gateway, 
                              TS_NET_IP_STR_MAX_LEN);
-    }
-}
-
-static void notify_callbacks(ts_net_if_t iface, ts_net_state_t state)
-{
-    ts_net_cb_node_t *node = s_state.callbacks;
-    while (node) {
-        if (node->callback) {
-            node->callback(iface, state, node->user_data);
-        }
-        node = node->next;
     }
 }
 

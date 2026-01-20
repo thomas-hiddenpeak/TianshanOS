@@ -49,6 +49,8 @@ typedef enum {
     TS_API_ERR_INTERNAL,         /**< Internal error */
     TS_API_ERR_NOT_SUPPORTED,    /**< Operation not supported */
     TS_API_ERR_HARDWARE,         /**< Hardware error */
+    TS_API_ERR_CONNECTION,       /**< Connection failed */
+    TS_API_ERR_AUTH,             /**< Authentication failed */
     TS_API_ERR_MAX
 } ts_api_result_code_t;
 
@@ -65,6 +67,7 @@ typedef enum {
     TS_API_CAT_NETWORK,          /**< Network APIs */
     TS_API_CAT_DEVICE,           /**< Device control APIs */
     TS_API_CAT_STORAGE,          /**< Storage APIs */
+    TS_API_CAT_SECURITY,         /**< Security APIs (SSH/SFTP/keys) */
     TS_API_CAT_MAX
 } ts_api_category_t;
 
@@ -325,6 +328,46 @@ esp_err_t ts_api_storage_register(void);
  * @brief Register GPIO APIs
  */
 esp_err_t ts_api_gpio_register(void);
+
+/**
+ * @brief Register AGX monitor APIs
+ */
+esp_err_t ts_api_agx_register(void);
+
+/**
+ * @brief Register WiFi APIs
+ */
+esp_err_t ts_api_wifi_register(void);
+
+/**
+ * @brief Register DHCP server APIs
+ */
+esp_err_t ts_api_dhcp_register(void);
+
+/**
+ * @brief Register NAT gateway APIs
+ */
+esp_err_t ts_api_nat_register(void);
+
+/**
+ * @brief Register SSH known hosts APIs
+ */
+esp_err_t ts_api_hosts_register(void);
+
+/**
+ * @brief Register key management APIs
+ */
+esp_err_t ts_api_key_register(void);
+
+/**
+ * @brief Register SSH APIs
+ */
+esp_err_t ts_api_ssh_register(void);
+
+/**
+ * @brief Register SFTP APIs
+ */
+esp_err_t ts_api_sftp_register(void);
 
 #ifdef __cplusplus
 }

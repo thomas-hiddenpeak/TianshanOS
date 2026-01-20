@@ -111,6 +111,12 @@ esp_err_t ts_http_get_header(ts_http_request_t *req, const char *key,
  */
 esp_err_t ts_http_set_cors(ts_http_request_t *req, const char *origin);
 
+/**
+ * @brief Get the underlying httpd handle for advanced operations
+ * @return httpd_handle_t or NULL if not started
+ */
+httpd_handle_t ts_http_server_get_handle(void);
+
 #ifdef __cplusplus
 }
 #endif

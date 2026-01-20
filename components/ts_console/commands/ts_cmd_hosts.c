@@ -75,6 +75,26 @@ static void format_time(uint32_t timestamp, char *buf, size_t buf_len)
  */
 static int do_hosts_list(bool json_output)
 {
+    /* JSON 模式使用 API */
+    if (json_output) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        esp_err_t ret = ts_api_call("hosts.list", NULL, &result);
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Unknown error");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     ts_known_host_t hosts[MAX_KNOWN_HOSTS];
     size_t count = 0;
     
@@ -82,22 +102,6 @@ static int do_hosts_list(bool json_output)
     if (ret != ESP_OK) {
         ts_console_printf("Error: Failed to list known hosts (%s)\n", esp_err_to_name(ret));
         return 1;
-    }
-    
-    if (json_output) {
-        ts_console_printf("{\"hosts\":[");
-        for (size_t i = 0; i < count; i++) {
-            if (i > 0) ts_console_printf(",");
-            ts_console_printf("{\"host\":\"%s\",\"port\":%u,\"type\":\"%s\","
-                             "\"fingerprint\":\"%s\",\"added\":%u}",
-                hosts[i].host,
-                hosts[i].port,
-                ts_host_key_type_str(hosts[i].type),
-                hosts[i].fingerprint,
-                hosts[i].added_time);
-        }
-        ts_console_printf("],\"count\":%zu}\n", count);
-        return 0;
     }
     
     ts_console_printf("\n");
@@ -145,6 +149,32 @@ static int do_hosts_info(const char *host, int port, bool json_output)
         return 1;
     }
     
+    /* JSON 模式使用 API */
+    if (json_output) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        cJSON *params = cJSON_CreateObject();
+        cJSON_AddStringToObject(params, "host", host);
+        cJSON_AddNumberToObject(params, "port", port);
+        
+        esp_err_t ret = ts_api_call("hosts.info", params, &result);
+        cJSON_Delete(params);
+        
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Host not found");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     ts_known_host_t info;
     esp_err_t ret = ts_known_hosts_get(host, port, &info);
     
@@ -158,14 +188,6 @@ static int do_hosts_info(const char *host, int port, bool json_output)
     
     char time_str[20];
     format_time(info.added_time, time_str, sizeof(time_str));
-    
-    if (json_output) {
-        ts_console_printf("{\"host\":\"%s\",\"port\":%u,\"type\":\"%s\","
-                         "\"fingerprint\":\"%s\",\"added\":%u,\"added_str\":\"%s\"}\n",
-            info.host, info.port, ts_host_key_type_str(info.type),
-            info.fingerprint, info.added_time, time_str);
-        return 0;
-    }
     
     ts_console_printf("\n");
     ts_console_printf("Known Host Information\n");

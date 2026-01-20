@@ -68,6 +68,10 @@ typedef struct {
     bool test_mode;
     float test_voltage;
     
+    /* Debug mode */
+    bool debug_mode;
+    uint32_t debug_remaining_sec;
+    
     /* Callback */
     ts_power_policy_callback_t callback;
     void *callback_user_data;
@@ -395,14 +399,57 @@ esp_err_t ts_power_policy_register_callback(ts_power_policy_callback_t callback,
     return ESP_OK;
 }
 
+esp_err_t ts_power_policy_set_debug_mode(bool enable, uint32_t duration_sec)
+{
+    if (!s_pp.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (xSemaphoreTake(s_pp.state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_pp.debug_mode = enable;
+        s_pp.debug_remaining_sec = duration_sec;
+        
+        if (enable) {
+            TS_LOGI(TAG, "Debug mode enabled for %lu seconds", (unsigned long)duration_sec);
+        } else {
+            TS_LOGI(TAG, "Debug mode disabled");
+        }
+        
+        xSemaphoreGive(s_pp.state_mutex);
+        return ESP_OK;
+    }
+    
+    return ESP_ERR_TIMEOUT;
+}
+
+bool ts_power_policy_is_debug_mode(void)
+{
+    return s_pp.debug_mode;
+}
+
 /*===========================================================================*/
 /*                          Internal Functions                                */
 /*===========================================================================*/
 
 static void trigger_event(ts_power_policy_event_t event)
 {
-    ts_power_policy_status_t status;
-    ts_power_policy_get_status(&status);
+    /* 注意：此函数在持有 state_mutex 时调用，不能再获取锁 */
+    /* 直接读取状态（调用者已持有锁） */
+    ts_power_policy_status_t status = {
+        .initialized = s_pp.initialized,
+        .running = s_pp.running,
+        .state = s_pp.state,
+        .current_voltage = s_pp.current_voltage,
+        .countdown_remaining_sec = s_pp.countdown_remaining_sec,
+        .recovery_timer_sec = s_pp.recovery_timer_sec,
+        .protection_count = s_pp.protection_count,
+        .uptime_ms = (esp_timer_get_time() - s_pp.start_time_us) / 1000,
+        .device_status = {
+            .agx_powered = s_pp.agx_powered,
+            .lpmu_powered = s_pp.lpmu_powered,
+            .agx_connected = s_pp.agx_connected,
+        }
+    };
     
     /* 调用用户回调 */
     if (s_pp.callback) {
@@ -551,6 +598,30 @@ static void power_policy_task(void *pvParameters)
                 default:
                     break;
             }
+            
+            /* 调试模式：每秒输出状态 */
+            if (s_pp.debug_mode) {
+                /* 发送 WebSocket 事件（Web 终端） */
+                trigger_event(TS_POWER_POLICY_EVENT_DEBUG_TICK);
+                
+                /* 打印到串口日志 */
+                TS_LOGI(TAG, "[DEBUG] %s | V: %.2fV | 倒计时: %lus | 恢复: %lus | 剩余: %lus",
+                        ts_power_policy_get_state_name(s_pp.state),
+                        s_pp.current_voltage,
+                        (unsigned long)s_pp.countdown_remaining_sec,
+                        (unsigned long)s_pp.recovery_timer_sec,
+                        (unsigned long)s_pp.debug_remaining_sec);
+                
+                /* 递减调试计时器 */
+                if (s_pp.debug_remaining_sec > 0) {
+                    s_pp.debug_remaining_sec--;
+                    if (s_pp.debug_remaining_sec == 0) {
+                        s_pp.debug_mode = false;
+                        TS_LOGI(TAG, "Debug mode auto-disabled");
+                    }
+                }
+            }
+            
             xSemaphoreGive(s_pp.state_mutex);
         }
         

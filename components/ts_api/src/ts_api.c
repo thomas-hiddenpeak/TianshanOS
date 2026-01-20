@@ -595,6 +595,62 @@ esp_err_t ts_api_register_all(void)
         return ret;
     }
     
+    /* AGX Monitor APIs */
+    ret = ts_api_agx_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register AGX APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* WiFi APIs */
+    ret = ts_api_wifi_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register WiFi APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* DHCP Server APIs */
+    ret = ts_api_dhcp_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register DHCP APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* NAT Gateway APIs */
+    ret = ts_api_nat_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register NAT APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* SSH Known Hosts APIs */
+    ret = ts_api_hosts_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register Hosts APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* Key Management APIs */
+    ret = ts_api_key_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register Key APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* SSH APIs */
+    ret = ts_api_ssh_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register SSH APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    /* SFTP APIs */
+    ret = ts_api_sftp_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register SFTP APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
     TS_LOGI(TAG, "All API modules registered (%zu endpoints)", s_api.endpoint_count);
     
     return ESP_OK;

@@ -189,15 +189,34 @@ static esp_err_t api_power_protection_set(const cJSON *params, ts_api_result_t *
 static esp_err_t api_power_protection_status(const cJSON *params, ts_api_result_t *result)
 {
     (void)params;
+    
+    cJSON *data = cJSON_CreateObject();
+    
+    /* Check if power policy is initialized */
+    if (!ts_power_policy_is_initialized()) {
+        /* Return default/disabled status */
+        cJSON_AddBoolToObject(data, "initialized", false);
+        cJSON_AddBoolToObject(data, "running", false);
+        cJSON_AddStringToObject(data, "state", "disabled");
+        cJSON_AddNumberToObject(data, "current_voltage_v", 0);
+        cJSON_AddStringToObject(data, "message", "Power protection not initialized");
+        ts_api_result_ok(result, data);
+        return ESP_OK;
+    }
+    
     ts_power_policy_status_t status;
     esp_err_t ret = ts_power_policy_get_status(&status);
     
     if (ret != ESP_OK) {
-        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to get protection status");
-        return ret;
+        cJSON_AddBoolToObject(data, "initialized", false);
+        cJSON_AddBoolToObject(data, "running", false);
+        cJSON_AddStringToObject(data, "state", "error");
+        cJSON_AddStringToObject(data, "message", "Failed to get status");
+        ts_api_result_ok(result, data);
+        return ESP_OK;
     }
     
-    cJSON *data = cJSON_CreateObject();
+    /* Success - populate with actual data */
     cJSON_AddBoolToObject(data, "initialized", status.initialized);
     cJSON_AddBoolToObject(data, "running", status.running);
     cJSON_AddStringToObject(data, "state", ts_power_policy_get_state_name(status.state));
@@ -253,6 +272,182 @@ static esp_err_t api_power_monitor_stop(const cJSON *params, ts_api_result_t *re
     return ESP_OK;
 }
 
+/**
+ * @brief power.chip - Get power chip data
+ */
+static esp_err_t api_power_chip(const cJSON *params, ts_api_result_t *result)
+{
+    (void)params;
+    ts_power_chip_data_t data;
+    esp_err_t ret = ts_power_monitor_get_power_chip_data(&data);
+    
+    if (ret != ESP_OK) {
+        ts_api_result_error(result, TS_API_ERR_HARDWARE, "Failed to get power chip data");
+        return ret;
+    }
+    
+    cJSON *json = cJSON_CreateObject();
+    cJSON_AddBoolToObject(json, "valid", data.valid);
+    cJSON_AddNumberToObject(json, "voltage_v", data.voltage);
+    cJSON_AddNumberToObject(json, "current_a", data.current);
+    cJSON_AddNumberToObject(json, "power_w", data.power);
+    cJSON_AddBoolToObject(json, "crc_valid", data.crc_valid);
+    cJSON_AddNumberToObject(json, "timestamp_ms", data.timestamp);
+    
+    cJSON *raw = cJSON_AddArrayToObject(json, "raw_data");
+    for (int i = 0; i < 4; i++) {
+        cJSON_AddItemToArray(raw, cJSON_CreateNumber(data.raw_data[i]));
+    }
+    
+    ts_api_result_ok(result, json);
+    return ESP_OK;
+}
+
+/**
+ * @brief power.stats - Get monitoring statistics
+ */
+static esp_err_t api_power_stats(const cJSON *params, ts_api_result_t *result)
+{
+    (void)params;
+    ts_power_monitor_stats_t stats;
+    esp_err_t ret = ts_power_monitor_get_stats(&stats);
+    
+    if (ret != ESP_OK) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to get statistics");
+        return ret;
+    }
+    
+    cJSON *json = cJSON_CreateObject();
+    cJSON_AddNumberToObject(json, "uptime_ms", (double)stats.uptime_ms);
+    cJSON_AddNumberToObject(json, "voltage_samples", stats.voltage_samples);
+    cJSON_AddNumberToObject(json, "power_chip_packets", stats.power_chip_packets);
+    cJSON_AddNumberToObject(json, "crc_errors", stats.crc_errors);
+    cJSON_AddNumberToObject(json, "timeout_errors", stats.timeout_errors);
+    cJSON_AddNumberToObject(json, "threshold_violations", stats.threshold_violations);
+    cJSON_AddNumberToObject(json, "avg_voltage_v", stats.avg_voltage);
+    cJSON_AddNumberToObject(json, "avg_current_a", stats.avg_current);
+    cJSON_AddNumberToObject(json, "avg_power_w", stats.avg_power);
+    
+    ts_api_result_ok(result, json);
+    return ESP_OK;
+}
+
+/**
+ * @brief power.stats.reset - Reset statistics
+ */
+static esp_err_t api_power_stats_reset(const cJSON *params, ts_api_result_t *result)
+{
+    (void)params;
+    esp_err_t ret = ts_power_monitor_reset_stats();
+    
+    if (ret != ESP_OK) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to reset statistics");
+        return ret;
+    }
+    
+    cJSON *json = cJSON_CreateObject();
+    cJSON_AddBoolToObject(json, "reset", true);
+    ts_api_result_ok(result, json);
+    return ESP_OK;
+}
+
+/**
+ * @brief power.threshold.set - Set voltage thresholds
+ * 
+ * Params: { "min_v": 10.0, "max_v": 28.0 }
+ */
+static esp_err_t api_power_threshold_set(const cJSON *params, ts_api_result_t *result)
+{
+    if (!params) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing parameters");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    const cJSON *min_v = cJSON_GetObjectItem(params, "min_v");
+    const cJSON *max_v = cJSON_GetObjectItem(params, "max_v");
+    
+    if (!cJSON_IsNumber(min_v) || !cJSON_IsNumber(max_v)) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing min_v or max_v");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    esp_err_t ret = ts_power_monitor_set_voltage_thresholds(
+        (float)min_v->valuedouble, (float)max_v->valuedouble);
+    
+    if (ret != ESP_OK) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to set thresholds");
+        return ret;
+    }
+    
+    cJSON *json = cJSON_CreateObject();
+    cJSON_AddNumberToObject(json, "min_v", min_v->valuedouble);
+    cJSON_AddNumberToObject(json, "max_v", max_v->valuedouble);
+    ts_api_result_ok(result, json);
+    return ESP_OK;
+}
+
+/**
+ * @brief power.interval.set - Set sampling interval
+ * 
+ * Params: { "interval_ms": 1000 }
+ */
+static esp_err_t api_power_interval_set(const cJSON *params, ts_api_result_t *result)
+{
+    if (!params) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing parameters");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    const cJSON *interval = cJSON_GetObjectItem(params, "interval_ms");
+    if (!cJSON_IsNumber(interval)) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing interval_ms");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    esp_err_t ret = ts_power_monitor_set_sample_interval((uint32_t)interval->valueint);
+    
+    if (ret != ESP_OK) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to set interval");
+        return ret;
+    }
+    
+    cJSON *json = cJSON_CreateObject();
+    cJSON_AddNumberToObject(json, "interval_ms", interval->valueint);
+    ts_api_result_ok(result, json);
+    return ESP_OK;
+}
+
+/**
+ * @brief power.debug - Set debug mode
+ * 
+ * Params: { "enable": true }
+ */
+static esp_err_t api_power_debug(const cJSON *params, ts_api_result_t *result)
+{
+    if (!params) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing parameters");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    const cJSON *enable = cJSON_GetObjectItem(params, "enable");
+    if (!cJSON_IsBool(enable)) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing enable parameter");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    esp_err_t ret = ts_power_monitor_set_debug_mode(cJSON_IsTrue(enable));
+    
+    if (ret != ESP_OK) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to set debug mode");
+        return ret;
+    }
+    
+    cJSON *json = cJSON_CreateObject();
+    cJSON_AddBoolToObject(json, "debug_enabled", cJSON_IsTrue(enable));
+    ts_api_result_ok(result, json);
+    return ESP_OK;
+}
+
 /*===========================================================================*/
 /*                          Registration                                      */
 /*===========================================================================*/
@@ -271,6 +466,48 @@ static const ts_api_endpoint_t s_power_endpoints[] = {
         .category = TS_API_CAT_POWER,
         .handler = api_power_voltage,
         .requires_auth = false,
+    },
+    {
+        .name = "power.chip",
+        .description = "Get power chip data",
+        .category = TS_API_CAT_POWER,
+        .handler = api_power_chip,
+        .requires_auth = false,
+    },
+    {
+        .name = "power.stats",
+        .description = "Get monitoring statistics",
+        .category = TS_API_CAT_POWER,
+        .handler = api_power_stats,
+        .requires_auth = false,
+    },
+    {
+        .name = "power.stats.reset",
+        .description = "Reset monitoring statistics",
+        .category = TS_API_CAT_POWER,
+        .handler = api_power_stats_reset,
+        .requires_auth = true,
+    },
+    {
+        .name = "power.threshold.set",
+        .description = "Set voltage thresholds",
+        .category = TS_API_CAT_POWER,
+        .handler = api_power_threshold_set,
+        .requires_auth = true,
+    },
+    {
+        .name = "power.interval.set",
+        .description = "Set sampling interval",
+        .category = TS_API_CAT_POWER,
+        .handler = api_power_interval_set,
+        .requires_auth = true,
+    },
+    {
+        .name = "power.debug",
+        .description = "Set debug mode",
+        .category = TS_API_CAT_POWER,
+        .handler = api_power_debug,
+        .requires_auth = true,
     },
     {
         .name = "power.protection.set",

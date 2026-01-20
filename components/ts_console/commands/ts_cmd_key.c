@@ -120,6 +120,26 @@ static void format_time(uint32_t timestamp, char *buf, size_t buf_len)
  */
 static int do_key_list(bool json_output)
 {
+    /* JSON 模式使用 API */
+    if (json_output) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        esp_err_t ret = ts_api_call("key.list", NULL, &result);
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Unknown error");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     ts_keystore_key_info_t keys[TS_KEYSTORE_MAX_KEYS];
     size_t count = TS_KEYSTORE_MAX_KEYS;
     
@@ -127,24 +147,6 @@ static int do_key_list(bool json_output)
     if (ret != ESP_OK) {
         ts_console_printf("Error: Failed to list keys (%s)\n", esp_err_to_name(ret));
         return 1;
-    }
-    
-    if (json_output) {
-        ts_console_printf("{\"keys\":[");
-        for (size_t i = 0; i < count; i++) {
-            if (i > 0) ts_console_printf(",");
-            ts_console_printf("{\"id\":\"%s\",\"type\":\"%s\",\"comment\":\"%s\","
-                             "\"created\":%u,\"last_used\":%u,\"has_pubkey\":%s,\"exportable\":%s}",
-                keys[i].id,
-                ts_keystore_type_to_string(keys[i].type),
-                keys[i].comment,
-                keys[i].created_at,
-                keys[i].last_used,
-                keys[i].has_public_key ? "true" : "false",
-                keys[i].exportable ? "true" : "false");
-        }
-        ts_console_printf("],\"count\":%zu}\n", count);
-        return 0;
     }
     
     ts_console_printf("\n");
@@ -187,6 +189,31 @@ static int do_key_info(const char *key_id, bool json_output)
         return 1;
     }
     
+    /* JSON 模式使用 API */
+    if (json_output) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        cJSON *params = cJSON_CreateObject();
+        cJSON_AddStringToObject(params, "id", key_id);
+        
+        esp_err_t ret = ts_api_call("key.info", params, &result);
+        cJSON_Delete(params);
+        
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Key not found");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     ts_keystore_key_info_t info;
     esp_err_t ret = ts_keystore_get_key_info(key_id, &info);
     if (ret == ESP_ERR_NOT_FOUND) {
@@ -200,21 +227,6 @@ static int do_key_info(const char *key_id, bool json_output)
     char created_str[20], used_str[20];
     format_time(info.created_at, created_str, sizeof(created_str));
     format_time(info.last_used, used_str, sizeof(used_str));
-    
-    if (json_output) {
-        ts_console_printf("{\"id\":\"%s\",\"type\":\"%s\",\"comment\":\"%s\","
-                         "\"created\":%u,\"created_str\":\"%s\","
-                         "\"last_used\":%u,\"last_used_str\":\"%s\","
-                         "\"has_public_key\":%s,\"exportable\":%s}\n",
-            info.id,
-            ts_keystore_type_to_string(info.type),
-            info.comment,
-            info.created_at, created_str,
-            info.last_used, used_str,
-            info.has_public_key ? "true" : "false",
-            info.exportable ? "true" : "false");
-        return 0;
-    }
     
     ts_console_printf("\n");
     ts_console_printf("Key Information\n");

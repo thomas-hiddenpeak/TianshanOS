@@ -104,7 +104,34 @@ static const char *resolve_device_name(const char *name)
 
 static int do_led_status(const char *device_name, bool json)
 {
-    /* 使用内部设备名 */
+    /* JSON 模式使用 API */
+    if (json) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        cJSON *params = NULL;
+        if (device_name) {
+            params = cJSON_CreateObject();
+            cJSON_AddStringToObject(params, "device", device_name);
+        }
+        
+        esp_err_t ret = ts_api_call("led.list", params, &result);
+        if (params) cJSON_Delete(params);
+        
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Unknown error");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 - 使用内部设备名 */
     const char *device_names[] = {"led_touch", "led_board", "led_matrix"};
     const char *display_names[] = {"touch", "board", "matrix"};
     size_t num_devices = sizeof(device_names) / sizeof(device_names[0]);
@@ -118,55 +145,31 @@ static int do_led_status(const char *device_name, bool json)
             return 1;
         }
         
-        if (json) {
-            ts_console_printf("{\"device\":\"%s\",\"count\":%u,\"brightness\":%u}\n",
-                device_name,
-                ts_led_device_get_count(dev),
-                ts_led_device_get_brightness(dev));
-        } else {
-            ts_console_printf("LED Device: %s\n", device_name);
-            ts_console_printf("  Count:      %u\n", ts_led_device_get_count(dev));
-            ts_console_printf("  Brightness: %u\n", ts_led_device_get_brightness(dev));
-        }
+        ts_console_printf("LED Device: %s\n", device_name);
+        ts_console_printf("  Count:      %u\n", ts_led_device_get_count(dev));
+        ts_console_printf("  Brightness: %u\n", ts_led_device_get_brightness(dev));
     } else {
         // 所有设备状态
-        if (json) {
-            ts_console_printf("{\"devices\":[");
-            bool first = true;
-            for (size_t i = 0; i < num_devices; i++) {
-                ts_led_device_t dev = ts_led_device_get(device_names[i]);
-                if (dev) {
-                    if (!first) ts_console_printf(",");
-                    ts_console_printf("{\"name\":\"%s\",\"count\":%u,\"brightness\":%u}",
-                        display_names[i],
-                        ts_led_device_get_count(dev),
-                        ts_led_device_get_brightness(dev));
-                    first = false;
-                }
+        ts_console_printf("LED Devices:\n\n");
+        ts_console_printf("%-12s  %6s  %10s\n", "NAME", "COUNT", "BRIGHTNESS");
+        ts_console_printf("------------------------------------\n");
+        
+        bool found = false;
+        for (size_t i = 0; i < num_devices; i++) {
+            ts_led_device_t dev = ts_led_device_get(device_names[i]);
+            if (dev) {
+                ts_console_printf("%-12s  %6u  %10u\n", 
+                    display_names[i],
+                    ts_led_device_get_count(dev),
+                    ts_led_device_get_brightness(dev));
+                found = true;
             }
-            ts_console_printf("]}\n");
-        } else {
-            ts_console_printf("LED Devices:\n\n");
-            ts_console_printf("%-12s  %6s  %10s\n", "NAME", "COUNT", "BRIGHTNESS");
-            ts_console_printf("------------------------------------\n");
-            
-            bool found = false;
-            for (size_t i = 0; i < num_devices; i++) {
-                ts_led_device_t dev = ts_led_device_get(device_names[i]);
-                if (dev) {
-                    ts_console_printf("%-12s  %6u  %10u\n", 
-                        display_names[i],
-                        ts_led_device_get_count(dev),
-                        ts_led_device_get_brightness(dev));
-                    found = true;
-                }
-            }
-            
-            if (!found) {
-                ts_console_printf("  (no devices initialized)\n");
-            }
-            ts_console_printf("\n");
         }
+        
+        if (!found) {
+            ts_console_printf("  (no devices initialized)\n");
+        }
+        ts_console_printf("\n");
     }
     
     return 0;
@@ -620,27 +623,35 @@ static int do_led_stop_filter(const char *device_name)
 
 static int do_led_list_filters(bool json)
 {
+    /* JSON 模式使用 API */
     if (json) {
-        ts_console_printf("{\"filters\":[");
-        bool first = true;
-        for (int i = 0; s_filter_types[i].name; i++) {
-            if (!first) ts_console_printf(",");
-            ts_console_printf("{\"name\":\"%s\",\"description\":\"%s\"}",
-                              s_filter_types[i].name, s_filter_types[i].description);
-            first = false;
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        esp_err_t ret = ts_api_call("led.filter.list", NULL, &result);
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Unknown error");
         }
-        ts_console_printf("]}\n");
-    } else {
-        ts_console_printf("\n╭─ Post-Processing Filters ───────────────────────────────╮\n");
-        for (int i = 0; s_filter_types[i].name; i++) {
-            ts_console_printf("│ %-14s  %-40s │\n", 
-                              s_filter_types[i].name, 
-                              s_filter_types[i].description);
-        }
-        ts_console_printf("╰──────────────────────────────────────────────────────────╯\n");
-        ts_console_printf("\nUsage: led --filter -d <device> --filter-name <name> [--speed <1-100>]\n");
-        ts_console_printf("       led --stop-filter -d <device>\n");
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
     }
+    
+    /* 格式化输出 */
+    ts_console_printf("\n╭─ Post-Processing Filters ───────────────────────────────╮\n");
+    for (int i = 0; s_filter_types[i].name; i++) {
+        ts_console_printf("│ %-14s  %-40s │\n", 
+                          s_filter_types[i].name, 
+                          s_filter_types[i].description);
+    }
+    ts_console_printf("╰──────────────────────────────────────────────────────────╯\n");
+    ts_console_printf("\nUsage: led --filter -d <device> --filter-name <name> [--speed <1-100>]\n");
+    ts_console_printf("       led --stop-filter -d <device>\n");
     return 0;
 }
 
@@ -701,6 +712,34 @@ static int do_led_off(const char *device_name)
 
 static int do_led_list_effects(const char *device_name, bool json)
 {
+    /* JSON 模式使用 API */
+    if (json) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        cJSON *params = NULL;
+        if (device_name) {
+            params = cJSON_CreateObject();
+            cJSON_AddStringToObject(params, "device", device_name);
+        }
+        
+        esp_err_t ret = ts_api_call("led.effect.list", params, &result);
+        if (params) cJSON_Delete(params);
+        
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Unknown error");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     const char *names[32];
     
     if (device_name) {
@@ -720,71 +759,35 @@ static int do_led_list_effects(const char *device_name, bool json)
         
         size_t count = ts_led_animation_list_for_device(layout, names, 32);
         
-        if (json) {
-            ts_console_printf("{\"device\":\"%s\",\"effects\":[", device_name);
-            for (size_t i = 0; i < count; i++) {
-                ts_console_printf("%s\"%s\"", i > 0 ? "," : "", names[i]);
-            }
-            ts_console_printf("]}\n");
-        } else {
-            ts_console_printf("Effects for '%s':\n", device_name);
-            for (size_t i = 0; i < count; i++) {
-                ts_console_printf("  - %s\n", names[i]);
-            }
+        ts_console_printf("Effects for '%s':\n", device_name);
+        for (size_t i = 0; i < count; i++) {
+            ts_console_printf("  - %s\n", names[i]);
         }
     } else {
         // 分类列出所有特效
-        if (json) {
-            ts_console_printf("{");
-            
-            // Touch 特效
-            size_t count = ts_led_animation_list_for_device(TS_LED_LAYOUT_STRIP, names, 32);
-            ts_console_printf("\"touch\":[");
-            for (size_t i = 0; i < count; i++) {
-                ts_console_printf("%s\"%s\"", i > 0 ? "," : "", names[i]);
-            }
-            ts_console_printf("],");
-            
-            // Board 特效
-            count = ts_led_animation_list_for_device(TS_LED_LAYOUT_RING, names, 32);
-            ts_console_printf("\"board\":[");
-            for (size_t i = 0; i < count; i++) {
-                ts_console_printf("%s\"%s\"", i > 0 ? "," : "", names[i]);
-            }
-            ts_console_printf("],");
-            
-            // Matrix 特效
-            count = ts_led_animation_list_for_device(TS_LED_LAYOUT_MATRIX, names, 32);
-            ts_console_printf("\"matrix\":[");
-            for (size_t i = 0; i < count; i++) {
-                ts_console_printf("%s\"%s\"", i > 0 ? "," : "", names[i]);
-            }
-            ts_console_printf("]}\n");
-        } else {
-            ts_console_printf("Available Effects by Device Type:\n\n");
-            
-            // Touch 特效 (点光源)
-            ts_console_printf("Touch (point light, 1 LED):\n");
-            size_t count = ts_led_animation_list_for_device(TS_LED_LAYOUT_STRIP, names, 32);
-            for (size_t i = 0; i < count; i++) {
-                ts_console_printf("  - %s\n", names[i]);
-            }
-            
-            // Board 特效 (环形)
-            ts_console_printf("\nBoard (ring, 28 LEDs):\n");
-            count = ts_led_animation_list_for_device(TS_LED_LAYOUT_RING, names, 32);
-            for (size_t i = 0; i < count; i++) {
-                ts_console_printf("  - %s\n", names[i]);
-            }
-            
-            // Matrix 特效 (矩阵)
-            ts_console_printf("\nMatrix (32x32 panel):\n");
-            count = ts_led_animation_list_for_device(TS_LED_LAYOUT_MATRIX, names, 32);
-            for (size_t i = 0; i < count; i++) {
-                ts_console_printf("  - %s\n", names[i]);
-            }
-            ts_console_printf("\n");
+        ts_console_printf("Available Effects by Device Type:\n\n");
+        
+        // Touch 特效 (点光源)
+        ts_console_printf("Touch (point light, 1 LED):\n");
+        size_t count = ts_led_animation_list_for_device(TS_LED_LAYOUT_STRIP, names, 32);
+        for (size_t i = 0; i < count; i++) {
+            ts_console_printf("  - %s\n", names[i]);
         }
+        
+        // Board 特效 (环形)
+        ts_console_printf("\nBoard (ring, 28 LEDs):\n");
+        count = ts_led_animation_list_for_device(TS_LED_LAYOUT_RING, names, 32);
+        for (size_t i = 0; i < count; i++) {
+            ts_console_printf("  - %s\n", names[i]);
+        }
+        
+        // Matrix 特效 (矩阵)
+        ts_console_printf("\nMatrix (32x32 panel):\n");
+        count = ts_led_animation_list_for_device(TS_LED_LAYOUT_MATRIX, names, 32);
+        for (size_t i = 0; i < count; i++) {
+            ts_console_printf("  - %s\n", names[i]);
+        }
+        ts_console_printf("\n");
     }
     
     return 0;
@@ -801,6 +804,31 @@ static int do_led_parse_color(const char *color_str, bool json)
         return 1;
     }
     
+    /* JSON 模式使用 API */
+    if (json) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        cJSON *params = cJSON_CreateObject();
+        cJSON_AddStringToObject(params, "color", color_str);
+        
+        esp_err_t ret = ts_api_call("led.color.parse", params, &result);
+        cJSON_Delete(params);
+        
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Invalid color");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     ts_led_rgb_t color;
     if (ts_led_parse_color(color_str, &color) != ESP_OK) {
         ts_console_error("Invalid color: %s\n", color_str);
@@ -811,19 +839,10 @@ static int do_led_parse_color(const char *color_str, bool json)
     // 转换为 HSV
     ts_led_hsv_t hsv = ts_led_rgb_to_hsv(color);
     
-    if (json) {
-        ts_console_printf(
-            "{\"input\":\"%s\",\"rgb\":{\"r\":%u,\"g\":%u,\"b\":%u},"
-            "\"hex\":\"#%02X%02X%02X\",\"hsv\":{\"h\":%u,\"s\":%u,\"v\":%u}}\n",
-            color_str, color.r, color.g, color.b,
-            color.r, color.g, color.b,
-            hsv.h, hsv.s, hsv.v);
-    } else {
-        ts_console_printf("Color: %s\n", color_str);
-        ts_console_printf("  RGB: (%3u, %3u, %3u)\n", color.r, color.g, color.b);
-        ts_console_printf("  Hex: #%02X%02X%02X\n", color.r, color.g, color.b);
-        ts_console_printf("  HSV: (%3u, %3u, %3u)\n", hsv.h, hsv.s, hsv.v);
-    }
+    ts_console_printf("Color: %s\n", color_str);
+    ts_console_printf("  RGB: (%3u, %3u, %3u)\n", color.r, color.g, color.b);
+    ts_console_printf("  Hex: #%02X%02X%02X\n", color.r, color.g, color.b);
+    ts_console_printf("  HSV: (%3u, %3u, %3u)\n", hsv.h, hsv.s, hsv.v);
     
     return 0;
 }
@@ -888,6 +907,34 @@ static int do_led_clear_boot(const char *device_name)
 
 static int do_led_show_boot(const char *device_name, bool json)
 {
+    /* JSON 模式使用 API */
+    if (json) {
+        ts_api_result_t result;
+        ts_api_result_init(&result);
+        
+        cJSON *params = NULL;
+        if (device_name) {
+            params = cJSON_CreateObject();
+            cJSON_AddStringToObject(params, "device", device_name);
+        }
+        
+        esp_err_t ret = ts_api_call("led.boot.config", params, &result);
+        if (params) cJSON_Delete(params);
+        
+        if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            ts_console_printf("{\"error\":\"%s\"}\n", result.message ? result.message : "Unknown error");
+        }
+        ts_api_result_free(&result);
+        return (ret == ESP_OK) ? 0 : 1;
+    }
+    
+    /* 格式化输出 */
     const char *devices[] = {"touch", "board", "matrix"};
     int start = 0, end = 3;
     
@@ -902,50 +949,28 @@ static int do_led_show_boot(const char *device_name, bool json)
         }
     }
     
-    if (json) {
-        ts_console_printf("{\"boot_config\":[");
-        bool first = true;
-        for (int i = start; i < end; i++) {
-            ts_led_boot_config_t cfg;
-            if (ts_led_get_boot_config(devices[i], &cfg) == ESP_OK) {
-                if (!first) ts_console_printf(",");
-                ts_console_printf("{\"device\":\"%s\",\"enabled\":%s,\"animation\":\"%s\","
-                    "\"filter\":\"%s\",\"image\":\"%s\",\"speed\":%d,\"brightness\":%d}",
-                    devices[i],
-                    cfg.enabled ? "true" : "false",
-                    cfg.animation,
-                    cfg.filter,
-                    cfg.image_path,
-                    cfg.speed,
-                    cfg.brightness);
-                first = false;
-            }
+    ts_console_printf("Boot Configuration:\n\n");
+    ts_console_printf("%-10s  %-8s  %-15s  %-12s  %-25s  %6s  %10s\n", 
+        "DEVICE", "ENABLED", "ANIMATION", "FILTER", "IMAGE", "SPEED", "BRIGHTNESS");
+    ts_console_printf("------------------------------------------------------------------------------------------------------\n");
+    
+    for (int i = start; i < end; i++) {
+        ts_led_boot_config_t cfg;
+        if (ts_led_get_boot_config(devices[i], &cfg) == ESP_OK && cfg.enabled) {
+            ts_console_printf("%-10s  %-8s  %-15s  %-12s  %-25s  %6d  %10d\n",
+                devices[i],
+                cfg.enabled ? "yes" : "no",
+                cfg.animation[0] ? cfg.animation : "(none)",
+                cfg.filter[0] ? cfg.filter : "(none)",
+                cfg.image_path[0] ? cfg.image_path : "(none)",
+                cfg.speed,
+                cfg.brightness);
+        } else {
+            ts_console_printf("%-10s  %-8s  %-15s  %-12s  %-25s  %6s  %10s\n",
+                devices[i], "no", "-", "-", "-", "-", "-");
         }
-        ts_console_printf("]}\n");
-    } else {
-        ts_console_printf("Boot Configuration:\n\n");
-        ts_console_printf("%-10s  %-8s  %-15s  %-12s  %-25s  %6s  %10s\n", 
-            "DEVICE", "ENABLED", "ANIMATION", "FILTER", "IMAGE", "SPEED", "BRIGHTNESS");
-        ts_console_printf("------------------------------------------------------------------------------------------------------\n");
-        
-        for (int i = start; i < end; i++) {
-            ts_led_boot_config_t cfg;
-            if (ts_led_get_boot_config(devices[i], &cfg) == ESP_OK && cfg.enabled) {
-                ts_console_printf("%-10s  %-8s  %-15s  %-12s  %-25s  %6d  %10d\n",
-                    devices[i],
-                    cfg.enabled ? "yes" : "no",
-                    cfg.animation[0] ? cfg.animation : "(none)",
-                    cfg.filter[0] ? cfg.filter : "(none)",
-                    cfg.image_path[0] ? cfg.image_path : "(none)",
-                    cfg.speed,
-                    cfg.brightness);
-            } else {
-                ts_console_printf("%-10s  %-8s  %-15s  %-12s  %-25s  %6s  %10s\n",
-                    devices[i], "no", "-", "-", "-", "-", "-");
-            }
-        }
-        ts_console_printf("\n");
     }
+    ts_console_printf("\n");
     
     return 0;
 }
