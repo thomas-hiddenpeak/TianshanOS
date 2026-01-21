@@ -483,9 +483,203 @@ ssh --host 10.10.99.100 --user thomas --keyid test_new --exec "uname -a"
 
 ---
 
+## 8. SD 卡卸载后重新挂载失败 (ESP_ERR_NO_MEM)
+
+### 问题描述
+
+**症状**：执行 `storage --unmount` 卸载 SD 卡后，再执行 `storage --mount` 重新挂载失败，错误码为 `ESP_ERR_NO_MEM (0x101)`。
+
+**错误日志**：
+```
+E (xxxxx) vfs_fat_sdmmc: mount_to_vfs failed (0x101)
+```
+
+**误导性**：错误码 `ESP_ERR_NO_MEM` 暗示内存不足，但通过 `heap_caps_get_largest_free_block()` 检查发现堆内存充足（6MB+）。
+
+### 排查过程
+
+**1. 检查 FATFS pdrv 槽位**
+
+在 mount 前添加诊断：
+```c
+uint8_t pdrv = 0xFF;
+esp_err_t ret = ff_diskio_get_drive(&pdrv);
+ESP_LOGI(TAG, "ff_diskio_get_drive: ret=%s, pdrv=%d", esp_err_to_name(ret), pdrv);
+```
+
+结果：`ESP_OK, pdrv=0`（正常）。排除 FATFS 槽位耗尽。
+
+**2. 检查 FATFS s_fat_ctxs[] 状态**
+
+使用 `esp_vfs_fat_info()` 检查：
+```c
+uint64_t total, free;
+esp_err_t ret = esp_vfs_fat_info("/sdcard", &total, &free);
+// 返回 ESP_ERR_INVALID_STATE 表示正确清理
+```
+
+结果：卸载后返回 `ESP_ERR_INVALID_STATE`（正常）。排除 FATFS 上下文泄漏。
+
+**3. 检查 VFS 路径注册状态**
+
+使用 `esp_vfs_dump_registered_paths()` 打印所有 VFS 条目：
+```
+0:/dev/uart -> 0x3c191994
+1:/dev/secondary -> 0x3c191c70
+2:/dev/null -> 0x3c191da8
+3:/dev/console -> 0x3c191cdc
+4:/spiffs -> 0x3c197740
+5:/sdcard -> 0x3c197580  ← 卸载前
+5:NULL -> 0x0            ← 卸载后（正确清理）
+6: -> 0x3c1c4ef4         ← socket VFS
+7:/www -> 0x3c197740
+```
+
+**关键发现**：系统有 8 个 VFS 条目，而 `CONFIG_VFS_MAX_COUNT=8`！
+
+### 根本原因
+
+**ESP-IDF VFS 层的 `s_vfs_count` 计数器在注销时不递减**。
+
+查看 ESP-IDF 源码 `vfs.c`：
+```c
+// esp_vfs_register_fs_common() 中：
+s_vfs_count++;  // 注册时递增
+
+// esp_vfs_unregister() 中：
+s_vfs[id] = NULL;  // 只清空槽位
+// 没有 s_vfs_count--  ← 问题所在！
+```
+
+这意味着：
+- 系统启动时注册 8 个 VFS（uart, secondary, null, console, spiffs, sdcard, socket, www）
+- `s_vfs_count = 8`，达到 `CONFIG_VFS_MAX_COUNT=8` 上限
+- 卸载 SD 卡后，`/sdcard` 槽位变为 NULL，但 `s_vfs_count` 仍为 8
+- 重新挂载时，`esp_vfs_register_common()` 检查 `s_vfs_count >= VFS_MAX_COUNT`，直接返回 `ESP_ERR_NO_MEM`
+
+### 解决方案
+
+**增加 VFS_MAX_COUNT 配置**：
+
+```kconfig
+# sdkconfig.defaults
+# ============================================================================
+# VFS 配置
+# ESP-IDF 的 s_vfs_count 在 unregister 时不递减，需要足够大的 MAX_COUNT
+# ============================================================================
+CONFIG_VFS_MAX_COUNT=16
+CONFIG_FATFS_VOLUME_COUNT=4
+```
+
+### 诊断代码
+
+在 `ts_storage_sd.c` 中添加的诊断日志（可保留用于未来排查）：
+
+```c
+// Mount 前检查
+ESP_LOGI(TAG, "=== VFS paths BEFORE mount ===");
+esp_vfs_dump_registered_paths();
+
+// Unmount 后验证
+uint64_t total, free;
+esp_err_t info_ret = esp_vfs_fat_info("/sdcard", &total, &free);
+if (info_ret == ESP_ERR_INVALID_STATE) {
+    ESP_LOGI(TAG, "Good: /sdcard removed from FATFS s_fat_ctxs[]");
+} else {
+    ESP_LOGW(TAG, "Warning: /sdcard still in FATFS s_fat_ctxs[]");
+}
+```
+
+### 经验教训
+
+1. **ESP_ERR_NO_MEM 不一定是堆内存不足**：可能是其他资源（VFS 槽位、文件描述符等）耗尽
+2. **ESP-IDF VFS 的 s_vfs_count 只增不减**：这是设计行为，需要配置足够大的 `VFS_MAX_COUNT`
+3. **诊断日志的价值**：`esp_vfs_dump_registered_paths()` 是排查 VFS 问题的利器
+4. **阅读框架源码**：当文档不足时，直接阅读 ESP-IDF 源码是最可靠的方法
+
+---
+
+## 9. 配置系统加载 JSON 时 Double-Free 崩溃
+
+### 问题描述
+
+**症状**：SD 卡重新挂载成功后，配置系统自动加载 JSON 文件时崩溃。
+
+**错误日志**：
+```
+assert failed: tlsf_free tlsf.c:630 (!block_is_free(block) && "block already marked as free")
+
+Backtrace:
+... → free → free_value → config_set_value → ts_config_set_string → parse_json_value
+```
+
+**触发条件**：配置键已存在，重新设置相同类型（STRING）的值。
+
+### 根本原因
+
+`config_set_value()` 中的内存管理逻辑错误：
+
+```c
+// 问题代码
+} else {
+    // 保存旧值用于通知
+    had_old_value = true;
+    old_value = node->item.value;  // 浅拷贝！
+    // ...
+}
+
+// 复制新值
+copy_value(&node->item.value, value, type, size);  // 这里释放了 val_string
+
+// ... 函数末尾 ...
+if (had_old_value) {
+    free_value(&old_value, type);  // 再次释放同一指针！
+}
+```
+
+**问题链**：
+1. `old_value = node->item.value` 是浅拷贝
+2. `old_value.val_string` 和 `node->item.value.val_string` 指向同一块内存
+3. `copy_value()` 内部释放 `dst->val_string`（第一次 free）
+4. `free_value(&old_value)` 释放 `old_value.val_string`（第二次 free，同一指针！）
+
+### 解决方案
+
+在调用 `copy_value()` 前，清零 `node->item.value` 中的指针：
+
+```c
+} else {
+    // 保存旧值用于通知
+    had_old_value = true;
+    old_value = node->item.value;
+    
+    if (node->item.type != type) {
+        free_value(&node->item.value, node->item.type);
+        memset(&node->item.value, 0, sizeof(ts_config_value_t));
+        node->item.type = type;
+        had_old_value = false;
+    } else {
+        // 类型相同，清零指针防止 copy_value 中 double-free
+        // （旧值已保存在 old_value 中，会在最后统一释放）
+        if (type == TS_CONFIG_TYPE_STRING) {
+            node->item.value.val_string = NULL;
+        } else if (type == TS_CONFIG_TYPE_BLOB) {
+            node->item.value.val_blob.data = NULL;
+            node->item.value.val_blob.size = 0;
+        }
+    }
+}
+```
+
+### 经验教训
+
+1. **浅拷贝结构体时注意指针成员**：指针成员会共享内存，需要明确所有权
+2. **内存释放要有清晰的责任归属**：要么调用者释放，要么被调用者释放，不能两边都释放
+3. **Double-free 的典型模式**：保存旧值 → 函数内部释放 → 外部再释放旧值
+4. **断言信息很有价值**：`block already marked as free` 直接指明是 double-free
+
+---
+
 ## 更新日志
 
-- 2026-01-18: 添加 SSH 内存密钥认证 mpint padding bug 修复记录（libssh2 mbedTLS 后端）
-- 2026-01-18: 添加 SSH 公钥认证失败问题（libssh2 mbedTLS 需要显式公钥文件）
-- 2026-01-18: 添加 SSH 交互式 Shell 字符回显延迟问题调试记录
-- 2026-01-17: 初始版本，记录 DHCP 服务器崩溃问题及解决方案
+- 2026-01-22: 添加 SD 卡重挂载失败（VFS_MAX_COUNT 限制）和配置 double-free 问题修复记录
