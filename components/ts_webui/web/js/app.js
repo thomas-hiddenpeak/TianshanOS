@@ -17,8 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初始化认证 UI
     updateAuthUI();
     
-    // 注册路由
-    router.register('/', loadDashboard);
+    // 注册路由（系统页面作为首页）
+    router.register('/', loadSystemPage);
     router.register('/system', loadSystemPage);
     router.register('/led', loadLedPage);
     router.register('/network', loadNetworkPage);
@@ -108,32 +108,53 @@ function handleEvent(msg) {
 }
 
 // =========================================================================
-//                         仪表盘页面
+//                         系统页面（合并原首页+系统）
 // =========================================================================
 
-async function loadDashboard() {
+async function loadSystemPage() {
+    clearInterval(refreshInterval);
+    
     const content = document.getElementById('page-content');
     content.innerHTML = `
-        <div class="dashboard">
-            <h1>仪表盘</h1>
+        <div class="page-system">
+            <h1>🖥️ 系统</h1>
             
+            <!-- 系统概览卡片 -->
             <div class="cards">
                 <div class="card">
-                    <h3>🖥️ 系统信息</h3>
-                    <div class="card-content" id="sys-info-card">
-                        <p><strong>芯片:</strong> <span id="chip-model">-</span></p>
-                        <p><strong>固件:</strong> <span id="firmware-version">-</span></p>
-                        <p><strong>运行时间:</strong> <span id="uptime">-</span></p>
+                    <h3>📟 系统信息</h3>
+                    <div class="card-content">
+                        <p><strong>芯片:</strong> <span id="sys-chip">-</span></p>
+                        <p><strong>固件:</strong> <span id="sys-version">-</span></p>
+                        <p><strong>IDF:</strong> <span id="sys-idf">-</span></p>
+                        <p><strong>编译:</strong> <span id="sys-compile">-</span></p>
+                        <p><strong>运行时间:</strong> <span id="sys-uptime">-</span></p>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>🕐 系统时间</h3>
+                    <div class="card-content">
+                        <p><strong>当前:</strong> <span id="sys-datetime">-</span></p>
+                        <p><strong>状态:</strong> <span id="sys-time-status">-</span></p>
+                        <p><strong>来源:</strong> <span id="sys-time-source">-</span></p>
+                        <p><strong>时区:</strong> <span id="sys-timezone">-</span></p>
+                    </div>
+                    <div class="button-group" style="margin-top:10px">
+                        <button class="btn btn-small" onclick="syncTimeFromBrowser()">🔄 浏览器同步</button>
+                        <button class="btn btn-small" onclick="showTimezoneModal()">⚙️ 时区</button>
                     </div>
                 </div>
                 
                 <div class="card">
                     <h3>💾 内存</h3>
                     <div class="card-content">
-                        <div class="progress-bar">
-                            <div class="progress" id="mem-progress" style="width: 0%"></div>
-                        </div>
-                        <p><span id="mem-used">-</span> / <span id="mem-total">-</span></p>
+                        <p><strong>堆内存:</strong></p>
+                        <div class="progress-bar"><div class="progress" id="heap-progress"></div></div>
+                        <p style="font-size:0.9em" id="heap-text">-</p>
+                        <p><strong>PSRAM:</strong></p>
+                        <div class="progress-bar"><div class="progress" id="psram-progress"></div></div>
+                        <p style="font-size:0.9em" id="psram-text">-</p>
                     </div>
                 </div>
                 
@@ -150,6 +171,8 @@ async function loadDashboard() {
                     <h3>⚡ 电源</h3>
                     <div class="card-content">
                         <p><strong>电压:</strong> <span id="voltage">-</span></p>
+                        <p><strong>电流:</strong> <span id="current">-</span></p>
+                        <p><strong>功率:</strong> <span id="power-watts">-</span></p>
                         <p><strong>保护:</strong> <span id="protection-status">-</span></p>
                     </div>
                 </div>
@@ -161,177 +184,19 @@ async function loadDashboard() {
                         <p><strong>LPMU:</strong> <span id="lpmu-status">-</span></p>
                     </div>
                 </div>
-                
-                <div class="card">
-                    <h3>🌡️ 温度 & 风扇</h3>
-                    <div class="card-content">
-                        <p><strong>温度:</strong> <span id="temperature">-</span></p>
-                        <p><strong>风扇:</strong> <span id="fan-status">-</span></p>
-                    </div>
-                </div>
             </div>
-        </div>
-    `;
-    
-    await refreshDashboard();
-    
-    // 定时刷新
-    clearInterval(refreshInterval);
-    refreshInterval = setInterval(refreshDashboard, 3000);
-}
-
-async function refreshDashboard() {
-    // 系统信息
-    try {
-        const sysInfo = await api.getSystemInfo();
-        if (sysInfo.data) {
-            document.getElementById('chip-model').textContent = sysInfo.data.chip?.model || '-';
-            document.getElementById('firmware-version').textContent = sysInfo.data.app?.version || '-';
-            document.getElementById('uptime').textContent = formatUptime(sysInfo.data.uptime_ms);
-        }
-    } catch (e) { console.log('System info not available'); }
-    
-    // 内存
-    try {
-        const memInfo = await api.getMemoryInfo();
-        if (memInfo.data) {
-            const total = memInfo.data.internal?.total || 1;
-            const free = memInfo.data.internal?.free || memInfo.data.free_heap || 0;
-            const used = total - free;
-            const percent = Math.round((used / total) * 100);
             
-            document.getElementById('mem-progress').style.width = percent + '%';
-            document.getElementById('mem-used').textContent = formatBytes(used);
-            document.getElementById('mem-total').textContent = formatBytes(total);
-        }
-    } catch (e) { console.log('Memory info not available'); }
-    
-    // 网络
-    try {
-        const netStatus = await api.networkStatus();
-        if (netStatus.data) {
-            const eth = netStatus.data.ethernet || {};
-            const wifi = netStatus.data.wifi || {};
-            document.getElementById('eth-status').textContent = eth.status === 'connected' ? '已连接' : '未连接';
-            document.getElementById('wifi-status').textContent = wifi.connected ? '已连接' : '未连接';
-            document.getElementById('ip-addr').textContent = eth.ip || wifi.ip || '-';
-        }
-    } catch (e) {
-        document.getElementById('eth-status').textContent = '-';
-        document.getElementById('wifi-status').textContent = '-';
-    }
-    
-    // 电源
-    try {
-        const powerStatus = await api.powerStatus();
-        if (powerStatus.data) {
-            // 优先使用 power_chip 数据，其次用 voltage 数据
-            const voltage = powerStatus.data.power_chip?.voltage_v || 
-                           powerStatus.data.voltage?.supply_v || 
-                           powerStatus.data.stats?.avg_voltage_v || '-';
-            document.getElementById('voltage').textContent = 
-                (typeof voltage === 'number' ? voltage.toFixed(1) : voltage) + ' V';
-        }
-        const protStatus = await api.powerProtectionStatus();
-        if (protStatus.data) {
-            const running = protStatus.data.running || protStatus.data.initialized;
-            document.getElementById('protection-status').textContent = 
-                running ? '已启用' : '已禁用';
-        }
-    } catch (e) { document.getElementById('voltage').textContent = '-'; }
-    
-    // 设备
-    try {
-        const devStatus = await api.deviceStatus();
-        if (devStatus.data) {
-            const agx = devStatus.data.devices?.find(d => d.name === 'agx');
-            const lpmu = devStatus.data.devices?.find(d => d.name === 'lpmu');
-            document.getElementById('agx-status').textContent = agx?.powered ? '运行中' : '关机';
-            document.getElementById('lpmu-status').textContent = lpmu?.powered ? '运行中' : '关机';
-        }
-    } catch (e) {
-        document.getElementById('agx-status').textContent = '-';
-        document.getElementById('lpmu-status').textContent = '-';
-    }
-    
-    // 温度和风扇
-    try {
-        const tempStatus = await api.tempStatus();
-        if (tempStatus.data) {
-            document.getElementById('temperature').textContent = 
-                (tempStatus.data.temperature || '-') + ' °C';
-        }
-        const fanStatus = await api.fanStatus();
-        if (fanStatus.data) {
-            const fans = fanStatus.data.fans || [];
-            const running = fans.filter(f => f.enabled).length;
-            document.getElementById('fan-status').textContent = `${running}/${fans.length} 运行`;
-        }
-    } catch (e) {
-        document.getElementById('temperature').textContent = '-';
-        document.getElementById('fan-status').textContent = '-';
-    }
-}
-
-// =========================================================================
-//                         系统页面
-// =========================================================================
-
-async function loadSystemPage() {
-    clearInterval(refreshInterval);
-    
-    const content = document.getElementById('page-content');
-    content.innerHTML = `
-        <div class="page-system">
-            <h1>系统管理</h1>
-            
+            <!-- 风扇控制 -->
             <div class="section">
-                <h2>系统信息</h2>
-                <div class="info-grid" id="system-info">
-                    <div class="info-item"><label>芯片</label><span id="sys-chip">-</span></div>
-                    <div class="info-item"><label>版本</label><span id="sys-version">-</span></div>
-                    <div class="info-item"><label>编译时间</label><span id="sys-compile">-</span></div>
-                    <div class="info-item"><label>运行时间</label><span id="sys-uptime">-</span></div>
-                    <div class="info-item"><label>IDF版本</label><span id="sys-idf">-</span></div>
-                    <div class="info-item"><label>Flash大小</label><span id="sys-flash">-</span></div>
+                <h2>🌀 风扇控制</h2>
+                <div class="fans-grid" id="fans-grid">
+                    <div class="loading">加载中...</div>
                 </div>
             </div>
             
+            <!-- 服务状态 -->
             <div class="section">
-                <h2>🕐 系统时间</h2>
-                <div class="info-grid">
-                    <div class="info-item"><label>当前时间</label><span id="sys-datetime">-</span></div>
-                    <div class="info-item"><label>同步状态</label><span id="sys-time-status">-</span></div>
-                    <div class="info-item"><label>时间来源</label><span id="sys-time-source">-</span></div>
-                    <div class="info-item"><label>NTP服务器</label><span id="sys-ntp-server">-</span></div>
-                    <div class="info-item"><label>时区</label><span id="sys-timezone">-</span></div>
-                    <div class="info-item"><label>同步次数</label><span id="sys-sync-count">-</span></div>
-                </div>
-                <div class="button-group" style="margin-top:15px">
-                    <button class="btn" onclick="syncTimeFromBrowser()">🔄 从浏览器同步</button>
-                    <button class="btn" onclick="forceNtpSync()">🌐 强制NTP同步</button>
-                    <button class="btn" onclick="showTimezoneModal()">⚙️ 设置时区</button>
-                </div>
-            </div>
-            
-            <div class="section">
-                <h2>内存状态</h2>
-                <div class="memory-bars">
-                    <div class="memory-item">
-                        <label>总堆内存</label>
-                        <div class="progress-bar"><div class="progress" id="heap-progress"></div></div>
-                        <span id="heap-text">-</span>
-                    </div>
-                    <div class="memory-item">
-                        <label>PSRAM</label>
-                        <div class="progress-bar"><div class="progress" id="psram-progress"></div></div>
-                        <span id="psram-text">-</span>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="section">
-                <h2>服务状态</h2>
+                <h2>📋 服务状态</h2>
                 <table class="data-table" id="services-table">
                     <thead>
                         <tr>
@@ -346,8 +211,9 @@ async function loadSystemPage() {
                 </table>
             </div>
             
+            <!-- 系统操作 -->
             <div class="section">
-                <h2>系统操作</h2>
+                <h2>⚙️ 系统操作</h2>
                 <div class="button-group">
                     <button class="btn btn-warning" onclick="confirmReboot()">🔄 重启系统</button>
                 </div>
@@ -356,6 +222,9 @@ async function loadSystemPage() {
     `;
     
     await refreshSystemPage();
+    
+    // 定时刷新
+    refreshInterval = setInterval(refreshSystemPage, 3000);
 }
 
 async function refreshSystemPage() {
@@ -365,11 +234,10 @@ async function refreshSystemPage() {
         if (info.data) {
             document.getElementById('sys-chip').textContent = info.data.chip?.model || '-';
             document.getElementById('sys-version').textContent = info.data.app?.version || '-';
+            document.getElementById('sys-idf').textContent = info.data.app?.idf_version || '-';
             document.getElementById('sys-compile').textContent = 
                 (info.data.app?.compile_date || '') + ' ' + (info.data.app?.compile_time || '');
             document.getElementById('sys-uptime').textContent = formatUptime(info.data.uptime_ms);
-            document.getElementById('sys-idf').textContent = info.data.app?.idf_version || '-';
-            document.getElementById('sys-flash').textContent = formatBytes(info.data.flash_size || 0);
         }
     } catch (e) { console.log('System info error:', e); }
     
@@ -380,11 +248,9 @@ async function refreshSystemPage() {
             document.getElementById('sys-datetime').textContent = time.data.datetime || '-';
             const statusText = time.data.synced ? '✅ 已同步' : '⏳ 未同步';
             document.getElementById('sys-time-status').textContent = statusText;
-            const sourceMap = { ntp: 'NTP服务器', http: '浏览器', manual: '手动设置', none: '未同步' };
+            const sourceMap = { ntp: 'NTP', http: '浏览器', manual: '手动', none: '未同步' };
             document.getElementById('sys-time-source').textContent = sourceMap[time.data.source] || time.data.source;
-            document.getElementById('sys-ntp-server').textContent = time.data.ntp_server || '-';
             document.getElementById('sys-timezone').textContent = time.data.timezone || '-';
-            document.getElementById('sys-sync-count').textContent = time.data.sync_count || '0';
         }
     } catch (e) { console.log('Time info error:', e); }
     
@@ -410,9 +276,97 @@ async function refreshSystemPage() {
                 document.getElementById('psram-progress').style.width = psramPercent + '%';
                 document.getElementById('psram-text').textContent = 
                     `${formatBytes(psramUsed)} / ${formatBytes(psramTotal)} (${psramPercent}%)`;
+            } else {
+                document.getElementById('psram-text').textContent = '不可用';
             }
         }
     } catch (e) { console.log('Memory info error:', e); }
+    
+    // 网络
+    try {
+        const netStatus = await api.networkStatus();
+        if (netStatus.data) {
+            const eth = netStatus.data.ethernet || {};
+            const wifi = netStatus.data.wifi || {};
+            document.getElementById('eth-status').textContent = eth.status === 'connected' ? '已连接' : '未连接';
+            document.getElementById('wifi-status').textContent = wifi.connected ? '已连接' : '未连接';
+            document.getElementById('ip-addr').textContent = eth.ip || wifi.ip || '-';
+        }
+    } catch (e) {
+        document.getElementById('eth-status').textContent = '-';
+        document.getElementById('wifi-status').textContent = '-';
+    }
+    
+    // 电源
+    try {
+        const powerStatus = await api.powerStatus();
+        if (powerStatus.data) {
+            const voltage = powerStatus.data.power_chip?.voltage_v || 
+                           powerStatus.data.voltage?.supply_v || 
+                           powerStatus.data.stats?.avg_voltage_v;
+            const current = powerStatus.data.power_chip?.current_a ||
+                           powerStatus.data.current?.value_a;
+            const power = powerStatus.data.power_chip?.power_w ||
+                         powerStatus.data.power?.value_w;
+            
+            document.getElementById('voltage').textContent = 
+                (typeof voltage === 'number' ? voltage.toFixed(1) + ' V' : '-');
+            document.getElementById('current').textContent = 
+                (typeof current === 'number' ? current.toFixed(2) + ' A' : '-');
+            document.getElementById('power-watts').textContent = 
+                (typeof power === 'number' ? power.toFixed(1) + ' W' : '-');
+        }
+        const protStatus = await api.powerProtectionStatus();
+        if (protStatus.data) {
+            const running = protStatus.data.running || protStatus.data.initialized;
+            document.getElementById('protection-status').textContent = 
+                running ? '✅ 已启用' : '⚠️ 已禁用';
+        }
+    } catch (e) { 
+        document.getElementById('voltage').textContent = '-'; 
+        document.getElementById('current').textContent = '-'; 
+        document.getElementById('power-watts').textContent = '-'; 
+    }
+    
+    // 设备状态
+    try {
+        const devStatus = await api.deviceStatus();
+        if (devStatus.data?.devices) {
+            const agx = devStatus.data.devices.find(d => d.name === 'agx');
+            const lpmu = devStatus.data.devices.find(d => d.name === 'lpmu');
+            document.getElementById('agx-status').textContent = agx?.powered ? '🟢 运行中' : '⚫ 关机';
+            document.getElementById('lpmu-status').textContent = lpmu?.powered ? '🟢 运行中' : '⚫ 关机';
+        }
+    } catch (e) {
+        document.getElementById('agx-status').textContent = '-';
+        document.getElementById('lpmu-status').textContent = '-';
+    }
+    
+    // 风扇
+    try {
+        const fans = await api.fanStatus();
+        const container = document.getElementById('fans-grid');
+        if (fans.data?.fans && fans.data.fans.length > 0) {
+            container.innerHTML = fans.data.fans.map(fan => `
+                <div class="fan-card">
+                    <h4>🌀 风扇 ${fan.id}</h4>
+                    <p><strong>模式:</strong> ${fan.mode || 'auto'}</p>
+                    <p><strong>转速:</strong> ${fan.speed || fan.duty || 0}%</p>
+                    <p><strong>RPM:</strong> ${fan.rpm || '-'}</p>
+                    <div class="fan-slider">
+                        <input type="range" min="0" max="100" value="${fan.speed || fan.duty || 0}" 
+                               onchange="setFanSpeed(${fan.id}, this.value)"
+                               oninput="this.nextElementSibling.textContent = this.value + '%'">
+                        <span>${fan.speed || fan.duty || 0}%</span>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            container.innerHTML = '<p class="text-muted">无可用风扇</p>';
+        }
+    } catch (e) { 
+        document.getElementById('fans-grid').innerHTML = '<p class="text-muted">风扇状态不可用</p>';
+    }
     
     // 服务列表
     try {
@@ -438,6 +392,13 @@ async function refreshSystemPage() {
             });
         }
     } catch (e) { console.log('Services error:', e); }
+}
+
+async function setFanSpeed(id, speed) {
+    try {
+        await api.fanSet(id, parseInt(speed));
+        showToast(`风扇 ${id} 速度已设置为 ${speed}%`, 'success');
+    } catch (e) { showToast('设置风扇失败: ' + e.message, 'error'); }
 }
 
 async function serviceAction(name, action) {
@@ -490,7 +451,6 @@ async function forceNtpSync() {
         const result = await api.timeForceSync();
         if (result.data?.syncing) {
             showToast('NTP同步已启动，请稍候刷新查看结果', 'success');
-            // 延迟刷新以等待同步完成
             setTimeout(refreshSystemPage, 3000);
         }
     } catch (e) {
@@ -2217,44 +2177,39 @@ async function loadDevicePage() {
     const content = document.getElementById('page-content');
     content.innerHTML = `
         <div class="page-device">
-            <h1>设备控制</h1>
+            <h1>🖲️ 设备控制</h1>
             
             <div class="cards">
-                <div class="card">
+                <div class="card card-large">
                     <h3>🖥️ AGX</h3>
                     <div class="card-content">
-                        <p><strong>电源:</strong> <span id="dev-agx-power">-</span></p>
-                        <p><strong>CPU:</strong> <span id="dev-agx-cpu">-</span></p>
-                        <p><strong>GPU:</strong> <span id="dev-agx-gpu">-</span></p>
-                        <p><strong>温度:</strong> <span id="dev-agx-temp">-</span></p>
+                        <div class="device-status-grid">
+                            <p><strong>电源状态:</strong> <span id="dev-agx-power" class="status-value">-</span></p>
+                            <p><strong>CPU 使用率:</strong> <span id="dev-agx-cpu">-</span></p>
+                            <p><strong>GPU 使用率:</strong> <span id="dev-agx-gpu">-</span></p>
+                            <p><strong>温度:</strong> <span id="dev-agx-temp">-</span></p>
+                        </div>
                     </div>
                     <div class="button-group">
-                        <button class="btn btn-success" onclick="devicePower('agx', true)">开机</button>
-                        <button class="btn btn-danger" onclick="devicePower('agx', false)">关机</button>
-                        <button class="btn btn-warning" onclick="deviceReset('agx')">重启</button>
+                        <button class="btn btn-success" onclick="devicePower('agx', true)">⏻ 开机</button>
+                        <button class="btn btn-danger" onclick="devicePower('agx', false)">⏼ 关机</button>
+                        <button class="btn btn-warning" onclick="deviceReset('agx')">🔄 重启</button>
+                        <button class="btn" onclick="deviceForceOff('agx')">⚡ 强制关机</button>
                     </div>
                 </div>
                 
-                <div class="card">
+                <div class="card card-large">
                     <h3>🔋 LPMU</h3>
                     <div class="card-content">
-                        <p><strong>电源:</strong> <span id="dev-lpmu-power">-</span></p>
+                        <div class="device-status-grid">
+                            <p><strong>电源状态:</strong> <span id="dev-lpmu-power" class="status-value">-</span></p>
+                        </div>
                     </div>
                     <div class="button-group">
-                        <button class="btn btn-success" onclick="devicePower('lpmu', true)">开机</button>
-                        <button class="btn btn-danger" onclick="devicePower('lpmu', false)">关机</button>
+                        <button class="btn btn-success" onclick="devicePower('lpmu', true)">⏻ 开机</button>
+                        <button class="btn btn-danger" onclick="devicePower('lpmu', false)">⏼ 关机</button>
                     </div>
                 </div>
-            </div>
-            
-            <div class="section">
-                <h2>🌀 风扇控制</h2>
-                <div class="fans-grid" id="fans-grid"></div>
-            </div>
-            
-            <div class="section">
-                <h2>⚡ 电源状态</h2>
-                <div class="power-info" id="power-info"></div>
             </div>
         </div>
     `;
@@ -2271,8 +2226,17 @@ async function refreshDevicePage() {
             const agx = status.data.devices.find(d => d.name === 'agx');
             const lpmu = status.data.devices.find(d => d.name === 'lpmu');
             
-            document.getElementById('dev-agx-power').textContent = agx?.powered ? '运行中' : '关机';
-            document.getElementById('dev-lpmu-power').textContent = lpmu?.powered ? '运行中' : '关机';
+            const agxPowerEl = document.getElementById('dev-agx-power');
+            const lpmuPowerEl = document.getElementById('dev-lpmu-power');
+            
+            if (agxPowerEl) {
+                agxPowerEl.textContent = agx?.powered ? '🟢 运行中' : '⚫ 关机';
+                agxPowerEl.className = agx?.powered ? 'status-value status-on' : 'status-value status-off';
+            }
+            if (lpmuPowerEl) {
+                lpmuPowerEl.textContent = lpmu?.powered ? '🟢 运行中' : '⚫ 关机';
+                lpmuPowerEl.className = lpmu?.powered ? 'status-value status-on' : 'status-value status-off';
+            }
         }
     } catch (e) { console.log('Device status error:', e); }
     
@@ -2280,70 +2244,42 @@ async function refreshDevicePage() {
     try {
         const agxData = await api.agxData();
         if (agxData.data) {
-            document.getElementById('dev-agx-cpu').textContent = 
-                agxData.data.cpu_usage ? `${agxData.data.cpu_usage}%` : '-';
-            document.getElementById('dev-agx-gpu').textContent = 
-                agxData.data.gpu_usage ? `${agxData.data.gpu_usage}%` : '-';
-            document.getElementById('dev-agx-temp').textContent = 
-                agxData.data.temperature ? `${agxData.data.temperature}°C` : '-';
+            const cpuEl = document.getElementById('dev-agx-cpu');
+            const gpuEl = document.getElementById('dev-agx-gpu');
+            const tempEl = document.getElementById('dev-agx-temp');
+            
+            if (cpuEl) cpuEl.textContent = agxData.data.cpu_usage ? `${agxData.data.cpu_usage}%` : '-';
+            if (gpuEl) gpuEl.textContent = agxData.data.gpu_usage ? `${agxData.data.gpu_usage}%` : '-';
+            if (tempEl) tempEl.textContent = agxData.data.temperature ? `${agxData.data.temperature}°C` : '-';
         }
     } catch (e) { /* AGX 可能未连接 */ }
-    
-    // 风扇
-    try {
-        const fans = await api.fanStatus();
-        const container = document.getElementById('fans-grid');
-        if (fans.data?.fans) {
-            container.innerHTML = fans.data.fans.map(fan => `
-                <div class="fan-card">
-                    <h4>风扇 ${fan.id}</h4>
-                    <p>模式: ${fan.mode}</p>
-                    <p>转速: ${fan.speed}%</p>
-                    <p>RPM: ${fan.rpm || '-'}</p>
-                    <input type="range" min="0" max="100" value="${fan.speed}" 
-                           onchange="setFanSpeed(${fan.id}, this.value)">
-                </div>
-            `).join('');
-        }
-    } catch (e) { console.log('Fan error:', e); }
-    
-    // 电源
-    try {
-        const power = await api.powerStatus();
-        const container = document.getElementById('power-info');
-        if (power.data) {
-            container.innerHTML = `
-                <div class="power-card">
-                    <p><strong>电压:</strong> ${power.data.voltage || '-'} V</p>
-                    <p><strong>电流:</strong> ${power.data.current || '-'} A</p>
-                    <p><strong>功率:</strong> ${power.data.power || '-'} W</p>
-                </div>
-            `;
-        }
-    } catch (e) { console.log('Power error:', e); }
 }
 
 async function devicePower(name, on) {
     try {
         await api.devicePower(name, on);
-        showToast(`${name} ${on ? '开机' : '关机'} 命令已发送`, 'success');
+        showToast(`${name.toUpperCase()} ${on ? '开机' : '关机'} 命令已发送`, 'success');
         await refreshDevicePage();
     } catch (e) { showToast('操作失败: ' + e.message, 'error'); }
 }
 
 async function deviceReset(name) {
-    if (confirm(`确定要重启 ${name} 吗？`)) {
+    if (confirm(`确定要重启 ${name.toUpperCase()} 吗？`)) {
         try {
             await api.deviceReset(name);
-            showToast(`${name} 重启命令已发送`, 'success');
+            showToast(`${name.toUpperCase()} 重启命令已发送`, 'success');
         } catch (e) { showToast('操作失败: ' + e.message, 'error'); }
     }
 }
 
-async function setFanSpeed(id, speed) {
-    try {
-        await api.fanSet(id, parseInt(speed));
-    } catch (e) { showToast('设置风扇失败', 'error'); }
+async function deviceForceOff(name) {
+    if (confirm(`确定要强制关闭 ${name.toUpperCase()} 吗？这可能导致数据丢失！`)) {
+        try {
+            await api.deviceForceOff(name);
+            showToast(`${name.toUpperCase()} 强制关机命令已发送`, 'success');
+            await refreshDevicePage();
+        } catch (e) { showToast('操作失败: ' + e.message, 'error'); }
+    }
 }
 
 // =========================================================================

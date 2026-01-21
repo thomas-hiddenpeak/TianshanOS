@@ -1262,10 +1262,12 @@ body {
     background: var(--bg-color);
     padding: 16px;
     border-radius: 8px;
+    border: 1px solid var(--border-color);
 }
 
 .fan-card h4 {
     margin-bottom: 12px;
+    color: var(--primary-color);
 }
 
 .fan-card p {
@@ -1275,7 +1277,44 @@ body {
 
 .fan-card input[type="range"] {
     width: 100%;
-    margin-top: 12px;
+    margin-top: 8px;
+}
+
+.fan-slider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.fan-slider input[type="range"] {
+    flex: 1;
+    margin: 0;
+}
+
+.fan-slider span {
+    min-width: 40px;
+    text-align: right;
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+/* 设备状态样式 */
+.status-value.status-on {
+    color: #22c55e;
+    font-weight: bold;
+}
+
+.status-value.status-off {
+    color: #6b7280;
+}
+
+.device-status-grid p {
+    margin: 6px 0;
+}
+
+.card-large {
+    min-width: 280px;
 }
 
 /* 电源信息 */
