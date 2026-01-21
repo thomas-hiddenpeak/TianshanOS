@@ -196,6 +196,33 @@ static const ts_config_module_schema_t s_wifi_schema = {
 };
 
 /* ============================================================================
+ * NAT 模块 Schema (v1)
+ * NAT 网关配置
+ * ========================================================================== */
+
+static const ts_config_schema_entry_t s_nat_schema_entries[] = {
+    {
+        .key = "enabled",
+        .type = TS_CONFIG_TYPE_BOOL,
+        .default_bool = false,
+        .description = "是否启用 NAT 网关"
+    },
+    {
+        .key = "auto_start",
+        .type = TS_CONFIG_TYPE_BOOL,
+        .default_bool = true,
+        .description = "WiFi 连接后自动启动 NAT"
+    },
+};
+
+static const ts_config_module_schema_t s_nat_schema = {
+    .version = 1,
+    .entries = s_nat_schema_entries,
+    .entry_count = sizeof(s_nat_schema_entries) / sizeof(s_nat_schema_entries[0]),
+    .migrate = NULL,
+};
+
+/* ============================================================================
  * LED 模块 Schema (v1)
  * LED 配置
  * ========================================================================== */
@@ -502,6 +529,11 @@ esp_err_t ts_config_schemas_init(void)
     ret = ts_config_module_register(TS_CONFIG_MODULE_WIFI, "ts_wifi", &s_wifi_schema);
     if (ret != ESP_OK && ret != TS_CONFIG_ERR_ALREADY_REGISTERED) {
         ESP_LOGW(TAG, "Failed to register WIFI module: %s", esp_err_to_name(ret));
+    }
+    
+    ret = ts_config_module_register(TS_CONFIG_MODULE_NAT, "ts_nat", &s_nat_schema);
+    if (ret != ESP_OK && ret != TS_CONFIG_ERR_ALREADY_REGISTERED) {
+        ESP_LOGW(TAG, "Failed to register NAT module: %s", esp_err_to_name(ret));
     }
     
     ret = ts_config_module_register(TS_CONFIG_MODULE_LED, "ts_led", &s_led_schema);

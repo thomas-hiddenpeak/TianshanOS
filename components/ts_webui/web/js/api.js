@@ -113,10 +113,20 @@ class TianShanAPI {
     //                         配置 API (config.*)
     // =====================================================================
     
+    // 基础配置
     async configGet(key) { return this.call('config.get', { key }); }
     async configSet(key, value, persist = false) { return this.call('config.set', { key, value, persist }, 'POST'); }
     async configDelete(key) { return this.call('config.delete', { key }, 'POST'); }
     async configList(prefix = '') { return this.call('config.list', prefix ? { prefix } : null); }
+    async configSave() { return this.call('config.save', null, 'POST'); }
+    
+    // 模块化配置
+    async configModuleList() { return this.call('config.module.list'); }
+    async configModuleShow(module) { return this.call('config.module.show', { module }); }
+    async configModuleSet(module, key, value) { return this.call('config.module.set', { module, key, value }, 'POST'); }
+    async configModuleSave(module = null) { return this.call('config.module.save', module ? { module } : null, 'POST'); }
+    async configModuleReset(module, persist = true) { return this.call('config.module.reset', { module, persist }, 'POST'); }
+    async configSync() { return this.call('config.sync', null, 'POST'); }
     
     // =====================================================================
     //                         服务 API (service.*)
@@ -201,7 +211,7 @@ class TianShanAPI {
     async agxStatus() { return this.call('agx.status'); }
     async agxData() { return this.call('agx.data'); }
     async fanStatus(id = null) { return this.call('fan.status', id !== null ? { id } : null); }
-    async fanSet(id, speed) { return this.call('fan.set', { id, speed }, 'POST'); }
+    async fanSet(id, duty) { return this.call('fan.set', { id, duty }, 'POST'); }
     async fanMode(id, mode) { return this.call('fan.mode', { id, mode }, 'POST'); }
     
     // =====================================================================

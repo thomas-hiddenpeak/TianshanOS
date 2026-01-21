@@ -49,6 +49,7 @@ static const char *const MODULE_NAMES[] = {
     [TS_CONFIG_MODULE_NET]    = "NET",
     [TS_CONFIG_MODULE_DHCP]   = "DHCP",
     [TS_CONFIG_MODULE_WIFI]   = "WIFI",
+    [TS_CONFIG_MODULE_NAT]    = "NAT",
     [TS_CONFIG_MODULE_LED]    = "LED",
     [TS_CONFIG_MODULE_FAN]    = "FAN",
     [TS_CONFIG_MODULE_DEVICE] = "DEVICE",

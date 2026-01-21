@@ -184,6 +184,16 @@ async function loadSystemPage() {
                         <p><strong>LPMU:</strong> <span id="lpmu-status">-</span></p>
                     </div>
                 </div>
+                
+                <div class="card">
+                    <h3>⚙️ 系统操作</h3>
+                    <div class="card-content">
+                        <p style="color:#888;font-size:0.9em">管理 ESP32 系统</p>
+                    </div>
+                    <div class="button-group" style="margin-top:10px">
+                        <button class="btn btn-warning btn-small" onclick="confirmReboot()">🔄 重启系统</button>
+                    </div>
+                </div>
             </div>
             
             <!-- 风扇控制 -->
@@ -209,14 +219,6 @@ async function loadSystemPage() {
                     </thead>
                     <tbody id="services-body"></tbody>
                 </table>
-            </div>
-            
-            <!-- 系统操作 -->
-            <div class="section">
-                <h2>⚙️ 系统操作</h2>
-                <div class="button-group">
-                    <button class="btn btn-warning" onclick="confirmReboot()">🔄 重启系统</button>
-                </div>
             </div>
         </div>
     `;
@@ -245,7 +247,24 @@ async function refreshSystemPage() {
     try {
         const time = await api.timeInfo();
         if (time.data) {
-            document.getElementById('sys-datetime').textContent = time.data.datetime || '-';
+            // 检查时间是否早于 2025 年，自动同步浏览器时间
+            const deviceYear = time.data.year || (time.data.datetime ? parseInt(time.data.datetime.substring(0, 4)) : 0);
+            if (deviceYear < 2025) {
+                console.log('Device time is before 2025, auto-syncing from browser...');
+                await syncTimeFromBrowser(true);  // 静默同步
+                return;  // 同步后会再次刷新
+            }
+            
+            // 显示实时时间（基于服务器时间+本地偏移）
+            const serverTime = time.data.timestamp_ms || Date.now();
+            const now = new Date(serverTime);
+            const timeStr = now.toLocaleString('zh-CN', { 
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                hour12: false 
+            });
+            document.getElementById('sys-datetime').textContent = timeStr;
+            
             const statusText = time.data.synced ? '✅ 已同步' : '⏳ 未同步';
             document.getElementById('sys-time-status').textContent = statusText;
             const sourceMap = { ntp: 'NTP', http: '浏览器', manual: '手动', none: '未同步' };
@@ -429,19 +448,19 @@ function confirmReboot() {
 }
 
 // 时间同步功能
-async function syncTimeFromBrowser() {
+async function syncTimeFromBrowser(silent = false) {
     try {
         const now = Date.now();
-        showToast('正在从浏览器同步时间...', 'info');
+        if (!silent) showToast('正在从浏览器同步时间...', 'info');
         const result = await api.timeSync(now);
         if (result.data?.synced) {
-            showToast(`时间已同步: ${result.data.datetime}`, 'success');
+            if (!silent) showToast(`时间已同步: ${result.data.datetime}`, 'success');
             await refreshSystemPage();
         } else {
-            showToast('时间同步失败', 'error');
+            if (!silent) showToast('时间同步失败', 'error');
         }
     } catch (e) {
-        showToast('同步失败: ' + e.message, 'error');
+        if (!silent) showToast('同步失败: ' + e.message, 'error');
     }
 }
 
@@ -562,6 +581,9 @@ async function refreshLedPage() {
                 }
             });
             
+            // 缓存设备数据供模态框使用
+            window.ledDevicesCache = result.data.devices;
+            
             // 为每个设备生成独立的控制面板
             panelsContainer.innerHTML = result.data.devices.map(dev => generateDevicePanel(dev)).join('');
             
@@ -608,266 +630,610 @@ function generateDevicePanel(dev) {
     
     // 使用设备自带的特效列表（已按设备类型过滤）
     const deviceEffects = dev.effects || [];
-    const effectsHtml = deviceEffects.length > 0 
-        ? deviceEffects.map(eff => {
-            const isActive = eff === currentAnimation;
-            const activeClass = isActive ? ' active' : '';
-            return `<button class="btn effect-btn${activeClass}" onclick="showEffectConfig('${dev.name}', '${eff}')" title="点击配置并启动">${getEffectIcon(eff)} ${eff}</button>`;
-        }).join('')
-        : '<span class="empty">暂无可用</span>';
     
     // 开关按钮状态
     const toggleClass = isOn ? ' on' : '';
-    const toggleText = isOn ? '关灯' : '开灯';
+    const toggleText = isOn ? '🔆 已开启' : '💡 已关闭';
     
-    // Matrix 专属功能区域
+    // Matrix 设备使用不同的按钮布局
     const isMatrix = dev.name === 'matrix' || dev.layout === 'matrix';
-    const matrixExtras = isMatrix ? generateMatrixExtras(dev) : '';
+    const actionButtons = isMatrix ? `
+                <button class="btn btn-action btn-toggle${toggleClass}" id="toggle-${dev.name}" onclick="toggleLed('${dev.name}')">${toggleText}</button>
+                <button class="btn btn-action" onclick="openColorModal('${dev.name}')">🎨 颜色</button>
+                <button class="btn btn-action" onclick="openLedModal('${dev.name}', 'content')">🎬 内容</button>
+                <button class="btn btn-action" onclick="openLedModal('${dev.name}', 'text')">📝 文本</button>
+                <button class="btn btn-action" onclick="openLedModal('${dev.name}', 'filter')">🌈 滤镜</button>
+                <button class="btn btn-action btn-save" onclick="saveLedConfig('${dev.name}')">💾 保存</button>` : `
+                <button class="btn btn-action btn-toggle${toggleClass}" id="toggle-${dev.name}" onclick="toggleLed('${dev.name}')">${toggleText}</button>
+                <button class="btn btn-action" onclick="openColorModal('${dev.name}')">🎨 颜色</button>
+                <button class="btn btn-action" onclick="openLedModal('${dev.name}', 'effect')">🎬 动画</button>
+                <button class="btn btn-action btn-save" onclick="saveLedConfig('${dev.name}')">💾 保存</button>`;
     
     return `
-        <div class="led-panel" data-device="${dev.name}">
+        <div class="led-panel compact" data-device="${dev.name}">
             <div class="panel-header">
                 <span class="device-icon">${icon}</span>
-                <div class="device-title">
-                    <h2>${dev.name}</h2>
-                    <span class="device-desc">${description}</span>
+                <div class="device-info">
+                    <strong>${dev.name}</strong>
+                    <span class="device-meta">${description} · ${dev.count} LEDs</span>
                 </div>
-                <span class="device-layout">${dev.layout || 'strip'}</span>
-                <span class="led-count">${dev.count} LEDs</span>
-                <button class="btn btn-sm btn-header-save" onclick="saveLedConfig('${dev.name}')" title="保存当前状态为开机配置">💾</button>
+                <!-- 亮度控制 -->
+                <div class="brightness-compact">
+                    <span class="brightness-icon">☀️</span>
+                    <input type="range" min="0" max="255" value="${dev.brightness}" 
+                           oninput="updateBrightnessLabel('${dev.name}', this.value)"
+                           onchange="setBrightness('${dev.name}', this.value)"
+                           id="brightness-${dev.name}" title="亮度">
+                    <span class="brightness-val" id="brightness-val-${dev.name}">${dev.brightness}</span>
+                </div>
+                <!-- 操作按钮 -->
+                ${actionButtons}
             </div>
-            
-            <div class="panel-body two-columns">
-                <!-- 左侧：基础控制 -->
-                <div class="control-column basic-controls">
-                    <label class="column-title">基础控制</label>
-                    
-                    <!-- 电源开关 -->
-                    <div class="control-row">
-                        <button class="btn btn-toggle${toggleClass}" id="toggle-${dev.name}" onclick="toggleLed('${dev.name}')">
-                            <span class="toggle-icon">💡</span>
-                            <span class="toggle-text">${toggleText}</span>
-                        </button>
-                    </div>
-                    
-                    <!-- 亮度控制 -->
-                    <div class="control-row">
-                        <label>亮度 <span id="brightness-val-${dev.name}">${dev.brightness}</span></label>
-                        <input type="range" min="0" max="255" value="${dev.brightness}" 
-                               oninput="updateBrightnessLabel('${dev.name}', this.value)"
-                               onchange="setBrightness('${dev.name}', this.value)"
-                               id="brightness-${dev.name}">
-                    </div>
-                    
-                    <!-- 颜色填充 -->
-                    <div class="control-row color-control">
-                        <input type="color" id="color-${dev.name}" value="${colorHex}">
-                        <button class="btn btn-sm btn-primary" onclick="fillColor('${dev.name}')">填充</button>
-                    </div>
-                    
-                    <div class="preset-colors">
-                        <button class="color-preset" style="background:#ff0000" onclick="quickFill('${dev.name}', '#ff0000')" title="红"></button>
-                        <button class="color-preset" style="background:#00ff00" onclick="quickFill('${dev.name}', '#00ff00')" title="绿"></button>
-                        <button class="color-preset" style="background:#0000ff" onclick="quickFill('${dev.name}', '#0000ff')" title="蓝"></button>
-                        <button class="color-preset" style="background:#ffff00" onclick="quickFill('${dev.name}', '#ffff00')" title="黄"></button>
-                        <button class="color-preset" style="background:#ff00ff" onclick="quickFill('${dev.name}', '#ff00ff')" title="品红"></button>
-                        <button class="color-preset" style="background:#00ffff" onclick="quickFill('${dev.name}', '#00ffff')" title="青"></button>
-                        <button class="color-preset" style="background:#ffffff" onclick="quickFill('${dev.name}', '#ffffff')" title="白"></button>
-                        <button class="color-preset" style="background:#ff8000" onclick="quickFill('${dev.name}', '#ff8000')" title="橙"></button>
-                    </div>
-                </div>
-                
-                <!-- 右侧：程序动画 -->
-                <div class="control-column effects-column">
-                    <label class="column-title">程序动画 <span class="effect-count">(${deviceEffects.length})</span></label>
-                    <div class="effects-grid">
-                        ${effectsHtml}
-                    </div>
-                    <div class="effect-controls" id="effect-controls-${dev.name}" style="display:${currentAnimation ? 'block' : 'none'};">
-                        <div class="effect-config">
-                            <span class="current-effect" id="current-effect-${dev.name}">${currentAnimation || '-'}</span>
-                            <div class="config-row">
-                                <label>速度</label>
-                                <input type="range" min="1" max="100" value="${currentSpeed}" id="effect-speed-${dev.name}">
-                                <span id="speed-val-${dev.name}">${currentSpeed}</span>
-                            </div>
-                            <div class="config-row" id="color-row-${dev.name}" style="display:none;">
-                                <label>颜色</label>
-                                <input type="color" id="effect-color-${dev.name}" value="${colorHex}">
-                            </div>
-                            <div class="config-actions">
-                                <button class="btn btn-sm btn-success" onclick="applyEffect('${dev.name}')">▶ 启动</button>
-                                <button class="btn btn-sm btn-danger" onclick="stopEffect('${dev.name}')">⏹ 停止</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            ${matrixExtras}
         </div>
     `;
 }
 
-// 生成 Matrix 专属功能区域
-function generateMatrixExtras(dev) {
-    return `
-        <div class="matrix-extras">
-            <!-- 图像/动画 -->
-            <div class="matrix-section">
-                <label class="section-title">📷 图像/动画</label>
-                <div class="matrix-controls">
-                    <div class="control-row">
-                        <input type="text" id="matrix-image-path" placeholder="/sdcard/images/..." class="input-full" value="/sdcard/images/">
-                        <button class="btn btn-sm" onclick="browseImages()">📁</button>
-                    </div>
-                    <div class="control-row">
-                        <label><input type="checkbox" id="matrix-image-center" checked> 居中</label>
-                        <button class="btn btn-sm btn-primary" onclick="displayImage()">显示</button>
-                    </div>
-                </div>
+// 颜色选择模态框
+function openColorModal(device) {
+    const deviceData = window.ledDevicesCache?.find(d => d.name === device);
+    const current = deviceData?.current || {};
+    const currentColor = current.color || {r: 255, g: 0, b: 0};
+    const colorHex = '#' + 
+        currentColor.r.toString(16).padStart(2, '0') +
+        currentColor.g.toString(16).padStart(2, '0') +
+        currentColor.b.toString(16).padStart(2, '0');
+    
+    const modal = document.getElementById('led-modal');
+    const title = document.getElementById('led-modal-title');
+    const body = document.getElementById('led-modal-body');
+    
+    title.textContent = `🎨 ${device} - 颜色设置`;
+    body.innerHTML = `
+        <div class="modal-section">
+            <h3>颜色选择</h3>
+            <div class="config-row">
+                <input type="color" id="modal-color-picker-${device}" value="${colorHex}" style="width:60px;height:40px;">
+                <button class="btn btn-primary" onclick="applyColorFromModal('${device}')">填充颜色</button>
             </div>
-            
-            <!-- QR 码 -->
-            <div class="matrix-section">
-                <label class="section-title">📱 QR 码</label>
-                <div class="matrix-controls">
-                    <div class="control-row">
-                        <input type="text" id="matrix-qr-text" placeholder="输入文本或URL" class="input-full">
-                    </div>
-                    <div class="control-row">
-                        <select id="matrix-qr-ecc" title="纠错级别">
-                            <option value="L">低(L)</option>
-                            <option value="M" selected>中(M)</option>
-                            <option value="Q">较高(Q)</option>
-                            <option value="H">高(H)</option>
-                        </select>
-                        <input type="color" id="matrix-qr-fg" value="#ffffff" title="前景色">
-                        <button class="btn btn-sm btn-primary" onclick="generateQrCode()">生成</button>
-                    </div>
-                    <div class="control-row">
-                        <label style="flex:1">背景图:</label>
-                        <input type="text" id="matrix-qr-bg-image" placeholder="无背景图" readonly style="flex:2;cursor:pointer" onclick="openFilePickerFor('matrix-qr-bg-image', '/sdcard/images')">
-                        <button class="btn btn-sm" onclick="clearQrBgImage()" title="清除背景图">✕</button>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- 文本滚动 -->
-            <div class="matrix-section">
-                <label class="section-title">📝 文本显示</label>
-                <div class="matrix-controls">
-                    <div class="control-row">
-                        <input type="text" id="matrix-text-content" placeholder="输入显示文本" class="input-full">
-                    </div>
-                    <div class="control-row">
-                        <select id="matrix-text-font" title="字体" style="flex:2">
-                            <option value="default">默认字体</option>
-                        </select>
-                        <button class="btn btn-sm" onclick="loadFontList()" title="刷新字体列表">🔄</button>
-                    </div>
-                    <div class="control-row">
-                        <select id="matrix-text-align" title="对齐">
-                            <option value="left">左对齐</option>
-                            <option value="center">居中</option>
-                            <option value="right">右对齐</option>
-                        </select>
-                        <input type="color" id="matrix-text-color" value="#00ff00" title="文字颜色">
-                    </div>
-                    <div class="control-row">
-                        <label>X: <input type="number" id="matrix-text-x" value="0" min="0" max="255" style="width:50px" title="X坐标"></label>
-                        <label>Y: <input type="number" id="matrix-text-y" value="0" min="0" max="255" style="width:50px" title="Y坐标"></label>
-                        <label><input type="checkbox" id="matrix-text-auto-pos"> 自动定位</label>
-                    </div>
-                    <div class="control-row">
-                        <label>滚动 <select id="matrix-text-scroll">
-                            <option value="none">无</option>
-                            <option value="left" selected>向左</option>
-                            <option value="right">向右</option>
-                            <option value="up">向上</option>
-                            <option value="down">向下</option>
-                        </select></label>
-                        <label>速度 <input type="number" id="matrix-text-speed" value="50" min="1" max="100" style="width:50px"></label>
-                        <label><input type="checkbox" id="matrix-text-loop" checked> 循环</label>
-                    </div>
-                    <div class="control-row">
-                        <button class="btn btn-sm btn-primary" onclick="displayText()">显示</button>
-                        <button class="btn btn-sm btn-danger" onclick="stopText()">停止</button>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- 后处理滤镜 -->
-            <div class="matrix-section">
-                <label class="section-title">🎨 后处理滤镜</label>
-                <div class="matrix-controls">
-                    <!-- 滤镜分类：动态效果 -->
-                    <div class="filter-category">
-                        <span class="filter-label">动态效果</span>
-                        <div class="control-row filters-grid">
-                            <button class="btn btn-sm filter-btn" data-filter="pulse" onclick="selectFilter('pulse', this)">💓 脉冲</button>
-                            <button class="btn btn-sm filter-btn" data-filter="breathing" onclick="selectFilter('breathing', this)">💨 呼吸</button>
-                            <button class="btn btn-sm filter-btn" data-filter="blink" onclick="selectFilter('blink', this)">💡 闪烁</button>
-                            <button class="btn btn-sm filter-btn" data-filter="wave" onclick="selectFilter('wave', this)">🌊 波浪</button>
-                            <button class="btn btn-sm filter-btn" data-filter="scanline" onclick="selectFilter('scanline', this)">📺 扫描</button>
-                            <button class="btn btn-sm filter-btn" data-filter="glitch" onclick="selectFilter('glitch', this)">⚡ 故障</button>
-                        </div>
-                    </div>
-                    <!-- 滤镜分类：渐变效果 -->
-                    <div class="filter-category">
-                        <span class="filter-label">渐变效果</span>
-                        <div class="control-row filters-grid">
-                            <button class="btn btn-sm filter-btn" data-filter="fade-in" onclick="selectFilter('fade-in', this)">📈 淡入</button>
-                            <button class="btn btn-sm filter-btn" data-filter="fade-out" onclick="selectFilter('fade-out', this)">📉 淡出</button>
-                            <button class="btn btn-sm filter-btn" data-filter="color-shift" onclick="selectFilter('color-shift', this)">🌈 色移</button>
-                        </div>
-                    </div>
-                    <!-- 滤镜分类：静态效果 -->
-                    <div class="filter-category">
-                        <span class="filter-label">静态效果</span>
-                        <div class="control-row filters-grid">
-                            <button class="btn btn-sm filter-btn" data-filter="invert" onclick="selectFilter('invert', this)">🔄 反色</button>
-                            <button class="btn btn-sm filter-btn" data-filter="grayscale" onclick="selectFilter('grayscale', this)">⬜ 灰度</button>
-                        </div>
-                    </div>
-                    <!-- 滤镜参数区域 -->
-                    <div id="filter-params" class="filter-params" style="display:none;">
-                        <div class="filter-param-row" id="filter-speed-row">
-                            <label>速度</label>
-                            <input type="range" id="matrix-filter-speed" min="1" max="100" value="50">
-                            <span id="filter-speed-value">50</span>
-                        </div>
-                    </div>
-                    <!-- 操作按钮 -->
-                    <div class="control-row" style="margin-top:8px;">
-                        <span id="selected-filter-name" style="color:#888;">未选择滤镜</span>
-                        <button class="btn btn-sm btn-primary" id="apply-filter-btn" onclick="applySelectedFilter()" disabled>应用滤镜</button>
-                        <button class="btn btn-sm btn-danger" onclick="stopFilter()">停止滤镜</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- 文件选择器模态框 -->
-        <div id="file-picker-modal" class="modal hidden">
-            <div class="modal-content file-picker-modal">
-                <h2>📁 选择文件</h2>
-                <div class="file-picker-path">
-                    <button class="btn btn-sm" onclick="filePickerGoUp()">⬆️ 上级</button>
-                    <span id="file-picker-current-path">/sdcard/images</span>
-                </div>
-                <div class="file-picker-list" id="file-picker-list">
-                    <div class="loading">加载中...</div>
-                </div>
-                <div class="file-picker-selected">
-                    <span>已选择: </span><span id="file-picker-selected-name">-</span>
-                </div>
-                <div class="form-actions">
-                    <button class="btn" onclick="closeFilePicker()">取消</button>
-                    <button class="btn btn-primary" id="file-picker-confirm" onclick="confirmFilePicker()" disabled>确定</button>
-                </div>
+            <h3 style="margin-top:16px;">快捷颜色</h3>
+            <div class="preset-colors-grid">
+                <button class="color-preset" style="background:#ff0000" onclick="quickFillFromModal('${device}', '#ff0000')"></button>
+                <button class="color-preset" style="background:#ff6600" onclick="quickFillFromModal('${device}', '#ff6600')"></button>
+                <button class="color-preset" style="background:#ffff00" onclick="quickFillFromModal('${device}', '#ffff00')"></button>
+                <button class="color-preset" style="background:#00ff00" onclick="quickFillFromModal('${device}', '#00ff00')"></button>
+                <button class="color-preset" style="background:#00ffff" onclick="quickFillFromModal('${device}', '#00ffff')"></button>
+                <button class="color-preset" style="background:#0000ff" onclick="quickFillFromModal('${device}', '#0000ff')"></button>
+                <button class="color-preset" style="background:#ff00ff" onclick="quickFillFromModal('${device}', '#ff00ff')"></button>
+                <button class="color-preset" style="background:#ffffff" onclick="quickFillFromModal('${device}', '#ffffff')"></button>
+                <button class="color-preset" style="background:#ffcccc" onclick="quickFillFromModal('${device}', '#ffcccc')"></button>
+                <button class="color-preset" style="background:#ccffcc" onclick="quickFillFromModal('${device}', '#ccffcc')"></button>
+                <button class="color-preset" style="background:#ccccff" onclick="quickFillFromModal('${device}', '#ccccff')"></button>
+                <button class="color-preset" style="background:#000000" onclick="quickFillFromModal('${device}', '#000000')"></button>
             </div>
         </div>
     `;
+    
+    modal.classList.remove('hidden');
+}
+
+async function applyColorFromModal(device) {
+    const color = document.getElementById(`modal-color-picker-${device}`)?.value || '#ffffff';
+    try {
+        await api.ledFill(device, color);
+        ledStates[device] = true;
+        updateToggleButton(device, true);
+        showToast(`${device} 已填充 ${color}`, 'success');
+    } catch (e) {
+        showToast(`填充失败: ${e.message}`, 'error');
+    }
+}
+
+async function quickFillFromModal(device, color) {
+    try {
+        await api.ledFill(device, color);
+        ledStates[device] = true;
+        updateToggleButton(device, true);
+        showToast(`${device} → ${color}`, 'success');
+    } catch (e) {
+        showToast(`填充失败: ${e.message}`, 'error');
+    }
+}
+
+// 更新开关按钮状态
+function updateToggleButton(device, isOn) {
+    const btn = document.getElementById(`toggle-${device}`);
+    if (btn) {
+        if (isOn) {
+            btn.classList.add('on');
+            btn.innerHTML = '🔆 已开启';
+        } else {
+            btn.classList.remove('on');
+            btn.innerHTML = '💡 已关闭';
+        }
+    }
+}
+
+// 生成 LED 模态框内容
+function generateLedModalContent(device, type) {
+    const deviceData = window.ledDevicesCache?.find(d => d.name === device);
+    const current = deviceData?.current || {};
+    const currentAnimation = current.animation || '';
+    const currentSpeed = current.speed || 50;
+    const currentColor = current.color || {r: 255, g: 0, b: 0};
+    const colorHex = '#' + 
+        currentColor.r.toString(16).padStart(2, '0') +
+        currentColor.g.toString(16).padStart(2, '0') +
+        currentColor.b.toString(16).padStart(2, '0');
+    const deviceEffects = deviceData?.effects || [];
+    
+    if (type === 'effect') {
+        // 普通设备的动画模态框
+        const effectsHtml = deviceEffects.length > 0 
+            ? deviceEffects.map(eff => {
+                const isActive = eff === currentAnimation;
+                const activeClass = isActive ? ' active' : '';
+                return `<button class="btn effect-btn${activeClass}" onclick="selectEffectInModal('${device}', '${eff}', this)">${getEffectIcon(eff)} ${eff}</button>`;
+            }).join('')
+            : '<span class="empty">暂无可用特效</span>';
+        
+        return `
+            <div class="modal-section">
+                <h3>🎬 程序动画</h3>
+                <div class="effects-grid">${effectsHtml}</div>
+                <div class="effect-config-modal" id="modal-effect-config-${device}" style="display:${currentAnimation ? 'flex' : 'none'};">
+                    <span class="effect-name" id="modal-effect-name-${device}">${currentAnimation || '未选择'}</span>
+                    <div class="config-row">
+                        <label>速度</label>
+                        <input type="range" min="1" max="100" value="${currentSpeed}" id="modal-effect-speed-${device}" 
+                               oninput="document.getElementById('modal-speed-val-${device}').textContent=this.value">
+                        <span id="modal-speed-val-${device}">${currentSpeed}</span>
+                    </div>
+                    <div class="config-row" id="modal-color-row-${device}" style="display:${colorSupportedEffects.includes(currentAnimation) ? 'flex' : 'none'};">
+                        <label>颜色</label>
+                        <input type="color" id="modal-effect-color-${device}" value="${colorHex}">
+                    </div>
+                    <div class="config-actions">
+                        <button class="btn btn-primary" onclick="applyEffectFromModal('${device}')">▶ 启动</button>
+                        <button class="btn btn-danger" onclick="stopEffectFromModal('${device}')">⏹ 停止</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else if (type === 'content') {
+        // Matrix 内容模态框 (动画 + 图像 + QR码)
+        const effectsHtml = deviceEffects.length > 0 
+            ? deviceEffects.map(eff => {
+                const isActive = eff === currentAnimation;
+                const activeClass = isActive ? ' active' : '';
+                return `<button class="btn effect-btn${activeClass}" onclick="selectEffectInModal('${device}', '${eff}', this)">${getEffectIcon(eff)} ${eff}</button>`;
+            }).join('')
+            : '<span class="empty">暂无可用特效</span>';
+        
+        return `
+            <div class="modal-tabs">
+                <button class="modal-tab active" onclick="switchModalTab(this, 'modal-tab-effect')">🎬 动画</button>
+                <button class="modal-tab" onclick="switchModalTab(this, 'modal-tab-image')">📷 图像</button>
+                <button class="modal-tab" onclick="switchModalTab(this, 'modal-tab-qr')">📱 QR码</button>
+            </div>
+            
+            <!-- 动画 Tab -->
+            <div class="modal-tab-content active" id="modal-tab-effect">
+                <div class="effects-grid">${effectsHtml}</div>
+                <div class="effect-config-modal" id="modal-effect-config-${device}" style="display:${currentAnimation ? 'flex' : 'none'};">
+                    <span class="effect-name" id="modal-effect-name-${device}">${currentAnimation || '未选择'}</span>
+                    <div class="config-row">
+                        <label>速度</label>
+                        <input type="range" min="1" max="100" value="${currentSpeed}" id="modal-effect-speed-${device}" 
+                               oninput="document.getElementById('modal-speed-val-${device}').textContent=this.value">
+                        <span id="modal-speed-val-${device}">${currentSpeed}</span>
+                    </div>
+                    <div class="config-row" id="modal-color-row-${device}" style="display:${colorSupportedEffects.includes(currentAnimation) ? 'flex' : 'none'};">
+                        <label>颜色</label>
+                        <input type="color" id="modal-effect-color-${device}" value="${colorHex}">
+                    </div>
+                    <div class="config-actions">
+                        <button class="btn btn-primary" onclick="applyEffectFromModal('${device}')">▶ 启动</button>
+                        <button class="btn btn-danger" onclick="stopEffectFromModal('${device}')">⏹ 停止</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 图像 Tab -->
+            <div class="modal-tab-content" id="modal-tab-image" style="display:none;">
+                <div class="modal-section">
+                    <div class="config-row">
+                        <input type="text" id="modal-image-path" placeholder="/sdcard/images/..." class="input-flex" value="/sdcard/images/">
+                        <button class="btn btn-sm" onclick="browseImages()">📁 浏览</button>
+                    </div>
+                    <div class="config-row">
+                        <label><input type="checkbox" id="modal-image-center" checked> 居中显示</label>
+                        <button class="btn btn-primary" onclick="displayImageFromModal()">显示图像</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- QR码 Tab -->
+            <div class="modal-tab-content" id="modal-tab-qr" style="display:none;">
+                <div class="modal-section">
+                    <div class="config-row">
+                        <input type="text" id="modal-qr-text" placeholder="输入文本或URL" class="input-flex">
+                    </div>
+                    <div class="config-row">
+                        <label>纠错</label>
+                        <select id="modal-qr-ecc">
+                            <option value="L">L - 7%</option>
+                            <option value="M" selected>M - 15%</option>
+                            <option value="Q">Q - 25%</option>
+                            <option value="H">H - 30%</option>
+                        </select>
+                        <label>前景色</label>
+                        <input type="color" id="modal-qr-fg" value="#ffffff">
+                    </div>
+                    <div class="config-row">
+                        <label>背景图</label>
+                        <input type="text" id="modal-qr-bg-image" placeholder="无" readonly style="flex:1;cursor:pointer" onclick="openFilePickerFor('modal-qr-bg-image', '/sdcard/images')">
+                        <button class="btn btn-sm" onclick="document.getElementById('modal-qr-bg-image').value=''" title="清除">✕</button>
+                    </div>
+                    <div class="config-row">
+                        <button class="btn btn-primary" onclick="generateQrCodeFromModal()">生成 QR 码</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else if (type === 'text') {
+        // Matrix 文本模态框
+        return `
+            <div class="modal-section">
+                <h3>📝 文本显示</h3>
+                <div class="config-row">
+                    <input type="text" id="modal-text-content" placeholder="输入要显示的文本" class="input-flex">
+                </div>
+                <div class="config-row">
+                    <label>字体</label>
+                    <select id="modal-text-font">
+                        <option value="default">默认</option>
+                    </select>
+                    <button class="btn btn-sm" onclick="loadFontListForModal()" title="刷新字体">🔄</button>
+                </div>
+                <div class="config-row">
+                    <label>对齐</label>
+                    <select id="modal-text-align">
+                        <option value="left">左对齐</option>
+                        <option value="center" selected>居中</option>
+                        <option value="right">右对齐</option>
+                    </select>
+                    <label>颜色</label>
+                    <input type="color" id="modal-text-color" value="#00ff00">
+                </div>
+                <div class="config-row">
+                    <label>X</label>
+                    <input type="number" id="modal-text-x" value="0" min="0" max="255" style="width:50px">
+                    <label>Y</label>
+                    <input type="number" id="modal-text-y" value="0" min="0" max="255" style="width:50px">
+                    <label><input type="checkbox" id="modal-text-auto-pos" checked> 自动位置</label>
+                </div>
+                <div class="config-row">
+                    <label>滚动</label>
+                    <select id="modal-text-scroll">
+                        <option value="none">无滚动</option>
+                        <option value="left" selected>← 向左</option>
+                        <option value="right">→ 向右</option>
+                        <option value="up">↑ 向上</option>
+                        <option value="down">↓ 向下</option>
+                    </select>
+                    <label>速度</label>
+                    <input type="number" id="modal-text-speed" value="50" min="1" max="100" style="width:55px">
+                </div>
+                <div class="config-row">
+                    <label><input type="checkbox" id="modal-text-loop" checked> 循环滚动</label>
+                </div>
+                <div class="config-actions">
+                    <button class="btn btn-primary" onclick="displayTextFromModal()">▶ 显示</button>
+                    <button class="btn btn-danger" onclick="stopTextFromModal()">⏹ 停止</button>
+                </div>
+            </div>
+        `;
+    } else if (type === 'filter') {
+        // Matrix 滤镜模态框
+        return `
+            <div class="modal-section">
+                <h3>🎨 后处理滤镜</h3>
+                <div class="filters-grid">
+                    <button class="btn filter-btn" data-filter="pulse" onclick="selectFilterInModal('pulse', this)">💓 脉冲</button>
+                    <button class="btn filter-btn" data-filter="breathing" onclick="selectFilterInModal('breathing', this)">💨 呼吸</button>
+                    <button class="btn filter-btn" data-filter="blink" onclick="selectFilterInModal('blink', this)">💡 闪烁</button>
+                    <button class="btn filter-btn" data-filter="wave" onclick="selectFilterInModal('wave', this)">🌊 波浪</button>
+                    <button class="btn filter-btn" data-filter="scanline" onclick="selectFilterInModal('scanline', this)">📺 扫描线</button>
+                    <button class="btn filter-btn" data-filter="glitch" onclick="selectFilterInModal('glitch', this)">⚡ 故障艺术</button>
+                    <button class="btn filter-btn" data-filter="invert" onclick="selectFilterInModal('invert', this)">🔄 反色</button>
+                    <button class="btn filter-btn" data-filter="grayscale" onclick="selectFilterInModal('grayscale', this)">⬜ 灰度</button>
+                </div>
+                <div class="filter-config-modal" id="modal-filter-config" style="display:none;">
+                    <span class="filter-name" id="modal-filter-name">未选择</span>
+                    <div class="config-row">
+                        <label>速度</label>
+                        <input type="range" id="modal-filter-speed" min="1" max="100" value="50" style="flex:1"
+                               oninput="document.getElementById('modal-filter-speed-val').textContent=this.value">
+                        <span id="modal-filter-speed-val">50</span>
+                    </div>
+                </div>
+                <div class="config-actions">
+                    <button class="btn btn-primary" id="modal-apply-filter-btn" onclick="applyFilterFromModal()" disabled>▶ 应用</button>
+                    <button class="btn btn-danger" onclick="stopFilterFromModal()">⏹ 停止</button>
+                </div>
+            </div>
+        `;
+    }
+    return '<p>未知类型</p>';
+}
+
+// LED 模态框存储
+let currentLedModal = { device: null, type: null };
+let selectedModalFilter = null;
+
+// 打开 LED 模态框
+function openLedModal(device, type) {
+    currentLedModal = { device, type };
+    
+    const titleMap = {
+        'effect': `🎬 ${device} - 程序动画`,
+        'content': `🎬 ${device} - 内容`,
+        'text': `📝 ${device} - 文本显示`,
+        'filter': `🎨 ${device} - 后处理滤镜`
+    };
+    
+    const modal = document.getElementById('led-modal');
+    const title = document.getElementById('led-modal-title');
+    const body = document.getElementById('led-modal-body');
+    
+    title.textContent = titleMap[type] || `${device} - 设置`;
+    body.innerHTML = generateLedModalContent(device, type);
+    
+    modal.classList.remove('hidden');
+    
+    // 加载字体列表（如果是文本模态框）
+    if (type === 'text') {
+        loadFontListForModal();
+    }
+}
+
+// 关闭 LED 模态框
+function closeLedModal() {
+    const modal = document.getElementById('led-modal');
+    modal.classList.add('hidden');
+    currentLedModal = { device: null, type: null };
+    selectedModalFilter = null;
+}
+
+// 模态框内 Tab 切换
+function switchModalTab(btn, tabId) {
+    btn.parentElement.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    
+    const modal = btn.closest('.modal-content');
+    modal.querySelectorAll('.modal-tab-content').forEach(c => {
+        c.style.display = 'none';
+        c.classList.remove('active');
+    });
+    
+    const tab = document.getElementById(tabId);
+    if (tab) {
+        tab.style.display = 'block';
+        tab.classList.add('active');
+    }
+}
+
+// 模态框内选择特效
+function selectEffectInModal(device, effect, btn) {
+    selectedEffects[device] = effect;
+    
+    // 更新按钮状态
+    btn.closest('.effects-grid, .modal-tab-content').querySelectorAll('.effect-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    
+    // 显示特效名
+    const effectName = document.getElementById(`modal-effect-name-${device}`);
+    if (effectName) effectName.textContent = `${getEffectIcon(effect)} ${effect}`;
+    
+    // 显示/隐藏颜色选择器
+    const colorRow = document.getElementById(`modal-color-row-${device}`);
+    if (colorRow) {
+        colorRow.style.display = colorSupportedEffects.includes(effect) ? 'flex' : 'none';
+    }
+    
+    // 显示配置区
+    const configEl = document.getElementById(`modal-effect-config-${device}`);
+    if (configEl) configEl.style.display = 'flex';
+}
+
+// 模态框内应用特效
+async function applyEffectFromModal(device) {
+    const effect = selectedEffects[device];
+    if (!effect) {
+        showToast('请先选择一个特效', 'warning');
+        return;
+    }
+    
+    const speed = parseInt(document.getElementById(`modal-effect-speed-${device}`)?.value || '50');
+    const color = document.getElementById(`modal-effect-color-${device}`)?.value || '#ff0000';
+    
+    try {
+        const params = { speed };
+        if (colorSupportedEffects.includes(effect)) {
+            params.color = color;
+        }
+        await api.ledEffectStart(device, effect, params);
+        
+        ledStates[device] = true;
+        const btn = document.getElementById(`toggle-${device}`);
+        if (btn) {
+            btn.classList.add('on');
+            const icon = btn.querySelector('.power-icon');
+            if (icon) icon.textContent = '🔆';
+        }
+        
+        showToast(`${device}: ${effect} 已启动`, 'success');
+    } catch (e) {
+        showToast(`启动特效失败: ${e.message}`, 'error');
+    }
+}
+
+// 模态框内停止特效
+async function stopEffectFromModal(device) {
+    try {
+        await api.ledEffectStop(device);
+        delete selectedEffects[device];
+        showToast(`${device} 特效已停止`, 'success');
+    } catch (e) {
+        showToast(`停止特效失败: ${e.message}`, 'error');
+    }
+}
+
+// 模态框内显示图像
+async function displayImageFromModal() {
+    const path = document.getElementById('modal-image-path')?.value;
+    const center = document.getElementById('modal-image-center')?.checked;
+    
+    if (!path) {
+        showToast('请输入图像路径', 'warning');
+        return;
+    }
+    
+    try {
+        await api.call('led.image', { device: 'matrix', path, center });
+        showToast('图像已显示', 'success');
+    } catch (e) {
+        showToast(`显示图像失败: ${e.message}`, 'error');
+    }
+}
+
+// 模态框内生成 QR 码
+async function generateQrCodeFromModal() {
+    const text = document.getElementById('modal-qr-text')?.value;
+    const ecc = document.getElementById('modal-qr-ecc')?.value || 'M';
+    const fg = document.getElementById('modal-qr-fg')?.value || '#ffffff';
+    const bgImage = document.getElementById('modal-qr-bg-image')?.value || '';
+    
+    if (!text) {
+        showToast('请输入要编码的文本', 'warning');
+        return;
+    }
+    
+    try {
+        await api.call('led.qr', { device: 'matrix', text, ecc, fg_color: fg, bg_image: bgImage || undefined });
+        showToast('QR 码已生成', 'success');
+    } catch (e) {
+        showToast(`生成 QR 码失败: ${e.message}`, 'error');
+    }
+}
+
+// 加载字体列表（模态框版本）
+async function loadFontListForModal() {
+    try {
+        const result = await api.call('led.fonts', {});
+        const fonts = result.fonts || [];
+        const select = document.getElementById('modal-text-font');
+        if (select) {
+            select.innerHTML = '<option value="default">默认</option>' + 
+                fonts.map(f => `<option value="${f}">${f}</option>`).join('');
+        }
+    } catch (e) {
+        console.error('加载字体失败:', e);
+    }
+}
+
+// 模态框内显示文本
+async function displayTextFromModal() {
+    const text = document.getElementById('modal-text-content')?.value;
+    const font = document.getElementById('modal-text-font')?.value || 'default';
+    const align = document.getElementById('modal-text-align')?.value || 'center';
+    const color = document.getElementById('modal-text-color')?.value || '#00ff00';
+    const x = parseInt(document.getElementById('modal-text-x')?.value || '0');
+    const y = parseInt(document.getElementById('modal-text-y')?.value || '0');
+    const autoPos = document.getElementById('modal-text-auto-pos')?.checked;
+    const scroll = document.getElementById('modal-text-scroll')?.value || 'none';
+    const speed = parseInt(document.getElementById('modal-text-speed')?.value || '50');
+    const loop = document.getElementById('modal-text-loop')?.checked;
+    
+    if (!text) {
+        showToast('请输入要显示的文本', 'warning');
+        return;
+    }
+    
+    try {
+        const params = {
+            device: 'matrix',
+            text,
+            font: font !== 'default' ? font : undefined,
+            align,
+            color,
+            scroll: scroll !== 'none' ? scroll : undefined,
+            speed,
+            loop
+        };
+        if (!autoPos) {
+            params.x = x;
+            params.y = y;
+        }
+        await api.call('led.text', params);
+        showToast('文本已显示', 'success');
+    } catch (e) {
+        showToast(`显示文本失败: ${e.message}`, 'error');
+    }
+}
+
+// 模态框内停止文本
+async function stopTextFromModal() {
+    try {
+        await api.call('led.text_stop', { device: 'matrix' });
+        showToast('文本滚动已停止', 'success');
+    } catch (e) {
+        showToast(`停止文本失败: ${e.message}`, 'error');
+    }
+}
+
+// 模态框内选择滤镜
+function selectFilterInModal(filter, btn) {
+    selectedModalFilter = filter;
+    
+    btn.closest('.filters-grid').querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    
+    const filterName = document.getElementById('modal-filter-name');
+    if (filterName) filterName.textContent = filter;
+    
+    const filterConfig = document.getElementById('modal-filter-config');
+    if (filterConfig) filterConfig.style.display = 'flex';
+    
+    const applyBtn = document.getElementById('modal-apply-filter-btn');
+    if (applyBtn) applyBtn.disabled = false;
+}
+
+// 模态框内应用滤镜
+async function applyFilterFromModal() {
+    if (!selectedModalFilter) {
+        showToast('请先选择一个滤镜', 'warning');
+        return;
+    }
+    
+    const speed = parseInt(document.getElementById('modal-filter-speed')?.value || '50');
+    
+    try {
+        await api.call('led.filter', { device: 'matrix', filter: selectedModalFilter, speed });
+        showToast(`滤镜 ${selectedModalFilter} 已应用`, 'success');
+    } catch (e) {
+        showToast(`应用滤镜失败: ${e.message}`, 'error');
+    }
+}
+
+// 模态框内停止滤镜
+async function stopFilterFromModal() {
+    try {
+        await api.call('led.filter_stop', { device: 'matrix' });
+        showToast('滤镜已停止', 'success');
+    } catch (e) {
+        showToast(`停止滤镜失败: ${e.message}`, 'error');
+    }
 }
 
 function getDeviceIcon(name) {
@@ -924,34 +1290,19 @@ const selectedEffects = {};
 // 支持颜色参数的特效
 const colorSupportedEffects = ['breathing', 'solid', 'rain'];
 
-function showEffectConfig(device, effect) {
-    // 记录选中的特效
+// 选择特效（旧版兼容，保留）
+function selectEffect(device, effect, btn) {
     selectedEffects[device] = effect;
     
-    // 更新特效名显示
-    const currentEffectEl = document.getElementById(`current-effect-${device}`);
-    if (currentEffectEl) {
-        currentEffectEl.textContent = `${getEffectIcon(effect)} ${effect}`;
-    }
-    
-    // 显示/隐藏颜色配置（只有支持颜色的特效才显示）
-    const colorRow = document.getElementById(`color-row-${device}`);
-    if (colorRow) {
-        colorRow.style.display = colorSupportedEffects.includes(effect) ? 'flex' : 'none';
-    }
-    
-    // 显示配置面板
-    const controlsEl = document.getElementById(`effect-controls-${device}`);
-    if (controlsEl) {
-        controlsEl.style.display = 'block';
-    }
-    
-    // 绑定速度滑块的实时显示
-    const speedSlider = document.getElementById(`effect-speed-${device}`);
-    const speedVal = document.getElementById(`speed-val-${device}`);
-    if (speedSlider && speedVal) {
-        speedSlider.oninput = () => { speedVal.textContent = speedSlider.value; };
-    }
+    // 更新按钮状态
+    const panel = btn.closest('.led-panel');
+    panel.querySelectorAll('.effect-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+}
+
+// 旧版 showEffectConfig 保持兼容
+function showEffectConfig(device, effect) {
+    selectedEffects[device] = effect;
 }
 
 async function applyEffect(device) {
@@ -977,11 +1328,15 @@ async function applyEffect(device) {
         const btn = document.getElementById(`toggle-${device}`);
         if (btn) {
             btn.classList.add('on');
-            btn.querySelector('.toggle-icon').textContent = '⬛';
-            btn.querySelector('.toggle-text').textContent = '关灯';
+            const icon = btn.querySelector('.power-icon');
+            if (icon) icon.textContent = '🔆';
         }
         
-        showToast(`${device}: ${effect} 已启动 (速度: ${speed})`, 'success');
+        // 更新顶部当前动画显示
+        const currentAnim = document.getElementById(`current-anim-${device}`);
+        if (currentAnim) currentAnim.textContent = `▶ ${effect}`;
+        
+        showToast(`${device}: ${effect} 已启动`, 'success');
     } catch (e) {
         showToast(`启动特效失败: ${e.message}`, 'error');
     }
@@ -1005,7 +1360,6 @@ async function setBrightness(device, value) {
 const ledStates = {};
 
 async function toggleLed(device) {
-    const btn = document.getElementById(`toggle-${device}`);
     const isOn = ledStates[device] || false;
     
     try {
@@ -1013,17 +1367,13 @@ async function toggleLed(device) {
             // 当前是开启状态，关闭它
             await api.ledClear(device);
             ledStates[device] = false;
-            btn.classList.remove('on');
-            btn.querySelector('.toggle-icon').textContent = '💡';
-            btn.querySelector('.toggle-text').textContent = '开灯';
+            updateToggleButton(device, false);
             showToast(`${device} 已关闭`, 'success');
         } else {
             // 当前是关闭状态，开启它（白光）
             await api.ledFill(device, '#ffffff');
             ledStates[device] = true;
-            btn.classList.add('on');
-            btn.querySelector('.toggle-icon').textContent = '⬛';
-            btn.querySelector('.toggle-text').textContent = '关灯';
+            updateToggleButton(device, true);
             showToast(`${device} 已开启`, 'success');
         }
     } catch (e) {
@@ -1034,14 +1384,8 @@ async function toggleLed(device) {
 async function ledOn(device, color = '#ffffff') {
     try {
         await api.ledFill(device, color);
-        // 更新状态
         ledStates[device] = true;
-        const btn = document.getElementById(`toggle-${device}`);
-        if (btn) {
-            btn.classList.add('on');
-            btn.querySelector('.toggle-icon').textContent = '⬛';
-            btn.querySelector('.toggle-text').textContent = '关灯';
-        }
+        updateToggleButton(device, true);
         showToast(`${device} 已开启`, 'success');
     } catch (e) {
         showToast(`开启失败: ${e.message}`, 'error');
@@ -1172,7 +1516,14 @@ async function browseImages() {
     filePickerCurrentPath = '/sdcard/images';
     filePickerSelectedFile = null;
     filePickerCallback = (path) => {
-        document.getElementById('matrix-image-path').value = path;
+        // 优先填充模态框中的路径，否则填充旧版元素
+        const modalInput = document.getElementById('modal-image-path');
+        const oldInput = document.getElementById('matrix-image-path');
+        if (modalInput) {
+            modalInput.value = path;
+        } else if (oldInput) {
+            oldInput.value = path;
+        }
     };
     document.getElementById('file-picker-modal').classList.remove('hidden');
     await loadFilePickerDirectory(filePickerCurrentPath);
@@ -1593,185 +1944,267 @@ async function loadNetworkPage() {
     const content = document.getElementById('page-content');
     content.innerHTML = `
         <div class="page-network">
-            <h1>网络配置</h1>
+            <h1>🌐 网络配置</h1>
             
-            <div class="cards">
-                <!-- 以太网 -->
-                <div class="card">
-                    <h3>🔌 以太网 (W5500)</h3>
-                    <div class="card-content" id="eth-info">
-                        <p><strong>状态:</strong> <span id="net-eth-status" class="status-badge">-</span></p>
-                        <p><strong>链路:</strong> <span id="net-eth-link">-</span></p>
-                        <p><strong>IP:</strong> <span id="net-eth-ip">-</span></p>
-                        <p><strong>子网:</strong> <span id="net-eth-netmask">-</span></p>
-                        <p><strong>网关:</strong> <span id="net-eth-gw">-</span></p>
-                        <p><strong>DNS:</strong> <span id="net-eth-dns">-</span></p>
-                        <p><strong>MAC:</strong> <span id="net-eth-mac">-</span></p>
-                    </div>
-                </div>
-                
-                <!-- WiFi STA -->
-                <div class="card">
-                    <h3>📶 WiFi 站点</h3>
-                    <div class="card-content" id="wifi-sta-info">
-                        <p><strong>状态:</strong> <span id="net-wifi-sta-status" class="status-badge">-</span></p>
-                        <p><strong>已连接:</strong> <span id="net-wifi-sta-connected">-</span></p>
-                        <p><strong>IP:</strong> <span id="net-wifi-sta-ip">-</span></p>
-                        <p><strong>信号:</strong> <span id="net-wifi-sta-rssi">-</span></p>
-                        <p><strong>MAC:</strong> <span id="net-wifi-sta-mac">-</span></p>
-                    </div>
-                    <div class="button-group">
-                        <button class="btn" id="wifi-scan-btn" onclick="showWifiScan()" disabled title="需要 STA 或 APSTA 模式">📡 扫描网络</button>
-                        <button class="btn btn-danger hidden" id="wifi-disconnect-btn" onclick="disconnectWifi()">断开连接</button>
-                    </div>
-                </div>
-                
-                <!-- WiFi AP -->
-                <div class="card">
-                    <h3>📻 WiFi 热点</h3>
-                    <div class="card-content" id="wifi-ap-info">
-                        <p><strong>状态:</strong> <span id="net-wifi-ap-status" class="status-badge">-</span></p>
-                        <p><strong>接入数:</strong> <span id="net-wifi-ap-sta-count">-</span></p>
-                        <p><strong>IP:</strong> <span id="net-wifi-ap-ip">-</span></p>
-                    </div>
-                    <div class="button-group">
-                        <button class="btn" id="ap-config-btn" onclick="showApConfig()" disabled title="需要 AP 或 APSTA 模式">⚙️ 配置热点</button>
-                        <button class="btn" id="ap-stations-btn" onclick="showApStations()" disabled title="需要 AP 或 APSTA 模式">👥 查看接入设备</button>
-                    </div>
-                </div>
-                
-                <!-- 主机名 -->
-                <div class="card">
-                    <h3>🏷️ 主机名</h3>
-                    <div class="card-content">
-                        <p><strong>当前:</strong> <span id="net-hostname">-</span></p>
-                        <div class="form-group" style="margin-top:10px">
-                            <input type="text" id="hostname-input" placeholder="输入新主机名">
-                            <button class="btn btn-small" onclick="setHostname()">设置</button>
+            <!-- 网络状态概览 -->
+            <div class="net-overview">
+                <div class="net-status-row">
+                    <div class="net-iface" id="net-iface-eth">
+                        <div class="iface-icon">🔌</div>
+                        <div class="iface-info">
+                            <div class="iface-name">以太网</div>
+                            <div class="iface-status" id="eth-quick-status">-</div>
                         </div>
+                        <div class="iface-ip" id="eth-quick-ip">-</div>
+                    </div>
+                    <div class="net-iface" id="net-iface-wifi">
+                        <div class="iface-icon">📶</div>
+                        <div class="iface-info">
+                            <div class="iface-name">WiFi STA</div>
+                            <div class="iface-status" id="wifi-quick-status">-</div>
+                        </div>
+                        <div class="iface-ip" id="wifi-quick-ip">-</div>
+                    </div>
+                    <div class="net-iface" id="net-iface-ap">
+                        <div class="iface-icon">📻</div>
+                        <div class="iface-info">
+                            <div class="iface-name">WiFi AP</div>
+                            <div class="iface-status" id="ap-quick-status">-</div>
+                        </div>
+                        <div class="iface-clients" id="ap-quick-clients">-</div>
                     </div>
                 </div>
             </div>
             
-            <div class="cards" style="margin-top:20px">
-                <!-- DHCP 服务器 -->
-                <div class="card">
-                    <h3>🔀 DHCP 服务器</h3>
-                    <div class="card-content" id="dhcp-info">
-                        <div id="dhcp-interfaces-list"></div>
+            <!-- 主要配置区域 -->
+            <div class="net-config-grid">
+                <!-- 左侧：接口配置 -->
+                <div class="net-panel">
+                    <div class="panel-header">
+                        <h3>🔧 接口配置</h3>
+                        <div class="panel-tabs">
+                            <button class="panel-tab active" onclick="switchNetTab('eth')">以太网</button>
+                            <button class="panel-tab" onclick="switchNetTab('wifi')">WiFi</button>
+                        </div>
                     </div>
-                    <div class="button-group">
-                        <button class="btn" onclick="showDhcpClients()">👥 查看客户端</button>
+                    
+                    <!-- 以太网配置面板 -->
+                    <div class="panel-content" id="net-tab-eth">
+                        <div class="config-section">
+                            <div class="config-row">
+                                <span class="config-label">链路状态</span>
+                                <span class="config-value" id="net-eth-link">-</span>
+                            </div>
+                            <div class="config-row">
+                                <span class="config-label">IP 地址</span>
+                                <span class="config-value mono" id="net-eth-ip">-</span>
+                            </div>
+                            <div class="config-row">
+                                <span class="config-label">子网掩码</span>
+                                <span class="config-value mono" id="net-eth-netmask">-</span>
+                            </div>
+                            <div class="config-row">
+                                <span class="config-label">网关</span>
+                                <span class="config-value mono" id="net-eth-gw">-</span>
+                            </div>
+                            <div class="config-row">
+                                <span class="config-label">DNS</span>
+                                <span class="config-value mono" id="net-eth-dns">-</span>
+                            </div>
+                            <div class="config-row">
+                                <span class="config-label">MAC</span>
+                                <span class="config-value mono small" id="net-eth-mac">-</span>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                
-                <!-- NAT 网关 -->
-                <div class="card">
-                    <h3>🌍 NAT 网关</h3>
-                    <div class="card-content" id="nat-info">
-                        <p><strong>状态:</strong> <span id="net-nat-status" class="status-badge">-</span></p>
-                        <p><strong>WiFi 连接:</strong> <span id="net-nat-wifi">-</span></p>
-                        <p><strong>以太网:</strong> <span id="net-nat-eth">-</span></p>
-                        <p class="hint" style="font-size:0.85rem;color:#888;margin-top:8px">
-                            NAT 将 WiFi 网络共享给以太网设备
-                        </p>
-                    </div>
-                    <div class="button-group">
-                        <button class="btn" id="nat-toggle-btn" onclick="toggleNat()">启用</button>
-                        <button class="btn" onclick="saveNatConfig()">💾 保存配置</button>
-                    </div>
-                </div>
-                
-                <!-- WiFi 模式 -->
-                <div class="card">
-                    <h3>📻 WiFi 模式</h3>
-                    <div class="card-content">
-                        <p><strong>当前模式:</strong> <span id="net-wifi-mode">-</span></p>
-                        <div class="form-group" style="margin-top:10px">
-                            <select id="wifi-mode-select">
+                    
+                    <!-- WiFi 配置面板 -->
+                    <div class="panel-content hidden" id="net-tab-wifi">
+                        <div class="wifi-mode-selector">
+                            <label>模式:</label>
+                            <select id="wifi-mode-select" onchange="setWifiMode()">
                                 <option value="off">关闭</option>
-                                <option value="sta">仅站点 (STA)</option>
-                                <option value="ap">仅热点 (AP)</option>
-                                <option value="apsta">站点+热点 (AP+STA)</option>
+                                <option value="sta">站点 (STA)</option>
+                                <option value="ap">热点 (AP)</option>
+                                <option value="apsta">STA+AP</option>
                             </select>
-                            <button class="btn btn-small" onclick="setWifiMode()">切换</button>
+                        </div>
+                        
+                        <!-- STA 信息 -->
+                        <div class="config-section" id="wifi-sta-section">
+                            <h4>📶 站点连接</h4>
+                            <div class="config-row">
+                                <span class="config-label">状态</span>
+                                <span class="config-value" id="net-wifi-sta-status">-</span>
+                            </div>
+                            <div class="config-row">
+                                <span class="config-label">SSID</span>
+                                <span class="config-value" id="net-wifi-sta-ssid">-</span>
+                            </div>
+                            <div class="config-row">
+                                <span class="config-label">IP</span>
+                                <span class="config-value mono" id="net-wifi-sta-ip">-</span>
+                            </div>
+                            <div class="config-row">
+                                <span class="config-label">信号</span>
+                                <span class="config-value" id="net-wifi-sta-rssi">-</span>
+                            </div>
+                            <div class="wifi-sta-actions">
+                                <button class="btn btn-sm" id="wifi-scan-btn" onclick="showWifiScan()">📡 扫描</button>
+                                <button class="btn btn-sm btn-danger hidden" id="wifi-disconnect-btn" onclick="disconnectWifi()">断开</button>
+                            </div>
+                        </div>
+                        
+                        <!-- AP 信息 -->
+                        <div class="config-section" id="wifi-ap-section">
+                            <h4>📻 热点</h4>
+                            <div class="config-row">
+                                <span class="config-label">状态</span>
+                                <span class="config-value" id="net-wifi-ap-status">-</span>
+                            </div>
+                            <div class="config-row">
+                                <span class="config-label">SSID</span>
+                                <span class="config-value" id="net-wifi-ap-ssid">-</span>
+                            </div>
+                            <div class="config-row">
+                                <span class="config-label">IP</span>
+                                <span class="config-value mono" id="net-wifi-ap-ip">-</span>
+                            </div>
+                            <div class="config-row">
+                                <span class="config-label">接入数</span>
+                                <span class="config-value" id="net-wifi-ap-sta-count">0</span>
+                            </div>
+                            <div class="wifi-ap-actions">
+                                <button class="btn btn-sm" id="ap-config-btn" onclick="showApConfig()">⚙️ 配置</button>
+                                <button class="btn btn-sm" id="ap-stations-btn" onclick="showApStations()">👥 设备</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 右侧：服务配置 -->
+                <div class="net-panel">
+                    <div class="panel-header">
+                        <h3>🔀 网络服务</h3>
+                    </div>
+                    <div class="panel-content">
+                        <!-- 主机名 -->
+                        <div class="service-block">
+                            <div class="service-header">
+                                <span class="service-icon">🏷️</span>
+                                <span class="service-name">主机名</span>
+                                <span class="service-value" id="net-hostname">-</span>
+                            </div>
+                            <div class="service-config">
+                                <input type="text" id="hostname-input" placeholder="新主机名" class="input-sm">
+                                <button class="btn btn-sm" onclick="setHostname()">设置</button>
+                            </div>
+                        </div>
+                        
+                        <!-- DHCP 服务 -->
+                        <div class="service-block">
+                            <div class="service-header">
+                                <span class="service-icon">🔄</span>
+                                <span class="service-name">DHCP 服务器</span>
+                                <span class="service-badge" id="dhcp-badge">-</span>
+                            </div>
+                            <div class="service-detail" id="dhcp-interfaces-list"></div>
+                            <div class="service-actions">
+                                <button class="btn btn-sm" onclick="showDhcpClients()">👥 客户端</button>
+                            </div>
+                        </div>
+                        
+                        <!-- NAT 网关 -->
+                        <div class="service-block">
+                            <div class="service-header">
+                                <span class="service-icon">🌍</span>
+                                <span class="service-name">NAT 网关</span>
+                                <span class="service-badge" id="nat-badge">-</span>
+                            </div>
+                            <div class="service-detail">
+                                <div class="nat-status-row">
+                                    <span>WiFi:</span>
+                                    <span id="net-nat-wifi">-</span>
+                                    <span>ETH:</span>
+                                    <span id="net-nat-eth">-</span>
+                                </div>
+                            </div>
+                            <div class="service-actions">
+                                <button class="btn btn-sm" id="nat-toggle-btn" onclick="toggleNat()">启用</button>
+                                <button class="btn btn-sm" onclick="saveNatConfig()">💾 保存</button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
             
-            <!-- WiFi 扫描结果 -->
-            <div class="section hidden" id="wifi-scan-section">
-                <h2>📡 WiFi 网络列表</h2>
-                <table class="data-table">
-                    <thead>
-                        <tr><th>SSID</th><th>信号</th><th>信道</th><th>加密</th><th>BSSID</th><th>操作</th></tr>
-                    </thead>
-                    <tbody id="wifi-scan-results"></tbody>
-                </table>
-                <div class="button-group" style="margin-top:10px">
-                    <button class="btn" onclick="hideWifiScan()">关闭</button>
-                    <button class="btn" onclick="showWifiScan()">🔄 重新扫描</button>
+            <!-- WiFi 扫描结果面板 -->
+            <div class="net-section hidden" id="wifi-scan-section">
+                <div class="section-header">
+                    <h3>📡 WiFi 网络</h3>
+                    <div class="section-actions">
+                        <button class="btn btn-sm" onclick="showWifiScan()">🔄 刷新</button>
+                        <button class="btn btn-sm" onclick="hideWifiScan()">✕ 关闭</button>
+                    </div>
                 </div>
+                <div class="wifi-networks" id="wifi-scan-results"></div>
             </div>
             
-            <!-- AP 接入设备 -->
-            <div class="section hidden" id="ap-stations-section">
-                <h2>👥 热点接入设备</h2>
-                <table class="data-table">
-                    <thead>
-                        <tr><th>MAC 地址</th><th>信号强度</th></tr>
-                    </thead>
-                    <tbody id="ap-stations-results"></tbody>
-                </table>
-                <div class="button-group" style="margin-top:10px">
-                    <button class="btn" onclick="hideApStations()">关闭</button>
+            <!-- AP 接入设备面板 -->
+            <div class="net-section hidden" id="ap-stations-section">
+                <div class="section-header">
+                    <h3>👥 热点接入设备</h3>
+                    <button class="btn btn-sm" onclick="hideApStations()">✕ 关闭</button>
                 </div>
+                <div class="ap-stations-list" id="ap-stations-results"></div>
             </div>
             
-            <!-- DHCP 客户端 -->
-            <div class="section hidden" id="dhcp-clients-section">
-                <h2>👥 DHCP 客户端</h2>
-                <div class="form-group">
-                    <select id="dhcp-iface-select" onchange="loadDhcpClients()">
-                        <option value="ap">WiFi AP</option>
-                        <option value="eth">Ethernet</option>
-                    </select>
+            <!-- DHCP 客户端面板 -->
+            <div class="net-section hidden" id="dhcp-clients-section">
+                <div class="section-header">
+                    <h3>👥 DHCP 客户端</h3>
+                    <div class="section-actions">
+                        <select id="dhcp-iface-select" class="select-sm" onchange="loadDhcpClients()">
+                            <option value="ap">WiFi AP</option>
+                            <option value="eth">Ethernet</option>
+                        </select>
+                        <button class="btn btn-sm" onclick="loadDhcpClients()">🔄</button>
+                        <button class="btn btn-sm" onclick="hideDhcpClients()">✕</button>
+                    </div>
                 </div>
-                <table class="data-table">
-                    <thead>
-                        <tr><th>IP</th><th>MAC</th><th>主机名</th><th>类型</th></tr>
-                    </thead>
-                    <tbody id="dhcp-clients-results"></tbody>
-                </table>
-                <div class="button-group" style="margin-top:10px">
-                    <button class="btn" onclick="hideDhcpClients()">关闭</button>
-                    <button class="btn" onclick="loadDhcpClients()">🔄 刷新</button>
-                </div>
+                <div class="dhcp-clients-list" id="dhcp-clients-results"></div>
             </div>
             
             <!-- AP 配置弹窗 -->
             <div class="modal hidden" id="ap-config-modal">
-                <div class="modal-content">
-                    <h2>⚙️ 配置 WiFi 热点</h2>
+                <div class="modal-content modal-sm">
+                    <div class="modal-header">
+                        <h2>⚙️ WiFi 热点配置</h2>
+                        <button class="modal-close" onclick="hideApConfig()">✕</button>
+                    </div>
                     <div class="form-group">
-                        <label>SSID (热点名称)</label>
+                        <label>SSID</label>
                         <input type="text" id="ap-ssid-input" placeholder="TianShanOS">
                     </div>
                     <div class="form-group">
-                        <label>密码 (留空为开放网络)</label>
+                        <label>密码 (留空=开放)</label>
                         <input type="password" id="ap-password-input" placeholder="至少 8 位">
                     </div>
-                    <div class="form-group">
-                        <label>信道</label>
-                        <select id="ap-channel-input">
-                            <option value="1">1</option>
-                            <option value="6" selected>6</option>
-                            <option value="11">11</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label><input type="checkbox" id="ap-hidden-input"> 隐藏 SSID</label>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>信道</label>
+                            <select id="ap-channel-input">
+                                <option value="1">1</option>
+                                <option value="6" selected>6</option>
+                                <option value="11">11</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="ap-hidden-input">
+                                隐藏 SSID
+                            </label>
+                        </div>
                     </div>
                     <div class="form-actions">
                         <button class="btn" onclick="hideApConfig()">取消</button>
@@ -1783,6 +2216,15 @@ async function loadNetworkPage() {
     `;
     
     await refreshNetworkPage();
+}
+
+// 网络页面 Tab 切换
+function switchNetTab(tab) {
+    document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel-content').forEach(p => p.classList.add('hidden'));
+    
+    event.target.classList.add('active');
+    document.getElementById('net-tab-' + tab).classList.remove('hidden');
 }
 
 async function refreshNetworkPage() {
@@ -1797,8 +2239,16 @@ async function refreshNetworkPage() {
             
             // 以太网
             const eth = data.ethernet || {};
-            updateStatusBadge('net-eth-status', eth.status, eth.status === 'connected');
-            document.getElementById('net-eth-link').textContent = eth.link_up ? '已连接' : '未连接';
+            const ethConnected = eth.status === 'connected' || eth.link_up;
+            
+            // 概览区
+            updateIfaceStatus('net-iface-eth', ethConnected);
+            document.getElementById('eth-quick-status').textContent = ethConnected ? '已连接' : '未连接';
+            document.getElementById('eth-quick-ip').textContent = eth.ip || '-';
+            
+            // 详细配置
+            document.getElementById('net-eth-link').innerHTML = ethConnected ? 
+                '<span class="status-dot green"></span>已连接' : '<span class="status-dot red"></span>未连接';
             document.getElementById('net-eth-ip').textContent = eth.ip || '-';
             document.getElementById('net-eth-netmask').textContent = eth.netmask || '-';
             document.getElementById('net-eth-gw').textContent = eth.gateway || '-';
@@ -1807,15 +2257,21 @@ async function refreshNetworkPage() {
             
             // WiFi STA
             const wifiSta = data.wifi_sta || {};
-            updateStatusBadge('net-wifi-sta-status', wifiSta.status, wifiSta.status === 'connected');
-            document.getElementById('net-wifi-sta-connected').textContent = wifiSta.connected ? '是' : '否';
+            const staConnected = wifiSta.connected || wifiSta.status === 'connected';
+            
+            updateIfaceStatus('net-iface-wifi', staConnected);
+            document.getElementById('wifi-quick-status').textContent = staConnected ? '已连接' : '未连接';
+            document.getElementById('wifi-quick-ip').textContent = wifiSta.ip || '-';
+            
+            document.getElementById('net-wifi-sta-status').innerHTML = staConnected ? 
+                '<span class="status-dot green"></span>已连接' : '<span class="status-dot red"></span>未连接';
+            document.getElementById('net-wifi-sta-ssid').textContent = wifiSta.ssid || '-';
             document.getElementById('net-wifi-sta-ip').textContent = wifiSta.ip || '-';
-            document.getElementById('net-wifi-sta-rssi').textContent = wifiSta.rssi ? `${wifiSta.rssi} dBm` : '-';
-            document.getElementById('net-wifi-sta-mac').textContent = wifiSta.mac || '-';
+            document.getElementById('net-wifi-sta-rssi').textContent = wifiSta.rssi ? `${wifiSta.rssi} dBm ${getSignalBars(wifiSta.rssi)}` : '-';
             
             // 根据连接状态显示/隐藏断开按钮
             const disconnectBtn = document.getElementById('wifi-disconnect-btn');
-            if (wifiSta.connected) {
+            if (staConnected) {
                 disconnectBtn.classList.remove('hidden');
             } else {
                 disconnectBtn.classList.add('hidden');
@@ -1823,10 +2279,18 @@ async function refreshNetworkPage() {
             
             // WiFi AP
             const wifiAp = data.wifi_ap || {};
-            updateStatusBadge('net-wifi-ap-status', wifiAp.status, wifiAp.status === 'connected');
-            document.getElementById('net-wifi-ap-sta-count').textContent = 
-                (wifiAp.sta_count !== undefined ? wifiAp.sta_count : 0) + ' 台设备';
+            const apActive = wifiAp.status === 'connected' || wifiAp.active;
+            const apClients = wifiAp.sta_count || 0;
+            
+            updateIfaceStatus('net-iface-ap', apActive);
+            document.getElementById('ap-quick-status').textContent = apActive ? '运行中' : '未启用';
+            document.getElementById('ap-quick-clients').textContent = apActive ? `${apClients} 设备` : '-';
+            
+            document.getElementById('net-wifi-ap-status').innerHTML = apActive ? 
+                '<span class="status-dot green"></span>运行中' : '<span class="status-dot gray"></span>未启用';
+            document.getElementById('net-wifi-ap-ssid').textContent = wifiAp.ssid || '-';
             document.getElementById('net-wifi-ap-ip').textContent = wifiAp.ip || '-';
+            document.getElementById('net-wifi-ap-sta-count').textContent = apClients;
         }
     } catch (e) { console.log('Network status error:', e); }
     
@@ -1836,23 +2300,24 @@ async function refreshNetworkPage() {
         const mode = await api.wifiMode();
         if (mode.data) {
             currentWifiMode = mode.data.mode || 'off';
-            document.getElementById('net-wifi-mode').textContent = getWifiModeDisplay(currentWifiMode);
             document.getElementById('wifi-mode-select').value = currentWifiMode;
             
-            // 根据 WiFi 模式启用/禁用扫描按钮（需要 STA 或 APSTA 模式）
+            // 根据模式显示/隐藏相关区域
+            const staSection = document.getElementById('wifi-sta-section');
+            const apSection = document.getElementById('wifi-ap-section');
             const scanBtn = document.getElementById('wifi-scan-btn');
-            const canScan = (currentWifiMode === 'sta' || currentWifiMode === 'apsta');
-            scanBtn.disabled = !canScan;
-            scanBtn.title = canScan ? '扫描周围 WiFi 网络' : '需要先切换到 STA 或 APSTA 模式';
-            
-            // 根据 WiFi 模式启用/禁用 AP 按钮（需要 AP 或 APSTA 模式）
             const apConfigBtn = document.getElementById('ap-config-btn');
             const apStationsBtn = document.getElementById('ap-stations-btn');
+            
+            const canSta = (currentWifiMode === 'sta' || currentWifiMode === 'apsta');
             const canAp = (currentWifiMode === 'ap' || currentWifiMode === 'apsta');
+            
+            staSection.style.display = canSta ? 'block' : 'none';
+            apSection.style.display = canAp ? 'block' : 'none';
+            
+            scanBtn.disabled = !canSta;
             apConfigBtn.disabled = !canAp;
             apStationsBtn.disabled = !canAp;
-            apConfigBtn.title = canAp ? '配置 WiFi 热点参数' : '需要先切换到 AP 或 APSTA 模式';
-            apStationsBtn.title = canAp ? '查看已连接的设备' : '需要先切换到 AP 或 APSTA 模式';
         }
     } catch (e) { console.log('WiFi mode error:', e); }
     
@@ -1861,23 +2326,27 @@ async function refreshNetworkPage() {
         const dhcp = await api.dhcpStatus();
         if (dhcp.data) {
             const container = document.getElementById('dhcp-interfaces-list');
+            const badge = document.getElementById('dhcp-badge');
+            
             if (dhcp.data.interfaces) {
+                const runningCount = dhcp.data.interfaces.filter(i => i.running).length;
+                badge.textContent = `${runningCount}/${dhcp.data.interfaces.length}`;
+                badge.className = 'service-badge ' + (runningCount > 0 ? 'badge-ok' : 'badge-warn');
+                
                 container.innerHTML = dhcp.data.interfaces.map(iface => `
-                    <div style="margin-bottom:8px;padding:8px;background:var(--bg-color);border-radius:4px;">
-                        <strong>${iface.display_name}</strong><br>
-                        状态: <span class="status-badge ${iface.running ? 'status-ok' : 'status-warn'}">${iface.running ? '运行中' : '已停止'}</span><br>
-                        活跃租约: ${iface.active_leases || 0}<br>
-                        地址池: ${iface.pool_start} - ${iface.pool_end}
+                    <div class="dhcp-iface-row">
+                        <span class="status-dot ${iface.running ? 'green' : 'gray'}"></span>
+                        <span class="iface-name">${iface.display_name || iface.interface}</span>
+                        <span class="iface-detail">${iface.active_leases || 0} 租约</span>
                     </div>
                 `).join('');
             } else {
-                // 单接口响应
-                container.innerHTML = `
-                    <p><strong>接口:</strong> ${dhcp.data.display_name || dhcp.data.interface}</p>
-                    <p><strong>状态:</strong> <span class="status-badge ${dhcp.data.running ? 'status-ok' : 'status-warn'}">${dhcp.data.running ? '运行中' : '已停止'}</span></p>
-                    <p><strong>活跃租约:</strong> ${dhcp.data.active_leases || 0}</p>
-                    <p><strong>地址池:</strong> ${dhcp.data.pool?.start || '-'} - ${dhcp.data.pool?.end || '-'}</p>
-                `;
+                badge.textContent = dhcp.data.running ? '运行' : '停止';
+                badge.className = 'service-badge ' + (dhcp.data.running ? 'badge-ok' : 'badge-warn');
+                container.innerHTML = `<div class="dhcp-iface-row">
+                    <span class="status-dot ${dhcp.data.running ? 'green' : 'gray'}"></span>
+                    <span>${dhcp.data.active_leases || 0} 活跃租约</span>
+                </div>`;
             }
         }
     } catch (e) { console.log('DHCP error:', e); }
@@ -1890,46 +2359,41 @@ async function refreshNetworkPage() {
             const wifiConnected = nat.data.wifi_connected;
             const ethUp = nat.data.eth_up;
             
-            updateStatusBadge('net-nat-status', nat.data.state, enabled);
-            document.getElementById('net-nat-wifi').textContent = wifiConnected ? '已连接 ✓' : '未连接 ✗';
-            document.getElementById('net-nat-eth').textContent = ethUp ? '链路正常 ✓' : '链路断开 ✗';
+            const badge = document.getElementById('nat-badge');
+            badge.textContent = enabled ? '运行' : '停止';
+            badge.className = 'service-badge ' + (enabled ? 'badge-ok' : 'badge-warn');
             
-            // NAT 启用/禁用按钮
+            document.getElementById('net-nat-wifi').innerHTML = wifiConnected ? 
+                '<span class="status-dot green"></span>✓' : '<span class="status-dot red"></span>✗';
+            document.getElementById('net-nat-eth').innerHTML = ethUp ? 
+                '<span class="status-dot green"></span>✓' : '<span class="status-dot red"></span>✗';
+            
+            // NAT 按钮
             const natToggleBtn = document.getElementById('nat-toggle-btn');
             natToggleBtn.textContent = enabled ? '禁用' : '启用';
-            natToggleBtn.className = enabled ? 'btn btn-danger' : 'btn btn-success';
+            natToggleBtn.className = enabled ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-success';
             
-            // 只有在 WiFi 已连接且以太网链路正常时才能启用 NAT
-            // 如果 NAT 已启用，则始终允许禁用
             const canToggle = enabled || (wifiConnected && ethUp);
             natToggleBtn.disabled = !canToggle;
-            if (!canToggle) {
-                natToggleBtn.title = '需要 WiFi STA 已连接且以太网链路正常';
-            } else {
-                natToggleBtn.title = enabled ? '停止 NAT 网关' : '启动 NAT 网关';
-            }
         }
     } catch (e) { console.log('NAT error:', e); }
 }
 
-// 更新状态徽章样式
-function updateStatusBadge(elementId, text, isOk) {
+// 更新接口状态样式
+function updateIfaceStatus(elementId, isActive) {
     const el = document.getElementById(elementId);
     if (el) {
-        el.textContent = text || '-';
-        el.className = 'status-badge ' + (isOk ? 'status-ok' : 'status-warn');
+        el.className = 'net-iface ' + (isActive ? 'active' : 'inactive');
     }
 }
 
-// WiFi 模式显示名
-function getWifiModeDisplay(mode) {
-    const modes = {
-        'off': '关闭',
-        'sta': '站点 (STA)',
-        'ap': '热点 (AP)',
-        'apsta': '站点+热点'
-    };
-    return modes[mode] || mode || '-';
+// 信号强度条
+function getSignalBars(rssi) {
+    if (rssi >= -50) return '████';
+    if (rssi >= -60) return '███░';
+    if (rssi >= -70) return '██░░';
+    if (rssi >= -80) return '█░░░';
+    return '░░░░';
 }
 
 // 设置 WiFi 模式
@@ -1963,40 +2427,44 @@ async function setHostname() {
 
 async function showWifiScan() {
     const section = document.getElementById('wifi-scan-section');
-    const tbody = document.getElementById('wifi-scan-results');
+    const container = document.getElementById('wifi-scan-results');
     
     section.classList.remove('hidden');
-    tbody.innerHTML = '<tr><td colspan="6">扫描中...</td></tr>';
+    container.innerHTML = '<div class="loading-inline">扫描中...</div>';
     
     try {
         const result = await api.wifiScan();
         if (result.data && result.data.networks) {
             if (result.data.networks.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6">未发现网络</td></tr>';
+                container.innerHTML = '<div class="empty-state">未发现网络</div>';
                 return;
             }
-            tbody.innerHTML = result.data.networks.map(net => `
-                <tr>
-                    <td>${escapeHtml(net.ssid) || '(隐藏)'}</td>
-                    <td>${getSignalIcon(net.rssi)} ${net.rssi} dBm</td>
-                    <td>${net.channel}</td>
-                    <td>${net.auth || 'OPEN'}</td>
-                    <td style="font-family:monospace;font-size:0.85rem">${net.bssid || '-'}</td>
-                    <td><button class="btn btn-small btn-primary" onclick="connectWifi('${escapeHtml(net.ssid)}')">连接</button></td>
-                </tr>
+            // 按信号强度排序
+            const networks = result.data.networks.sort((a, b) => b.rssi - a.rssi);
+            container.innerHTML = networks.map(net => `
+                <div class="wifi-network-card" onclick="connectWifi('${escapeHtml(net.ssid)}')">
+                    <div class="wifi-signal">${getSignalIcon(net.rssi)}</div>
+                    <div class="wifi-info">
+                        <div class="wifi-ssid">${escapeHtml(net.ssid) || '(隐藏网络)'}</div>
+                        <div class="wifi-meta">
+                            <span>${net.rssi} dBm</span>
+                            <span>CH ${net.channel}</span>
+                            <span>${net.auth || 'OPEN'}</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-sm btn-primary">连接</button>
+                </div>
             `).join('');
         }
     } catch (e) {
-        // 检查是否是模式错误
         const errorMsg = e.message || '';
         if (errorMsg.includes('STA') || errorMsg.includes('APSTA') || errorMsg.includes('mode')) {
-            tbody.innerHTML = `
-                <tr><td colspan="6" style="text-align:center;padding:20px">
-                    <div style="color:#e74c3c;margin-bottom:10px">⚠️ WiFi 扫描需要 STA 或 APSTA 模式</div>
-                    <div style="color:#666;font-size:0.9rem">请在下方"WiFi 模式"卡片中切换到"站点 (STA)"或"站点+热点"模式</div>
-                </td></tr>`;
+            container.innerHTML = `<div class="error-state">
+                <div class="error-icon">⚠️</div>
+                <div class="error-text">需要切换到 STA 或 APSTA 模式</div>
+            </div>`;
         } else {
-            tbody.innerHTML = `<tr><td colspan="6" style="color:red">扫描失败: ${errorMsg}</td></tr>`;
+            container.innerHTML = `<div class="error-state">扫描失败: ${errorMsg}</div>`;
         }
     }
 }
@@ -2042,27 +2510,30 @@ async function disconnectWifi() {
 // AP 接入设备
 async function showApStations() {
     const section = document.getElementById('ap-stations-section');
-    const tbody = document.getElementById('ap-stations-results');
+    const container = document.getElementById('ap-stations-results');
     
     section.classList.remove('hidden');
-    tbody.innerHTML = '<tr><td colspan="2">加载中...</td></tr>';
+    container.innerHTML = '<div class="loading-inline">加载中...</div>';
     
     try {
         const result = await api.wifiApStations();
         if (result.data && result.data.stations) {
             if (result.data.stations.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="2">无接入设备</td></tr>';
+                container.innerHTML = '<div class="empty-state">无接入设备</div>';
                 return;
             }
-            tbody.innerHTML = result.data.stations.map(sta => `
-                <tr>
-                    <td style="font-family:monospace">${sta.mac}</td>
-                    <td>${sta.rssi} dBm</td>
-                </tr>
+            container.innerHTML = result.data.stations.map(sta => `
+                <div class="device-card">
+                    <div class="device-icon">📱</div>
+                    <div class="device-info">
+                        <div class="device-mac">${sta.mac}</div>
+                        <div class="device-rssi">${sta.rssi} dBm</div>
+                    </div>
+                </div>
             `).join('');
         }
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="2" style="color:red">获取失败: ${e.message}</td></tr>`;
+        container.innerHTML = `<div class="error-state">获取失败: ${e.message}</div>`;
     }
 }
 
@@ -2117,28 +2588,31 @@ function hideDhcpClients() {
 
 async function loadDhcpClients() {
     const iface = document.getElementById('dhcp-iface-select').value;
-    const tbody = document.getElementById('dhcp-clients-results');
+    const container = document.getElementById('dhcp-clients-results');
     
-    tbody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
+    container.innerHTML = '<div class="loading-inline">加载中...</div>';
     
     try {
         const result = await api.dhcpClients(iface);
         if (result.data && result.data.clients) {
             if (result.data.clients.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="4">无客户端</td></tr>';
+                container.innerHTML = '<div class="empty-state">无客户端</div>';
                 return;
             }
-            tbody.innerHTML = result.data.clients.map(client => `
-                <tr>
-                    <td>${client.ip}</td>
-                    <td style="font-family:monospace;font-size:0.85rem">${client.mac}</td>
-                    <td>${client.hostname || '-'}</td>
-                    <td>${client.is_static ? '静态' : '动态'}</td>
-                </tr>
+            container.innerHTML = result.data.clients.map(client => `
+                <div class="device-card">
+                    <div class="device-icon">${client.is_static ? '📌' : '💻'}</div>
+                    <div class="device-info">
+                        <div class="device-ip">${client.ip}</div>
+                        <div class="device-mac">${client.mac}</div>
+                        ${client.hostname ? `<div class="device-hostname">${client.hostname}</div>` : ''}
+                    </div>
+                    <div class="device-badge">${client.is_static ? '静态' : '动态'}</div>
+                </div>
             `).join('');
         }
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="4" style="color:red">获取失败: ${e.message}</td></tr>`;
+        container.innerHTML = `<div class="error-state">获取失败: ${e.message}</div>`;
     }
 }
 
@@ -3001,138 +3475,352 @@ async function deleteFile(path) {
 //                         配置页面
 // =========================================================================
 
+// 模块描述信息
+const CONFIG_MODULE_INFO = {
+    net: { name: '网络', icon: '🌐', description: '以太网和主机名配置' },
+    dhcp: { name: 'DHCP', icon: '📡', description: 'DHCP 服务器配置' },
+    wifi: { name: 'WiFi', icon: '📶', description: 'WiFi AP 配置' },
+    led: { name: 'LED', icon: '💡', description: 'LED 亮度和效果配置' },
+    fan: { name: '风扇', icon: '🌀', description: '风扇控制配置' },
+    device: { name: '设备', icon: '🖥️', description: 'AGX 设备控制配置' },
+    system: { name: '系统', icon: '⚙️', description: '系统和控制台配置' }
+};
+
+// 配置项的用户友好描述
+const CONFIG_KEY_LABELS = {
+    // net
+    'eth.enabled': { label: '以太网启用', type: 'bool' },
+    'eth.dhcp': { label: 'DHCP 客户端', type: 'bool' },
+    'eth.ip': { label: 'IP 地址', type: 'ip' },
+    'eth.netmask': { label: '子网掩码', type: 'ip' },
+    'eth.gateway': { label: '网关', type: 'ip' },
+    'hostname': { label: '主机名', type: 'string' },
+    // dhcp
+    'enabled': { label: '启用', type: 'bool' },
+    'start_ip': { label: '起始 IP', type: 'ip' },
+    'end_ip': { label: '结束 IP', type: 'ip' },
+    'lease_time': { label: '租约时间 (秒)', type: 'number' },
+    // wifi
+    'mode': { label: '模式', type: 'select', options: ['off', 'ap', 'sta', 'apsta'] },
+    'ap.ssid': { label: 'AP SSID', type: 'string' },
+    'ap.password': { label: 'AP 密码', type: 'password' },
+    'ap.channel': { label: 'AP 信道', type: 'number', min: 1, max: 13 },
+    'ap.max_conn': { label: '最大连接数', type: 'number', min: 1, max: 10 },
+    'ap.hidden': { label: '隐藏 SSID', type: 'bool' },
+    // led
+    'brightness': { label: '亮度', type: 'number', min: 0, max: 255 },
+    'effect_speed': { label: '效果速度', type: 'number', min: 1, max: 100 },
+    'power_on_effect': { label: '开机效果', type: 'string' },
+    'idle_effect': { label: '待机效果', type: 'string' },
+    // fan
+    'min_duty': { label: '最小占空比 (%)', type: 'number', min: 0, max: 100 },
+    'max_duty': { label: '最大占空比 (%)', type: 'number', min: 0, max: 100 },
+    'target_temp': { label: '目标温度 (°C)', type: 'number', min: 20, max: 80 },
+    // device
+    'agx.auto_power_on': { label: 'AGX 自动开机', type: 'bool' },
+    'agx.power_on_delay': { label: '开机延迟 (ms)', type: 'number' },
+    'agx.force_off_timeout': { label: '强制关机超时 (ms)', type: 'number' },
+    'monitor.enabled': { label: '监控启用', type: 'bool' },
+    'monitor.interval': { label: '监控间隔 (ms)', type: 'number' },
+    // system
+    'timezone': { label: '时区', type: 'string' },
+    'log_level': { label: '日志级别', type: 'select', options: ['none', 'error', 'warn', 'info', 'debug', 'verbose'] },
+    'console.enabled': { label: '控制台启用', type: 'bool' },
+    'console.baudrate': { label: '波特率', type: 'select', options: [9600, 115200, 460800, 921600] },
+    'webui.enabled': { label: 'WebUI 启用', type: 'bool' },
+    'webui.port': { label: 'WebUI 端口', type: 'number', min: 1, max: 65535 }
+};
+
 async function loadConfigPage() {
     clearInterval(refreshInterval);
     
     const content = document.getElementById('page-content');
     content.innerHTML = `
         <div class="page-config">
-            <h1>系统配置</h1>
+            <h1>⚙️ 系统配置</h1>
             
+            <!-- 模块概览 -->
             <div class="section">
-                <h2>配置列表</h2>
-                <div class="config-filter">
-                    <input type="text" id="config-prefix" placeholder="输入前缀过滤 (如 network.)">
-                    <button class="btn" onclick="filterConfigList()">筛选</button>
-                    <button class="btn" onclick="loadAllConfig()">显示全部</button>
+                <div class="section-header">
+                    <h2>配置模块</h2>
+                    <div class="section-actions">
+                        <button class="btn btn-small" onclick="saveAllModules()">💾 保存全部</button>
+                        <button class="btn btn-small" onclick="syncConfigToSd()">📤 同步到 SD 卡</button>
+                    </div>
                 </div>
-                <table class="data-table">
-                    <thead>
-                        <tr><th>键</th><th>值</th><th>类型</th><th>操作</th></tr>
-                    </thead>
-                    <tbody id="config-table-body"></tbody>
-                </table>
+                <div id="module-cards" class="module-cards">
+                    <div class="loading">加载中...</div>
+                </div>
             </div>
             
-            <div class="section">
-                <h2>添加/修改配置</h2>
-                <form id="config-form" class="config-form" onsubmit="saveConfig(event)">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>键名</label>
-                            <input type="text" id="cfg-key" required placeholder="network.hostname">
-                        </div>
-                        <div class="form-group">
-                            <label>值</label>
-                            <input type="text" id="cfg-value" required>
-                        </div>
-                        <div class="form-group">
-                            <label>持久化</label>
-                            <input type="checkbox" id="cfg-persist">
-                        </div>
+            <!-- 模块详情 -->
+            <div class="section" id="module-detail-section" style="display:none">
+                <div class="section-header">
+                    <h2 id="module-detail-title">模块配置</h2>
+                    <div class="section-actions">
+                        <button class="btn btn-small" id="btn-save-module" onclick="saveCurrentModule()">💾 保存</button>
+                        <button class="btn btn-small btn-danger" id="btn-reset-module" onclick="resetCurrentModule()">🔄 重置</button>
                     </div>
-                    <button type="submit" class="btn btn-primary">保存</button>
-                </form>
+                </div>
+                <div id="module-detail-content"></div>
             </div>
         </div>
     `;
     
-    await loadAllConfig();
+    await loadModuleCards();
 }
 
-async function loadAllConfig() {
-    const tbody = document.getElementById('config-table-body');
-    tbody.innerHTML = '<tr><td colspan="4">加载中...</td></tr>';
+async function loadModuleCards() {
+    const container = document.getElementById('module-cards');
     
     try {
-        const result = await api.configList();
-        if (result.data?.items) {
-            tbody.innerHTML = result.data.items.map(item => `
-                <tr>
-                    <td><code>${item.key}</code></td>
-                    <td>${item.value}</td>
-                    <td>${item.type || '-'}</td>
-                    <td>
-                        <button class="btn btn-small" onclick="editConfig('${item.key}', '${item.value}')">编辑</button>
-                        <button class="btn btn-small btn-danger" onclick="deleteConfig('${item.key}')">删除</button>
-                    </td>
-                </tr>
-            `).join('');
-        } else {
-            tbody.innerHTML = '<tr><td colspan="4">暂无配置</td></tr>';
+        const result = await api.configModuleList();
+        const modules = result.data?.modules || result.modules || [];
+        
+        if (modules.length === 0) {
+            container.innerHTML = '<div class="empty">没有注册的配置模块</div>';
+            return;
         }
+        
+        container.innerHTML = modules.map(mod => {
+            const info = CONFIG_MODULE_INFO[mod.name] || { name: mod.name, icon: '📦', description: '' };
+            const statusClass = mod.registered ? (mod.dirty ? 'dirty' : 'clean') : 'disabled';
+            const statusText = !mod.registered ? '未注册' : (mod.dirty ? '有修改' : '已同步');
+            const pendingBadge = mod.pending_sync ? '<span class="badge badge-warning">待同步</span>' : '';
+            
+            return `
+                <div class="module-card ${statusClass}" onclick="showModuleDetail('${mod.name}')" ${!mod.registered ? 'style="opacity:0.5;pointer-events:none"' : ''}>
+                    <div class="module-icon">${info.icon}</div>
+                    <div class="module-info">
+                        <div class="module-name">${info.name}</div>
+                        <div class="module-desc">${info.description}</div>
+                        <div class="module-status">
+                            <span class="status-dot ${statusClass}"></span>
+                            <span>${statusText}</span>
+                            ${pendingBadge}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
     } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="4">加载失败</td></tr>';
+        container.innerHTML = `<div class="error">加载失败: ${e.message}</div>`;
     }
 }
 
-async function filterConfigList() {
-    const prefix = document.getElementById('config-prefix').value;
-    const tbody = document.getElementById('config-table-body');
+// 当前选中的模块
+let currentConfigModule = null;
+
+async function showModuleDetail(moduleName) {
+    currentConfigModule = moduleName;
+    const info = CONFIG_MODULE_INFO[moduleName] || { name: moduleName, icon: '📦' };
+    
+    document.getElementById('module-detail-title').textContent = `${info.icon} ${info.name} 配置`;
+    document.getElementById('module-detail-section').style.display = 'block';
+    
+    const contentDiv = document.getElementById('module-detail-content');
+    contentDiv.innerHTML = '<div class="loading">加载中...</div>';
     
     try {
-        const result = await api.configList(prefix);
-        if (result.data?.items) {
-            tbody.innerHTML = result.data.items.map(item => `
-                <tr>
-                    <td><code>${item.key}</code></td>
-                    <td>${item.value}</td>
-                    <td>${item.type || '-'}</td>
-                    <td>
-                        <button class="btn btn-small" onclick="editConfig('${item.key}', '${item.value}')">编辑</button>
-                        <button class="btn btn-small btn-danger" onclick="deleteConfig('${item.key}')">删除</button>
-                    </td>
-                </tr>
-            `).join('');
-        } else {
-            tbody.innerHTML = '<tr><td colspan="4">暂无匹配配置</td></tr>';
+        const result = await api.configModuleShow(moduleName);
+        const config = result.data?.config || result.config || {};
+        const dirty = result.data?.dirty || result.dirty || false;
+        
+        // 生成配置表单
+        const keys = Object.keys(config);
+        if (keys.length === 0) {
+            contentDiv.innerHTML = '<div class="empty">此模块暂无配置项</div>';
+            return;
         }
+        
+        contentDiv.innerHTML = `
+            <form id="module-config-form" class="config-form" onsubmit="return false;">
+                <div class="config-grid">
+                    ${keys.map(key => generateConfigInput(moduleName, key, config[key])).join('')}
+                </div>
+                ${dirty ? '<div class="form-note">⚠️ 有未保存的修改</div>' : ''}
+            </form>
+        `;
+        
+        // 滚动到详情区域
+        document.getElementById('module-detail-section').scrollIntoView({ behavior: 'smooth' });
+        
     } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="4">加载失败</td></tr>';
+        contentDiv.innerHTML = `<div class="error">加载失败: ${e.message}</div>`;
     }
 }
 
-function editConfig(key, value) {
-    document.getElementById('cfg-key').value = key;
-    document.getElementById('cfg-value').value = value;
+function generateConfigInput(module, key, value) {
+    const meta = CONFIG_KEY_LABELS[key] || { label: key, type: 'string' };
+    const inputId = `cfg-${module}-${key.replace(/\./g, '-')}`;
+    
+    let inputHtml = '';
+    
+    switch (meta.type) {
+        case 'bool':
+            inputHtml = `
+                <label class="toggle-switch">
+                    <input type="checkbox" id="${inputId}" data-module="${module}" data-key="${key}" 
+                           ${value ? 'checked' : ''} onchange="markModuleConfigChanged('${module}', '${key}', this.checked)">
+                    <span class="toggle-slider"></span>
+                </label>`;
+            break;
+            
+        case 'select':
+            inputHtml = `
+                <select id="${inputId}" data-module="${module}" data-key="${key}" 
+                        onchange="markModuleConfigChanged('${module}', '${key}', this.value)">
+                    ${meta.options.map(opt => `<option value="${opt}" ${value == opt ? 'selected' : ''}>${opt}</option>`).join('')}
+                </select>`;
+            break;
+            
+        case 'number':
+            const min = meta.min !== undefined ? `min="${meta.min}"` : '';
+            const max = meta.max !== undefined ? `max="${meta.max}"` : '';
+            inputHtml = `
+                <input type="number" id="${inputId}" data-module="${module}" data-key="${key}" 
+                       value="${value}" ${min} ${max}
+                       onchange="markModuleConfigChanged('${module}', '${key}', parseInt(this.value))">`;
+            break;
+            
+        case 'password':
+            inputHtml = `
+                <input type="password" id="${inputId}" data-module="${module}" data-key="${key}" 
+                       value="${value}" autocomplete="new-password"
+                       onchange="markModuleConfigChanged('${module}', '${key}', this.value)">`;
+            break;
+            
+        case 'ip':
+            inputHtml = `
+                <input type="text" id="${inputId}" data-module="${module}" data-key="${key}" 
+                       value="${value}" pattern="^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$" 
+                       placeholder="192.168.1.1"
+                       onchange="markModuleConfigChanged('${module}', '${key}', this.value)">`;
+            break;
+            
+        default: // string
+            inputHtml = `
+                <input type="text" id="${inputId}" data-module="${module}" data-key="${key}" 
+                       value="${value}"
+                       onchange="markModuleConfigChanged('${module}', '${key}', this.value)">`;
+    }
+    
+    return `
+        <div class="config-item">
+            <label for="${inputId}">${meta.label}</label>
+            ${inputHtml}
+        </div>
+    `;
 }
 
-async function saveConfig(e) {
-    e.preventDefault();
+// 待保存的修改
+const pendingConfigChanges = {};
+
+function markModuleConfigChanged(module, key, value) {
+    if (!pendingConfigChanges[module]) {
+        pendingConfigChanges[module] = {};
+    }
+    pendingConfigChanges[module][key] = value;
     
-    const key = document.getElementById('cfg-key').value;
-    const value = document.getElementById('cfg-value').value;
-    const persist = document.getElementById('cfg-persist').checked;
+    // 更新保存按钮状态
+    const saveBtn = document.getElementById('btn-save-module');
+    if (saveBtn) {
+        saveBtn.classList.add('btn-primary');
+        saveBtn.textContent = '💾 保存 *';
+    }
+}
+
+async function saveCurrentModule() {
+    if (!currentConfigModule) return;
+    
+    const changes = pendingConfigChanges[currentConfigModule];
+    if (!changes || Object.keys(changes).length === 0) {
+        showToast('没有需要保存的修改', 'info');
+        return;
+    }
     
     try {
-        await api.configSet(key, value, persist);
-        showToast('配置已保存', 'success');
-        await loadAllConfig();
-        document.getElementById('config-form').reset();
+        // 先设置所有修改
+        for (const [key, value] of Object.entries(changes)) {
+            await api.configModuleSet(currentConfigModule, key, value);
+        }
+        
+        // 然后保存到 NVS
+        await api.configModuleSave(currentConfigModule);
+        
+        // 清除待保存的修改
+        delete pendingConfigChanges[currentConfigModule];
+        
+        showToast(`${CONFIG_MODULE_INFO[currentConfigModule]?.name || currentConfigModule} 配置已保存`, 'success');
+        
+        // 刷新
+        await loadModuleCards();
+        await showModuleDetail(currentConfigModule);
+        
     } catch (e) {
         showToast('保存失败: ' + e.message, 'error');
     }
 }
 
-async function deleteConfig(key) {
-    if (confirm(`确定要删除配置 "${key}" 吗？`)) {
-        try {
-            await api.configDelete(key);
-            showToast('配置已删除', 'success');
-            await loadAllConfig();
-        } catch (e) {
-            showToast('删除失败: ' + e.message, 'error');
+async function resetCurrentModule() {
+    if (!currentConfigModule) return;
+    
+    const info = CONFIG_MODULE_INFO[currentConfigModule] || { name: currentConfigModule };
+    if (!confirm(`确定要重置 ${info.name} 模块的所有配置为默认值吗？`)) {
+        return;
+    }
+    
+    try {
+        await api.configModuleReset(currentConfigModule, true);
+        delete pendingConfigChanges[currentConfigModule];
+        
+        showToast(`${info.name} 配置已重置`, 'success');
+        
+        await loadModuleCards();
+        await showModuleDetail(currentConfigModule);
+        
+    } catch (e) {
+        showToast('重置失败: ' + e.message, 'error');
+    }
+}
+
+async function saveAllModules() {
+    try {
+        const result = await api.configModuleSave();
+        const data = result.data || result;
+        
+        if (data.fail_count > 0) {
+            showToast(`保存完成，${data.success_count} 成功，${data.fail_count} 失败`, 'warning');
+        } else {
+            showToast(`已保存 ${data.success_count} 个模块`, 'success');
         }
+        
+        // 清除所有待保存修改
+        Object.keys(pendingConfigChanges).forEach(k => delete pendingConfigChanges[k]);
+        
+        await loadModuleCards();
+        
+    } catch (e) {
+        showToast('保存失败: ' + e.message, 'error');
+    }
+}
+
+async function syncConfigToSd() {
+    try {
+        const result = await api.configSync();
+        const data = result.data || result;
+        
+        if (data.synced) {
+            showToast('配置已同步到 SD 卡', 'success');
+        } else {
+            showToast(data.message || '无需同步', 'info');
+        }
+        
+        await loadModuleCards();
+        
+    } catch (e) {
+        showToast('同步失败: ' + e.message, 'error');
     }
 }
 
@@ -4019,11 +4707,13 @@ window.toggleNat = toggleNat;
 window.devicePower = devicePower;
 window.deviceReset = deviceReset;
 window.setFanSpeed = setFanSpeed;
-window.filterConfigList = filterConfigList;
-window.loadAllConfig = loadAllConfig;
-window.editConfig = editConfig;
-window.saveConfig = saveConfig;
-window.deleteConfig = deleteConfig;
+// Config module functions
+window.showModuleDetail = showModuleDetail;
+window.saveCurrentModule = saveCurrentModule;
+window.resetCurrentModule = resetCurrentModule;
+window.saveAllModules = saveAllModules;
+window.syncConfigToSd = syncConfigToSd;
+window.markModuleConfigChanged = markModuleConfigChanged;
 window.toggleSshAuthType = toggleSshAuthType;
 window.testSsh = testSsh;
 window.deleteKey = deleteKey;

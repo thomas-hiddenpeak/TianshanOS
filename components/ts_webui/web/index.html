@@ -71,6 +71,43 @@
         </div>
     </div>
     
+    <!-- LED 控制模态框 -->
+    <div id="led-modal" class="modal hidden">
+        <div class="modal-content led-modal">
+            <div class="modal-header">
+                <h2 id="led-modal-title">LED 设置</h2>
+                <button class="modal-close" onclick="closeLedModal()">&times;</button>
+            </div>
+            <div id="led-modal-body" class="modal-body">
+                <!-- 动态内容 -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- 文件选择器模态框 -->
+    <div id="file-picker-modal" class="modal hidden">
+        <div class="modal-content file-picker-modal">
+            <div class="modal-header">
+                <h2>📁 选择文件</h2>
+                <button class="modal-close" onclick="closeFilePicker()">&times;</button>
+            </div>
+            <div class="file-picker-path">
+                <button class="btn btn-sm" onclick="filePickerGoUp()">⬆️ 上级</button>
+                <span id="file-picker-current-path">/sdcard/images</span>
+            </div>
+            <div class="file-picker-list" id="file-picker-list">
+                <div class="loading">加载中...</div>
+            </div>
+            <div class="file-picker-selected">
+                <span>已选择: </span><span id="file-picker-selected-name">-</span>
+            </div>
+            <div class="form-actions">
+                <button class="btn" onclick="closeFilePicker()">取消</button>
+                <button class="btn btn-primary" id="file-picker-confirm" onclick="confirmFilePicker()" disabled>确定</button>
+            </div>
+        </div>
+    </div>
+    
     <script src="/js/api.js"></script>
     <script src="/js/router.js"></script>
     <script src="/js/terminal.js"></script>

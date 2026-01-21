@@ -398,6 +398,33 @@
 
 ## 📝 开发日志
 
+### 2026-01-22
+- **统一配置系统修复**：
+  - 修复 `MODULE_NAMES` 数组缺少 `NAT` 条目导致崩溃
+    - 问题：`strlen(NULL)` 在 `ts_config_module_register()` 触发 LoadProhibited
+    - 修复：在 `ts_config_module.c` 中添加 `[TS_CONFIG_MODULE_NAT] = "NAT"`
+  - 为 NAT 模块添加统一配置支持
+    - `ts_config_module.h` 添加 `TS_CONFIG_MODULE_NAT` 枚举
+    - `ts_config_schemas.c` 添加 NAT schema 定义 (enabled, auto_start)
+    - `ts_cmd_nat.c` 更新 `--save` 使用双写机制
+    - `ts_api_config.c` 添加 NAT 模块解析
+  - 修复 API 槽位不足问题
+    - `CONFIG_TS_API_MAX_ENDPOINTS` 从 128 增加到 200
+
+- **WebUI 网络配置页面重构**：
+  - 新增状态概览区（顶部三接口卡片：以太网/WiFi STA/WiFi AP）
+  - 双栏布局设计
+    - 左栏：接口配置（以太网/WiFi 标签页切换）
+    - 右栏：网络服务（主机名/DHCP/NAT）
+  - WiFi 扫描结果改为卡片式布局，按信号强度排序
+  - 设备列表（AP 接入设备/DHCP 客户端）改为网格卡片
+  - 视觉优化
+    - 状态点（绿/红/灰）替代文字状态
+    - 服务徽章显示运行状态
+    - 信号强度条显示 (████)
+    - 响应式布局支持移动端
+  - 新增 CSS 样式：500+ 行网络页面专用样式
+
 ### 2026-01-21
 - **WebUI 文件管理功能**：
   - 实现 Storage API 扩展

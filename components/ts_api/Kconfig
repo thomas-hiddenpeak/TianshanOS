@@ -2,7 +2,7 @@ menu "TianShanOS API Configuration"
 
     config TS_API_MAX_ENDPOINTS
         int "Maximum API endpoints"
-        default 128
+        default 200
         range 32 512
         help
             Maximum number of API endpoints that can be registered.

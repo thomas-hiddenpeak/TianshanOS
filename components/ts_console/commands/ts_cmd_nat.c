@@ -13,19 +13,13 @@
 #include "ts_cmd_all.h"
 #include "ts_console.h"
 #include "ts_nat.h"
-#include "ts_console.h"
 #include "ts_net_manager.h"
-#include "ts_console.h"
 #include "ts_api.h"
-#include "ts_console.h"
+#include "ts_config_module.h"
 #include "esp_console.h"
-#include "ts_console.h"
 #include "argtable3/argtable3.h"
-#include "ts_console.h"
 #include <stdio.h>
-#include "ts_console.h"
 #include <string.h>
-#include "ts_console.h"
 
 static const char *TAG = "cmd_nat";
 
@@ -166,19 +160,38 @@ static int do_nat_disable(bool json_output)
 
 static int do_nat_save(bool json_output)
 {
+    ts_console_printf("Saving NAT configuration...\n");
+    
+    /* 调用原有保存方法 */
     esp_err_t ret = ts_nat_save_config();
+    if (ret != ESP_OK) {
+        if (json_output) {
+            ts_console_printf("{\"success\":false,\"error\":\"%s\"}\n", esp_err_to_name(ret));
+        } else {
+            ts_console_error("Failed to save to NVS: %s\n", esp_err_to_name(ret));
+        }
+        return 1;
+    }
+    
+    /* 同时使用统一配置模块进行双写 */
+    ret = ts_config_module_persist(TS_CONFIG_MODULE_NAT);
     
     if (json_output) {
-        ts_console_printf("{\"success\":%s}\n", ret == ESP_OK ? "true" : "false");
+        ts_console_printf("{\"success\":true}\n");
     } else {
         if (ret == ESP_OK) {
-            ts_console_printf("NAT configuration saved\n");
+            ts_console_success("Configuration saved to NVS");
+            if (ts_config_module_has_pending_sync()) {
+                ts_console_printf(" (SD card sync pending)\n");
+            } else {
+                ts_console_printf(" and SD card\n");
+            }
         } else {
-            ts_console_printf("Error saving config: %s\n", esp_err_to_name(ret));
+            ts_console_success("Configuration saved to NVS\n");
         }
     }
     
-    return ret == ESP_OK ? 0 : 1;
+    return 0;
 }
 
 /* ============================================================================

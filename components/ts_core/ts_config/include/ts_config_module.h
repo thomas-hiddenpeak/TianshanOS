@@ -77,6 +77,7 @@ typedef enum {
     TS_CONFIG_MODULE_NET = 0,   /**< 网络配置 (net.json / ts_net) */
     TS_CONFIG_MODULE_DHCP,      /**< DHCP 配置 (dhcp.json / ts_dhcp) */
     TS_CONFIG_MODULE_WIFI,      /**< WiFi 配置 (wifi.json / ts_wifi) */
+    TS_CONFIG_MODULE_NAT,       /**< NAT 配置 (nat.json / ts_nat) */
     TS_CONFIG_MODULE_LED,       /**< LED 配置 (led.json / ts_led) */
     TS_CONFIG_MODULE_FAN,       /**< 风扇配置 (fan.json / ts_fan) */
     TS_CONFIG_MODULE_DEVICE,    /**< 设备控制配置 (device.json / ts_device) */
