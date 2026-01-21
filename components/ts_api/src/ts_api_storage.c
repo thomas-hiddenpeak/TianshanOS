@@ -118,6 +118,11 @@ static esp_err_t api_storage_list(const cJSON *params, ts_api_result_t *result)
     
     DIR *dir = opendir(path);
     if (!dir) {
+        // 检查是否是 SD 卡未挂载
+        if (strncmp(path, "/sdcard", 7) == 0 && !ts_storage_sd_mounted()) {
+            ts_api_result_error(result, TS_API_ERR_NOT_FOUND, "SD card not mounted");
+            return ESP_ERR_NOT_FOUND;
+        }
         ts_api_result_error(result, TS_API_ERR_NOT_FOUND, "Directory not found");
         return ESP_ERR_NOT_FOUND;
     }

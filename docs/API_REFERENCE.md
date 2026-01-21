@@ -366,6 +366,131 @@ POST /api/v1/device/fan/speed
 }
 ```
 
+## 存储 API
+
+### storage.status
+获取存储状态。
+
+**请求**: `GET /api/v1/storage/status`
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "spiffs": {
+      "mounted": true,
+      "total": 1048576,
+      "used": 524288,
+      "free": 524288
+    },
+    "sd": {
+      "mounted": true,
+      "total": 32212254720,
+      "used": 1073741824,
+      "free": 31138512896
+    }
+  }
+}
+```
+
+### storage.list
+列出目录内容。
+
+**请求**: `GET /api/v1/storage/list?path=/sdcard`
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "path": "/sdcard",
+    "entries": [
+      {"name": "config", "type": "dir"},
+      {"name": "test.txt", "type": "file", "size": 1024}
+    ]
+  }
+}
+```
+
+**错误响应**（SD 卡未挂载）:
+```json
+{
+  "code": 3,
+  "message": "SD card not mounted"
+}
+```
+
+### storage.mount
+挂载 SD 卡。
+
+**请求**: `POST /api/v1/storage/mount`
+
+**响应**:
+```json
+{
+  "code": 0,
+  "message": "SD card mounted successfully"
+}
+```
+
+### storage.unmount
+卸载 SD 卡。
+
+**请求**: `POST /api/v1/storage/unmount`
+
+**响应**:
+```json
+{
+  "code": 0,
+  "message": "SD card unmounted successfully"
+}
+```
+
+### storage.delete
+删除文件或目录。
+
+**请求**:
+```
+POST /api/v1/storage/delete
+{
+  "path": "/sdcard/test.txt"
+}
+```
+
+### storage.mkdir
+创建目录。
+
+**请求**:
+```
+POST /api/v1/storage/mkdir
+{
+  "path": "/sdcard/newfolder"
+}
+```
+
+### storage.rename
+重命名文件或目录。
+
+**请求**:
+```
+POST /api/v1/storage/rename
+{
+  "old_path": "/sdcard/old.txt",
+  "new_path": "/sdcard/new.txt"
+}
+```
+
+### storage.upload
+上传文件（multipart/form-data）。
+
+**请求**: `POST /api/v1/storage/upload?path=/sdcard`
+
+### storage.download
+下载文件。
+
+**请求**: `GET /api/v1/storage/download?path=/sdcard/file.txt`
+
 ## WebSocket API
 
 连接 `ws://<device-ip>/ws` 进行实时通信。

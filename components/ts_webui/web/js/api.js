@@ -218,6 +218,8 @@ class TianShanAPI {
     // =====================================================================
     
     async storageStatus() { return this.call('storage.status'); }
+    async storageMount() { return this.call('storage.mount', null, 'POST'); }
+    async storageUnmount() { return this.call('storage.unmount', null, 'POST'); }
     async storageList(path = '/sdcard') { return this.call('storage.list', { path }, 'POST'); }
     async storageDelete(path) { return this.call('storage.delete', { path }, 'POST'); }
     async storageMkdir(path) { return this.call('storage.mkdir', { path }, 'POST'); }

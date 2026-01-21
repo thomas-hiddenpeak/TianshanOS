@@ -2380,6 +2380,9 @@ async function loadFilesPage() {
             <div class="storage-tabs">
                 <button class="tab-btn active" onclick="navigateToPath('/sdcard')">💾 SD 卡</button>
                 <button class="tab-btn" onclick="navigateToPath('/spiffs')">💿 SPIFFS</button>
+                <div class="storage-controls" id="storage-controls">
+                    <!-- 动态显示挂载/卸载按钮 -->
+                </div>
             </div>
             
             <div class="file-list" id="file-list">
@@ -2575,6 +2578,37 @@ async function batchDownload() {
     showToast('批量下载完成', 'success');
 }
 
+// SD 卡挂载/卸载
+async function mountSdCard() {
+    try {
+        showToast('正在挂载 SD 卡...', 'info');
+        await api.storageMount();
+        showToast('SD 卡挂载成功', 'success');
+        await refreshFilesPage();
+    } catch (e) {
+        showToast('挂载失败: ' + e.message, 'error');
+    }
+}
+
+async function unmountSdCard() {
+    if (!confirm('确定要卸载 SD 卡吗？\n\n卸载后将无法访问 SD 卡上的文件。')) {
+        return;
+    }
+    
+    try {
+        showToast('正在卸载 SD 卡...', 'info');
+        await api.storageUnmount();
+        showToast('SD 卡已卸载', 'success');
+        // 如果当前在 SD 卡目录，切换到 SPIFFS
+        if (currentFilePath.startsWith('/sdcard')) {
+            currentFilePath = '/spiffs';
+        }
+        await refreshFilesPage();
+    } catch (e) {
+        showToast('卸载失败: ' + e.message, 'error');
+    }
+}
+
 async function refreshFilesPage() {
     await loadDirectory(currentFilePath);
     await loadStorageStatus();
@@ -2588,6 +2622,28 @@ async function loadDirectory(path) {
     listContainer.removeEventListener('click', handleFileListClick);
     
     console.log('Loading directory:', path);
+    
+    // 如果是 SD 卡路径，先检查挂载状态，避免不必要的错误请求
+    if (path.startsWith('/sdcard')) {
+        try {
+            const status = await api.storageStatus();
+            if (!status.data?.sd?.mounted) {
+                console.log('SD card not mounted, showing mount prompt');
+                listContainer.innerHTML = `
+                    <div class="unmounted-notice">
+                        <div class="unmounted-icon">💾</div>
+                        <div class="unmounted-text">SD 卡未挂载</div>
+                        <button class="btn btn-success" onclick="mountSdCard()">挂载 SD 卡</button>
+                    </div>
+                `;
+                updateBreadcrumb(path);
+                return;
+            }
+        } catch (e) {
+            console.warn('Failed to check storage status:', e.message);
+            // 继续尝试加载目录，让后续逻辑处理错误
+        }
+    }
     
     try {
         const result = await api.storageList(path);
@@ -2668,7 +2724,22 @@ async function loadDirectory(path) {
         listContainer.addEventListener('click', handleFileListClick);
     } catch (e) {
         console.error('loadDirectory error:', e);
-        listContainer.innerHTML = `<div class="error">加载失败: ${e.message}</div>`;
+        
+        // 检查是否是 SD 卡未挂载（后端返回 'SD card not mounted' 或 'Directory not found'）
+        const isUnmounted = path.startsWith('/sdcard') && 
+            (e.message.includes('not mounted') || e.message.includes('未挂载') || e.message.includes('Directory not found'));
+        
+        if (isUnmounted) {
+            listContainer.innerHTML = `
+                <div class="unmounted-notice">
+                    <div class="unmounted-icon">💾</div>
+                    <div class="unmounted-text">SD 卡未挂载</div>
+                    <button class="btn btn-success" onclick="mountSdCard()">挂载 SD 卡</button>
+                </div>
+            `;
+        } else {
+            listContainer.innerHTML = `<div class="error">加载失败: ${e.message}</div>`;
+        }
     }
 }
 
@@ -2710,6 +2781,10 @@ async function loadStorageStatus() {
     try {
         const status = await api.storageStatus();
         const container = document.getElementById('storage-status');
+        const controlsContainer = document.getElementById('storage-controls');
+        
+        const sdMounted = status.data?.sd?.mounted;
+        const spiffsMounted = status.data?.spiffs?.mounted;
         
         const formatStorage = (type, data) => {
             if (!data?.mounted) return `<span class="unmounted">未挂载</span>`;
@@ -2722,6 +2797,23 @@ async function loadStorageStatus() {
                 <span>💿 SPIFFS: ${formatStorage('spiffs', status.data?.spiffs)}</span>
             </div>
         `;
+        
+        // 更新挂载/卸载按钮
+        if (controlsContainer) {
+            if (sdMounted) {
+                controlsContainer.innerHTML = `
+                    <button class="btn btn-sm btn-warning" onclick="unmountSdCard()" title="卸载 SD 卡">
+                        ⏏️ 卸载 SD
+                    </button>
+                `;
+            } else {
+                controlsContainer.innerHTML = `
+                    <button class="btn btn-sm btn-success" onclick="mountSdCard()" title="挂载 SD 卡">
+                        💾 挂载 SD
+                    </button>
+                `;
+            }
+        }
     } catch (e) {
         console.log('Storage status error:', e);
     }
