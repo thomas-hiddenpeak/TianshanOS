@@ -23,6 +23,7 @@ set(TS_API_SRCS
     "src/ts_api_sftp.c"
     "src/ts_api_time.c"
     "src/ts_api_ota.c"
+    "src/ts_api_log.c"
 )
 
 idf_component_register(

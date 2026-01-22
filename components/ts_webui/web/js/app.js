@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     router.register('/device', loadDevicePage);
     router.register('/ota', loadOtaPage);
     router.register('/files', loadFilesPage);
+    router.register('/logs', loadLogsPage);
     router.register('/terminal', loadTerminalPage);
     router.register('/config', loadConfigPage);
     router.register('/security', loadSecurityPage);
@@ -95,16 +96,69 @@ function setupWebSocket() {
         () => document.getElementById('ws-status')?.classList.remove('connected')
     );
     ws.connect();
+    
+    // 暴露给全局，供日志页面使用
+    window.ws = ws;
 }
 
 function handleEvent(msg) {
-    console.log('Event:', msg);
+    // console.log('Event:', msg);
+    
+    // 处理日志消息
+    if (msg.type === 'log') {
+        if (typeof window.handleLogMessage === 'function') {
+            window.handleLogMessage(msg);
+        }
+        return;
+    }
+    
+    // 处理日志订阅确认
+    if (msg.type === 'log_subscribed') {
+        if (typeof window.updateWsStatus === 'function') {
+            window.updateWsStatus(true);
+        }
+        return;
+    }
+    
+    // 处理历史日志响应
+    if (msg.type === 'log_history') {
+        const logs = msg.logs || [];
+        if (typeof window.logEntries !== 'undefined') {
+            window.logEntries = logs;
+            if (typeof window.renderFilteredLogs === 'function') {
+                window.renderFilteredLogs();
+            }
+            showToast(`加载了 ${logs.length} 条历史日志`, 'success');
+        }
+        return;
+    }
     
     if (msg.type === 'event') {
         // 刷新相关页面数据
         if (router.currentPage) {
             router.currentPage();
         }
+    }
+    
+    // 处理电压保护事件
+    if (msg.type === 'power_event') {
+        handlePowerEvent(msg);
+    }
+}
+
+// 处理电压保护事件
+function handlePowerEvent(msg) {
+    const state = msg.state;
+    const voltage = msg.voltage?.toFixed(2) || '?';
+    const countdown = msg.countdown || 0;
+    
+    // 显示警告
+    if (state === 'LOW_VOLTAGE' || state === 'SHUTDOWN') {
+        showToast(`⚠️ 低电压警告: ${voltage}V (${countdown}s)`, 'warning', 5000);
+    } else if (state === 'PROTECTED') {
+        showToast(`🛡️ 电压保护已触发`, 'error', 10000);
+    } else if (state === 'RECOVERY') {
+        showToast(`🔄 电压恢复中: ${voltage}V`, 'info', 3000);
     }
 }
 
@@ -6293,3 +6347,587 @@ window.abortOta = abortOta;
 window.saveOtaServer = saveOtaServer;
 window.checkForUpdates = checkForUpdates;
 window.upgradeFromServer = upgradeFromServer;
+
+// =========================================================================
+//                         日志页面
+// =========================================================================
+
+let logRefreshInterval = null;
+let logAutoScroll = true;
+let logLastTimestamp = 0;
+let logWsConnected = false;
+let logEntries = [];  // 存储日志条目用于前端过滤
+const MAX_LOG_ENTRIES = 1000;  // 最大显示条数
+
+async function loadLogsPage() {
+    stopLogRefresh();
+    logEntries = [];
+    
+    const container = document.getElementById('page-content');
+    container.innerHTML = `
+        <div class="page-logs">
+            <h1>📋 系统日志</h1>
+            
+            <!-- 工具栏 -->
+            <div class="log-toolbar">
+                <div class="toolbar-left">
+                    <div class="toolbar-item">
+                        <label>级别</label>
+                        <select id="log-level-filter" class="form-control" onchange="updateLogLevelFilter()">
+                            <option value="5">全部</option>
+                            <option value="1">ERROR</option>
+                            <option value="2">WARN+</option>
+                            <option value="3" selected>INFO+</option>
+                            <option value="4">DEBUG+</option>
+                        </select>
+                    </div>
+                    <div class="toolbar-item">
+                        <label>TAG</label>
+                        <input type="text" id="log-tag-filter" class="form-control" 
+                               placeholder="过滤TAG..." onkeyup="debounceRenderLogs()">
+                    </div>
+                    <div class="toolbar-item search">
+                        <label>搜索</label>
+                        <input type="text" id="log-keyword-filter" class="form-control" 
+                               placeholder="搜索日志..." onkeyup="debounceRenderLogs()">
+                    </div>
+                </div>
+                <div class="toolbar-right">
+                    <span id="log-ws-status" class="ws-status connecting" title="WebSocket 连接状态">
+                        <span class="dot"></span>
+                    </span>
+                    <span id="log-stats" class="log-stats"></span>
+                    <label class="auto-scroll-toggle">
+                        <input type="checkbox" id="log-auto-scroll" checked onchange="logAutoScroll=this.checked">
+                        <span>自动滚动</span>
+                    </label>
+                    <button class="btn btn-small" onclick="loadHistoryLogs()" title="加载历史日志">📥</button>
+                    <button class="btn btn-small btn-danger" onclick="clearLogs()" title="清空日志">🗑️</button>
+                </div>
+            </div>
+            
+            <!-- 日志内容 -->
+            <div class="log-panel">
+                <div id="log-container" class="log-viewer">
+                    <div class="log-empty">
+                        <div class="icon">📋</div>
+                        <div class="text">等待日志...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <style>
+            .page-logs {
+                display: flex;
+                flex-direction: column;
+                height: calc(100vh - var(--header-height) - var(--footer-height) - 40px);
+            }
+            .page-logs h1 {
+                margin-bottom: 15px;
+                font-size: 1.5rem;
+            }
+            
+            /* 工具栏 */
+            .log-toolbar {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 15px;
+                padding: 12px 15px;
+                background: var(--card-bg);
+                border-radius: 8px;
+                margin-bottom: 15px;
+                flex-wrap: wrap;
+            }
+            .toolbar-left {
+                display: flex;
+                gap: 12px;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+            .toolbar-right {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+                flex-wrap: wrap;
+            }
+            .toolbar-item {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .toolbar-item label {
+                font-size: 0.85em;
+                color: var(--text-light);
+                white-space: nowrap;
+            }
+            .toolbar-item .form-control {
+                padding: 6px 10px;
+                font-size: 0.9em;
+                min-width: 100px;
+            }
+            .toolbar-item.search .form-control {
+                min-width: 150px;
+            }
+            
+            /* WebSocket 状态 */
+            .ws-status {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                font-size: 0.85em;
+                padding: 4px 10px;
+                border-radius: 12px;
+                background: #f0f0f0;
+            }
+            .ws-status .dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: #888;
+            }
+            .ws-status.connected {
+                background: #e8f5e9;
+                color: #2e7d32;
+            }
+            .ws-status.connected .dot {
+                background: #4caf50;
+                animation: pulse 2s infinite;
+            }
+            .ws-status.connecting .dot {
+                background: #ff9800;
+                animation: blink 1s infinite;
+            }
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.5; }
+            }
+            @keyframes blink {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.3; }
+            }
+            
+            .log-stats {
+                font-size: 0.85em;
+                color: var(--text-light);
+            }
+            
+            .auto-scroll-toggle {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                font-size: 0.85em;
+                color: var(--text-light);
+                cursor: pointer;
+            }
+            .auto-scroll-toggle input {
+                cursor: pointer;
+            }
+            
+            /* 日志面板 */
+            .log-panel {
+                flex: 1;
+                background: var(--card-bg);
+                border-radius: 8px;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            }
+            
+            .log-viewer {
+                flex: 1;
+                font-family: 'SF Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+                font-size: 12px;
+                line-height: 1.6;
+                background: #1a1a2e;
+                color: #eee;
+                padding: 12px;
+                overflow-y: auto;
+                min-height: 400px;
+                max-height: calc(100vh - 280px);
+            }
+            
+            .log-entry {
+                padding: 3px 8px;
+                border-radius: 3px;
+                margin: 2px 0;
+                display: flex;
+                align-items: baseline;
+                gap: 8px;
+            }
+            .log-entry:hover {
+                background: rgba(255,255,255,0.05);
+            }
+            .log-time {
+                color: #666;
+                font-size: 0.9em;
+                flex-shrink: 0;
+            }
+            .log-level {
+                font-weight: 600;
+                font-size: 0.85em;
+                padding: 1px 6px;
+                border-radius: 3px;
+                flex-shrink: 0;
+                min-width: 55px;
+                text-align: center;
+            }
+            .log-tag {
+                color: #64b5f6;
+                flex-shrink: 0;
+                max-width: 150px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .log-message {
+                flex: 1;
+                word-break: break-word;
+            }
+            .log-task {
+                color: #666;
+                font-size: 0.85em;
+                flex-shrink: 0;
+            }
+            
+            /* 日志级别颜色 */
+            .level-error { border-left: 3px solid #ef5350; }
+            .level-error .log-level { background: #ef5350; color: #fff; }
+            .level-warn { border-left: 3px solid #ffa726; }
+            .level-warn .log-level { background: #ffa726; color: #000; }
+            .level-info { border-left: 3px solid #66bb6a; }
+            .level-info .log-level { background: rgba(102,187,106,0.2); color: #66bb6a; }
+            .level-debug { border-left: 3px solid #42a5f5; }
+            .level-debug .log-level { background: rgba(66,165,245,0.2); color: #42a5f5; }
+            .level-verbose { border-left: 3px solid #78909c; }
+            .level-verbose .log-level { background: rgba(120,144,156,0.2); color: #78909c; }
+            
+            .log-empty {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 200px;
+                color: #666;
+            }
+            .log-empty .icon {
+                font-size: 3em;
+                margin-bottom: 10px;
+                opacity: 0.5;
+            }
+            .log-empty .text {
+                font-size: 1.1em;
+            }
+            
+            .log-highlight {
+                background: #ffeb3b;
+                color: #000;
+                padding: 0 3px;
+                border-radius: 2px;
+            }
+            
+            /* 响应式 */
+            @media (max-width: 768px) {
+                .log-toolbar {
+                    flex-direction: column;
+                    align-items: stretch;
+                }
+                .toolbar-left, .toolbar-right {
+                    justify-content: center;
+                }
+                .toolbar-item.search .form-control {
+                    min-width: 120px;
+                }
+            }
+        </style>
+    `;
+    
+    // 订阅日志 WebSocket（会在连接成功后自动加载历史）
+    subscribeToLogs();
+}
+
+let logDebounceTimer = null;
+function debounceRenderLogs() {
+    if (logDebounceTimer) clearTimeout(logDebounceTimer);
+    logDebounceTimer = setTimeout(renderFilteredLogs, 300);
+}
+
+// 订阅日志 WebSocket
+function subscribeToLogs() {
+    const levelFilter = document.getElementById('log-level-filter')?.value || '3';
+    const minLevel = parseInt(levelFilter);
+    
+    // 通过全局 WebSocket 发送订阅请求
+    if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+        window.ws.send({
+            type: 'log_subscribe',
+            minLevel: minLevel
+        });
+        updateWsStatus(true);
+        // 订阅成功后自动加载历史日志
+        loadHistoryLogs();
+    } else {
+        // 等待 WebSocket 连接
+        updateWsStatus(false);
+        setTimeout(subscribeToLogs, 1000);
+    }
+}
+
+// 取消订阅日志
+function unsubscribeFromLogs() {
+    if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+        window.ws.send({ type: 'log_unsubscribe' });
+    }
+    logWsConnected = false;
+}
+
+// 更新 WebSocket 级别过滤
+function updateLogLevelFilter() {
+    const levelFilter = document.getElementById('log-level-filter')?.value || '3';
+    const minLevel = parseInt(levelFilter);
+    
+    if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+        window.ws.send({
+            type: 'log_set_level',
+            minLevel: minLevel
+        });
+    }
+    
+    // 同时重新渲染现有日志
+    renderFilteredLogs();
+}
+
+// 更新 WebSocket 状态显示
+function updateWsStatus(connected) {
+    logWsConnected = connected;
+    const statusEl = document.getElementById('log-ws-status');
+    if (statusEl) {
+        if (connected) {
+            statusEl.className = 'ws-status connected';
+            statusEl.title = '实时连接';
+        } else {
+            statusEl.className = 'ws-status connecting';
+            statusEl.title = '连接中...';
+        }
+    }
+}
+
+// 处理收到的日志消息（从全局 WebSocket 调用）
+function handleLogMessage(log) {
+    // 添加到日志数组
+    logEntries.push(log);
+    
+    // 限制最大条数
+    while (logEntries.length > MAX_LOG_ENTRIES) {
+        logEntries.shift();
+    }
+    
+    // 检查是否通过当前过滤
+    if (logPassesFilter(log)) {
+        appendLogEntry(log);
+    }
+    
+    // 更新统计
+    updateLogStats();
+}
+
+// 检查日志是否通过过滤
+function logPassesFilter(log) {
+    const levelFilter = parseInt(document.getElementById('log-level-filter')?.value || '3');
+    const tagFilter = document.getElementById('log-tag-filter')?.value.trim().toLowerCase() || '';
+    const keyword = document.getElementById('log-keyword-filter')?.value.trim().toLowerCase() || '';
+    
+    // 级别过滤
+    if (log.level > levelFilter) return false;
+    
+    // TAG 过滤
+    if (tagFilter && !log.tag.toLowerCase().includes(tagFilter)) return false;
+    
+    // 关键字过滤
+    if (keyword) {
+        const inMsg = log.message.toLowerCase().includes(keyword);
+        const inTag = log.tag.toLowerCase().includes(keyword);
+        if (!inMsg && !inTag) return false;
+    }
+    
+    return true;
+}
+
+// 追加单条日志到显示区
+function appendLogEntry(log) {
+    const container = document.getElementById('log-container');
+    if (!container) return;
+    
+    // 移除空状态提示
+    const empty = container.querySelector('.log-empty');
+    if (empty) empty.remove();
+    
+    const keyword = document.getElementById('log-keyword-filter')?.value.trim() || '';
+    const html = renderLogEntry(log, keyword);
+    
+    container.insertAdjacentHTML('beforeend', html);
+    
+    // 限制显示条数
+    while (container.children.length > MAX_LOG_ENTRIES) {
+        container.removeChild(container.firstChild);
+    }
+    
+    // 自动滚动
+    if (logAutoScroll) {
+        container.scrollTop = container.scrollHeight;
+    }
+}
+
+// 渲染过滤后的日志（用于过滤条件改变时）
+function renderFilteredLogs() {
+    const container = document.getElementById('log-container');
+    if (!container) return;
+    
+    const keyword = document.getElementById('log-keyword-filter')?.value.trim() || '';
+    
+    const filteredLogs = logEntries.filter(logPassesFilter);
+    
+    if (filteredLogs.length === 0) {
+        container.innerHTML = `<div class="log-empty">
+            <div class="icon">🔍</div>
+            <div class="text">没有匹配的日志</div>
+        </div>`;
+    } else {
+        const html = filteredLogs.map(log => renderLogEntry(log, keyword)).join('');
+        container.innerHTML = html;
+        
+        if (logAutoScroll) {
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+    
+    updateLogStats();
+}
+
+// 更新日志统计
+function updateLogStats() {
+    const statsEl = document.getElementById('log-stats');
+    if (statsEl) {
+        const filteredCount = logEntries.filter(logPassesFilter).length;
+        statsEl.textContent = `显示 ${filteredCount} / ${logEntries.length} 条`;
+    }
+}
+
+// 加载历史日志 (通过 WebSocket)
+async function loadHistoryLogs() {
+    const container = document.getElementById('log-container');
+    
+    if (!window.ws || window.ws.readyState !== WebSocket.OPEN) {
+        // WebSocket 未连接，稍后重试
+        setTimeout(loadHistoryLogs, 500);
+        return;
+    }
+    
+    const levelFilter = document.getElementById('log-level-filter')?.value || '3';
+    
+    // 通过 WebSocket 请求历史日志
+    window.ws.send({
+        type: 'log_get_history',
+        limit: 1000,
+        minLevel: 1,
+        maxLevel: parseInt(levelFilter)
+    });
+    
+    // 响应将在 handleEvent 中处理
+}
+
+async function refreshLogs() {
+    // 兼容旧接口，现在改为加载历史
+    await loadHistoryLogs();
+}
+
+function renderLogEntry(log, keyword) {
+    const levelNames = ['NONE', 'ERROR', 'WARN', 'INFO', 'DEBUG', 'VERBOSE'];
+    const levelClasses = ['none', 'error', 'warn', 'info', 'debug', 'verbose'];
+    
+    const levelClass = levelClasses[log.level] || 'info';
+    const levelName = levelNames[log.level] || 'UNKNOWN';
+    
+    // 格式化时间戳（毫秒转为 HH:MM:SS.mmm 格式）
+    const totalMs = log.timestamp || 0;
+    const totalSec = Math.floor(totalMs / 1000);
+    const hours = Math.floor(totalSec / 3600);
+    const min = Math.floor((totalSec % 3600) / 60);
+    const sec = totalSec % 60;
+    const ms = totalMs % 1000;
+    const timeStr = `${String(hours).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+    
+    // 高亮关键字
+    let message = escapeHtml(log.message);
+    if (keyword) {
+        const regex = new RegExp(`(${escapeRegExp(keyword)})`, 'gi');
+        message = message.replace(regex, '<span class="log-highlight">$1</span>');
+    }
+    
+    return `<div class="log-entry level-${levelClass}">
+        <span class="log-time">${timeStr}</span>
+        <span class="log-level">${levelName}</span>
+        <span class="log-tag">${escapeHtml(log.tag)}</span>
+        <span class="log-message">${message}</span>
+        ${log.task ? `<span class="log-task">[${escapeHtml(log.task)}]</span>` : ''}
+    </div>`;
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function escapeRegExp(str) {
+    return str.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+}
+
+function toggleLogAutoRefresh(enable) {
+    // WebSocket 模式下不需要轮询，保留函数以兼容
+    stopLogRefresh();
+}
+
+function stopLogRefresh() {
+    if (logRefreshInterval) {
+        clearInterval(logRefreshInterval);
+        logRefreshInterval = null;
+    }
+}
+
+async function clearLogs() {
+    if (!confirm('确定要清空日志缓冲区吗？')) return;
+    
+    try {
+        await api.call('log.clear');
+        logEntries = [];
+        const container = document.getElementById('log-container');
+        if (container) {
+            container.innerHTML = '<div class="log-empty">日志已清空</div>';
+        }
+        updateLogStats();
+        showToast('日志已清空', 'success');
+    } catch (error) {
+        showToast('清空失败: ' + error.message, 'error');
+    }
+}
+
+// 导出日志页面函数和变量
+window.loadLogsPage = loadLogsPage;
+window.refreshLogs = refreshLogs;
+window.clearLogs = clearLogs;
+window.debounceRenderLogs = debounceRenderLogs;
+window.toggleLogAutoRefresh = toggleLogAutoRefresh;
+window.handleLogMessage = handleLogMessage;
+window.updateLogLevelFilter = updateLogLevelFilter;
+window.loadHistoryLogs = loadHistoryLogs;
+window.unsubscribeFromLogs = unsubscribeFromLogs;
+window.renderFilteredLogs = renderFilteredLogs;
+// logEntries 通过 getter/setter 暴露
+Object.defineProperty(window, 'logEntries', {
+    get: () => logEntries,
+    set: (val) => { logEntries = val; }
+});

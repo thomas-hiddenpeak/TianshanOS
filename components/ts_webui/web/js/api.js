@@ -57,15 +57,30 @@ class TianShanAPI {
      * 例如: call('system.info') -> GET /api/v1/system/info
      */
     async call(apiName, params = null, method = null) {
-        const endpoint = '/' + apiName.replace(/\./g, '/');
+        let endpoint = '/' + apiName.replace(/\./g, '/');
         
         // 自动判断方法：有参数且非查询类用 POST
         if (!method) {
             const isQuery = apiName.includes('.list') || apiName.includes('.status') || 
                            apiName.includes('.info') || apiName.includes('.get') ||
                            apiName.includes('.version') || apiName.includes('.partitions') ||
-                           apiName.includes('.progress');
+                           apiName.includes('.progress') || apiName.includes('.stats');
             method = (params && !isQuery) ? 'POST' : 'GET';
+        }
+        
+        // GET 请求时，将 params 转为 query string
+        if (method === 'GET' && params) {
+            const queryParams = new URLSearchParams();
+            for (const [key, value] of Object.entries(params)) {
+                if (value !== null && value !== undefined && value !== '') {
+                    queryParams.append(key, value);
+                }
+            }
+            const queryString = queryParams.toString();
+            if (queryString) {
+                endpoint += '?' + queryString;
+            }
+            params = null;  // GET 请求不发送 body
         }
         
         return this.request(endpoint, method, params);
@@ -426,6 +441,11 @@ class TianShanWS {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send(JSON.stringify(data));
         }
+    }
+    
+    // 暴露 readyState 属性，供日志页面检查连接状态
+    get readyState() {
+        return this.ws ? this.ws.readyState : WebSocket.CLOSED;
     }
 }
 

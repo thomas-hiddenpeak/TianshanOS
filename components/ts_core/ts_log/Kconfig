@@ -94,15 +94,26 @@ menu "TianShanOS Logging"
             bool "Memory buffer output"
             default y
             help
-                Enable memory buffer for recent logs (useful for diagnostics).
+                Enable memory buffer for recent logs (useful for diagnostics and WebUI).
 
         config TS_LOG_BUFFER_SIZE
             int "Log buffer size (entries)"
-            default 100
-            range 10 1000
+            default 500
+            range 50 5000
             depends on TS_LOG_OUTPUT_BUFFER
             help
                 Number of recent log entries to keep in memory.
+                Each entry uses ~300 bytes. 500 entries = ~150KB.
+                With PSRAM, can increase to 2000+ for longer history.
+
+        config TS_LOG_CAPTURE_ESP_LOG
+            bool "Capture ESP_LOG output"
+            default y
+            depends on TS_LOG_OUTPUT_BUFFER
+            help
+                Install a vprintf hook to capture all ESP_LOG* output
+                (ESP_LOGE, ESP_LOGW, ESP_LOGI, etc.) into the log buffer.
+                This allows viewing all system logs via WebUI.
 
     endmenu
 

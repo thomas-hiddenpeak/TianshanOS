@@ -108,6 +108,17 @@ typedef void (*ts_log_callback_t)(const ts_log_entry_t *entry, void *user_data);
  */
 typedef struct ts_log_callback_handle *ts_log_callback_handle_t;
 
+/**
+ * @brief 日志统计信息
+ */
+typedef struct {
+    size_t buffer_capacity;         /**< 缓冲区容量 */
+    size_t buffer_count;            /**< 当前缓冲区中的日志数 */
+    uint32_t total_captured;        /**< 总捕获日志数（含溢出覆盖的）*/
+    uint32_t dropped;               /**< 丢弃的日志数 */
+    bool esp_log_capture_enabled;   /**< ESP_LOG 捕获是否启用 */
+} ts_log_stats_t;
+
 /* ============================================================================
  * 初始化和反初始化
  * ========================================================================== */
@@ -370,6 +381,43 @@ ts_log_level_t ts_log_level_from_string(const char *str);
  * @return ANSI 颜色代码字符串
  */
 const char *ts_log_level_color(ts_log_level_t level);
+
+/* ============================================================================
+ * 日志统计和高级查询 API
+ * ========================================================================== */
+
+/**
+ * @brief 获取日志系统统计信息
+ *
+ * @param[out] stats 输出统计信息
+ * @return
+ *      - ESP_OK: 成功
+ *      - ESP_ERR_INVALID_ARG: 参数无效
+ *      - ESP_ERR_INVALID_STATE: 未初始化
+ */
+esp_err_t ts_log_get_stats(ts_log_stats_t *stats);
+
+/**
+ * @brief 搜索日志缓冲区（带过滤条件）
+ *
+ * @param entries 输出条目数组
+ * @param max_count 最大返回条目数
+ * @param min_level 最小日志级别（含）
+ * @param max_level 最大日志级别（含）
+ * @param tag_filter TAG 过滤字符串（NULL 或空字符串表示不过滤）
+ * @param keyword 关键字搜索（在消息和 TAG 中搜索，NULL 表示不过滤）
+ * @return 实际返回的条目数
+ */
+size_t ts_log_buffer_search(ts_log_entry_t *entries, size_t max_count,
+                            ts_log_level_t min_level, ts_log_level_t max_level,
+                            const char *tag_filter, const char *keyword);
+
+/**
+ * @brief 启用/禁用 ESP_LOG 捕获
+ *
+ * @param enable true 启用，false 禁用
+ */
+void ts_log_enable_esp_capture(bool enable);
 
 #ifdef __cplusplus
 }

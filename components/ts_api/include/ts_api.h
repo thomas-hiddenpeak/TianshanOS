@@ -379,6 +379,11 @@ esp_err_t ts_api_time_register(void);
  */
 esp_err_t ts_api_ota_register(void);
 
+/**
+ * @brief Register Log APIs
+ */
+void ts_api_log_register(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -24,6 +24,7 @@
 | Phase 10: WebUI 增强 & SSH Shell | ✅ 完成 | 100% | 2026-01-21 |
 | Phase 11: OTA 固件升级 | ✅ 完成 | 100% | 2026-01-22 |
 | Phase 12: OTA 增强 & Bug修复 | ✅ 完成 | 100% | 2026-01-23 |
+| Phase 13: 日志系统增强 | ✅ 完成 | 100% | 2026-01-23 |
 
 ---
 
@@ -517,9 +518,92 @@
 - [x] `ota.https.start` - 支持 `www_url` 参数
 
 ---
-## �📝 开发日志
+
+## 📋 Phase 13: 日志系统增强 ✅
+
+### ts_log - 日志系统核心增强
+- [x] ESP_LOG 捕获钩子
+  - 安装 `vprintf` 钩子拦截所有 ESP_LOG 输出
+  - 解析 ESP_LOG 格式（时间戳、级别、TAG、消息）
+  - 去除 ANSI 颜色代码，提取纯文本
+  - 防递归保护（避免日志风暴）
+- [x] 日志缓冲区扩展
+  - 默认容量从 100 增加到 1000 条
+  - Kconfig 可配置范围 50-5000
+  - 每条约 300 字节，1000 条约 300KB
+- [x] 日志统计 API
+  - `ts_log_get_stats()` - 获取缓冲区容量、数量、丢弃数
+  - `ts_log_buffer_search()` - 支持级别/TAG/关键字过滤搜索
+  - `ts_log_enable_esp_capture()` - 动态启用/禁用捕获
+- [x] Kconfig 配置项
+  - `CONFIG_TS_LOG_BUFFER_SIZE` - 缓冲区大小（默认 1000）
+  - `CONFIG_TS_LOG_CAPTURE_ESP_LOG` - ESP_LOG 捕获开关
+
+### Log Core API (ts_api_log.c)
+- [x] `log.list` - 获取日志列表
+  - 支持分页（offset/limit）
+  - 支持级别过滤（minLevel/maxLevel）
+  - 支持 TAG 子字符串匹配
+  - 支持关键字全文搜索
+- [x] `log.stats` - 获取日志统计信息
+  - 缓冲区容量/数量
+  - 总捕获数/丢弃数
+  - 当前日志级别
+- [x] `log.clear` - 清空日志缓冲区
+- [x] `log.setLevel` - 设置日志级别（全局或按 TAG）
+- [x] `log.capture` - 控制 ESP_LOG 捕获开关
+
+### WebSocket 日志流 (ts_webui_ws.c)
+- [x] 新增 `WS_CLIENT_TYPE_LOG` 客户端类型
+- [x] WebSocket 消息协议
+  - `log_subscribe` - 订阅日志流（支持 minLevel 过滤）
+  - `log_unsubscribe` - 取消订阅
+  - `log_set_level` - 更新级别过滤
+  - `log_get_history` - 获取历史日志（最多 500 条）
+- [x] 实时日志推送
+  - 日志回调注册到 `ts_log`
+  - 按客户端级别过滤后推送
+  - JSON 格式：timestamp/level/levelName/tag/message/task
+- [x] 智能流控制
+  - 无订阅客户端时自动禁用回调
+  - 客户端断开时自动更新状态
+
+### WebUI 日志页面 (app.js)
+- [x] 全新日志查看界面
+  - 深色终端风格（#1a1a2e 背景）
+  - 等宽字体（SF Mono/Monaco/Consolas）
+  - 日志级别颜色高亮（ERROR 红/WARN 橙/INFO 绿/DEBUG 蓝）
+- [x] 工具栏功能
+  - 级别过滤下拉框（全部/ERROR/WARN+/INFO+/DEBUG+）
+  - TAG 过滤输入框
+  - 关键字搜索（支持高亮）
+  - WebSocket 状态指示器
+  - 自动滚动开关
+  - 加载历史/清空按钮
+- [x] 实时日志流
+  - WebSocket 订阅后自动推送
+  - 前端最大保留 1000 条
+  - 防抖动过滤渲染
+- [x] 响应式布局
+  - 移动端自适应
+  - 工具栏换行布局
+
+### WebUI 集成
+- [x] 导航栏添加「日志」入口
+- [x] SPA 路由注册 `/logs`
+- [x] TianShanWS 添加 `readyState` getter
+
+---
+## 📝 开发日志
 
 ### 2026-01-23
+- **日志系统增强**：
+  - 实现 ESP_LOG 捕获钩子，自动解析 ESP-IDF 所有日志
+  - 日志缓冲区扩展到 1000 条，支持 WebUI 长时间查看
+  - 新增 WebSocket 日志流协议，支持实时推送和历史查询
+  - WebUI 新增日志页面，支持实时查看、过滤、搜索、清空
+  - Log Core API 5 个端点：list/stats/clear/setLevel/capture
+
 - **OTA 回滚机制修复**：
   - 修复 `ts_ota_is_pending_verify()` 误判问题
     - 问题：新固件首次启动时，函数返回 false（无需验证）

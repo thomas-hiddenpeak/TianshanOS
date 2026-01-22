@@ -94,6 +94,10 @@ typedef struct {
     FILE *log_file;
     size_t file_size;
     int file_index;
+    vprintf_like_t original_vprintf;     /**< 原始 vprintf 函数指针 */
+    bool esp_log_capture_enabled;        /**< 是否启用 ESP_LOG 捕获 */
+    uint32_t total_logs_captured;        /**< 总捕获日志数（含溢出） */
+    uint32_t logs_dropped;               /**< 因缓冲区满丢弃的日志数 */
 } ts_log_context_t;
 
 /* ============================================================================
@@ -112,6 +116,8 @@ static void log_output_buffer(const ts_log_entry_t *entry);
 static void notify_callbacks(const ts_log_entry_t *entry);
 static ts_log_level_t get_effective_level(const char *tag);
 static void rotate_log_file(void);
+static int ts_log_vprintf_hook(const char *fmt, va_list args);
+static void parse_esp_log_and_store(const char *log_line);
 
 /* ============================================================================
  * 初始化和反初始化
@@ -190,10 +196,24 @@ esp_err_t ts_log_init(void)
 
     s_log_ctx.tag_levels = NULL;
     s_log_ctx.callbacks = NULL;
+    s_log_ctx.total_logs_captured = 0;
+    s_log_ctx.logs_dropped = 0;
 
     s_log_ctx.initialized = true;
-    ESP_LOGI(TAG, "Logging system initialized (level=%d, outputs=0x%02lx)",
-             s_log_ctx.global_level, (unsigned long)s_log_ctx.output_mask);
+
+    // 安装 ESP_LOG vprintf 钩子（捕获所有 ESP-IDF 日志）
+#ifdef CONFIG_TS_LOG_CAPTURE_ESP_LOG
+    s_log_ctx.esp_log_capture_enabled = true;
+    s_log_ctx.original_vprintf = esp_log_set_vprintf(ts_log_vprintf_hook);
+    ESP_LOGI(TAG, "ESP_LOG capture hook installed");
+#else
+    s_log_ctx.esp_log_capture_enabled = false;
+    s_log_ctx.original_vprintf = NULL;
+#endif
+
+    ESP_LOGI(TAG, "Logging system initialized (level=%d, outputs=0x%02lx, buffer=%zu)",
+             s_log_ctx.global_level, (unsigned long)s_log_ctx.output_mask,
+             s_log_ctx.buffer.capacity);
 
     return ESP_OK;
 }
@@ -831,4 +851,256 @@ static void rotate_log_file(void)
     snprintf(filepath, sizeof(filepath), "%s/tianshan_%d.log",
              s_log_ctx.file_path, s_log_ctx.file_index);
     remove(filepath);
+}
+
+/* ============================================================================
+ * ESP_LOG 捕获钩子
+ * ========================================================================== */
+
+/**
+ * @brief 解析 ESP_LOG 格式的日志行并存入缓冲区
+ *
+ * ESP_LOG 格式: "\033[0;32mI (12345) tag: message\033[0m"
+ * 或无颜色格式: "I (12345) tag: message"
+ */
+static void parse_esp_log_and_store(const char *log_line)
+{
+    if (log_line == NULL || log_line[0] == '\0') {
+        return;
+    }
+
+    ts_log_entry_t entry;
+    memset(&entry, 0, sizeof(entry));
+
+    const char *p = log_line;
+
+    // 跳过 ANSI 颜色代码 (如 \033[0;32m)
+    while (*p == '\033') {
+        while (*p && *p != 'm') p++;
+        if (*p == 'm') p++;
+    }
+
+    // 解析日志级别字符 (E/W/I/D/V)
+    char level_char = *p;
+    switch (level_char) {
+        case 'E': entry.level = TS_LOG_ERROR; break;
+        case 'W': entry.level = TS_LOG_WARN; break;
+        case 'I': entry.level = TS_LOG_INFO; break;
+        case 'D': entry.level = TS_LOG_DEBUG; break;
+        case 'V': entry.level = TS_LOG_VERBOSE; break;
+        default:
+            // 非标准日志格式，作为 INFO 级别存储
+            entry.level = TS_LOG_INFO;
+            strncpy(entry.tag, "system", TS_LOG_TAG_MAX_LEN - 1);
+            strncpy(entry.message, log_line, TS_LOG_MSG_MAX_LEN - 1);
+            entry.timestamp_ms = (uint32_t)(esp_timer_get_time() / 1000);
+            goto store_entry;
+    }
+    p++;
+
+    // 跳过空格
+    while (*p == ' ') p++;
+
+    // 解析时间戳 (12345)
+    if (*p == '(') {
+        p++;
+        entry.timestamp_ms = (uint32_t)strtoul(p, (char **)&p, 10);
+        if (*p == ')') p++;
+    } else {
+        entry.timestamp_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    }
+
+    // 跳过空格
+    while (*p == ' ') p++;
+
+    // 解析 TAG (到冒号为止)
+    const char *tag_start = p;
+    while (*p && *p != ':') p++;
+    size_t tag_len = p - tag_start;
+    if (tag_len > 0 && tag_len < TS_LOG_TAG_MAX_LEN) {
+        strncpy(entry.tag, tag_start, tag_len);
+        entry.tag[tag_len] = '\0';
+    }
+
+    // 跳过 ": "
+    if (*p == ':') p++;
+    while (*p == ' ') p++;
+
+    // 剩余部分是消息
+    const char *msg_start = p;
+
+    // 去除尾部的 ANSI 重置码和换行符
+    size_t msg_len = strlen(msg_start);
+    while (msg_len > 0 && (msg_start[msg_len - 1] == '\n' ||
+                          msg_start[msg_len - 1] == '\r' ||
+                          msg_start[msg_len - 1] == 'm')) {
+        msg_len--;
+        // 检查是否是 ANSI 重置码结尾
+        if (msg_len >= 3 && msg_start[msg_len - 3] == '\033') {
+            msg_len -= 3;  // 跳过 \033[0
+        }
+    }
+
+    if (msg_len > 0 && msg_len < TS_LOG_MSG_MAX_LEN) {
+        strncpy(entry.message, msg_start, msg_len);
+        entry.message[msg_len] = '\0';
+    }
+
+    // 获取当前任务名
+    TaskHandle_t task = xTaskGetCurrentTaskHandle();
+    if (task != NULL) {
+        strncpy(entry.task_name, pcTaskGetName(task), sizeof(entry.task_name) - 1);
+    }
+
+store_entry:
+    // 存入缓冲区（不需要互斥锁，因为调用者已经在临界区）
+    if (s_log_ctx.buffer.entries != NULL) {
+        // 直接写入，不调用 log_output_buffer 避免重复锁
+        memcpy(&s_log_ctx.buffer.entries[s_log_ctx.buffer.head], &entry, sizeof(ts_log_entry_t));
+        s_log_ctx.buffer.head = (s_log_ctx.buffer.head + 1) % s_log_ctx.buffer.capacity;
+        if (s_log_ctx.buffer.count < s_log_ctx.buffer.capacity) {
+            s_log_ctx.buffer.count++;
+        }
+        s_log_ctx.total_logs_captured++;
+    }
+
+    // 通知回调（需要小心，回调中不能再打印日志）
+    // notify_callbacks(&entry);  // 暂时禁用，避免递归
+}
+
+/**
+ * @brief vprintf 钩子函数，拦截所有 ESP_LOG 输出
+ */
+static int ts_log_vprintf_hook(const char *fmt, va_list args)
+{
+    // 临时缓冲区格式化日志
+    static char log_buffer[512];
+    static bool in_hook = false;  // 防止递归
+
+    // 防止递归调用（某些情况下 vprintf 可能被嵌套调用）
+    if (in_hook) {
+        if (s_log_ctx.original_vprintf) {
+            return s_log_ctx.original_vprintf(fmt, args);
+        }
+        return vprintf(fmt, args);
+    }
+
+    in_hook = true;
+
+    // 格式化日志到缓冲区
+    int len = vsnprintf(log_buffer, sizeof(log_buffer), fmt, args);
+
+    // 解析并存储日志（跳过空行）
+    if (len > 0 && log_buffer[0] != '\n' && log_buffer[0] != '\r') {
+        // 使用快速锁保护缓冲区访问
+        if (s_log_ctx.mutex && xSemaphoreTake(s_log_ctx.mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            parse_esp_log_and_store(log_buffer);
+            xSemaphoreGive(s_log_ctx.mutex);
+        }
+    }
+
+    in_hook = false;
+
+    // 调用原始 vprintf 输出到控制台
+    if (s_log_ctx.original_vprintf) {
+        // 需要重新创建 va_list，因为已经被消费
+        // 直接用已格式化的字符串输出
+        return printf("%s", log_buffer);
+    }
+    return printf("%s", log_buffer);
+}
+
+/* ============================================================================
+ * 日志统计和查询 API
+ * ========================================================================== */
+
+esp_err_t ts_log_get_stats(ts_log_stats_t *stats)
+{
+    if (stats == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!s_log_ctx.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    xSemaphoreTake(s_log_ctx.mutex, portMAX_DELAY);
+
+    stats->buffer_capacity = s_log_ctx.buffer.capacity;
+    stats->buffer_count = s_log_ctx.buffer.count;
+    stats->total_captured = s_log_ctx.total_logs_captured;
+    stats->dropped = s_log_ctx.logs_dropped;
+    stats->esp_log_capture_enabled = s_log_ctx.esp_log_capture_enabled;
+
+    xSemaphoreGive(s_log_ctx.mutex);
+    return ESP_OK;
+}
+
+size_t ts_log_buffer_search(ts_log_entry_t *entries, size_t max_count,
+                            ts_log_level_t min_level, ts_log_level_t max_level,
+                            const char *tag_filter, const char *keyword)
+{
+    if (entries == NULL || max_count == 0 || s_log_ctx.buffer.entries == NULL) {
+        return 0;
+    }
+
+    xSemaphoreTake(s_log_ctx.mutex, portMAX_DELAY);
+
+    size_t found = 0;
+    size_t count = s_log_ctx.buffer.count;
+
+    // 从最旧的日志开始遍历
+    size_t start = (s_log_ctx.buffer.head + s_log_ctx.buffer.capacity - count)
+                   % s_log_ctx.buffer.capacity;
+
+    for (size_t i = 0; i < count && found < max_count; i++) {
+        size_t idx = (start + i) % s_log_ctx.buffer.capacity;
+        const ts_log_entry_t *e = &s_log_ctx.buffer.entries[idx];
+
+        // 级别过滤
+        if (e->level < min_level || e->level > max_level) {
+            continue;
+        }
+
+        // TAG 过滤（支持子字符串匹配）
+        if (tag_filter != NULL && tag_filter[0] != '\0') {
+            if (strcasestr(e->tag, tag_filter) == NULL) {
+                continue;
+            }
+        }
+
+        // 关键字过滤（在消息和 TAG 中搜索）
+        if (keyword != NULL && keyword[0] != '\0') {
+            if (strcasestr(e->message, keyword) == NULL &&
+                strcasestr(e->tag, keyword) == NULL) {
+                continue;
+            }
+        }
+
+        // 匹配，复制到结果
+        memcpy(&entries[found], e, sizeof(ts_log_entry_t));
+        found++;
+    }
+
+    xSemaphoreGive(s_log_ctx.mutex);
+    return found;
+}
+
+void ts_log_enable_esp_capture(bool enable)
+{
+    if (!s_log_ctx.initialized) {
+        return;
+    }
+
+    if (enable && !s_log_ctx.esp_log_capture_enabled) {
+        // 安装钩子
+        s_log_ctx.original_vprintf = esp_log_set_vprintf(ts_log_vprintf_hook);
+        s_log_ctx.esp_log_capture_enabled = true;
+    } else if (!enable && s_log_ctx.esp_log_capture_enabled) {
+        // 恢复原始 vprintf
+        if (s_log_ctx.original_vprintf) {
+            esp_log_set_vprintf(s_log_ctx.original_vprintf);
+        }
+        s_log_ctx.esp_log_capture_enabled = false;
+    }
 }

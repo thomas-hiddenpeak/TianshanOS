@@ -73,7 +73,10 @@ static esp_err_t api_handler(ts_http_request_t *req, void *user_data)
         if (*p == '/') *p = '.';
     }
     
-    TS_LOGI(TAG, "API request: uri=%s -> api_name=%s", uri, api_name);
+    // 日志相关 API 不输出调试日志，避免日志风暴
+    if (strncmp(api_name, "log.", 4) != 0) {
+        TS_LOGI(TAG, "API request: uri=%s -> api_name=%s", uri, api_name);
+    }
     
     // TODO: 测试阶段暂时禁用认证检查
     // 功能测试完成后需要恢复以下代码：
@@ -91,7 +94,43 @@ static esp_err_t api_handler(ts_http_request_t *req, void *user_data)
     // Build request JSON
     cJSON *request = cJSON_CreateObject();
     
-    // Add body data if present
+    // Parse URL query string parameters (for GET requests)
+    size_t query_len = httpd_req_get_url_query_len(req->req);
+    if (query_len > 0) {
+        char *query_buf = malloc(query_len + 1);
+        if (query_buf) {
+            if (httpd_req_get_url_query_str(req->req, query_buf, query_len + 1) == ESP_OK) {
+                // Parse query string parameters
+                char *saveptr = NULL;
+                char *pair = strtok_r(query_buf, "&", &saveptr);
+                while (pair) {
+                    char *eq = strchr(pair, '=');
+                    if (eq) {
+                        *eq = '\0';
+                        char *key = pair;
+                        char *value = eq + 1;
+                        
+                        // URL decode the value (basic: + to space, %XX sequences)
+                        // For simplicity, just add as string or number
+                        // Try to parse as number first
+                        char *endptr;
+                        long num = strtol(value, &endptr, 10);
+                        if (*endptr == '\0' && value[0] != '\0') {
+                            // It's a number
+                            cJSON_AddNumberToObject(request, key, num);
+                        } else {
+                            // It's a string
+                            cJSON_AddStringToObject(request, key, value);
+                        }
+                    }
+                    pair = strtok_r(NULL, "&", &saveptr);
+                }
+            }
+            free(query_buf);
+        }
+    }
+    
+    // Add body data if present (POST/PUT requests - overrides query params)
     if (req->body && req->body_len > 0) {
         cJSON *body = cJSON_Parse(req->body);
         if (body) {

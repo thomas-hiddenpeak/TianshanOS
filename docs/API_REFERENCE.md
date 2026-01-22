@@ -520,6 +520,193 @@ POST /api/v1/storage/rename
 }
 ```
 
+### 日志订阅
+订阅实时日志流：
+```json
+{"type": "log_subscribe", "minLevel": 3}
+```
+- `minLevel`: 最小日志级别（1=ERROR, 2=WARN, 3=INFO, 4=DEBUG, 5=VERBOSE）
+
+订阅确认响应：
+```json
+{"type": "log_subscribed", "minLevel": 3}
+```
+
+### 取消日志订阅
+```json
+{"type": "log_unsubscribe"}
+```
+
+### 更新日志级别过滤
+```json
+{"type": "log_set_level", "minLevel": 2}
+```
+
+### 获取历史日志
+```json
+{"type": "log_get_history", "limit": 500, "minLevel": 1, "maxLevel": 5}
+```
+
+历史日志响应：
+```json
+{
+  "type": "log_history",
+  "logs": [
+    {
+      "timestamp": 12345678,
+      "level": 3,
+      "levelName": "INFO",
+      "tag": "main",
+      "message": "System started",
+      "task": "main"
+    }
+  ],
+  "total": 150
+}
+```
+
+### 实时日志推送
+服务器主动推送日志：
+```json
+{
+  "type": "log",
+  "timestamp": 12345678,
+  "level": 3,
+  "levelName": "INFO",
+  "tag": "ts_net",
+  "message": "Ethernet connected",
+  "task": "net_task"
+}
+```
+
+## 日志 API
+
+### log.list
+获取日志列表（带过滤）。
+
+**请求**: `GET /api/v1/log/list?limit=50&minLevel=1&maxLevel=5`
+
+**参数**:
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| offset | number | 0 | 起始偏移 |
+| limit | number | 50 | 返回数量（最大200） |
+| minLevel | number | 1 | 最小级别 |
+| maxLevel | number | 5 | 最大级别 |
+| tag | string | - | TAG 过滤（子字符串匹配） |
+| keyword | string | - | 关键字搜索 |
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "logs": [
+      {
+        "timestamp": 12345678,
+        "level": 3,
+        "levelName": "INFO",
+        "tag": "main",
+        "message": "System started",
+        "task": "main"
+      }
+    ],
+    "total": 150,
+    "offset": 0,
+    "returned": 50,
+    "bufferCapacity": 1000,
+    "bufferCount": 150
+  }
+}
+```
+
+### log.stats
+获取日志统计信息。
+
+**请求**: `GET /api/v1/log/stats`
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "bufferCapacity": 1000,
+    "bufferCount": 150,
+    "totalCaptured": 1523,
+    "dropped": 0,
+    "espLogCaptureEnabled": true,
+    "currentLevel": 3,
+    "currentLevelName": "INFO"
+  }
+}
+```
+
+### log.clear
+清空日志缓冲区。
+
+**请求**: `POST /api/v1/log/clear`
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "success": true,
+    "message": "Log buffer cleared"
+  }
+}
+```
+
+### log.setLevel
+设置日志级别。
+
+**请求**:
+```
+POST /api/v1/log/setLevel
+{
+  "level": "debug",
+  "tag": "ts_net"
+}
+```
+
+**参数**:
+- `level`: 日志级别（0-5 或字符串 "error"/"warn"/"info"/"debug"/"verbose"）
+- `tag`: 可选，针对特定 TAG 设置级别
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "success": true,
+    "level": "DEBUG",
+    "tag": "ts_net"
+  }
+}
+```
+
+### log.capture
+控制 ESP_LOG 捕获。
+
+**请求**:
+```
+POST /api/v1/log/capture
+{
+  "enable": true
+}
+```
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "success": true,
+    "captureEnabled": true
+  }
+}
+```
+
 ## OTA API
 
 ### ota.status

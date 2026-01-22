@@ -35,7 +35,8 @@
 typedef enum {
     WS_CLIENT_TYPE_EVENT,      // 普通事件订阅客户端
     WS_CLIENT_TYPE_TERMINAL,   // 终端会话客户端
-    WS_CLIENT_TYPE_SSH_SHELL   // SSH Shell 会话客户端
+    WS_CLIENT_TYPE_SSH_SHELL,  // SSH Shell 会话客户端
+    WS_CLIENT_TYPE_LOG         // 日志订阅客户端
 } ws_client_type_t;
 
 typedef struct {
@@ -43,6 +44,7 @@ typedef struct {
     int fd;
     httpd_handle_t hd;
     ws_client_type_t type;
+    ts_log_level_t log_min_level;  // 日志客户端的最小级别过滤
 } ws_client_t;
 
 static ws_client_t s_clients[MAX_WS_CLIENTS];
@@ -64,6 +66,17 @@ static volatile bool s_ssh_running = false;
 
 /* 电压保护事件处理器句柄 */
 static ts_event_handler_handle_t s_power_event_handle = NULL;
+
+/* 日志回调句柄 */
+static ts_log_callback_handle_t s_log_callback_handle = NULL;
+static volatile bool s_log_streaming_enabled = false;
+
+/* 日志级别名称映射 */
+static const char *s_level_names[] = {"NONE", "ERROR", "WARN", "INFO", "DEBUG", "VERBOSE"};
+
+/* 前向声明 */
+static void update_log_stream_state(void);
+static bool has_log_clients(void);
 
 /* 电压保护状态字符串 */
 static const char *power_state_to_string(ts_power_policy_state_t state)
@@ -620,6 +633,8 @@ static void start_terminal_session(httpd_req_t *req)
 /* 清理断开的客户端 */
 static void cleanup_disconnected_client(int fd)
 {
+    bool was_log_client = false;
+    
     for (int i = 0; i < MAX_WS_CLIENTS; i++) {
         if (s_clients[i].active && s_clients[i].fd == fd) {
             // 如果是终端客户端，清理输出回调
@@ -634,10 +649,19 @@ static void cleanup_disconnected_client(int fd)
             if (s_clients[i].type == WS_CLIENT_TYPE_SSH_SHELL && s_ssh_client_fd == fd) {
                 ssh_cleanup();
             }
+            // 检查是否是日志客户端
+            if (s_clients[i].type == WS_CLIENT_TYPE_LOG) {
+                was_log_client = true;
+            }
             s_clients[i].active = false;
             TS_LOGI(TAG, "WebSocket client disconnected (fd=%d)", fd);
-            return;
+            break;
         }
+    }
+    
+    // 如果是日志客户端断开，更新日志流状态
+    if (was_log_client) {
+        update_log_stream_state();
     }
 }
 
@@ -777,6 +801,116 @@ static esp_err_t ws_handler(httpd_req_t *req)
                     handle_ssh_resize(width->valueint, height->valueint);
                 }
             }
+            /* 日志流订阅 */
+            else if (strcmp(type->valuestring, "log_subscribe") == 0) {
+                // 订阅日志流
+                int fd = httpd_req_to_sockfd(req);
+                cJSON *level = cJSON_GetObjectItem(msg, "minLevel");
+                ts_log_level_t min_level = TS_LOG_VERBOSE;  // 默认接收所有级别
+                if (level && cJSON_IsNumber(level)) {
+                    min_level = (ts_log_level_t)level->valueint;
+                }
+                
+                for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+                    if (s_clients[i].active && s_clients[i].fd == fd) {
+                        s_clients[i].type = WS_CLIENT_TYPE_LOG;
+                        s_clients[i].log_min_level = min_level;
+                        break;
+                    }
+                }
+                // 更新日志流状态
+                update_log_stream_state();
+                
+                // 发送确认
+                cJSON *ack = cJSON_CreateObject();
+                cJSON_AddStringToObject(ack, "type", "log_subscribed");
+                cJSON_AddNumberToObject(ack, "minLevel", min_level);
+                char *ack_str = cJSON_PrintUnformatted(ack);
+                cJSON_Delete(ack);
+                if (ack_str) {
+                    ws_pkt.payload = (uint8_t *)ack_str;
+                    ws_pkt.len = strlen(ack_str);
+                    httpd_ws_send_frame(req, &ws_pkt);
+                    free(ack_str);
+                }
+            }
+            else if (strcmp(type->valuestring, "log_unsubscribe") == 0) {
+                // 取消订阅日志流
+                int fd = httpd_req_to_sockfd(req);
+                for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+                    if (s_clients[i].active && s_clients[i].fd == fd) {
+                        s_clients[i].type = WS_CLIENT_TYPE_EVENT;
+                        break;
+                    }
+                }
+                // 更新日志流状态
+                update_log_stream_state();
+            }
+            else if (strcmp(type->valuestring, "log_set_level") == 0) {
+                // 更新日志级别过滤
+                int fd = httpd_req_to_sockfd(req);
+                cJSON *level = cJSON_GetObjectItem(msg, "minLevel");
+                if (level && cJSON_IsNumber(level)) {
+                    for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+                        if (s_clients[i].active && s_clients[i].fd == fd && 
+                            s_clients[i].type == WS_CLIENT_TYPE_LOG) {
+                            s_clients[i].log_min_level = (ts_log_level_t)level->valueint;
+                            break;
+                        }
+                    }
+                }
+            }
+            /* 获取历史日志 */
+            else if (strcmp(type->valuestring, "log_get_history") == 0) {
+                // 获取历史日志
+                cJSON *j_limit = cJSON_GetObjectItem(msg, "limit");
+                cJSON *j_min = cJSON_GetObjectItem(msg, "minLevel");
+                cJSON *j_max = cJSON_GetObjectItem(msg, "maxLevel");
+                
+                size_t limit = 200;
+                ts_log_level_t min_level = TS_LOG_ERROR;
+                ts_log_level_t max_level = TS_LOG_VERBOSE;
+                
+                if (j_limit && cJSON_IsNumber(j_limit)) limit = (size_t)j_limit->valueint;
+                if (j_min && cJSON_IsNumber(j_min)) min_level = (ts_log_level_t)j_min->valueint;
+                if (j_max && cJSON_IsNumber(j_max)) max_level = (ts_log_level_t)j_max->valueint;
+                if (limit > 500) limit = 500;
+                
+                // 分配缓冲区
+                ts_log_entry_t *entries = malloc(limit * sizeof(ts_log_entry_t));
+                if (entries) {
+                    size_t count = ts_log_buffer_search(entries, limit, min_level, max_level, NULL, NULL);
+                    
+                    // 构建响应
+                    cJSON *resp = cJSON_CreateObject();
+                    cJSON_AddStringToObject(resp, "type", "log_history");
+                    cJSON *logs = cJSON_AddArrayToObject(resp, "logs");
+                    
+                    for (size_t i = 0; i < count; i++) {
+                        cJSON *entry = cJSON_CreateObject();
+                        cJSON_AddNumberToObject(entry, "timestamp", entries[i].timestamp_ms);
+                        cJSON_AddNumberToObject(entry, "level", entries[i].level);
+                        cJSON_AddStringToObject(entry, "levelName", 
+                                               (entries[i].level < 6) ? s_level_names[entries[i].level] : "UNKNOWN");
+                        cJSON_AddStringToObject(entry, "tag", entries[i].tag);
+                        cJSON_AddStringToObject(entry, "message", entries[i].message);
+                        cJSON_AddStringToObject(entry, "task", entries[i].task_name);
+                        cJSON_AddItemToArray(logs, entry);
+                    }
+                    cJSON_AddNumberToObject(resp, "total", count);
+                    
+                    char *resp_str = cJSON_PrintUnformatted(resp);
+                    cJSON_Delete(resp);
+                    free(entries);
+                    
+                    if (resp_str) {
+                        ws_pkt.payload = (uint8_t *)resp_str;
+                        ws_pkt.len = strlen(resp_str);
+                        httpd_ws_send_frame(req, &ws_pkt);
+                        free(resp_str);
+                    }
+                }
+            }
         }
         cJSON_Delete(msg);
     }
@@ -907,4 +1041,98 @@ esp_err_t ts_webui_broadcast_event(const char *event_type, const char *data)
     }
     
     return ESP_ERR_NO_MEM;
+}
+
+/*===========================================================================*/
+/*                      Log Streaming via WebSocket                           */
+/*===========================================================================*/
+
+/**
+ * @brief 日志回调 - 将日志推送到所有订阅的 WebSocket 客户端
+ */
+static void log_ws_callback(const ts_log_entry_t *entry, void *user_data)
+{
+    (void)user_data;
+    
+    if (!entry || !s_server || !s_log_streaming_enabled) return;
+    
+    // 构造日志消息
+    cJSON *msg = cJSON_CreateObject();
+    cJSON_AddStringToObject(msg, "type", "log");
+    cJSON_AddNumberToObject(msg, "timestamp", entry->timestamp_ms);
+    cJSON_AddNumberToObject(msg, "level", entry->level);
+    cJSON_AddStringToObject(msg, "levelName", 
+                           (entry->level < 6) ? s_level_names[entry->level] : "UNKNOWN");
+    cJSON_AddStringToObject(msg, "tag", entry->tag);
+    cJSON_AddStringToObject(msg, "message", entry->message);
+    cJSON_AddStringToObject(msg, "task", entry->task_name);
+    
+    char *json = cJSON_PrintUnformatted(msg);
+    cJSON_Delete(msg);
+    
+    if (!json) return;
+    
+    httpd_ws_frame_t ws_pkt = {
+        .type = HTTPD_WS_TYPE_TEXT,
+        .payload = (uint8_t *)json,
+        .len = strlen(json)
+    };
+    
+    // 发送给所有日志订阅客户端（根据级别过滤）
+    for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+        if (s_clients[i].active && s_clients[i].type == WS_CLIENT_TYPE_LOG) {
+            // 检查级别过滤
+            if (entry->level <= s_clients[i].log_min_level) {
+                httpd_ws_send_frame_async(s_clients[i].hd, s_clients[i].fd, &ws_pkt);
+            }
+        }
+    }
+    
+    free(json);
+}
+
+/**
+ * @brief 启用/禁用日志 WebSocket 流
+ */
+esp_err_t ts_webui_log_stream_enable(bool enable)
+{
+    if (enable && !s_log_callback_handle) {
+        // 注册日志回调 (min_level=TS_LOG_ERROR, 接收所有级别)
+        esp_err_t ret = ts_log_add_callback(log_ws_callback, TS_LOG_ERROR, NULL, &s_log_callback_handle);
+        if (ret != ESP_OK) {
+            TS_LOGE(TAG, "Failed to register log callback: %s", esp_err_to_name(ret));
+            return ret;
+        }
+        s_log_streaming_enabled = true;
+    } else if (!enable && s_log_callback_handle) {
+        // 移除日志回调
+        s_log_streaming_enabled = false;
+        ts_log_remove_callback(s_log_callback_handle);
+        s_log_callback_handle = NULL;
+    }
+    return ESP_OK;
+}
+
+/**
+ * @brief 检查是否有日志订阅客户端
+ */
+static bool has_log_clients(void)
+{
+    for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+        if (s_clients[i].active && s_clients[i].type == WS_CLIENT_TYPE_LOG) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief 更新日志流状态（根据是否有订阅客户端）
+ */
+static void update_log_stream_state(void)
+{
+    bool need_streaming = has_log_clients();
+    if (need_streaming != s_log_streaming_enabled) {
+        ts_webui_log_stream_enable(need_streaming);
+    }
 }

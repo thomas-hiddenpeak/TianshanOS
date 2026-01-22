@@ -664,6 +664,9 @@ esp_err_t ts_api_register_all(void)
         TS_LOGE(TAG, "Failed to register OTA APIs: %s", esp_err_to_name(ret));
         return ret;
     }
+
+    /* Log APIs */
+    ts_api_log_register();
     
     TS_LOGI(TAG, "All API modules registered (%zu endpoints)", s_api.endpoint_count);
     
