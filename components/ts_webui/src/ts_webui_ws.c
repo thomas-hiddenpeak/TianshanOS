@@ -884,14 +884,14 @@ static esp_err_t ws_handler(httpd_req_t *req)
                 cJSON *j_min = cJSON_GetObjectItem(msg, "minLevel");
                 cJSON *j_max = cJSON_GetObjectItem(msg, "maxLevel");
                 
-                size_t limit = 200;
+                size_t limit = 500;
                 ts_log_level_t min_level = TS_LOG_ERROR;
                 ts_log_level_t max_level = TS_LOG_VERBOSE;
                 
                 if (j_limit && cJSON_IsNumber(j_limit)) limit = (size_t)j_limit->valueint;
                 if (j_min && cJSON_IsNumber(j_min)) min_level = (ts_log_level_t)j_min->valueint;
                 if (j_max && cJSON_IsNumber(j_max)) max_level = (ts_log_level_t)j_max->valueint;
-                if (limit > 500) limit = 500;
+                if (limit > CONFIG_TS_LOG_BUFFER_SIZE) limit = CONFIG_TS_LOG_BUFFER_SIZE;
                 
                 // 分配缓冲区
                 ts_log_entry_t *entries = malloc(limit * sizeof(ts_log_entry_t));
