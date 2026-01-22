@@ -1,0 +1,25 @@
+idf_component_register(
+    SRCS
+        "src/ts_ota.c"
+        "src/ts_ota_https.c"
+        "src/ts_ota_sdcard.c"
+        "src/ts_ota_rollback.c"
+        "src/ts_ota_version.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        esp_app_format
+        esp_http_client
+        esp_https_ota
+        esp_partition
+        app_update
+        bootloader_support
+        nvs_flash
+        ts_core
+        ts_storage
+        mbedtls
+    PRIV_REQUIRES
+        ts_event
+        json
+        esp_timer
+)

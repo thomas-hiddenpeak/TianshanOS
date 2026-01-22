@@ -146,6 +146,12 @@ esp_err_t ts_cmd_temp_register(void);
 esp_err_t ts_cmd_agx_register(void);
 
 /**
+ * @brief 注册 ota 命令（固件升级）
+ * ota --status/--progress/--version/--partitions/--url/--file/--validate/--rollback/--abort
+ */
+esp_err_t ts_cmd_ota_register(void);
+
+/**
  * @brief 注册所有扩展命令
  * 一次性注册所有非内置命令
  */

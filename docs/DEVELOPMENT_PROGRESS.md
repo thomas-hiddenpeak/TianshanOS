@@ -3,7 +3,7 @@
 > **项目**：TianShanOS（天山操作系统）  
 > **版本**：0.1.0-dev  
 > **最后更新**：2026年1月22日  
-> **代码统计**：95+ 个 C 源文件，70+ 个头文件
+> **代码统计**：100+ 个 C 源文件，75+ 个头文件
 
 ---
 
@@ -22,6 +22,7 @@
 | Phase 8: 文档与测试 | ✅ 完成 | 100% | 2026-01-15 |
 | Phase 9: 统一配置系统 | ✅ 完成 | 100% | 2026-01-19 |
 | Phase 10: WebUI 增强 & SSH Shell | ✅ 完成 | 100% | 2026-01-21 |
+| Phase 11: OTA 固件升级 | ✅ 完成 | 100% | 2026-01-22 |
 
 ---
 
@@ -396,7 +397,87 @@
 
 ---
 
-## 📝 开发日志
+## � Phase 11: OTA 固件升级 ✅
+
+### ts_ota - OTA 升级组件
+- [x] OTA 主框架 (ts_ota.c)
+  - 状态管理 (IDLE/CHECKING/DOWNLOADING/VERIFYING/WRITING/PENDING_REBOOT/ERROR)
+  - 进度跟踪 (百分比/已接收/总大小/状态消息)
+  - 互斥保护 (线程安全)
+  - 事件发布 (TS_EVENT_BASE_OTA)
+- [x] HTTPS OTA (ts_ota_https.c)
+  - esp_https_ota 集成
+  - 证书验证 (CA bundle / 自定义证书 / 跳过验证)
+  - 进度回调
+  - 版本比较 (禁止降级选项)
+- [x] SD 卡 OTA (ts_ota_sdcard.c)
+  - 本地固件文件加载
+  - ESP 镜像头验证
+  - 分块写入 (4KB buffer)
+  - 固件列表扫描
+- [x] 回滚机制 (ts_ota_rollback.c)
+  - 固件验证计时器 (默认60秒)
+  - ts_ota_mark_valid() 确认固件
+  - 自动回滚 (超时未确认)
+  - 分区信息查询
+  - NVS 升级记录 (时间戳/计数)
+- [x] 版本管理 (ts_ota_version.c)
+  - 语义化版本解析 (x.y.z[-prerelease])
+  - 版本比较 (major/minor/patch/prerelease)
+  - 运行固件版本查询
+  - 版本格式化输出
+
+### OTA Core API (ts_api_ota.c)
+- [x] `ota.status` - 获取 OTA 状态 (运行分区/下一分区/待验证)
+- [x] `ota.progress` - 获取升级进度 (百分比/已接收/总大小)
+- [x] `ota.version` - 获取固件版本信息
+- [x] `ota.start_url` - 从 URL 启动 OTA (auto_reboot/allow_downgrade/skip_verify)
+- [x] `ota.start_file` - 从 SD 卡启动 OTA
+- [x] `ota.abort` - 中止升级
+- [x] `ota.validate` - 标记固件有效 (取消回滚)
+- [x] `ota.rollback` - 回滚到上一版本
+- [x] `ota.upload_begin` - 开始固件上传 (WebUI)
+- [x] `ota.upload_end` - 结束固件上传
+- [x] `ota.upload_abort` - 中止固件上传
+
+### OTA CLI 命令 (ts_cmd_ota.c)
+- [x] `ota --status` - 显示 OTA 状态
+- [x] `ota --progress` - 显示升级进度 (含进度条)
+- [x] `ota --version` - 显示固件版本
+- [x] `ota --partitions` - 显示分区信息
+- [x] `ota --url <url>` - 从 HTTPS URL 升级
+- [x] `ota --file <path>` - 从 SD 卡文件升级
+- [x] `ota --validate` - 标记固件有效
+- [x] `ota --rollback` - 回滚到上一版本
+- [x] `ota --abort` - 中止升级
+- [x] `--no-reboot` 选项 - 升级后不自动重启
+- [x] `--allow-downgrade` 选项 - 允许降级
+- [x] `--skip-verify` 选项 - 跳过证书验证
+- [x] `--json` 选项 - JSON 格式输出
+
+### 分区表 (partitions_ota.csv)
+- [x] 双 OTA 分区 (ota_0 + ota_1, 各 3MB)
+- [x] OTA 数据分区 (otadata, 8KB)
+- [x] www 分区扩展至 2MB (WebUI + 静态资源)
+- [x] 16MB Flash 布局优化
+
+### Kconfig 配置
+- [x] CONFIG_TS_OTA_ENABLED - OTA 功能开关
+- [x] CONFIG_TS_OTA_ROLLBACK_TIMEOUT - 回滚超时 (10-300秒)
+- [x] CONFIG_TS_OTA_HTTPS_ENABLED - HTTPS OTA 开关
+- [x] CONFIG_TS_OTA_SDCARD_ENABLED - SD 卡 OTA 开关
+- [x] CONFIG_TS_OTA_WEBUI_UPLOAD_ENABLED - WebUI 上传开关
+- [x] CONFIG_TS_OTA_BUFFER_SIZE - 缓冲区大小 (1-16KB)
+- [x] CONFIG_TS_OTA_VERIFY_SIGNATURE - 固件签名验证 (可选)
+- [x] CONFIG_TS_OTA_ANTI_ROLLBACK - 防回滚保护 (可选)
+- [x] CONFIG_TS_OTA_VERSION_CHECK - 版本检查开关
+- [x] CONFIG_TS_OTA_DEFAULT_URL - 默认 OTA 服务器 URL
+- [x] CONFIG_TS_OTA_TASK_STACK_SIZE - 任务栈大小 (4-16KB)
+- [x] CONFIG_TS_OTA_TASK_PRIORITY - 任务优先级 (1-24)
+
+---
+
+## �📝 开发日志
 
 ### 2026-01-22
 - **统一配置系统修复**：

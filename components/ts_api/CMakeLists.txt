@@ -22,11 +22,12 @@ set(TS_API_SRCS
     "src/ts_api_ssh.c"
     "src/ts_api_sftp.c"
     "src/ts_api_time.c"
+    "src/ts_api_ota.c"
 )
 
 idf_component_register(
     SRCS ${TS_API_SRCS}
     INCLUDE_DIRS "include"
-    REQUIRES ts_core ts_drivers ts_led ts_net json ts_storage ts_security
-    PRIV_REQUIRES ts_hal esp_timer esp_app_format spi_flash bootloader_support esp_wifi
+    REQUIRES ts_core ts_drivers ts_led ts_net json ts_storage ts_security ts_ota
+    PRIV_REQUIRES ts_hal esp_timer esp_app_format spi_flash bootloader_support esp_wifi app_update esp_https_ota
 )

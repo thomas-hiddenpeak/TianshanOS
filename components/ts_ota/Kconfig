@@ -1,0 +1,95 @@
+menu "TianShanOS OTA Configuration"
+
+    config TS_OTA_ENABLED
+        bool "Enable OTA update support"
+        default y
+        help
+            Enable Over-The-Air firmware update functionality.
+
+    config TS_OTA_ROLLBACK_TIMEOUT
+        int "Rollback timeout (seconds)"
+        default 60
+        range 10 300
+        depends on TS_OTA_ENABLED
+        help
+            If the new firmware doesn't call ts_ota_mark_valid() within this
+            time after boot, the system will automatically rollback to the
+            previous firmware.
+
+    config TS_OTA_HTTPS_ENABLED
+        bool "Enable HTTPS OTA"
+        default y
+        depends on TS_OTA_ENABLED
+        help
+            Enable OTA updates from HTTPS URLs.
+
+    config TS_OTA_SDCARD_ENABLED
+        bool "Enable SD Card OTA"
+        default y
+        depends on TS_OTA_ENABLED
+        help
+            Enable OTA updates from SD card files.
+
+    config TS_OTA_WEBUI_UPLOAD_ENABLED
+        bool "Enable WebUI firmware upload"
+        default y
+        depends on TS_OTA_ENABLED
+        help
+            Enable firmware upload through WebUI.
+
+    config TS_OTA_BUFFER_SIZE
+        int "OTA buffer size (bytes)"
+        default 4096
+        range 1024 16384
+        depends on TS_OTA_ENABLED
+        help
+            Buffer size for OTA data transfer.
+
+    config TS_OTA_VERIFY_SIGNATURE
+        bool "Verify firmware signature"
+        default n
+        depends on TS_OTA_ENABLED
+        help
+            Enable firmware signature verification using RSA-2048.
+            Requires a valid public key to be embedded in the firmware.
+
+    config TS_OTA_ANTI_ROLLBACK
+        bool "Enable anti-rollback protection"
+        default n
+        depends on TS_OTA_ENABLED
+        help
+            Prevent downgrade to older firmware versions using eFuse counter.
+            WARNING: This uses one-time programmable eFuse bits.
+
+    config TS_OTA_VERSION_CHECK
+        bool "Enable version check before update"
+        default y
+        depends on TS_OTA_ENABLED
+        help
+            Check firmware version before allowing update. Prevents
+            accidental downgrade unless explicitly allowed.
+
+    config TS_OTA_DEFAULT_URL
+        string "Default OTA server URL"
+        default "https://ota.example.com/tianshanos"
+        depends on TS_OTA_HTTPS_ENABLED
+        help
+            Default URL for checking and downloading OTA updates.
+
+    config TS_OTA_TASK_STACK_SIZE
+        int "OTA task stack size"
+        default 8192
+        range 4096 16384
+        depends on TS_OTA_ENABLED
+        help
+            Stack size for the OTA update task.
+
+    config TS_OTA_TASK_PRIORITY
+        int "OTA task priority"
+        default 5
+        range 1 24
+        depends on TS_OTA_ENABLED
+        help
+            Priority for the OTA update task.
+
+endmenu

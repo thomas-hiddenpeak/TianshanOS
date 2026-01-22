@@ -1,0 +1,328 @@
+/**
+ * @file ts_ota_sdcard.c
+ * @brief TianShanOS OTA SD Card Implementation
+ */
+
+#include <string.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+#include "esp_ota_ops.h"
+#include "esp_app_format.h"
+#include "ts_ota.h"
+#include "ts_event.h"
+
+static const char *TAG = "ts_ota_sdcard";
+
+// OTA task handle
+static TaskHandle_t s_ota_task_handle = NULL;
+static ts_ota_config_t s_ota_config;
+static bool s_ota_running = false;
+
+// Forward declarations
+static void sdcard_ota_task(void *arg);
+
+/**
+ * @brief Start SD Card OTA update
+ */
+esp_err_t ts_ota_start_sdcard(const ts_ota_config_t *config)
+{
+    if (!config || !config->url) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (s_ota_running) {
+        ESP_LOGE(TAG, "OTA already running");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // Check if file exists
+    struct stat st;
+    if (stat(config->url, &st) != 0) {
+        ESP_LOGE(TAG, "Firmware file not found: %s", config->url);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    ESP_LOGI(TAG, "Firmware file: %s, size: %ld bytes", config->url, st.st_size);
+
+    // Copy config
+    memcpy(&s_ota_config, config, sizeof(ts_ota_config_t));
+    
+    // Create OTA task
+    BaseType_t ret = xTaskCreate(
+        sdcard_ota_task,
+        "ota_sdcard",
+        CONFIG_TS_OTA_TASK_STACK_SIZE,
+        NULL,
+        CONFIG_TS_OTA_TASK_PRIORITY,
+        &s_ota_task_handle
+    );
+
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create OTA task");
+        return ESP_ERR_NO_MEM;
+    }
+
+    s_ota_running = true;
+    return ESP_OK;
+}
+
+/**
+ * @brief SD Card OTA task
+ */
+static void sdcard_ota_task(void *arg)
+{
+    esp_err_t ret;
+    FILE *f = NULL;
+    esp_ota_handle_t ota_handle = 0;
+    const esp_partition_t *update_partition = NULL;
+    uint8_t *buffer = NULL;
+    
+    ESP_LOGI(TAG, "Starting SD Card OTA from: %s", s_ota_config.url);
+
+    // Post start event
+    ts_event_post(TS_EVENT_BASE_OTA, TS_EVENT_OTA_STARTED, NULL, 0, 0);
+
+    // Open firmware file
+    f = fopen(s_ota_config.url, "rb");
+    if (!f) {
+        ESP_LOGE(TAG, "Failed to open firmware file");
+        ret = ESP_ERR_NOT_FOUND;
+        goto cleanup;
+    }
+
+    // Get file size
+    fseek(f, 0, SEEK_END);
+    size_t file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    ESP_LOGI(TAG, "Firmware size: %zu bytes", file_size);
+
+    // Allocate buffer
+    buffer = malloc(CONFIG_TS_OTA_BUFFER_SIZE);
+    if (!buffer) {
+        ESP_LOGE(TAG, "Failed to allocate buffer");
+        ret = ESP_ERR_NO_MEM;
+        goto cleanup;
+    }
+
+    // Read and verify app description
+    size_t read_len = fread(buffer, 1, sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t), f);
+    if (read_len < sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t)) {
+        ESP_LOGE(TAG, "Failed to read firmware header");
+        ret = ESP_ERR_INVALID_SIZE;
+        goto cleanup;
+    }
+
+    // Parse app description
+    esp_app_desc_t *app_desc = (esp_app_desc_t *)(buffer + sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t));
+    
+    if (app_desc->magic_word != ESP_APP_DESC_MAGIC_WORD) {
+        ESP_LOGE(TAG, "Invalid firmware magic word");
+        ret = ESP_ERR_INVALID_ARG;
+        goto cleanup;
+    }
+
+    ESP_LOGI(TAG, "New firmware: %s, version: %s", app_desc->project_name, app_desc->version);
+    ESP_LOGI(TAG, "Compiled: %s %s", app_desc->date, app_desc->time);
+
+    // Version check
+    #if CONFIG_TS_OTA_VERSION_CHECK
+    if (!s_ota_config.allow_downgrade) {
+        const esp_app_desc_t *running_app = esp_app_get_description();
+        int cmp = ts_ota_compare_versions(app_desc->version, running_app->version);
+        if (cmp < 0) {
+            ESP_LOGE(TAG, "Downgrade not allowed: %s -> %s", 
+                     running_app->version, app_desc->version);
+            ret = ESP_ERR_INVALID_VERSION;
+            goto cleanup;
+        }
+    }
+    #endif
+
+    // Seek back to start
+    fseek(f, 0, SEEK_SET);
+
+    // Get update partition
+    update_partition = esp_ota_get_next_update_partition(NULL);
+    if (!update_partition) {
+        ESP_LOGE(TAG, "No OTA partition available");
+        ret = ESP_ERR_NOT_FOUND;
+        goto cleanup;
+    }
+
+    ESP_LOGI(TAG, "Target partition: %s (addr=0x%lx, size=%lu KB)",
+             update_partition->label, update_partition->address, 
+             update_partition->size / 1024);
+
+    // Check partition size
+    if (file_size > update_partition->size) {
+        ESP_LOGE(TAG, "Firmware too large for partition");
+        ret = ESP_ERR_INVALID_SIZE;
+        goto cleanup;
+    }
+
+    // Begin OTA
+    ret = esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES, &ota_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_begin failed: %s", esp_err_to_name(ret));
+        goto cleanup;
+    }
+
+    // Write firmware
+    size_t written = 0;
+    while (written < file_size) {
+        read_len = fread(buffer, 1, CONFIG_TS_OTA_BUFFER_SIZE, f);
+        if (read_len == 0) {
+            if (feof(f)) {
+                break;
+            }
+            ESP_LOGE(TAG, "Read error");
+            ret = ESP_ERR_INVALID_STATE;
+            goto cleanup;
+        }
+
+        ret = esp_ota_write(ota_handle, buffer, read_len);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "esp_ota_write failed: %s", esp_err_to_name(ret));
+            goto cleanup;
+        }
+
+        written += read_len;
+
+        // Progress update
+        int percent = (written * 100) / file_size;
+        ESP_LOGI(TAG, "Written: %zu / %zu bytes (%d%%)", written, file_size, percent);
+
+        // Call progress callback
+        if (s_ota_config.progress_cb) {
+            ts_ota_progress_t progress = {
+                .state = TS_OTA_STATE_WRITING,
+                .error = TS_OTA_ERR_NONE,
+                .total_size = file_size,
+                .received_size = written,
+                .progress_percent = percent,
+                .status_msg = "正在写入..."
+            };
+            s_ota_config.progress_cb(&progress, s_ota_config.user_data);
+        }
+
+        // Post progress event
+        ts_ota_progress_t progress = {
+            .state = TS_OTA_STATE_WRITING,
+            .total_size = file_size,
+            .received_size = written,
+            .progress_percent = percent,
+        };
+        ts_event_post(TS_EVENT_BASE_OTA, TS_EVENT_OTA_PROGRESS, 
+                      &progress, sizeof(progress), 0);
+
+        vTaskDelay(pdMS_TO_TICKS(10)); // Yield to other tasks
+    }
+
+    // End OTA
+    ret = esp_ota_end(ota_handle);
+    ota_handle = 0;
+    
+    if (ret != ESP_OK) {
+        if (ret == ESP_ERR_OTA_VALIDATE_FAILED) {
+            ESP_LOGE(TAG, "Image validation failed");
+        } else {
+            ESP_LOGE(TAG, "esp_ota_end failed: %s", esp_err_to_name(ret));
+        }
+        goto cleanup;
+    }
+
+    // Set boot partition
+    ret = esp_ota_set_boot_partition(update_partition);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_set_boot_partition failed: %s", esp_err_to_name(ret));
+        goto cleanup;
+    }
+
+    ESP_LOGI(TAG, "OTA update successful!");
+
+    // Post completion event
+    ts_event_post(TS_EVENT_BASE_OTA, TS_EVENT_OTA_COMPLETED, NULL, 0, 0);
+
+    // Notify callback
+    if (s_ota_config.progress_cb) {
+        ts_ota_progress_t progress = {
+            .state = TS_OTA_STATE_PENDING_REBOOT,
+            .error = TS_OTA_ERR_NONE,
+            .total_size = file_size,
+            .received_size = written,
+            .progress_percent = 100,
+            .status_msg = "升级完成，等待重启"
+        };
+        s_ota_config.progress_cb(&progress, s_ota_config.user_data);
+    }
+
+    // Auto reboot if requested
+    if (s_ota_config.auto_reboot) {
+        ESP_LOGI(TAG, "Rebooting in 2 seconds...");
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        esp_restart();
+    }
+
+cleanup:
+    if (f) fclose(f);
+    if (buffer) free(buffer);
+    if (ota_handle) esp_ota_abort(ota_handle);
+
+    if (ret != ESP_OK) {
+        // Post failure event
+        ts_ota_error_t error = TS_OTA_ERR_WRITE_FAILED;
+        ts_event_post(TS_EVENT_BASE_OTA, TS_EVENT_OTA_FAILED, &error, sizeof(error), 0);
+
+        if (s_ota_config.progress_cb) {
+            ts_ota_progress_t progress = {
+                .state = TS_OTA_STATE_ERROR,
+                .error = error,
+                .status_msg = "升级失败"
+            };
+            s_ota_config.progress_cb(&progress, s_ota_config.user_data);
+        }
+    }
+
+    s_ota_running = false;
+    s_ota_task_handle = NULL;
+    vTaskDelete(NULL);
+}
+
+/**
+ * @brief List firmware files on SD card
+ */
+esp_err_t ts_ota_list_sdcard_firmwares(const char *dir_path, 
+                                        char firmwares[][64], 
+                                        size_t *count,
+                                        size_t max_count)
+{
+    if (!dir_path || !firmwares || !count) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    *count = 0;
+
+    DIR *dir = opendir(dir_path);
+    if (!dir) {
+        ESP_LOGE(TAG, "Failed to open directory: %s", dir_path);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL && *count < max_count) {
+        // Check for .bin extension
+        size_t len = strlen(entry->d_name);
+        if (len > 4 && strcmp(entry->d_name + len - 4, ".bin") == 0) {
+            strncpy(firmwares[*count], entry->d_name, 63);
+            firmwares[*count][63] = '\0';
+            (*count)++;
+        }
+    }
+
+    closedir(dir);
+    return ESP_OK;
+}

@@ -374,6 +374,11 @@ esp_err_t ts_api_sftp_register(void);
  */
 esp_err_t ts_api_time_register(void);
 
+/**
+ * @brief Register OTA APIs
+ */
+esp_err_t ts_api_ota_register(void);
+
 #ifdef __cplusplus
 }
 #endif

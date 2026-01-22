@@ -22,6 +22,7 @@
 - [key - 安全密钥存储](#key---安全密钥存储)
 - [ssh - SSH 客户端](#ssh---ssh-客户端)
 - [hosts - SSH Known Hosts 管理](#hosts---ssh-known-hosts-管理)
+- [ota - OTA 固件升级](#ota---ota-固件升级)
 
 ---
 
@@ -1831,6 +1832,184 @@ Added: 2026-01-19
 
 ---
 
+## ota - OTA 固件升级
+
+管理 Over-The-Air (OTA) 固件升级，支持 HTTPS 下载和 SD 卡本地升级。
+
+### 语法
+
+```
+ota [options]
+```
+
+### 选项
+
+| 选项 | 简写 | 说明 |
+|------|------|------|
+| `--status` | | 显示 OTA 状态 |
+| `--progress` | | 显示升级进度 |
+| `--version` | | 显示固件版本 |
+| `--partitions` | | 显示分区信息 |
+| `--url <url>` | | 从 HTTPS URL 升级 |
+| `--file <path>` | | 从 SD 卡文件升级 |
+| `--validate` | | 标记当前固件有效（取消回滚） |
+| `--rollback` | | 回滚到上一版本 |
+| `--abort` | | 中止当前升级 |
+| `--no-reboot` | | 升级后不自动重启 |
+| `--allow-downgrade` | | 允许降级到旧版本 |
+| `--skip-verify` | | 跳过 HTTPS 证书验证（仅调试） |
+| `--json` | `-j` | JSON 格式输出 |
+| `--help` | `-h` | 显示帮助 |
+
+### 示例
+
+**查看 OTA 状态**：
+```bash
+ota --status
+```
+
+输出示例：
+```
+╔════════════════════════════════════════╗
+║           OTA 状态信息                  ║
+╠════════════════════════════════════════╣
+║ 当前状态: idle                         ║
+╠════════════════════════════════════════╣
+║ 运行分区: ota_0                        ║
+║ 版本:     0.1.0                        ║
+║ 项目:     TianShanOS                   ║
+║ 编译日期: Jan 22 2026                  ║
+║ IDF版本:  v5.5.1                       ║
+╠════════════════════════════════════════╣
+║ 下一分区: ota_1                        ║
+║ 可启动:   否                           ║
+╚════════════════════════════════════════╝
+```
+
+**查看固件版本**：
+```bash
+ota --version
+```
+
+**查看分区信息**：
+```bash
+ota --partitions
+```
+
+输出示例：
+```
+╔══════════════════════════════════════════════════════╗
+║                  OTA 分区信息                         ║
+╠══════════════════════════════════════════════════════╣
+║ 分区        地址         大小       状态              ║
+╠══════════════════════════════════════════════════════╣
+║ ota_0       0x00020000   3145728    [运行中]         ║
+║   版本: 0.1.0                                        ║
+╠══════════════════════════════════════════════════════╣
+║ ota_1       0x00320000   3145728    [空闲]           ║
+╚══════════════════════════════════════════════════════╝
+```
+
+**从 URL 升级**：
+```bash
+# 标准升级（自动重启）
+ota --url https://example.com/firmware/tianshanos-v0.2.0.bin
+
+# 不自动重启
+ota --url https://example.com/firmware.bin --no-reboot
+
+# 允许降级
+ota --url https://example.com/firmware.bin --allow-downgrade
+
+# 跳过证书验证（仅测试环境）
+ota --url https://self-signed.example.com/firmware.bin --skip-verify
+```
+
+**从 SD 卡升级**：
+```bash
+# 从 SD 卡升级
+ota --file /sdcard/firmware.bin
+
+# 允许降级
+ota --file /sdcard/old-firmware.bin --allow-downgrade
+```
+
+**查看升级进度**：
+```bash
+ota --progress
+```
+
+输出示例：
+```
+状态: downloading
+进度: 45%
+已下载: 921600 / 2048000 字节
+消息: 正在下载...
+[██████████████████░░░░░░░░░░░░░░░░░░░░░░] 45%
+```
+
+**确认新固件有效**：
+```bash
+# 升级后，新固件启动，需在 60 秒内确认
+ota --validate
+```
+
+**回滚到上一版本**：
+```bash
+ota --rollback
+```
+
+**中止升级**：
+```bash
+ota --abort
+```
+
+### OTA 工作流程
+
+1. **标准升级流程**：
+   ```bash
+   # 1. 查看当前版本
+   ota --version
+   
+   # 2. 启动升级
+   ota --url https://ota.example.com/firmware.bin
+   
+   # 3. 设备自动重启到新固件
+   
+   # 4. 新固件启动后，确认有效
+   ota --validate
+   ```
+
+2. **回滚保护**：
+   - 新固件启动后，默认 60 秒内必须调用 `ota --validate`
+   - 超时未确认会自动回滚到上一版本
+   - 可在 Kconfig 中配置超时时间
+
+3. **SD 卡升级**：
+   ```bash
+   # 将固件复制到 SD 卡
+   # 然后执行
+   ota --file /sdcard/firmware.bin
+   ```
+
+### OTA 事件
+
+OTA 过程中会发布以下事件（事件基础：`ts_ota`）：
+
+| 事件 ID | 说明 |
+|---------|------|
+| `TS_EVENT_OTA_STARTED` | OTA 升级开始 |
+| `TS_EVENT_OTA_PROGRESS` | 进度更新 |
+| `TS_EVENT_OTA_COMPLETED` | 升级完成 |
+| `TS_EVENT_OTA_FAILED` | 升级失败 |
+| `TS_EVENT_OTA_ABORTED` | 升级中止 |
+| `TS_EVENT_OTA_PENDING_REBOOT` | 等待重启 |
+| `TS_EVENT_OTA_ROLLBACK_PENDING` | 待验证，回滚计时中 |
+| `TS_EVENT_OTA_ROLLBACK_EXECUTED` | 执行了回滚 |
+| `TS_EVENT_OTA_VALIDATED` | 固件已验证 |
+
+---
+
 ## 命令状态总览
 
 | 命令 | 状态 | 说明 |
@@ -1852,6 +2031,7 @@ Added: 2026-01-19
 | `key` | ✅ 可用 | 安全密钥存储（NVS 加密分区），支持 exportable 标记 |
 | `ssh` | ✅ 可用 | 命令执行、Shell、端口转发、密钥部署、公钥撤销 |
 | `hosts` | ✅ 可用 | SSH Known Hosts 管理（TOFU 验证） |
+| `ota` | ✅ 可用 | OTA 固件升级（HTTPS/SD卡、回滚保护） |
 
 ---
 
@@ -1883,10 +2063,11 @@ fan set speed 75
 
 ## 版本信息
 
-- **文档版本**: 1.6.0
+- **文档版本**: 1.7.0
 - **适用版本**: TianShanOS v0.1.0+
-- **最后更新**: 2026-01-21
+- **最后更新**: 2026-01-22
 - **变更记录**:
+  - v1.7.0: 新增 `ota` 命令（OTA 固件升级、HTTPS/SD卡升级、回滚保护）
   - v1.6.0: SSH Shell WebSocket 支持、Web 终端页面、电压保护事件广播
   - v1.5.0: 新增 `gpio` 命令（GPIO 直接控制）、`power` 命令（电源监控）、`voltprot` 命令（低电压保护）
   - v1.4.0: 新增 `hosts` 命令、`ssh --revoke` 公钥撤销、`key --exportable` 私钥导出控制
