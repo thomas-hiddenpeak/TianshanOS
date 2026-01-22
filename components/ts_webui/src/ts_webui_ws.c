@@ -220,7 +220,7 @@ static void ssh_poll_task(void *arg)
     char buf[SSH_OUTPUT_BUF_SIZE];
     bool need_cleanup = false;
     
-    TS_LOGI(TAG, "SSH poll task started");
+    TS_LOGD(TAG, "SSH poll task started");
     
     while (s_ssh_running && s_ssh_shell) {
         size_t read_len = 0;
@@ -233,7 +233,7 @@ static void ssh_poll_task(void *arg)
         
         // 检查 shell 是否还活跃
         if (!ts_ssh_shell_is_active(s_ssh_shell)) {
-            TS_LOGI(TAG, "SSH shell closed by remote");
+            TS_LOGD(TAG, "SSH shell closed by remote");
             ssh_send_status("closed", "SSH session closed");
             need_cleanup = true;  // 标记需要清理
             break;
@@ -242,7 +242,7 @@ static void ssh_poll_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(20));  // 50Hz 轮询
     }
     
-    TS_LOGI(TAG, "SSH poll task ended");
+    TS_LOGD(TAG, "SSH poll task ended");
     s_ssh_poll_task = NULL;
     
     // 如果是因为远程关闭而退出，需要清理 SSH 会话
@@ -268,7 +268,7 @@ static void ssh_poll_task(void *arg)
             }
             s_ssh_client_fd = -1;
         }
-        TS_LOGI(TAG, "SSH session cleaned up after remote close");
+        TS_LOGD(TAG, "SSH session cleaned up after remote close");
     }
     
     vTaskDelete(NULL);
@@ -306,7 +306,7 @@ static void ssh_cleanup(void)
     }
     s_ssh_client_fd = -1;
     
-    TS_LOGI(TAG, "SSH session cleaned up");
+    TS_LOGD(TAG, "SSH session cleaned up");
 }
 
 /* 处理 SSH Shell 连接请求 */
@@ -334,7 +334,7 @@ static void handle_ssh_connect(httpd_req_t *req, cJSON *params)
     int ssh_port = (port && cJSON_IsNumber(port)) ? port->valueint : 22;
     const char *ssh_password = (password && cJSON_IsString(password)) ? password->valuestring : "";
     
-    TS_LOGI(TAG, "SSH connect: %s@%s:%d", user->valuestring, host->valuestring, ssh_port);
+    TS_LOGD(TAG, "SSH connect: %s@%s:%d", user->valuestring, host->valuestring, ssh_port);
     
     // 设置 SSH 客户端 fd
     s_ssh_client_fd = fd;
@@ -468,7 +468,7 @@ static void add_client(httpd_handle_t hd, int fd, ws_client_type_t type)
             // 已存在，更新类型
             s_clients[i].type = type;
             s_clients[i].hd = hd;
-            TS_LOGI(TAG, "WebSocket client reconnected (fd=%d, type=%s)", 
+            TS_LOGD(TAG, "WebSocket client reconnected (fd=%d, type=%s)", 
                     fd, type == WS_CLIENT_TYPE_TERMINAL ? "terminal" : "event");
             return;
         }
@@ -481,7 +481,7 @@ static void add_client(httpd_handle_t hd, int fd, ws_client_type_t type)
             s_clients[i].fd = fd;
             s_clients[i].hd = hd;
             s_clients[i].type = type;
-            TS_LOGI(TAG, "WebSocket client connected (fd=%d, type=%s)", 
+            TS_LOGD(TAG, "WebSocket client connected (fd=%d, type=%s)", 
                     fd, type == WS_CLIENT_TYPE_TERMINAL ? "terminal" : "event");
             return;
         }
@@ -514,7 +514,7 @@ static void handle_terminal_command(httpd_req_t *req, const char *command)
         return;
     }
     
-    TS_LOGI(TAG, "Terminal exec: %s", command);
+    TS_LOGD(TAG, "Terminal exec: %s", command);
     
     // 清空输出缓冲区
     if (s_output_mutex && xSemaphoreTake(s_output_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -529,11 +529,11 @@ static void handle_terminal_command(httpd_req_t *req, const char *command)
     ts_cmd_result_t result;
     ts_console_exec(command, &result);
     
-    TS_LOGI(TAG, "Command finished, output len: %zu", s_terminal_output_len);
+    TS_LOGD(TAG, "Command finished, output len: %zu", s_terminal_output_len);
     
     // 获取输出并发送
     if (s_output_mutex && xSemaphoreTake(s_output_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        TS_LOGI(TAG, "Sending output: %zu bytes", s_terminal_output_len);
+        TS_LOGD(TAG, "Sending output: %zu bytes", s_terminal_output_len);
         if (s_terminal_output_len > 0 && s_terminal_output_buf) {
             cJSON *output_msg = cJSON_CreateObject();
             cJSON_AddStringToObject(output_msg, "type", "output");
@@ -627,7 +627,7 @@ static void start_terminal_session(httpd_req_t *req)
         free(json);
     }
     
-    TS_LOGI(TAG, "Terminal session started (fd=%d)", fd);
+    TS_LOGD(TAG, "Terminal session started (fd=%d)", fd);
 }
 
 /* 清理断开的客户端 */
@@ -654,7 +654,7 @@ static void cleanup_disconnected_client(int fd)
                 was_log_client = true;
             }
             s_clients[i].active = false;
-            TS_LOGI(TAG, "WebSocket client disconnected (fd=%d)", fd);
+            TS_LOGD(TAG, "WebSocket client disconnected (fd=%d)", fd);
             break;
         }
     }
@@ -668,7 +668,7 @@ static void cleanup_disconnected_client(int fd)
 static esp_err_t ws_handler(httpd_req_t *req)
 {
     if (req->method == HTTP_GET) {
-        TS_LOGI(TAG, "WebSocket handshake");
+        TS_LOGD(TAG, "WebSocket handshake");
         // 初次连接时添加为事件客户端
         add_client(req->handle, httpd_req_to_sockfd(req), WS_CLIENT_TYPE_EVENT);
         return ESP_OK;
@@ -688,7 +688,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
     
     // 处理关闭帧
     if (ws_pkt.type == HTTPD_WS_TYPE_CLOSE) {
-        TS_LOGI(TAG, "WebSocket close frame received");
+        TS_LOGD(TAG, "WebSocket close frame received");
         cleanup_disconnected_client(httpd_req_to_sockfd(req));
         return ESP_OK;
     }
@@ -720,7 +720,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
     if (msg) {
         cJSON *type = cJSON_GetObjectItem(msg, "type");
         if (type && cJSON_IsString(type)) {
-            TS_LOGI(TAG, "WS msg type=%s from fd=%d", type->valuestring, httpd_req_to_sockfd(req));
+            TS_LOGD(TAG, "WS msg type=%s from fd=%d", type->valuestring, httpd_req_to_sockfd(req));
             
             if (strcmp(type->valuestring, "ping") == 0) {
                 // Respond to ping
@@ -736,7 +736,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
             }
             else if (strcmp(type->valuestring, "subscribe") == 0) {
                 // 保持为事件订阅客户端（已在握手时添加）
-                TS_LOGI(TAG, "Client subscribed to events");
+                TS_LOGD(TAG, "Client subscribed to events");
             }
             else if (strcmp(type->valuestring, "terminal_start") == 0) {
                 // 启动终端会话
@@ -752,7 +752,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
             else if (strcmp(type->valuestring, "terminal_interrupt") == 0) {
                 // 发送中断信号 (Ctrl+C)
                 ts_console_request_interrupt();
-                TS_LOGI(TAG, "Terminal interrupt requested");
+                TS_LOGD(TAG, "Terminal interrupt requested");
             }
             else if (strcmp(type->valuestring, "terminal_stop") == 0) {
                 // 停止终端会话
@@ -767,7 +767,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
                             break;
                         }
                     }
-                    TS_LOGI(TAG, "Terminal session stopped");
+                    TS_LOGD(TAG, "Terminal session stopped");
                 }
             }
             /* SSH Shell 消息处理 */

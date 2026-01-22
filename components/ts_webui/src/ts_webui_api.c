@@ -75,7 +75,7 @@ static esp_err_t api_handler(ts_http_request_t *req, void *user_data)
     
     // 日志相关 API 不输出调试日志，避免日志风暴
     if (strncmp(api_name, "log.", 4) != 0) {
-        TS_LOGI(TAG, "API request: uri=%s -> api_name=%s", uri, api_name);
+        TS_LOGD(TAG, "API request: uri=%s -> api_name=%s", uri, api_name);
     }
     
     // TODO: 测试阶段暂时禁用认证检查
@@ -339,7 +339,7 @@ static esp_err_t file_download_handler(ts_http_request_t *req, void *user_data)
     
     // URL decode path
     url_decode(path);
-    TS_LOGI(TAG, "Download request: %s", path);
+    TS_LOGD(TAG, "Download request: %s", path);
     
     // 安全检查：只允许访问 /sdcard 和 /spiffs
     if (strncmp(path, "/sdcard", 7) != 0 && strncmp(path, "/spiffs", 7) != 0) {
@@ -382,7 +382,7 @@ static esp_err_t file_upload_handler(ts_http_request_t *req, void *user_data)
     
     // URL 解码路径
     url_decode(path);
-    TS_LOGI(TAG, "Upload request: path=%s, body_len=%d", path, (int)(req->body_len));
+    TS_LOGD(TAG, "Upload request: path=%s, body_len=%d", path, (int)(req->body_len));
     
     // 安全检查：只允许写入 /sdcard
     if (strncmp(path, "/sdcard", 7) != 0) {
@@ -410,7 +410,7 @@ static esp_err_t file_upload_handler(ts_http_request_t *req, void *user_data)
         return ts_http_send_error(req, 500, "Failed to write file");
     }
     
-    TS_LOGI(TAG, "File uploaded: %s (%zu bytes)", path, req->body_len);
+    TS_LOGD(TAG, "File uploaded: %s (%zu bytes)", path, req->body_len);
     
     // 返回成功响应
     cJSON *response = cJSON_CreateObject();
@@ -481,7 +481,7 @@ esp_err_t ts_webui_api_init(void)
             .user_data = NULL
         };
         esp_err_t ret = ts_http_server_register_route(&route);
-        TS_LOGI(TAG, "Register API %s handler: %s", method_names[i], esp_err_to_name(ret));
+        TS_LOGD(TAG, "Register API %s handler: %s", method_names[i], esp_err_to_name(ret));
     }
     
     // CORS preflight handler
