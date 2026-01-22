@@ -1,8 +1,8 @@
 # TianShanOS 开发进度跟踪
 
 > **项目**：TianShanOS（天山操作系统）  
-> **版本**：0.1.0-dev  
-> **最后更新**：2026年1月22日  
+> **版本**：0.2.0  
+> **最后更新**：2026年1月23日  
 > **代码统计**：100+ 个 C 源文件，75+ 个头文件
 
 ---
@@ -23,6 +23,7 @@
 | Phase 9: 统一配置系统 | ✅ 完成 | 100% | 2026-01-19 |
 | Phase 10: WebUI 增强 & SSH Shell | ✅ 完成 | 100% | 2026-01-21 |
 | Phase 11: OTA 固件升级 | ✅ 完成 | 100% | 2026-01-22 |
+| Phase 12: OTA 增强 & Bug修复 | ✅ 完成 | 100% | 2026-01-23 |
 
 ---
 
@@ -476,8 +477,92 @@
 - [x] CONFIG_TS_OTA_TASK_PRIORITY - 任务优先级 (1-24)
 
 ---
+## 📋 Phase 12: OTA 增强 & Bug修复 ✅
 
+### OTA 回滚机制修复
+- [x] 修复 `ts_ota_is_pending_verify()` 返回值错误
+  - 问题：新固件首次启动时误判为「无需验证」
+  - 原因：`s_rollback_timer` 在计时器创建前为 NULL
+  - 解决：检查 OTA 状态和分区状态而非计时器句柄
+- [x] 修复 `ts_ota_mark_valid()` 直接调用 SDK 而非组件层
+  - 修改为调用 `ts_ota_rollback_cancel()`
+
+### WebUI OTA 回滚功能
+- [x] 首页新固件验证横幅
+  - 倒计时显示（60秒）
+  - 确认固件 / 立即回滚按钮
+  - 自动刷新倒计时
+- [x] OTA 页面手动验证/回滚控制
+  - 显示验证状态和剩余时间
+  - 确认固件和回滚按钮
+- [x] 修复 OTA 进度显示
+  - 修复进度条不更新问题
+  - 修复上传方式无进度显示
+  - 添加 keepalive 机制防止 HTTP 超时
+
+### 手动升级 www 分区支持
+- [x] WebUI 两种手动升级方式添加 "包含 WebUI" 复选框
+  - URL 升级：勾选后依次升级 app + www 分区
+  - SD 卡升级：勾选后依次升级 app + www 分区
+- [x] 新增 `ota.www.start_sdcard` API
+  - 从 SD 卡文件升级 www (SPIFFS) 分区
+  - 路径推断：`/sdcard/firmware.bin` → `/sdcard/www.bin`
+- [x] `ts_ota_www.c` 新增 SD 卡 www OTA 实现
+  - `ts_ota_www_start_sdcard()` 启动函数
+  - `www_ota_sdcard_task()` 异步任务
+  - 分区擦除、分块写入、进度回调
+
+### Core API 扩展
+- [x] `ota.www.start_sdcard` - 从 SD 卡升级 www 分区
+- [x] `ota.https.start` - 支持 `www_url` 参数
+
+---
 ## �📝 开发日志
+
+### 2026-01-23
+- **OTA 回滚机制修复**：
+  - 修复 `ts_ota_is_pending_verify()` 误判问题
+    - 问题：新固件首次启动时，函数返回 false（无需验证）
+    - 原因：依赖 `s_rollback_timer` 句柄判断，但计时器在函数调用后才创建
+    - 修复：改用 OTA 状态 + 分区状态判断（`esp_ota_check_rollback_is_possible()`）
+  - 修复 `ts_ota_mark_valid()` 调用链
+    - 问题：直接调用 SDK `esp_ota_mark_app_valid_cancel_rollback()` 绕过组件层
+    - 修复：改为调用 `ts_ota_rollback_cancel()` 统一管理
+
+- **WebUI OTA 回滚功能**：
+  - 首页新固件验证横幅
+    - 醒目的黄色背景提示
+    - 实时倒计时显示（剩余 XX 秒）
+    - 「确认固件」和「立即回滚」按钮
+  - OTA 页面验证控制
+    - 当前验证状态显示
+    - 剩余时间倒计时
+    - 手动确认/回滚操作
+  - 修复 OTA 进度显示问题
+    - 问题：进度条卡在 0% 不更新
+    - 原因：定时器 ID 未保存导致无法清除
+    - 修复：正确管理 `pollInterval` 变量
+  - 修复上传方式无进度显示
+    - 添加 keepalive 定时器，每 5 秒调用 ota.progress
+
+- **手动升级 www 分区支持**：
+  - WebUI 手动升级增强
+    - URL 升级方式添加「包含 WebUI」复选框（默认勾选）
+    - SD 卡升级方式添加「包含 WebUI」复选框（默认勾选）
+    - 勾选后执行两步 OTA：先 app 分区，后 www 分区
+  - 新增 `ota.www.start_sdcard` API
+    - 从 SD 卡文件升级 www (SPIFFS) 分区
+    - 文件路径推断规则：`/sdcard/firmware.bin` → `/sdcard/www.bin`
+  - 实现 `ts_ota_www_start_sdcard()` 函数
+    - 文件存在性检查
+    - 文件大小获取
+    - 异步任务启动
+  - 实现 `www_ota_sdcard_task()` 异步任务
+    - 查找 www 分区（SPIFFS 类型）
+    - 分区擦除
+    - 分块读取文件并写入分区（4KB buffer）
+    - 进度回调
+    - 错误处理和状态更新
 
 ### 2026-01-22
 - **统一配置系统修复**：

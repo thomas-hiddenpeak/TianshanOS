@@ -36,13 +36,18 @@ class TianShanAPI {
             const response = await fetch(`${API_BASE}${endpoint}`, options);
             const json = await response.json();
             
-            if (!response.ok) {
+            // 返回 JSON 响应，即使是错误码也返回（让调用者决定如何处理）
+            // 只有真正的 HTTP 错误（如网络错误）才抛出异常
+            if (!response.ok && !json.code) {
                 throw new Error(json.message || json.error || 'Request failed');
             }
             
             return json;
         } catch (error) {
-            console.error(`API Error: ${endpoint}`, error);
+            // 只对非预期错误打印日志
+            if (error.name !== 'AbortError') {
+                console.error(`API Error: ${endpoint}`, error);
+            }
             throw error;
         }
     }
@@ -57,7 +62,9 @@ class TianShanAPI {
         // 自动判断方法：有参数且非查询类用 POST
         if (!method) {
             const isQuery = apiName.includes('.list') || apiName.includes('.status') || 
-                           apiName.includes('.info') || apiName.includes('.get');
+                           apiName.includes('.info') || apiName.includes('.get') ||
+                           apiName.includes('.version') || apiName.includes('.partitions') ||
+                           apiName.includes('.progress');
             method = (params && !isQuery) ? 'POST' : 'GET';
         }
         

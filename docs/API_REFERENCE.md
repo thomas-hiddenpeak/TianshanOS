@@ -520,6 +520,159 @@ POST /api/v1/storage/rename
 }
 ```
 
+## OTA API
+
+### ota.status
+获取 OTA 状态。
+
+**请求**: `GET /api/v1/ota/status`
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "state": "idle",
+    "running_partition": "ota_0",
+    "next_partition": "ota_1",
+    "pending_verify": false,
+    "rollback_possible": true
+  }
+}
+```
+
+### ota.progress
+获取升级进度。
+
+**请求**: `GET /api/v1/ota/progress`
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "state": "downloading",
+    "percent": 45,
+    "received": 921600,
+    "total": 2048000,
+    "message": "Downloading firmware..."
+  }
+}
+```
+
+### ota.version
+获取固件版本信息。
+
+**请求**: `GET /api/v1/ota/version`
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "version": "0.2.0",
+    "idf_version": "v5.5.2",
+    "compile_time": "Jan 23 2026 12:00:00"
+  }
+}
+```
+
+### ota.https.start
+从 HTTPS URL 启动 OTA。
+
+**请求**:
+```
+POST /api/v1/ota/https/start
+{
+  "url": "https://server/TianShanOS.bin",
+  "auto_reboot": true,
+  "allow_downgrade": false,
+  "skip_verify": false,
+  "www_url": "https://server/www.bin"
+}
+```
+
+**响应**:
+```json
+{
+  "code": 0,
+  "message": "OTA started"
+}
+```
+
+### ota.sdcard.start
+从 SD 卡启动 OTA。
+
+**请求**:
+```
+POST /api/v1/ota/sdcard/start
+{
+  "path": "/sdcard/TianShanOS.bin",
+  "auto_reboot": true
+}
+```
+
+### ota.www.start
+从 HTTPS URL 升级 www 分区。
+
+**请求**:
+```
+POST /api/v1/ota/www/start
+{
+  "url": "https://server/www.bin"
+}
+```
+
+### ota.www.start_sdcard
+从 SD 卡升级 www 分区。
+
+**请求**:
+```
+POST /api/v1/ota/www/start_sdcard
+{
+  "path": "/sdcard/www.bin"
+}
+```
+
+**响应**:
+```json
+{
+  "code": 0,
+  "message": "WWW OTA started from SD card"
+}
+```
+
+### ota.validate
+标记固件有效（取消回滚）。
+
+**请求**: `POST /api/v1/ota/validate`
+
+**响应**:
+```json
+{
+  "code": 0,
+  "message": "Firmware validated, rollback cancelled"
+}
+```
+
+### ota.rollback
+回滚到上一版本。
+
+**请求**: `POST /api/v1/ota/rollback`
+
+**响应**:
+```json
+{
+  "code": 0,
+  "message": "Rolling back to previous firmware..."
+}
+```
+
+### ota.abort
+中止升级。
+
+**请求**: `POST /api/v1/ota/abort`
+
 ## 错误码
 
 | 代码 | 含义 |

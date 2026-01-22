@@ -25,7 +25,7 @@ static bool s_core_started = false;
 
 const char *ts_get_version(void)
 {
-    return TIANSHAN_OS_VERSION_STRING;
+    return TIANSHAN_OS_VERSION_FULL;
 }
 
 const char *ts_get_build_time(void)

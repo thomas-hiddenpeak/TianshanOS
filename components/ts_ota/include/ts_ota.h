@@ -111,11 +111,11 @@ typedef struct {
  * @brief Firmware version information
  */
 typedef struct {
-    char version[32];           ///< Version string (e.g., "1.0.0")
+    char version[64];           ///< Version string (e.g., "1.0.0+commit.dirty.timestamp")
     char project_name[32];      ///< Project name
     char compile_time[32];      ///< Compile timestamp
     char compile_date[16];      ///< Compile date
-    char idf_version[16];       ///< ESP-IDF version
+    char idf_version[32];       ///< ESP-IDF version
     uint32_t secure_version;    ///< Secure version counter (anti-rollback)
 } ts_ota_version_info_t;
 
@@ -217,6 +217,16 @@ esp_err_t ts_ota_mark_valid(void);
  * @return true if pending verification, false otherwise
  */
 bool ts_ota_is_pending_verify(void);
+
+/**
+ * @brief Check if rollback is possible
+ * 
+ * Checks if there's a valid, bootable app in the other OTA partition
+ * that can be rolled back to.
+ *
+ * @return true if rollback is possible, false otherwise
+ */
+bool ts_ota_can_rollback(void);
 
 /**
  * @brief Rollback to previous firmware
@@ -344,7 +354,107 @@ esp_err_t ts_ota_upload_abort(void);
  * @brief OTA event base - use ts_event.h definition for consistency
  */
 // Note: TS_EVENT_BASE_OTA is defined in ts_event.h as "ts_ota"
+// ============================================================================
+//                           Internal API (for OTA sub-modules)
+// ============================================================================
 
+/**
+ * @brief Update OTA progress (internal use by ts_ota_https/sdcard)
+ * 
+ * @param state Current OTA state
+ * @param received Bytes received so far
+ * @param total Total bytes expected
+ * @param msg Status message
+ */
+void ts_ota_update_progress(ts_ota_state_t state, size_t received, size_t total, const char *msg);
+
+/**
+ * @brief Set OTA error state (internal use by ts_ota_https/sdcard)
+ * 
+ * @param error Error code
+ * @param msg Error message
+ */
+void ts_ota_set_error(ts_ota_error_t error, const char *msg);
+
+/**
+ * @brief Mark OTA as completed (internal use by ts_ota_https/sdcard)
+ * 
+ * @param msg Status message
+ */
+void ts_ota_set_completed(const char *msg);
+
+/**
+ * @brief Abort HTTPS OTA download (internal use)
+ */
+void ts_ota_abort_https(void);
+
+/**
+ * @brief Check if HTTPS OTA is running
+ * @return true if running
+ */
+bool ts_ota_https_is_running(void);
+
+// ============================================================================
+//                           WWW Partition OTA API
+// ============================================================================
+
+/**
+ * @brief Initialize WWW OTA module
+ * @return ESP_OK on success
+ */
+esp_err_t ts_ota_www_init(void);
+
+/**
+ * @brief Start WWW partition OTA from URL
+ *
+ * Downloads www.bin and writes to the www (SPIFFS) partition.
+ * This is typically the second step after app OTA completes.
+ *
+ * @param url URL to download www.bin from
+ * @param skip_cert_verify Skip SSL certificate verification
+ * @param progress_cb Progress callback (optional)
+ * @param user_data User data for callback
+ * @return ESP_OK if started successfully
+ */
+esp_err_t ts_ota_www_start(const char *url, bool skip_cert_verify,
+                            ts_ota_progress_cb_t progress_cb, void *user_data);
+
+/**
+ * @brief Start WWW partition OTA from SD card file
+ *
+ * Reads www.bin from SD card and writes to the www (SPIFFS) partition.
+ *
+ * @param filepath Path to www.bin file on SD card
+ * @param progress_cb Progress callback (optional)
+ * @param user_data User data for callback
+ * @return ESP_OK if started successfully
+ */
+esp_err_t ts_ota_www_start_sdcard(const char *filepath,
+                                   ts_ota_progress_cb_t progress_cb,
+                                   void *user_data);
+
+/**
+ * @brief Abort WWW partition OTA
+ * @return ESP_OK on success
+ */
+esp_err_t ts_ota_www_abort(void);
+
+/**
+ * @brief Check if WWW OTA is running
+ * @return true if running
+ */
+bool ts_ota_www_is_running(void);
+
+/**
+ * @brief Get WWW OTA progress
+ * @param progress Output progress structure
+ * @return ESP_OK on success
+ */
+esp_err_t ts_ota_www_get_progress(ts_ota_progress_t *progress);
+
+// ============================================================================
+//                           Event IDs
+// ============================================================================
 /**
  * @brief OTA event IDs
  */

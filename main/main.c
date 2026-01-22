@@ -102,7 +102,7 @@ static void print_banner(void)
     printf("║      ██║   ██║██║  ██║██║ ╚████║███████║██║  ██║██║  ██║██║ ╚████║     ║\n");
     printf("║      ╚═╝   ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝     ║\n");
     printf("║                                                                        ║\n");
-    printf("║                          TianShanOS v%s                         ║\n", TIANSHAN_OS_VERSION_STRING);
+    printf("║              TianShanOS %-16s                   ║\n", TIANSHAN_OS_VERSION_STRING);
     printf("║                     ESP32 Rack Management Operating System             ║\n");
     printf("║                                                                        ║\n");
     printf("╚════════════════════════════════════════════════════════════════════════╝\n");

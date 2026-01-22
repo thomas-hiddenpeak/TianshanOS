@@ -18,7 +18,9 @@ static const char *TAG = "ts_ota_https";
 // OTA task handle
 static TaskHandle_t s_ota_task_handle = NULL;
 static ts_ota_config_t s_ota_config;
+static char *s_ota_url = NULL;  // Deep copy of URL
 static bool s_ota_running = false;
+static bool s_ota_abort_requested = false;  // Abort flag
 
 // Forward declarations
 static void https_ota_task(void *arg);
@@ -38,8 +40,22 @@ esp_err_t ts_ota_start_https(const ts_ota_config_t *config)
         return ESP_ERR_INVALID_STATE;
     }
 
-    // Copy config
+    // Reset abort flag
+    s_ota_abort_requested = false;
+
+    // Deep copy URL (caller's buffer may be on stack)
+    if (s_ota_url) {
+        free(s_ota_url);
+    }
+    s_ota_url = strdup(config->url);
+    if (!s_ota_url) {
+        ESP_LOGE(TAG, "Failed to allocate URL buffer");
+        return ESP_ERR_NO_MEM;
+    }
+
+    // Copy config and update URL pointer
     memcpy(&s_ota_config, config, sizeof(ts_ota_config_t));
+    s_ota_config.url = s_ota_url;
     
     // Create OTA task
     BaseType_t ret = xTaskCreate(
@@ -101,26 +117,47 @@ static void https_ota_task(void *arg)
     esp_err_t ret;
     
     ESP_LOGI(TAG, "Starting HTTPS OTA from: %s", s_ota_config.url);
+    
+    // Update global state - connecting
+    ts_ota_update_progress(TS_OTA_STATE_DOWNLOADING, 0, 0, "正在连接服务器...");
 
-    // Configure HTTP client
+    // Check if URL is HTTP or HTTPS
+    bool is_http = (strncmp(s_ota_config.url, "http://", 7) == 0);
+    bool is_https = (strncmp(s_ota_config.url, "https://", 8) == 0);
+    
+    // Configure HTTP client - initialize all fields explicitly
     esp_http_client_config_t http_config = {
         .url = s_ota_config.url,
         .event_handler = http_event_handler,
         .keep_alive_enable = true,
         .timeout_ms = 30000,
+        .buffer_size = CONFIG_TS_OTA_BUFFER_SIZE,           // Receive buffer (default 512 is too small)
+        .buffer_size_tx = 1024,                              // Transmit buffer
+        // For HTTP: must set skip_cert_common_name_check to pass esp_https_ota validation
+        // For HTTPS: will be configured below based on certificate settings
+        .skip_cert_common_name_check = is_http ? true : s_ota_config.skip_cert_verify,
     };
+    
+    // For plain HTTP, bypass SSL entirely
+    if (is_http) {
+        http_config.transport_type = HTTP_TRANSPORT_OVER_TCP;
+        ESP_LOGW(TAG, "Using plain HTTP (no TLS) - NOT RECOMMENDED for production!");
+    } else if (is_https) {
+        // Certificate configuration (only for HTTPS)
+        if (s_ota_config.cert_pem) {
+            http_config.cert_pem = s_ota_config.cert_pem;
+        } else if (!s_ota_config.skip_cert_verify) {
+            // Use certificate bundle for verification
+            http_config.crt_bundle_attach = esp_crt_bundle_attach;
+        }
 
-    // Certificate configuration
-    if (s_ota_config.cert_pem) {
-        http_config.cert_pem = s_ota_config.cert_pem;
-    } else if (!s_ota_config.skip_cert_verify) {
-        // Use certificate bundle for verification
-        http_config.crt_bundle_attach = esp_crt_bundle_attach;
-    }
-
-    if (s_ota_config.skip_cert_verify) {
-        http_config.skip_cert_common_name_check = true;
-        ESP_LOGW(TAG, "Certificate verification disabled - NOT RECOMMENDED for production!");
+        if (s_ota_config.skip_cert_verify) {
+            ESP_LOGW(TAG, "Certificate verification disabled - NOT RECOMMENDED for production!");
+        }
+    } else {
+        ESP_LOGE(TAG, "Invalid URL scheme, must be http:// or https://");
+        ret = ESP_ERR_INVALID_ARG;
+        goto cleanup;
     }
 
     // Configure HTTPS OTA
@@ -133,14 +170,19 @@ static void https_ota_task(void *arg)
     ret = esp_https_ota_begin(&ota_config, &https_ota_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "esp_https_ota_begin failed: %s", esp_err_to_name(ret));
+        ts_ota_set_error(TS_OTA_ERR_CONNECTION_FAILED, "连接服务器失败");
         goto cleanup;
     }
+    
+    // Update state - connected, getting image info
+    ts_ota_update_progress(TS_OTA_STATE_DOWNLOADING, 0, 0, "正在获取固件信息...");
 
     // Get image info
     esp_app_desc_t app_desc;
     ret = esp_https_ota_get_img_desc(https_ota_handle, &app_desc);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "esp_https_ota_get_img_desc failed: %s", esp_err_to_name(ret));
+        ts_ota_set_error(TS_OTA_ERR_DOWNLOAD_FAILED, "获取固件信息失败");
         esp_https_ota_abort(https_ota_handle);
         goto cleanup;
     }
@@ -168,10 +210,22 @@ static void https_ota_task(void *arg)
     // Get total size
     int image_size = esp_https_ota_get_image_size(https_ota_handle);
     ESP_LOGI(TAG, "Image size: %d bytes", image_size);
+    
+    // Update global state - start downloading
+    ts_ota_update_progress(TS_OTA_STATE_DOWNLOADING, 0, image_size, "正在下载固件...");
 
     // Download and write firmware
     size_t received = 0;
     while (1) {
+        // Check abort flag
+        if (s_ota_abort_requested) {
+            ESP_LOGI(TAG, "OTA abort requested, stopping download");
+            esp_https_ota_abort(https_ota_handle);
+            ts_ota_update_progress(TS_OTA_STATE_IDLE, 0, 0, "已中止");
+            ret = ESP_ERR_INVALID_STATE;
+            goto cleanup_aborted;
+        }
+        
         ret = esp_https_ota_perform(https_ota_handle);
         if (ret != ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
             break;
@@ -183,11 +237,15 @@ static void https_ota_task(void *arg)
         if (image_size > 0) {
             int percent = (received * 100) / image_size;
             ESP_LOGI(TAG, "Downloaded: %zu / %d bytes (%d%%)", received, image_size, percent);
+            
+            // Update global state with progress
+            ts_ota_update_progress(TS_OTA_STATE_DOWNLOADING, received, image_size, "正在下载固件...");
         } else {
             ESP_LOGI(TAG, "Downloaded: %zu bytes", received);
+            ts_ota_update_progress(TS_OTA_STATE_DOWNLOADING, received, 0, "正在下载固件...");
         }
 
-        // Call progress callback
+        // Call progress callback (optional user callback)
         if (s_ota_config.progress_cb) {
             ts_ota_progress_t progress = {
                 .state = TS_OTA_STATE_DOWNLOADING,
@@ -206,29 +264,41 @@ static void https_ota_task(void *arg)
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "esp_https_ota_perform failed: %s", esp_err_to_name(ret));
         esp_https_ota_abort(https_ota_handle);
+        ts_ota_set_error(TS_OTA_ERR_DOWNLOAD_FAILED, "下载失败");
         goto cleanup;
     }
 
     // Verify and finish
+    ts_ota_update_progress(TS_OTA_STATE_VERIFYING, received, image_size, "正在验证固件...");
+    
     if (!esp_https_ota_is_complete_data_received(https_ota_handle)) {
         ESP_LOGE(TAG, "Complete data was not received");
         esp_https_ota_abort(https_ota_handle);
+        ts_ota_set_error(TS_OTA_ERR_DOWNLOAD_FAILED, "固件数据不完整");
         ret = ESP_ERR_INVALID_SIZE;
         goto cleanup;
     }
 
+    // Writing to flash
+    ts_ota_update_progress(TS_OTA_STATE_WRITING, received, image_size, "正在写入闪存...");
+    
     ret = esp_https_ota_finish(https_ota_handle);
     if (ret != ESP_OK) {
         // ESP_ERR_OTA_VALIDATE_FAILED is 0x1509
         if (ret == (esp_err_t)0x1509) {
             ESP_LOGE(TAG, "Image validation failed");
+            ts_ota_set_error(TS_OTA_ERR_VERIFY_FAILED, "固件验证失败");
         } else {
             ESP_LOGE(TAG, "esp_https_ota_finish failed: %s", esp_err_to_name(ret));
+            ts_ota_set_error(TS_OTA_ERR_WRITE_FAILED, "写入闪存失败");
         }
         goto cleanup;
     }
 
     ESP_LOGI(TAG, "OTA update successful!");
+
+    // Update global state - completed
+    ts_ota_set_completed("升级完成，等待重启");
 
     // Post completion event
     ts_event_post(TS_EVENT_BASE_OTA, TS_EVENT_OTA_COMPLETED, NULL, 0, 0);
@@ -248,28 +318,49 @@ static void https_ota_task(void *arg)
 
     // Auto reboot if requested
     if (s_ota_config.auto_reboot) {
+        ts_ota_update_progress(TS_OTA_STATE_PENDING_REBOOT, received, image_size, "即将重启...");
         ESP_LOGI(TAG, "Rebooting in 2 seconds...");
         vTaskDelay(pdMS_TO_TICKS(2000));
         esp_restart();
     }
+    goto task_exit;
 
 cleanup:
     if (ret != ESP_OK) {
-        // Post failure event
-        ts_ota_error_t error = TS_OTA_ERR_DOWNLOAD_FAILED;
-        ts_event_post(TS_EVENT_BASE_OTA, TS_EVENT_OTA_FAILED, &error, sizeof(error), 0);
+        // Error state already set by ts_ota_set_error calls above
+        // Only set generic error if not already set
+        ts_ota_progress_t progress;
+        ts_ota_get_progress(&progress);
+        if (progress.state != TS_OTA_STATE_ERROR) {
+            ts_ota_set_error(TS_OTA_ERR_DOWNLOAD_FAILED, "下载失败");
+        }
 
         if (s_ota_config.progress_cb) {
-            ts_ota_progress_t progress = {
+            ts_ota_progress_t cb_progress = {
                 .state = TS_OTA_STATE_ERROR,
-                .error = error,
+                .error = TS_OTA_ERR_DOWNLOAD_FAILED,
                 .status_msg = "下载失败"
             };
-            s_ota_config.progress_cb(&progress, s_ota_config.user_data);
+            s_ota_config.progress_cb(&cb_progress, s_ota_config.user_data);
         }
     }
+    goto task_exit;
 
+cleanup_aborted:
+    // Handle abort case - don't set error, just clean up
+    ESP_LOGI(TAG, "OTA aborted by user");
+    if (s_ota_config.progress_cb) {
+        ts_ota_progress_t cb_progress = {
+            .state = TS_OTA_STATE_IDLE,
+            .error = TS_OTA_ERR_ABORTED,
+            .status_msg = "已中止"
+        };
+        s_ota_config.progress_cb(&cb_progress, s_ota_config.user_data);
+    }
+
+task_exit:
     s_ota_running = false;
+    s_ota_abort_requested = false;  // Reset abort flag
     s_ota_task_handle = NULL;
     vTaskDelete(NULL);
 }
@@ -318,4 +409,21 @@ esp_err_t ts_ota_check_update_https(const char *url, bool *available,
 
     esp_http_client_cleanup(client);
     return ret;
+}
+
+/**
+ * @brief Abort HTTPS OTA download
+ */
+void ts_ota_abort_https(void)
+{
+    s_ota_abort_requested = true;
+    ESP_LOGI(TAG, "HTTPS OTA abort requested");
+}
+
+/**
+ * @brief Check if HTTPS OTA is running
+ */
+bool ts_ota_https_is_running(void)
+{
+    return s_ota_running;
 }

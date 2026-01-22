@@ -682,4 +682,221 @@ if (had_old_value) {
 
 ## 更新日志
 
-- 2026-01-22: 添加 SD 卡重挂载失败（VFS_MAX_COUNT 限制）和配置 double-free 问题修复记录
+- 2026-01-22: 添加 SD 卡重挂载失败（VFS_MAX_COUNT 限制）和配置 double-free 问题修复记录- 2026-01-23: 添加 OTA 回滚机制误判问题和 www 分区 OTA 实现记录
+
+---
+
+## 10. OTA 回滚机制 `ts_ota_is_pending_verify()` 误判问题
+
+### 问题描述
+
+**症状**：新固件首次启动后，WebUI 显示"无需验证固件"，但实际上应该显示验证倒计时横幅，等待用户确认固件。
+
+**错误日志**：
+```
+I (xxxxx) OTA: ts_ota_is_pending_verify: timer=0x0, state=0 -> false
+```
+
+**预期行为**：新固件首次启动时，`ts_ota_is_pending_verify()` 应返回 `true`，触发 WebUI 显示验证横幅。
+
+### 根本原因
+
+`ts_ota_is_pending_verify()` 的实现依赖 `s_rollback_timer` 句柄：
+
+```c
+// 错误实现：
+bool ts_ota_is_pending_verify(void)
+{
+    return (s_rollback_timer != NULL);  // timer 在后续才创建！
+}
+```
+
+**问题链**：
+1. `ts_ota_rollback_init()` 在系统启动时被调用
+2. 该函数检查 OTA 状态并启动回滚计时器
+3. 但 `ts_ota_is_pending_verify()` 可能在计时器创建前被调用
+4. 此时 `s_rollback_timer == NULL`，错误返回 `false`
+
+### 解决方案
+
+改用 OTA 状态和分区状态判断：
+
+```c
+bool ts_ota_is_pending_verify(void)
+{
+    // 方法1：检查计时器（如果已启动）
+    if (s_rollback_timer != NULL) {
+        return true;
+    }
+    
+    // 方法2：检查 OTA 状态机
+    if (s_ota_state == TS_OTA_STATE_PENDING_VERIFY) {
+        return true;
+    }
+    
+    // 方法3：直接检查分区状态（最可靠）
+    // esp_ota_check_rollback_is_possible() 检查：
+    // - 当前分区是否标记为 ESP_OTA_IMG_PENDING_VERIFY
+    // - 是否有可回滚的分区
+    if (esp_ota_check_rollback_is_possible()) {
+        return true;
+    }
+    
+    return false;
+}
+```
+
+### 相关修复
+
+同时修复 `ts_ota_mark_valid()` 绕过组件层直接调用 SDK 的问题：
+
+```c
+// 错误实现：
+esp_err_t ts_ota_mark_valid(void)
+{
+    return esp_ota_mark_app_valid_cancel_rollback();  // 绕过组件层！
+}
+
+// 正确实现：
+esp_err_t ts_ota_mark_valid(void)
+{
+    return ts_ota_rollback_cancel();  // 通过组件层统一管理
+}
+```
+
+### 调试技巧
+
+在 `ts_ota_is_pending_verify()` 中添加详细日志：
+
+```c
+bool ts_ota_is_pending_verify(void)
+{
+    bool timer_valid = (s_rollback_timer != NULL);
+    bool state_pending = (s_ota_state == TS_OTA_STATE_PENDING_VERIFY);
+    bool rollback_possible = esp_ota_check_rollback_is_possible();
+    
+    ESP_LOGI(TAG, "is_pending_verify: timer=%d, state=%d, rollback=%d",
+             timer_valid, state_pending, rollback_possible);
+    
+    return timer_valid || state_pending || rollback_possible;
+}
+```
+
+### 经验教训
+
+1. **不要依赖运行时状态判断静态属性**：分区是否待验证是分区表的静态属性，应该查询分区状态
+2. **组件层应该是唯一的 API 入口**：避免绕过组件层直接调用底层 SDK
+3. **时序问题需要考虑**：在系统启动早期，某些资源可能尚未初始化
+
+---
+
+## 11. WebUI OTA 进度条不更新问题
+
+### 问题描述
+
+**症状**：WebUI 触发 OTA 升级后，进度条卡在 0%，不随实际下载进度更新。状态文字显示"正在下载"但进度条始终为空。
+
+**相关代码**：
+```javascript
+// startOta() 中启动定时轮询
+pollInterval = setInterval(pollProgress, 500);
+
+// pollProgress() 中清除定时器
+function pollProgress() {
+    if (otaStep === 'idle') {
+        clearInterval(pollInterval);  // pollInterval 可能是 undefined！
+    }
+}
+```
+
+### 根本原因
+
+JavaScript 变量作用域问题：
+
+```javascript
+let pollInterval;  // 在函数外声明
+
+function startOta() {
+    // 启动定时器
+    pollInterval = setInterval(pollProgress, 500);
+}
+
+function pollProgress() {
+    // ... 检查状态 ...
+    if (state === 'idle' || state === 'error') {
+        clearInterval(pollInterval);  // 这里 pollInterval 可能是旧的或 undefined
+        pollInterval = null;
+    }
+}
+```
+
+**问题链**：
+1. 第一次 OTA：`pollInterval` 被设置为定时器 ID
+2. OTA 完成：`clearInterval(pollInterval)` 清除定时器
+3. 第二次 OTA：`pollInterval = setInterval(...)` 设置新 ID
+4. 但如果 `pollProgress` 使用了闭包中的旧引用，会导致逻辑错误
+
+### 解决方案
+
+确保 `pollInterval` 变量正确管理：
+
+```javascript
+let pollInterval = null;
+
+function startOta() {
+    // 先清除可能存在的旧定时器
+    if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+    }
+    
+    // 启动新定时器
+    pollInterval = setInterval(pollProgress, 500);
+}
+
+function pollProgress() {
+    if (otaStep === 'idle' || data.state === 'error') {
+        if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+        }
+        return;
+    }
+    
+    // 更新进度
+    updateProgressUI(data.percent, data.message);
+}
+```
+
+### 额外修复：上传方式的进度显示
+
+对于 WebUI 上传方式，固件数据通过 HTTP POST 发送，后端写入 Flash 期间前端无法获取进度。
+
+**解决方案**：添加 keepalive 机制
+
+```javascript
+let keepaliveInterval = null;
+
+function uploadOta() {
+    // 启动 keepalive 定时器，定期查询进度
+    keepaliveInterval = setInterval(async () => {
+        const progress = await api.call('ota.progress');
+        updateProgressUI(progress.percent, progress.message);
+    }, 5000);  // 每 5 秒查询一次
+    
+    // 执行上传
+    const response = await fetch('/api/v1/ota/upload', {
+        method: 'POST',
+        body: formData
+    });
+    
+    // 清除 keepalive
+    clearInterval(keepaliveInterval);
+}
+```
+
+### 经验教训
+
+1. **定时器 ID 必须正确保存和清除**：避免内存泄漏和逻辑错误
+2. **长时间操作需要 keepalive**：HTTP 连接可能超时，需要定期发送请求保活
+3. **前端状态管理要清晰**：使用明确的变量跟踪 OTA 阶段（idle/app/www）

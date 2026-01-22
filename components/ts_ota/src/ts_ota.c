@@ -205,6 +205,11 @@ esp_err_t ts_ota_abort(void)
         return ESP_OK;
     }
 
+    // Abort HTTPS OTA if running
+    if (ts_ota_https_is_running()) {
+        ts_ota_abort_https();
+    }
+
     // Abort upload if in progress
     if (s_upload_in_progress && s_upload_handle) {
         esp_ota_abort(s_upload_handle);
@@ -272,6 +277,44 @@ bool ts_ota_is_pending_verify(void)
     }
     
     return false;
+}
+
+bool ts_ota_can_rollback(void)
+{
+    // Check if there's a valid app in the other slot that we can rollback to
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    if (!running) {
+        return false;
+    }
+    
+    // Find the other OTA partition
+    const esp_partition_t *other = NULL;
+    if (strcmp(running->label, "ota_0") == 0) {
+        other = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_1, NULL);
+    } else if (strcmp(running->label, "ota_1") == 0) {
+        other = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+    }
+    
+    if (!other) {
+        return false;
+    }
+    
+    // Check if the other partition has a valid app
+    esp_app_desc_t desc;
+    if (esp_ota_get_partition_description(other, &desc) != ESP_OK) {
+        return false;  // No valid app header
+    }
+    
+    // Check the OTA state of the other partition
+    esp_ota_img_states_t ota_state;
+    if (esp_ota_get_state_partition(other, &ota_state) == ESP_OK) {
+        // Can only rollback to VALID or NEW apps, not INVALID or ABORTED
+        if (ota_state == ESP_OTA_IMG_INVALID || ota_state == ESP_OTA_IMG_ABORTED) {
+            return false;
+        }
+    }
+    
+    return true;
 }
 
 esp_err_t ts_ota_rollback(void)
@@ -515,4 +558,69 @@ static void ota_notify_progress(void)
     ts_ota_get_progress(&progress);
     ts_event_post(TS_EVENT_BASE_OTA, TS_EVENT_OTA_PROGRESS, 
                   &progress, sizeof(progress), 0);
+}
+
+// ============================================================================
+//                           Internal API (for OTA sub-modules)
+// ============================================================================
+
+void ts_ota_update_progress(ts_ota_state_t state, size_t received, size_t total, const char *msg)
+{
+    if (!s_ota_mutex) return;
+    
+    xSemaphoreTake(s_ota_mutex, portMAX_DELAY);
+    
+    s_state = state;
+    s_received_size = received;
+    s_total_size = total;
+    
+    if (msg) {
+        strncpy(s_status_msg, msg, sizeof(s_status_msg) - 1);
+        s_status_msg[sizeof(s_status_msg) - 1] = '\0';
+    }
+    
+    xSemaphoreGive(s_ota_mutex);
+    
+    // Notify via callback and event
+    ota_notify_progress();
+}
+
+void ts_ota_set_error(ts_ota_error_t error, const char *msg)
+{
+    if (!s_ota_mutex) return;
+    
+    xSemaphoreTake(s_ota_mutex, portMAX_DELAY);
+    
+    s_state = TS_OTA_STATE_ERROR;
+    s_error = error;
+    
+    if (msg) {
+        strncpy(s_status_msg, msg, sizeof(s_status_msg) - 1);
+        s_status_msg[sizeof(s_status_msg) - 1] = '\0';
+    }
+    
+    xSemaphoreGive(s_ota_mutex);
+    
+    // Post event
+    ts_event_post(TS_EVENT_BASE_OTA, TS_EVENT_OTA_FAILED, &error, sizeof(error), 0);
+}
+
+void ts_ota_set_completed(const char *msg)
+{
+    if (!s_ota_mutex) return;
+    
+    xSemaphoreTake(s_ota_mutex, portMAX_DELAY);
+    
+    s_state = TS_OTA_STATE_PENDING_REBOOT;
+    s_error = TS_OTA_ERR_NONE;
+    
+    if (msg) {
+        strncpy(s_status_msg, msg, sizeof(s_status_msg) - 1);
+        s_status_msg[sizeof(s_status_msg) - 1] = '\0';
+    }
+    
+    xSemaphoreGive(s_ota_mutex);
+    
+    // Post event
+    ts_event_post(TS_EVENT_BASE_OTA, TS_EVENT_OTA_COMPLETED, NULL, 0, 0);
 }

@@ -23,13 +23,28 @@ extern "C" {
 #endif
 
 /* ============================================================================
- * 版本信息
+ * 版本信息 - 由 CMakeLists.txt 从 version.txt 自动生成
  * ========================================================================== */
 
-#define TIANSHAN_OS_VERSION_MAJOR   0
-#define TIANSHAN_OS_VERSION_MINOR   1
-#define TIANSHAN_OS_VERSION_PATCH   0
-#define TIANSHAN_OS_VERSION_STRING  "0.1.0-dev"
+/* 这些宏由 CMake 根据 version.txt 自动定义:
+ * - TIANSHAN_OS_VERSION_MAJOR  主版本号
+ * - TIANSHAN_OS_VERSION_MINOR  次版本号
+ * - TIANSHAN_OS_VERSION_PATCH  修订号
+ * - TIANSHAN_OS_VERSION        核心版本 (如 "0.2.0")
+ * - TIANSHAN_OS_VERSION_FULL   完整版本 (如 "0.2.0+abc1234")
+ */
+
+/* 兼容性宏定义 - 如果 CMake 未定义则使用默认值 */
+#ifndef TIANSHAN_OS_VERSION
+#define TIANSHAN_OS_VERSION "0.0.0"
+#endif
+
+#ifndef TIANSHAN_OS_VERSION_FULL
+#define TIANSHAN_OS_VERSION_FULL TIANSHAN_OS_VERSION
+#endif
+
+/* 旧宏兼容 */
+#define TIANSHAN_OS_VERSION_STRING TIANSHAN_OS_VERSION_FULL
 
 /**
  * @brief 获取 TianShanOS 版本字符串

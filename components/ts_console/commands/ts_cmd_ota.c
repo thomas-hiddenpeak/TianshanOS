@@ -7,11 +7,13 @@
  *   ota --progress         显示升级进度
  *   ota --version          显示固件版本
  *   ota --partitions       显示分区信息
+ *   ota --server [url]     获取/设置 OTA 服务器地址
  *   ota --url <url>        从 URL 升级
  *   ota --file <path>      从 SD 卡升级
  *   ota --validate         标记固件有效
  *   ota --rollback         回滚到上一版本
  *   ota --abort            中止升级
+ *   ota --save             持久化配置到 NVS
  */
 
 #include <string.h>
@@ -34,6 +36,7 @@ static struct {
     struct arg_lit *progress;
     struct arg_lit *version;
     struct arg_lit *partitions;
+    struct arg_str *server;
     struct arg_str *url;
     struct arg_str *file;
     struct arg_lit *validate;
@@ -42,6 +45,7 @@ static struct {
     struct arg_lit *no_reboot;
     struct arg_lit *allow_downgrade;
     struct arg_lit *skip_verify;
+    struct arg_lit *save;
     struct arg_lit *json;
     struct arg_lit *help;
     struct arg_end *end;
@@ -93,6 +97,7 @@ static int cmd_ota_handler(int argc, char **argv)
         printf("  --progress       显示升级进度\n");
         printf("  --version        显示固件版本\n");
         printf("  --partitions     显示分区信息\n");
+        printf("  --server [url]   获取/设置 OTA 服务器地址\n");
         printf("  --url <url>      从 HTTPS URL 升级\n");
         printf("  --file <path>    从 SD 卡文件升级\n");
         printf("  --validate       标记当前固件有效（取消回滚）\n");
@@ -101,9 +106,13 @@ static int cmd_ota_handler(int argc, char **argv)
         printf("  --no-reboot      升级后不自动重启\n");
         printf("  --allow-downgrade 允许降级\n");
         printf("  --skip-verify    跳过证书验证（仅调试）\n");
+        printf("  --save           持久化配置到 NVS（与 --server 配合使用）\n");
         printf("  --json           JSON 格式输出\n");
         printf("\n示例:\n");
         printf("  ota --status\n");
+        printf("  ota --server                                # 查看当前服务器\n");
+        printf("  ota --server http://192.168.1.100:57807     # 设置服务器\n");
+        printf("  ota --server http://192.168.1.100:57807 --save  # 设置并保存\n");
         printf("  ota --url https://example.com/firmware.bin\n");
         printf("  ota --file /sdcard/firmware.bin\n");
         printf("  ota --validate\n");
@@ -295,6 +304,64 @@ static int cmd_ota_handler(int argc, char **argv)
         return 0;
     }
 
+    // --server: 获取/设置 OTA 服务器
+    if (s_ota_args.server->count > 0) {
+        const char *new_url = s_ota_args.server->sval[0];
+        bool do_save = s_ota_args.save->count > 0;
+        
+        // 如果提供了 URL，则设置
+        if (new_url && new_url[0]) {
+            cJSON *params = cJSON_CreateObject();
+            cJSON_AddStringToObject(params, "url", new_url);
+            cJSON_AddBoolToObject(params, "save", do_save);
+            
+            ret = ts_api_call("ota.server.set", params, &result);
+            cJSON_Delete(params);
+            
+            if (ret != ESP_OK || result.code != TS_API_OK) {
+                printf("错误: %s\n", result.message ? result.message : "设置失败");
+                ts_api_result_free(&result);
+                return 1;
+            }
+            
+            printf("OTA 服务器已设置: %s\n", new_url);
+            if (do_save) {
+                printf("✓ 配置已保存到 NVS\n");
+            } else {
+                printf("提示: 使用 --save 持久化配置\n");
+            }
+            
+            ts_api_result_free(&result);
+        } else {
+            // 没有提供 URL，显示当前设置
+            ret = ts_api_call("ota.server.get", NULL, &result);
+            
+            if (ret != ESP_OK || result.code != TS_API_OK) {
+                printf("错误: %s\n", result.message ? result.message : "获取失败");
+                ts_api_result_free(&result);
+                return 1;
+            }
+            
+            if (json_output) {
+                char *json_str = cJSON_Print(result.data);
+                if (json_str) {
+                    printf("%s\n", json_str);
+                    free(json_str);
+                }
+            } else {
+                const char *url = get_json_string(result.data, "url", "");
+                if (url[0]) {
+                    printf("OTA 服务器: %s\n", url);
+                } else {
+                    printf("OTA 服务器: (未设置)\n");
+                }
+            }
+            
+            ts_api_result_free(&result);
+        }
+        return 0;
+    }
+
     // --url: 从 URL 升级
     if (s_ota_args.url->count > 0) {
         const char *url = s_ota_args.url->sval[0];
@@ -404,7 +471,7 @@ static int cmd_ota_handler(int argc, char **argv)
     }
 
     // 默认显示帮助
-    printf("用法: ota --status | --url <url> | --file <path> | --validate | --rollback | --abort\n");
+    printf("用法: ota --status | --server [url] | --url <url> | --file <path> | --validate | --rollback\n");
     printf("使用 'ota --help' 查看详细帮助\n");
     return 0;
 }
@@ -419,6 +486,7 @@ esp_err_t ts_cmd_ota_register(void)
     s_ota_args.progress = arg_lit0(NULL, "progress", "显示升级进度");
     s_ota_args.version = arg_lit0(NULL, "version", "显示固件版本");
     s_ota_args.partitions = arg_lit0(NULL, "partitions", "显示分区信息");
+    s_ota_args.server = arg_str0(NULL, "server", "[url]", "获取/设置 OTA 服务器");
     s_ota_args.url = arg_str0(NULL, "url", "<url>", "从 HTTPS URL 升级");
     s_ota_args.file = arg_str0(NULL, "file", "<path>", "从 SD 卡文件升级");
     s_ota_args.validate = arg_lit0(NULL, "validate", "标记固件有效");
@@ -427,6 +495,7 @@ esp_err_t ts_cmd_ota_register(void)
     s_ota_args.no_reboot = arg_lit0(NULL, "no-reboot", "升级后不自动重启");
     s_ota_args.allow_downgrade = arg_lit0(NULL, "allow-downgrade", "允许降级");
     s_ota_args.skip_verify = arg_lit0(NULL, "skip-verify", "跳过证书验证");
+    s_ota_args.save = arg_lit0(NULL, "save", "持久化配置到 NVS");
     s_ota_args.json = arg_lit0("j", "json", "JSON 格式输出");
     s_ota_args.help = arg_lit0("h", "help", "显示帮助");
     s_ota_args.end = arg_end(2);

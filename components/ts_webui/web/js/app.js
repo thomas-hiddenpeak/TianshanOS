@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     router.register('/led', loadLedPage);
     router.register('/network', loadNetworkPage);
     router.register('/device', loadDevicePage);
+    router.register('/ota', loadOtaPage);
     router.register('/files', loadFilesPage);
     router.register('/terminal', loadTerminalPage);
     router.register('/config', loadConfigPage);
@@ -230,6 +231,12 @@ async function loadSystemPage() {
 }
 
 async function refreshSystemPage() {
+    // 检查是否还在系统页面
+    if (!document.getElementById('sys-chip')) {
+        clearInterval(refreshInterval);
+        return;
+    }
+    
     // 系统信息
     try {
         const info = await api.getSystemInfo();
@@ -2886,10 +2893,10 @@ async function refreshDevicePage() {
         }
     } catch (e) { console.log('Device status error:', e); }
     
-    // AGX 监控数据
+    // AGX 监控数据 (AGX 未连接时正常返回无数据)
     try {
         const agxData = await api.agxData();
-        if (agxData.data) {
+        if (agxData.code === 0 && agxData.data) {
             const cpuEl = document.getElementById('dev-agx-cpu');
             const gpuEl = document.getElementById('dev-agx-gpu');
             const tempEl = document.getElementById('dev-agx-temp');
@@ -2897,8 +2904,16 @@ async function refreshDevicePage() {
             if (cpuEl) cpuEl.textContent = agxData.data.cpu_usage ? `${agxData.data.cpu_usage}%` : '-';
             if (gpuEl) gpuEl.textContent = agxData.data.gpu_usage ? `${agxData.data.gpu_usage}%` : '-';
             if (tempEl) tempEl.textContent = agxData.data.temperature ? `${agxData.data.temperature}°C` : '-';
+        } else {
+            // AGX 未连接或无数据，显示占位符
+            const cpuEl = document.getElementById('dev-agx-cpu');
+            const gpuEl = document.getElementById('dev-agx-gpu');
+            const tempEl = document.getElementById('dev-agx-temp');
+            if (cpuEl) cpuEl.textContent = '-';
+            if (gpuEl) gpuEl.textContent = '-';
+            if (tempEl) tempEl.textContent = '-';
         }
-    } catch (e) { /* AGX 可能未连接 */ }
+    } catch (e) { /* AGX 可能未连接，静默忽略 */ }
 }
 
 async function devicePower(name, on) {
@@ -4984,3 +4999,1297 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
+
+// =========================================================================
+//                         OTA 页面
+// =========================================================================
+
+async function loadOtaPage() {
+    clearInterval(refreshInterval);
+    
+    const content = document.getElementById('page-content');
+    content.innerHTML = `
+        <div class="page-ota">
+            <h1>📦 固件升级</h1>
+            
+            <!-- 核心信息区：版本 + OTA服务器 -->
+            <div class="ota-main-card">
+                <!-- 第一行：版本号（最醒目） -->
+                <div class="ota-current-version">
+                    <span class="version-label">当前版本</span>
+                    <span class="version-number" id="ota-current-version">-</span>
+                </div>
+                <div class="version-meta" id="ota-version-meta">加载中...</div>
+                
+                <!-- 第二行：OTA服务器 -->
+                <div class="ota-server-row">
+                    <label class="server-label">OTA 服务器</label>
+                    <div class="server-input-group">
+                        <input type="text" id="ota-server-input" class="form-input" 
+                               placeholder="http://192.168.1.100:57807">
+                        <button class="btn btn-icon" onclick="saveOtaServer()" title="保存到设备">💾</button>
+                        <button class="btn btn-primary" onclick="checkForUpdates()">🔍 检查更新</button>
+                    </div>
+                </div>
+                
+                <!-- 更新状态区（动态显示） -->
+                <div id="ota-update-status" class="ota-update-status" style="display:none"></div>
+                
+                <!-- 升级进度区（动态显示） -->
+                <div id="ota-progress-section" class="ota-progress-section" style="display:none">
+                    <div class="progress-header">
+                        <span class="progress-state" id="ota-state-text">准备中...</span>
+                        <span class="progress-percent" id="ota-progress-percent">0%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" id="ota-progress-bar" style="width:0%"></div>
+                    </div>
+                    <div class="progress-footer">
+                        <span id="ota-progress-size">0 / 0</span>
+                        <span id="ota-message"></span>
+                    </div>
+                    <div class="progress-actions">
+                        <button class="btn btn-danger btn-small" id="ota-abort-btn" onclick="abortOta()">❌ 中止</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 分区管理（放在升级方式之前，让用户先了解当前状态） -->
+            <details class="ota-section" open>
+                <summary>💾 分区管理</summary>
+                <div class="ota-partitions" id="ota-partitions">
+                    <div class="loading">加载中...</div>
+                </div>
+            </details>
+            
+            <!-- 手动升级（可折叠） -->
+            <details class="ota-section">
+                <summary>🔧 手动升级</summary>
+                <div class="ota-methods">
+                    <div class="ota-method">
+                        <h4>🌐 从 URL 升级</h4>
+                        <div class="method-content">
+                            <input type="text" id="ota-url-input" class="form-input" 
+                                   placeholder="http://example.com/firmware.bin">
+                            <div class="method-options">
+                                <label><input type="checkbox" id="ota-url-include-www" checked> 包含 WebUI</label>
+                                <label><input type="checkbox" id="ota-url-skip-verify"> 跳过验证</label>
+                            </div>
+                            <button class="btn btn-primary btn-small" onclick="otaFromUrl()">🚀 升级</button>
+                        </div>
+                    </div>
+                    <div class="ota-method">
+                        <h4>📂 从 SD 卡升级</h4>
+                        <div class="method-content">
+                            <input type="text" id="ota-file-input" class="form-input" 
+                                   placeholder="/sdcard/firmware.bin">
+                            <div class="method-options">
+                                <label><input type="checkbox" id="ota-file-include-www" checked> 包含 WebUI</label>
+                            </div>
+                            <button class="btn btn-primary btn-small" onclick="otaFromFile()">🚀 升级</button>
+                        </div>
+                    </div>
+                </div>
+            </details>
+        </div>
+        
+        <style>
+        .page-ota {
+            padding: 15px;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+        
+        .page-ota h1 {
+            margin: 0 0 15px 0;
+            font-size: 1.4em;
+        }
+        
+        /* 主卡片 */
+        .ota-main-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 15px;
+        }
+        
+        /* 版本显示 */
+        .ota-current-version {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            margin-bottom: 4px;
+        }
+        
+        .version-label {
+            font-size: 0.9em;
+            color: #666;
+        }
+        
+        .version-number {
+            font-size: 1em;
+            font-weight: 700;
+            color: #333;
+            font-family: 'SF Mono', 'Courier New', monospace;
+            letter-spacing: -0.5px;
+        }
+        
+        .version-meta {
+            font-size: 0.85em;
+            color: #888;
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        /* OTA 服务器行 */
+        .ota-server-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .server-label {
+            font-size: 0.9em;
+            color: #666;
+            white-space: nowrap;
+        }
+        
+        .server-input-group {
+            flex: 1;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .server-input-group .form-input {
+            flex: 1;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.95em;
+            min-width: 0;
+        }
+        
+        .server-input-group .form-input:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+        
+        .btn-icon {
+            padding: 8px 10px;
+            border: 1px solid #ddd;
+            background: #f9f9f9;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        
+        .btn-icon:hover {
+            background: #eee;
+        }
+        
+        /* 更新状态 */
+        .ota-update-status {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 8px;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .ota-update-status.has-update {
+            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+            border: 1px solid #81c784;
+        }
+        
+        .ota-update-status.no-update {
+            background: #e3f2fd;
+            border: 1px solid #90caf9;
+        }
+        
+        .ota-update-status.downgrade {
+            background: #fff3e0;
+            border: 1px solid #ffb74d;
+        }
+        
+        .ota-update-status.error {
+            background: #ffebee;
+            border: 1px solid #ef9a9a;
+        }
+        
+        /* 进度区 */
+        .ota-progress-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 8px;
+        }
+        
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .progress-state {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .progress-percent {
+            font-weight: 700;
+            font-size: 1.2em;
+            color: #4CAF50;
+        }
+        
+        .progress-bar-container {
+            height: 8px;
+            background: #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #81c784);
+            transition: width 0.3s ease;
+        }
+        
+        .progress-footer {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 8px;
+        }
+        
+        .progress-actions {
+            margin-top: 10px;
+            text-align: right;
+        }
+        
+        /* 可折叠区 */
+        .ota-section {
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        
+        .ota-section summary {
+            padding: 12px 15px;
+            cursor: pointer;
+            font-weight: 600;
+            color: #333;
+            user-select: none;
+        }
+        
+        .ota-section summary:hover {
+            background: #f9f9f9;
+        }
+        
+        .ota-section[open] summary {
+            border-bottom: 1px solid #eee;
+        }
+        
+        /* 升级方式 */
+        .ota-methods {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 15px;
+            padding: 15px;
+        }
+        
+        .ota-method {
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        
+        .ota-method h4 {
+            margin: 0 0 10px 0;
+            font-size: 1em;
+            color: #555;
+        }
+        
+        .method-content {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .method-content .form-input {
+            padding: 8px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        
+        .method-options {
+            display: flex;
+            gap: 15px;
+            font-size: 0.85em;
+            color: #666;
+        }
+        
+        .method-options label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+        }
+        
+        /* 分区管理 - 合并后的样式 */
+        .ota-partitions {
+            padding: 15px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+        }
+        
+        .partition-card {
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            padding: 15px;
+            background: #fafafa;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .partition-card.running {
+            border-color: #4CAF50;
+            background: linear-gradient(135deg, #f1f8e9 0%, #e8f5e9 100%);
+        }
+        
+        .partition-card.bootable {
+            border-color: #ff9800;
+            background: linear-gradient(135deg, #fff8e1 0%, #fff3e0 100%);
+        }
+        
+        .partition-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .partition-name {
+            font-weight: 600;
+            font-family: monospace;
+            font-size: 1.1em;
+        }
+        
+        .partition-badge {
+            font-size: 0.75em;
+            padding: 3px 10px;
+            border-radius: 12px;
+            color: white;
+            font-weight: 500;
+        }
+        
+        .partition-badge.running { background: #4CAF50; }
+        .partition-badge.bootable { background: #ff9800; }
+        .partition-badge.idle { background: #999; }
+        
+        .partition-version {
+            font-size: 1em;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+        
+        .partition-info {
+            font-size: 0.85em;
+            color: #666;
+            margin-bottom: 12px;
+        }
+        
+        .partition-action {
+            margin-top: auto;
+            padding-top: 10px;
+            border-top: 1px solid rgba(0,0,0,0.1);
+        }
+        
+        .partition-action .btn {
+            width: 100%;
+            justify-content: center;
+        }
+        
+        .partition-action-desc {
+            font-size: 0.8em;
+            color: #888;
+            margin-top: 6px;
+            text-align: center;
+        }
+        
+        /* 移动端适配 */
+        @media (max-width: 600px) {
+            .ota-server-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .server-label {
+                margin-bottom: 5px;
+            }
+            
+            .server-input-group {
+                flex-wrap: wrap;
+            }
+            
+            .server-input-group .form-input {
+                width: 100%;
+                flex: none;
+            }
+            
+            .server-input-group .btn {
+                flex: 1;
+            }
+        }
+        </style>
+    `;
+    
+    // 加载数据
+    await loadOtaData();
+    
+    // 设置定时刷新进度
+    refreshInterval = setInterval(refreshOtaProgress, 1000);
+}
+
+async function loadOtaData() {
+    try {
+        // 1. 加载 OTA 服务器地址
+        const serverResult = await api.call('ota.server.get');
+        if (serverResult?.code === 0 && serverResult.data?.url) {
+            document.getElementById('ota-server-input').value = serverResult.data.url;
+        }
+        
+        // 2. 加载版本信息
+        const versionResult = await api.call('ota.version');
+        if (versionResult?.code === 0 && versionResult.data) {
+            const v = versionResult.data;
+            document.getElementById('ota-current-version').textContent = v.version || '未知';
+            document.getElementById('ota-version-meta').textContent = 
+                `${v.project || 'TianShanOS'} · ${v.compile_date || ''} ${v.compile_time || ''} · IDF ${v.idf_version || ''}`;
+            currentFirmwareVersion = v;
+        }
+        
+        // 3. 加载分区信息
+        const partResult = await api.call('ota.partitions');
+        if (partResult?.code === 0 && partResult.data) {
+            displayPartitionsCompact(partResult.data);
+        }
+        
+        // 4. 检查当前升级状态
+        await refreshOtaProgress();
+        
+    } catch (error) {
+        console.error('Failed to load OTA data:', error);
+    }
+}
+
+function displayPartitionsCompact(data) {
+    const container = document.getElementById('ota-partitions');
+    let html = '';
+    
+    // 运行中的分区
+    if (data.running) {
+        const p = data.running;
+        html += `
+            <div class="partition-card running">
+                <div class="partition-header">
+                    <span class="partition-name">${p.label}</span>
+                    <span class="partition-badge running">运行中</span>
+                </div>
+                <div class="partition-version">${p.version || '未知版本'}</div>
+                <div class="partition-info">
+                    0x${p.address.toString(16).toUpperCase().padStart(8,'0')} · ${formatSize(p.size)}
+                </div>
+                <div class="partition-action">
+                    <button class="btn btn-success btn-small" onclick="validateOta()">
+                        ✅ 标记有效
+                    </button>
+                    <div class="partition-action-desc">取消自动回滚保护</div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // 备用分区
+    if (data.next) {
+        const p = data.next;
+        const hasVersion = p.is_bootable && p.version;
+        const canRollback = data.can_rollback;  // 使用 API 返回的实际可回滚状态
+        html += `
+            <div class="partition-card ${p.is_bootable ? 'bootable' : ''}">
+                <div class="partition-header">
+                    <span class="partition-name">${p.label}</span>
+                    <span class="partition-badge ${p.is_bootable ? 'bootable' : 'idle'}">${p.is_bootable ? '可启动' : '空闲'}</span>
+                </div>
+                <div class="partition-version">${hasVersion ? p.version : (p.is_bootable ? '上一版本' : '无固件')}</div>
+                <div class="partition-info">
+                    0x${p.address.toString(16).toUpperCase().padStart(8,'0')} · ${formatSize(p.size)}
+                </div>
+                ${canRollback ? `
+                <div class="partition-action">
+                    <button class="btn btn-warning btn-small" onclick="confirmRollback()">
+                        ⏮️ 回滚到此版本
+                    </button>
+                    <div class="partition-action-desc">重启后加载此分区</div>
+                </div>
+                ` : `
+                <div class="partition-action">
+                    <div class="partition-action-desc" style="text-align:center;color:#999">
+                        ${p.is_bootable ? '此分区固件无法回滚（可能已损坏）' : '此分区为空，升级后将写入新固件'}
+                    </div>
+                </div>
+                `}
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html || '<p style="color:#888;padding:10px">无分区信息</p>';
+}
+
+async function refreshOtaInfo() {
+    await loadOtaData();
+}
+
+// OTA 两步升级状态
+let otaStep = 'idle'; // 'idle' | 'app' | 'www'
+let wwwOtaEnabled = true;  // 是否启用 WebUI 升级
+let sdcardOtaSource = '';  // SD卡升级时的文件路径，用于推导 www.bin 路径
+
+async function refreshOtaProgress() {
+    try {
+        // 根据当前步骤获取不同的进度
+        let result;
+        if (otaStep === 'www') {
+            result = await api.call('ota.www.progress');
+        } else {
+            result = await api.call('ota.progress');
+        }
+        
+        if (result.code === 0 && result.data) {
+            const data = result.data;
+            const state = data.state || 'idle';
+            const percent = data.percent || 0;
+            const received = data.received_size || data.received || 0;
+            const total = data.total_size || data.total || 0;
+            const message = data.message || '';
+            
+            // 更新状态文本
+            const stateMap = {
+                'idle': '空闲',
+                'checking': '检查更新中...',
+                'downloading': otaStep === 'www' ? '下载 WebUI...' : '下载固件...',
+                'verifying': '验证中...',
+                'writing': otaStep === 'www' ? '写入 WebUI...' : '写入闪存...',
+                'pending_reboot': '等待重启',
+                'completed': otaStep === 'www' ? 'WebUI 完成' : '固件完成',
+                'error': '错误'
+            };
+            
+            const stateEl = document.getElementById('ota-state-text');
+            const progressSection = document.getElementById('ota-progress-section');
+            const abortBtn = document.getElementById('ota-abort-btn');
+            
+            if (!stateEl || !progressSection) return;
+            
+            // 显示当前步骤
+            const stepText = otaStep === 'www' ? '[2/2] WebUI ' : (wwwOtaEnabled ? '[1/2] 固件 ' : '');
+            stateEl.textContent = stepText + (stateMap[state] || state);
+            
+            if (state !== 'idle') {
+                progressSection.style.display = 'block';
+                
+                // 更新进度条
+                document.getElementById('ota-progress-bar').style.width = percent + '%';
+                document.getElementById('ota-progress-percent').textContent = percent + '%';
+                document.getElementById('ota-progress-size').textContent = 
+                    `${formatSize(received)} / ${formatSize(total)}`;
+                
+                // 更新消息
+                document.getElementById('ota-message').textContent = message;
+                
+                // 显示中止按钮（除非已完成或出错）
+                if (state !== 'pending_reboot' && state !== 'completed' && state !== 'error') {
+                    abortBtn.style.display = 'inline-block';
+                } else {
+                    abortBtn.style.display = 'none';
+                }
+                
+                // 处理 App OTA 完成 - 开始 WWW OTA
+                if (otaStep === 'app' && (state === 'pending_reboot' || state === 'completed') && wwwOtaEnabled) {
+                    stateEl.textContent = '✅ 固件升级完成，准备升级 WebUI...';
+                    await startWwwOta();
+                    return;
+                }
+                
+                // 处理 WWW OTA 完成或 App OTA 完成（无 www 升级）
+                if ((otaStep === 'www' && (state === 'pending_reboot' || state === 'completed')) ||
+                    (otaStep === 'app' && (state === 'pending_reboot' || state === 'completed') && !wwwOtaEnabled)) {
+                    clearInterval(refreshInterval);
+                    refreshInterval = null;
+                    otaStep = 'idle';
+                    
+                    // 显示重启倒计时
+                    stateEl.textContent = '✅ 全部升级完成';
+                    document.getElementById('ota-message').innerHTML = `
+                        <div style="text-align:center">
+                            <p>固件和 WebUI 升级完成，设备正在重启...</p>
+                            <p id="reboot-countdown" style="color:#888;margin-top:5px">正在触发重启...</p>
+                        </div>
+                    `;
+                    
+                    // 触发设备重启
+                    try {
+                        await api.call('system.reboot', { delay: 1 });
+                    } catch (e) {
+                        console.log('Reboot triggered (connection may have closed)');
+                    }
+                    
+                    // 开始检测设备重启
+                    startRebootDetection();
+                } else if (state === 'error') {
+                    showToast('升级失败: ' + message, 'error');
+                    clearInterval(refreshInterval);
+                    refreshInterval = null;
+                    otaStep = 'idle';
+                }
+            } else {
+                // 如果 app OTA 是 idle 但我们在 www 步骤，检查 www 进度
+                if (otaStep !== 'www') {
+                    progressSection.style.display = 'none';
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Failed to get OTA status:', error);
+    }
+}
+
+// 启动 WWW OTA（第二步）
+async function startWwwOta() {
+    try {
+        let wwwSource = '';
+        let isFromSdcard = false;
+        
+        // 判断来源：SD卡 或 HTTP URL
+        if (sdcardOtaSource) {
+            // SD卡升级：推导 www.bin 路径
+            isFromSdcard = true;
+            if (sdcardOtaSource.match(/\.bin$/i)) {
+                wwwSource = sdcardOtaSource.replace(/[^\/]+\.bin$/i, 'www.bin');
+            } else {
+                wwwSource = sdcardOtaSource.replace(/\/?$/, '/www.bin');
+            }
+        } else {
+            // HTTP 升级：从服务器 URL 推导
+            const serverUrl = document.getElementById('ota-server-input').value.trim() ||
+                              document.getElementById('ota-url-input').value.trim();
+            
+            if (serverUrl) {
+                // 尝试多种方式推导 www.bin URL
+                if (serverUrl.includes('firmware.bin') || serverUrl.includes('TianShanOS.bin')) {
+                    wwwSource = serverUrl.replace(/firmware\.bin|TianShanOS\.bin/gi, 'www.bin');
+                } else if (serverUrl.match(/\.bin$/i)) {
+                    wwwSource = serverUrl.replace(/[^\/]+\.bin$/i, 'www.bin');
+                } else if (serverUrl.endsWith('/')) {
+                    wwwSource = serverUrl + 'www.bin';
+                } else {
+                    wwwSource = serverUrl + '/www.bin';
+                }
+            }
+        }
+        
+        if (!wwwSource) {
+            console.log('No www source configured, skipping WebUI upgrade');
+            wwwOtaEnabled = false;
+            sdcardOtaSource = '';  // 重置
+            return;
+        }
+        
+        otaStep = 'www';
+        
+        document.getElementById('ota-state-text').textContent = '[2/2] 开始升级 WebUI...';
+        document.getElementById('ota-progress-bar').style.width = '0%';
+        document.getElementById('ota-progress-percent').textContent = '0%';
+        document.getElementById('ota-message').textContent = wwwSource;
+        
+        let result;
+        if (isFromSdcard) {
+            // SD卡方式
+            result = await api.call('ota.www.start_sdcard', {
+                file: wwwSource
+            });
+        } else {
+            // HTTP 方式
+            const skipVerify = document.getElementById('ota-url-skip-verify')?.checked || false;
+            result = await api.call('ota.www.start', {
+                url: wwwSource,
+                skip_verify: skipVerify
+            });
+        }
+        
+        sdcardOtaSource = '';  // 重置
+        
+        if (result.code !== 0) {
+            showToast('WebUI 升级启动失败: ' + result.message, 'error');
+            // 即使 www 失败也继续重启（因为 app 已经更新）
+            otaStep = 'idle';
+            clearInterval(refreshInterval);
+            refreshInterval = null;
+            
+            document.getElementById('ota-state-text').textContent = '✅ 固件升级完成（WebUI 跳过）';
+            document.getElementById('ota-message').innerHTML = `
+                <div style="text-align:center">
+                    <p>固件已更新，WebUI 升级跳过，设备正在重启...</p>
+                    <p id="reboot-countdown" style="color:#888;margin-top:5px">正在触发重启...</p>
+                </div>
+            `;
+            
+            // 触发设备重启
+            try {
+                await api.call('system.reboot', { delay: 1 });
+            } catch (e) {
+                console.log('Reboot triggered (connection may have closed)');
+            }
+            
+            startRebootDetection();
+        }
+    } catch (error) {
+        console.error('Failed to start WWW OTA:', error);
+        otaStep = 'idle';
+        sdcardOtaSource = '';  // 重置
+    }
+}
+
+// 检测设备重启完成
+let rebootCheckInterval = null;
+let rebootStartTime = null;
+
+function startRebootDetection() {
+    rebootStartTime = Date.now();
+    let checkCount = 0;
+    
+    // 每 2 秒检测一次设备是否恢复
+    rebootCheckInterval = setInterval(async () => {
+        checkCount++;
+        const elapsed = Math.floor((Date.now() - rebootStartTime) / 1000);
+        const countdownEl = document.getElementById('reboot-countdown');
+        
+        if (countdownEl) {
+            countdownEl.textContent = `已等待 ${elapsed} 秒...`;
+        }
+        
+        try {
+            // 尝试连接设备
+            const result = await api.call('ota.version');
+            if (result.code === 0) {
+                // 设备恢复了！
+                clearInterval(rebootCheckInterval);
+                rebootCheckInterval = null;
+                
+                const newVersion = result.data?.version || '未知';
+                
+                if (countdownEl) {
+                    countdownEl.innerHTML = `
+                        <span style="color:#27ae60">✅ 设备已恢复！</span>
+                        <br><span style="font-size:0.9em">当前版本: ${newVersion}</span>
+                    `;
+                }
+                
+                showToast(`OTA 升级成功！当前版本: ${newVersion}`, 'success');
+                
+                // 3 秒后刷新页面
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
+            }
+        } catch (e) {
+            // 设备还在重启，继续等待
+            if (checkCount > 60) {
+                // 超过 2 分钟，提示用户手动检查
+                clearInterval(rebootCheckInterval);
+                rebootCheckInterval = null;
+                
+                if (countdownEl) {
+                    countdownEl.innerHTML = `
+                        <span style="color:#e74c3c">⚠️ 等待超时</span>
+                        <br><span style="font-size:0.9em">请手动检查设备状态并刷新页面</span>
+                        <br><button class="btn btn-primary btn-small" onclick="window.location.reload()" 
+                            style="margin-top:10px">刷新页面</button>
+                    `;
+                }
+            }
+        }
+    }, 2000);
+}
+
+async function otaFromUrl() {
+    const url = document.getElementById('ota-url-input').value.trim();
+    if (!url) {
+        showToast('请输入固件 URL', 'error');
+        return;
+    }
+    
+    // 允许 http 和 https
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        showToast('URL 必须以 http:// 或 https:// 开头', 'error');
+        return;
+    }
+    
+    const skipVerify = document.getElementById('ota-url-skip-verify').checked;
+    const includeWww = document.getElementById('ota-url-include-www').checked;
+    
+    const params = {
+        url: url,
+        no_reboot: true,  // 不自动重启，由前端控制流程
+        skip_verify: skipVerify
+    };
+    
+    // 设置 OTA 步骤
+    otaStep = 'app';
+    wwwOtaEnabled = includeWww;  // 根据用户选择决定是否升级 www
+    
+    // 立即显示进度区域，提供即时反馈
+    const progressSection = document.getElementById('ota-progress-section');
+    progressSection.style.display = 'block';
+    document.getElementById('ota-state-text').textContent = '[1/2] 正在连接服务器...';
+    document.getElementById('ota-progress-bar').style.width = '0%';
+    document.getElementById('ota-progress-percent').textContent = '0%';
+    document.getElementById('ota-progress-size').textContent = '准备中...';
+    document.getElementById('ota-message').textContent = url;
+    document.getElementById('ota-abort-btn').style.display = 'inline-block';
+    
+    try {
+        showToast('开始两步升级：固件 + WebUI', 'info');
+        const result = await api.call('ota.upgrade_url', params);
+        
+        if (result.code === 0) {
+            showToast('固件升级已启动', 'success');
+            document.getElementById('ota-state-text').textContent = '下载中...';
+            // 开始刷新进度
+            if (!refreshInterval) {
+                refreshInterval = setInterval(refreshOtaProgress, 1000);
+            }
+            // 立即刷新一次
+            await refreshOtaProgress();
+        } else {
+            showToast('启动升级失败: ' + result.message, 'error');
+            // 显示错误状态
+            document.getElementById('ota-state-text').textContent = '❌ 错误';
+            document.getElementById('ota-message').textContent = result.message || '启动失败';
+            document.getElementById('ota-abort-btn').style.display = 'none';
+        }
+    } catch (error) {
+        showToast('启动升级失败: ' + error.message, 'error');
+        document.getElementById('ota-state-text').textContent = '❌ 错误';
+        document.getElementById('ota-message').textContent = error.message || '网络错误';
+        document.getElementById('ota-abort-btn').style.display = 'none';
+    }
+}
+
+async function otaFromFile() {
+    const filepath = document.getElementById('ota-file-input').value.trim();
+    if (!filepath) {
+        showToast('请输入文件路径', 'error');
+        return;
+    }
+    
+    const includeWww = document.getElementById('ota-file-include-www').checked;
+    
+    const params = {
+        file: filepath,
+        no_reboot: true  // 不自动重启，由前端控制流程
+    };
+    
+    // 设置 OTA 步骤
+    otaStep = 'app';
+    wwwOtaEnabled = includeWww;  // 根据用户选择决定是否升级 www
+    sdcardOtaSource = filepath;  // 保存 SD 卡路径用于推导 www.bin 路径
+    
+    // 立即显示进度区域
+    const progressSection = document.getElementById('ota-progress-section');
+    progressSection.style.display = 'block';
+    const stepText = includeWww ? '[1/2] ' : '';
+    document.getElementById('ota-state-text').textContent = stepText + '正在读取文件...';
+    document.getElementById('ota-progress-bar').style.width = '0%';
+    document.getElementById('ota-progress-percent').textContent = '0%';
+    document.getElementById('ota-progress-size').textContent = '准备中...';
+    document.getElementById('ota-message').textContent = filepath;
+    document.getElementById('ota-abort-btn').style.display = 'inline-block';
+    
+    try {
+        showToast('开始从文件升级固件...', 'info');
+        const result = await api.call('ota.upgrade_file', params);
+        
+        if (result.code === 0) {
+            showToast('固件升级已启动', 'success');
+            document.getElementById('ota-state-text').textContent = '写入中...';
+            // 开始刷新进度
+            if (!refreshInterval) {
+                refreshInterval = setInterval(refreshOtaProgress, 1000);
+            }
+            await refreshOtaProgress();
+        } else {
+            showToast('启动升级失败: ' + result.message, 'error');
+            document.getElementById('ota-state-text').textContent = '❌ 错误';
+            document.getElementById('ota-message').textContent = result.message || '启动失败';
+            document.getElementById('ota-abort-btn').style.display = 'none';
+        }
+    } catch (error) {
+        showToast('启动升级失败: ' + error.message, 'error');
+        document.getElementById('ota-state-text').textContent = '❌ 错误';
+        document.getElementById('ota-message').textContent = error.message || '网络错误';
+        document.getElementById('ota-abort-btn').style.display = 'none';
+    }
+}
+
+async function validateOta() {
+    if (!confirm('确认将当前固件标记为有效？\n这将取消自动回滚保护。')) {
+        return;
+    }
+    
+    try {
+        const result = await api.call('ota.validate');
+        
+        if (result.code === 0) {
+            showToast('固件已标记为有效', 'success');
+            await refreshOtaInfo();
+        } else {
+            showToast('操作失败: ' + result.message, 'error');
+        }
+    } catch (error) {
+        showToast('操作失败: ' + error.message, 'error');
+    }
+}
+
+function confirmRollback() {
+    if (!confirm('⚠️ 确认回滚到上一版本固件？\n\n系统将立即重启并加载上一个分区的固件。\n请确保上一版本固件可用！')) {
+        return;
+    }
+    
+    rollbackOta();
+}
+
+async function rollbackOta() {
+    try {
+        showToast('正在回滚固件...', 'info');
+        const result = await api.call('ota.rollback');
+        
+        if (result.code === 0) {
+            showToast('回滚成功！系统将在 3 秒后重启...', 'success');
+            // 3秒后页面会因为重启而断开连接
+        } else {
+            showToast('回滚失败: ' + result.message, 'error');
+        }
+    } catch (error) {
+        showToast('回滚失败: ' + error.message, 'error');
+    }
+}
+
+async function abortOta() {
+    if (!confirm('确认中止当前升级？')) {
+        return;
+    }
+    
+    try {
+        // 根据当前步骤中止相应的 OTA
+        let result;
+        if (otaStep === 'www') {
+            result = await api.call('ota.www.abort');
+        } else {
+            result = await api.call('ota.abort');
+        }
+        
+        if (result.code === 0) {
+            showToast('升级已中止', 'info');
+            otaStep = 'idle';
+            await refreshOtaInfo();
+            clearInterval(refreshInterval);
+            refreshInterval = null;
+        } else {
+            showToast('中止失败: ' + result.message, 'error');
+        }
+    } catch (error) {
+        showToast('中止失败: ' + error.message, 'error');
+    }
+}
+
+function formatSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
+}
+
+// ============================================================================
+// 语义化版本工具函数
+// ============================================================================
+
+/**
+ * 解析语义化版本号
+ * @param {string} version - 版本字符串 (如 "1.2.3-rc1+build123")
+ * @returns {object} - { major, minor, patch, prerelease, build }
+ */
+function parseVersion(version) {
+    const result = { major: 0, minor: 0, patch: 0, prerelease: '', build: '' };
+    if (!version) return result;
+    
+    // 移除前缀 v/V
+    let v = version.trim();
+    if (v.startsWith('v') || v.startsWith('V')) {
+        v = v.substring(1);
+    }
+    
+    // 分离构建元数据 (+xxx)
+    const buildIdx = v.indexOf('+');
+    if (buildIdx !== -1) {
+        result.build = v.substring(buildIdx + 1);
+        v = v.substring(0, buildIdx);
+    }
+    
+    // 分离预发布标识 (-xxx)
+    const preIdx = v.indexOf('-');
+    if (preIdx !== -1) {
+        result.prerelease = v.substring(preIdx + 1);
+        v = v.substring(0, preIdx);
+    }
+    
+    // 解析核心版本号
+    const parts = v.split('.');
+    result.major = parseInt(parts[0]) || 0;
+    result.minor = parseInt(parts[1]) || 0;
+    result.patch = parseInt(parts[2]) || 0;
+    
+    return result;
+}
+
+/**
+ * 比较两个语义化版本
+ * @param {string} v1 - 第一个版本
+ * @param {string} v2 - 第二个版本
+ * @returns {number} - -1 (v1 < v2), 0 (v1 == v2), 1 (v1 > v2)
+ */
+function compareSemVer(v1, v2) {
+    const a = parseVersion(v1);
+    const b = parseVersion(v2);
+    
+    // 比较主版本号
+    if (a.major !== b.major) return a.major > b.major ? 1 : -1;
+    
+    // 比较次版本号
+    if (a.minor !== b.minor) return a.minor > b.minor ? 1 : -1;
+    
+    // 比较修订号
+    if (a.patch !== b.patch) return a.patch > b.patch ? 1 : -1;
+    
+    // 比较预发布标识
+    // 有预发布 < 无预发布 (1.0.0-rc1 < 1.0.0)
+    if (a.prerelease && !b.prerelease) return -1;
+    if (!a.prerelease && b.prerelease) return 1;
+    if (a.prerelease && b.prerelease) {
+        return a.prerelease.localeCompare(b.prerelease);
+    }
+    
+    return 0;
+}
+
+/**
+ * 格式化版本显示
+ * @param {object} versionInfo - 版本信息对象
+ * @returns {string} - 格式化的版本字符串
+ */
+function formatVersionDisplay(versionInfo) {
+    if (!versionInfo) return 'Unknown';
+    const v = versionInfo.version || '0.0.0';
+    const date = versionInfo.compile_date || '';
+    const time = versionInfo.compile_time || '';
+    return `${v} (${date} ${time})`.trim();
+}
+
+// OTA 服务器相关函数
+async function saveOtaServer() {
+    const serverUrl = document.getElementById('ota-server-input').value.trim();
+    
+    try {
+        const result = await api.call('ota.server.set', {
+            url: serverUrl,
+            save: true  // 保存到 NVS
+        });
+        
+        if (result.code === 0) {
+            if (serverUrl) {
+                showToast('✅ OTA 服务器地址已保存', 'success');
+            } else {
+                showToast('OTA 服务器地址已清除', 'info');
+            }
+        } else {
+            showToast('保存失败: ' + result.message, 'error');
+        }
+    } catch (error) {
+        showToast('保存失败: ' + error.message, 'error');
+    }
+}
+
+// 当前固件版本缓存
+let currentFirmwareVersion = null;
+
+async function checkForUpdates() {
+    const serverUrl = document.getElementById('ota-server-input').value.trim();
+    if (!serverUrl) {
+        showToast('请先输入 OTA 服务器地址', 'error');
+        return;
+    }
+    
+    const statusDiv = document.getElementById('ota-update-status');
+    statusDiv.style.display = 'block';
+    statusDiv.className = 'ota-update-status';
+    statusDiv.innerHTML = '<p>🔍 正在检查更新...</p>';
+    
+    try {
+        // 获取服务器版本信息
+        const versionUrl = serverUrl.replace(/\/$/, '') + '/version';
+        console.log('Checking for updates:', versionUrl);
+        
+        const response = await fetch(versionUrl);
+        if (!response.ok) {
+            throw new Error(`服务器响应错误: ${response.status}`);
+        }
+        
+        const serverInfo = await response.json();
+        console.log('Server version info:', serverInfo);
+        
+        // 获取当前版本
+        if (!currentFirmwareVersion) {
+            const localResult = await api.call('ota.version');
+            if (localResult && localResult.code === 0 && localResult.data) {
+                currentFirmwareVersion = localResult.data;
+            }
+        }
+        
+        // 比较版本
+        const localVersion = currentFirmwareVersion?.version || '0.0.0';
+        const serverVersion = serverInfo.version || '0.0.0';
+        const serverCompileDate = serverInfo.compile_date || '';
+        const serverCompileTime = serverInfo.compile_time || '';
+        const serverSize = serverInfo.size || 0;
+        
+        // 语义化版本比较
+        const versionComparison = compareSemVer(serverVersion, localVersion);
+        const hasUpdate = versionComparison > 0 || 
+                         (versionComparison === 0 && (
+                             serverCompileDate !== currentFirmwareVersion?.compile_date ||
+                             serverCompileTime !== currentFirmwareVersion?.compile_time
+                         ));
+        
+        // 版本变更类型说明
+        let updateType = '';
+        if (versionComparison > 0) {
+            const localParts = parseVersion(localVersion);
+            const serverParts = parseVersion(serverVersion);
+            if (serverParts.major > localParts.major) {
+                updateType = '<span style="color:#e74c3c;font-weight:bold">🔴 主版本更新</span>';
+            } else if (serverParts.minor > localParts.minor) {
+                updateType = '<span style="color:#f39c12;font-weight:bold">🟡 功能更新</span>';
+            } else {
+                updateType = '<span style="color:#27ae60;font-weight:bold">🟢 补丁更新</span>';
+            }
+        }
+        
+        if (hasUpdate) {
+            statusDiv.className = 'ota-update-status has-update';
+            statusDiv.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+                    <div>
+                        <span style="font-weight:600">🆕 发现新版本</span>
+                        ${updateType ? ` · ${updateType}` : ''}
+                        <div style="margin-top:5px;font-size:0.9em;color:#666">
+                            <code>${localVersion}</code> → <code style="color:#27ae60;font-weight:bold">${serverVersion}</code>
+                            <span style="margin-left:10px">${formatSize(serverSize)}</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-success btn-small" onclick="upgradeFromServer()">
+                        🚀 立即升级
+                    </button>
+                </div>
+            `;
+        } else if (versionComparison < 0) {
+            statusDiv.className = 'ota-update-status downgrade';
+            statusDiv.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+                    <div>
+                        <span style="font-weight:600">⚠️ 服务器版本较旧</span>
+                        <div style="margin-top:5px;font-size:0.9em;color:#666">
+                            <code>${localVersion}</code> → <code style="color:#ff9800">${serverVersion}</code>
+                        </div>
+                    </div>
+                    <button class="btn btn-warning btn-small" onclick="upgradeFromServer()">
+                        降级
+                    </button>
+                </div>
+            `;
+        } else {
+            statusDiv.className = 'ota-update-status no-update';
+            statusDiv.innerHTML = `
+                <div style="display:flex;align-items:center;gap:10px">
+                    <span style="font-weight:600">✅ 已是最新版本</span>
+                    <code style="color:#2196f3">${localVersion}</code>
+                </div>
+            `;
+        }
+        
+    } catch (error) {
+        console.error('Check for updates failed:', error);
+        statusDiv.className = 'ota-update-status error';
+        statusDiv.innerHTML = `
+            <div>
+                <span style="font-weight:600">❌ 检查更新失败</span>
+                <div style="margin-top:5px;font-size:0.9em;color:#666">${error.message}</div>
+            </div>
+        `;
+    }
+}
+
+async function upgradeFromServer() {
+    const serverUrl = document.getElementById('ota-server-input').value.trim();
+    if (!serverUrl) {
+        showToast('OTA 服务器地址未设置', 'error');
+        return;
+    }
+    
+    // 构建固件下载 URL
+    const firmwareUrl = serverUrl.replace(/\/$/, '') + '/firmware';
+    
+    // 填入 URL 输入框并执行升级
+    document.getElementById('ota-url-input').value = firmwareUrl;
+    document.getElementById('ota-url-skip-verify').checked = true;  // 本地服务器通常是 HTTP
+    
+    // 保存原始服务器地址（不含具体文件路径，用于后续 www 升级时推导）
+    await api.call('ota.server.set', { url: serverUrl.replace(/\/$/, ''), save: false });
+    
+    // 执行两步升级
+    await otaFromUrl();
+}
+
+// 导出全局函数
+window.loadOtaPage = loadOtaPage;
+window.otaFromUrl = otaFromUrl;
+window.otaFromFile = otaFromFile;
+window.validateOta = validateOta;
+window.confirmRollback = confirmRollback;
+window.rollbackOta = rollbackOta;
+window.abortOta = abortOta;
+window.saveOtaServer = saveOtaServer;
+window.checkForUpdates = checkForUpdates;
+window.upgradeFromServer = upgradeFromServer;

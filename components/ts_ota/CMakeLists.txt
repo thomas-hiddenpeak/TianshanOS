@@ -5,6 +5,7 @@ idf_component_register(
         "src/ts_ota_sdcard.c"
         "src/ts_ota_rollback.c"
         "src/ts_ota_version.c"
+        "src/ts_ota_www.c"
     INCLUDE_DIRS
         "include"
     REQUIRES
