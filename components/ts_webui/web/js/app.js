@@ -1357,14 +1357,13 @@ async function loadFontListForModal() {
         // 清空选项
         fontSelect.innerHTML = '';
         
-        // 添加默认选项
-        fontSelect.innerHTML = '<option value="default">默认</option>';
-        
-        // 添加字体文件
+        // 添加字体文件（移除扩展名，因为后端会自动添加 .fnt）
         fonts.forEach(f => {
             const option = document.createElement('option');
-            option.value = f.name;
-            option.textContent = f.name;
+            // 移除扩展名 (.fnt, .bdf, .pcf)
+            const baseName = f.name.substring(0, f.name.lastIndexOf('.'));
+            option.value = baseName;
+            option.textContent = f.name;  // 显示完整文件名
             fontSelect.appendChild(option);
         });
         
@@ -1374,15 +1373,15 @@ async function loadFontListForModal() {
         }
     } catch (e) {
         console.error('加载字体失败:', e);
-        // 如果加载失败，至少显示默认选项
-        fontSelect.innerHTML = '<option value="default">默认</option>';
+        // 如果加载失败，显示提示
+        fontSelect.innerHTML = '<option value="">无可用字体</option>';
     }
 }
 
 // 模态框内显示文本
 async function displayTextFromModal() {
     const text = document.getElementById('modal-text-content')?.value;
-    const font = document.getElementById('modal-text-font')?.value || 'default';
+    const font = document.getElementById('modal-text-font')?.value;
     const align = document.getElementById('modal-text-align')?.value || 'center';
     const color = document.getElementById('modal-text-color')?.value || '#00ff00';
     const x = parseInt(document.getElementById('modal-text-x')?.value || '0');
@@ -1401,13 +1400,16 @@ async function displayTextFromModal() {
         const params = {
             device: 'matrix',
             text,
-            font: font !== 'default' ? font : undefined,
             align,
             color,
             scroll: scroll !== 'none' ? scroll : undefined,
             speed,
             loop
         };
+        // 只有当用户选择了字体时才传递 font 参数
+        if (font && font !== '') {
+            params.font = font;
+        }
         if (!autoPos) {
             params.x = x;
             params.y = y;
