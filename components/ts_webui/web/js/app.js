@@ -1045,35 +1045,12 @@ function generateLedModalContent(device, type) {
         
         return `
             <div class="modal-tabs">
-                <button class="modal-tab active" onclick="switchModalTab(this, 'modal-tab-effect')">🎬 动画</button>
-                <button class="modal-tab" onclick="switchModalTab(this, 'modal-tab-image')">📷 图像</button>
+                <button class="modal-tab active" onclick="switchModalTab(this, 'modal-tab-image')">📷 图像</button>
                 <button class="modal-tab" onclick="switchModalTab(this, 'modal-tab-qr')">📱 QR码</button>
             </div>
             
-            <!-- 动画 Tab -->
-            <div class="modal-tab-content active" id="modal-tab-effect">
-                <div class="effects-grid">${effectsHtml}</div>
-                <div class="effect-config-modal" id="modal-effect-config-${device}" style="display:${currentAnimation ? 'flex' : 'none'};">
-                    <span class="effect-name" id="modal-effect-name-${device}">${currentAnimation || '未选择'}</span>
-                    <div class="config-row">
-                        <label>速度</label>
-                        <input type="range" min="1" max="100" value="${currentSpeed}" id="modal-effect-speed-${device}" 
-                               oninput="document.getElementById('modal-speed-val-${device}').textContent=this.value">
-                        <span id="modal-speed-val-${device}">${currentSpeed}</span>
-                    </div>
-                    <div class="config-row" id="modal-color-row-${device}" style="display:${colorSupportedEffects.includes(currentAnimation) ? 'flex' : 'none'};">
-                        <label>颜色</label>
-                        <input type="color" id="modal-effect-color-${device}" value="${colorHex}">
-                    </div>
-                    <div class="config-actions">
-                        <button class="btn btn-primary" onclick="applyEffectFromModal('${device}')">▶ 启动</button>
-                        <button class="btn btn-danger" onclick="stopEffectFromModal('${device}')">⏹ 停止</button>
-                    </div>
-                </div>
-            </div>
-            
             <!-- 图像 Tab -->
-            <div class="modal-tab-content" id="modal-tab-image" style="display:none;">
+            <div class="modal-tab-content active" id="modal-tab-image">
                 <div class="modal-section">
                     <div class="config-row">
                         <input type="text" id="modal-image-path" placeholder="/sdcard/images/..." class="input-flex" value="/sdcard/images/">
@@ -1359,16 +1336,46 @@ async function generateQrCodeFromModal() {
 
 // 加载字体列表（模态框版本）
 async function loadFontListForModal() {
+    const fontSelect = document.getElementById('modal-text-font');
+    if (!fontSelect) return;
+    
+    // 保存当前选中的字体
+    const currentFont = fontSelect.value;
+    
     try {
-        const result = await api.call('led.fonts', {});
-        const fonts = result.fonts || [];
-        const select = document.getElementById('modal-text-font');
-        if (select) {
-            select.innerHTML = '<option value="default">默认</option>' + 
-                fonts.map(f => `<option value="${f}">${f}</option>`).join('');
+        const result = await api.storageList('/sdcard/fonts');
+        const files = result.data?.entries || [];
+        
+        // 筛选字体文件 (.fnt, .bdf, .pcf)
+        const fontExts = ['.fnt', '.bdf', '.pcf'];
+        const fonts = files.filter(f => {
+            if (f.type === 'dir' || f.type === 'directory') return false;
+            const ext = f.name.toLowerCase().substring(f.name.lastIndexOf('.'));
+            return fontExts.includes(ext);
+        });
+        
+        // 清空选项
+        fontSelect.innerHTML = '';
+        
+        // 添加默认选项
+        fontSelect.innerHTML = '<option value="default">默认</option>';
+        
+        // 添加字体文件
+        fonts.forEach(f => {
+            const option = document.createElement('option');
+            option.value = f.name;
+            option.textContent = f.name;
+            fontSelect.appendChild(option);
+        });
+        
+        // 恢复之前选中的字体
+        if (currentFont && Array.from(fontSelect.options).some(opt => opt.value === currentFont)) {
+            fontSelect.value = currentFont;
         }
     } catch (e) {
         console.error('加载字体失败:', e);
+        // 如果加载失败，至少显示默认选项
+        fontSelect.innerHTML = '<option value="default">默认</option>';
     }
 }
 
