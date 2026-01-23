@@ -17,6 +17,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初始化认证 UI
     updateAuthUI();
     
+    // 更新 Footer 版本号
+    updateFooterVersion();
+    
     // 注册路由（系统页面作为首页）
     router.register('/', loadSystemPage);
     router.register('/system', loadSystemPage);
@@ -82,6 +85,24 @@ async function logout() {
         await api.logout();
     } finally {
         updateAuthUI();
+    }
+}
+
+// =========================================================================
+//                         Footer 版本号更新
+// =========================================================================
+
+async function updateFooterVersion() {
+    try {
+        const versionData = await api.call('ota.version');
+        if (versionData?.data?.version) {
+            const versionEl = document.getElementById('footer-version');
+            if (versionEl) {
+                versionEl.textContent = 'v' + versionData.data.version;
+            }
+        }
+    } catch (error) {
+        console.log('Failed to fetch version:', error);
     }
 }
 
@@ -3007,7 +3028,7 @@ async function loadDevicePage() {
     const content = document.getElementById('page-content');
     content.innerHTML = `
         <div class="page-device">
-            <h1>🖲️ 设备控制</h1>
+            <h1>🖲️ 监控控制</h1>
             
             <div class="cards">
                 <div class="card card-large">
