@@ -2629,6 +2629,17 @@ function getSignalBars(rssi) {
     return '░░░░';
 }
 
+// WiFi 模式显示文本
+function getWifiModeDisplay(mode) {
+    const modeMap = {
+        'off': '关闭',
+        'sta': '站点 (STA)',
+        'ap': '热点 (AP)',
+        'apsta': 'STA+AP'
+    };
+    return modeMap[mode] || mode;
+}
+
 // 设置 WiFi 模式
 async function setWifiMode() {
     const mode = document.getElementById('wifi-mode-select').value;

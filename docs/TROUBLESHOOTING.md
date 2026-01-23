@@ -1263,6 +1263,148 @@ system --time --sync-ntp
 # 手动设置时间（UTC）
 system --time --set "2026-01-23T15:30:00Z"
 ```
+
+---
+
+### 10.4 WiFi 开放网络（无密码）连接问题
+
+**症状**:
+- 连接开放 WiFi 网络时反复出现 `AUTH_EXPIRE` 错误
+- 日志显示: `WiFi STA disconnected, reason: 2 (AUTH_EXPIRE - authentication timeout)`
+- 设备无法连接到无密码的 WiFi 热点
+
+**根本原因**:
+
+ESP32 WiFi 默认配置问题：
+1. **认证模式阈值不匹配**: 默认配置期望 WPA2 加密，但开放网络不需要认证
+2. **PMF (Protected Management Frames) 冲突**: PMF 仅适用于加密网络，开放网络不支持
+3. **缺少预扫描**: 直接连接可能导致 WiFi 堆栈找不到目标 AP
+
+**解决方案**:
+
+#### 方案 1: 根据密码自动配置认证模式
+
+**文件**: [components/ts_net/src/ts_wifi.c](../components/ts_net/src/ts_wifi.c)
+
+```c
+esp_err_t ts_wifi_sta_config(const ts_wifi_sta_config_t *config)
+{
+    wifi_config_t wifi_config = {0};
+    strncpy((char *)wifi_config.sta.ssid, config->ssid, sizeof(wifi_config.sta.ssid) - 1);
+    strncpy((char *)wifi_config.sta.password, config->password, sizeof(wifi_config.sta.password) - 1);
+    
+    // 设置认证模式阈值：如果密码为空，使用 OPEN 模式
+    bool is_open = (strlen(config->password) == 0);
+    if (is_open) {
+        TS_LOGI(TAG, "Configuring for OPEN WiFi (no password)");
+        wifi_config.sta.threshold.authmode = WIFI_AUTH_OPEN;
+        // 对于开放网络，禁用 PMF
+        wifi_config.sta.pmf_cfg.capable = false;
+        wifi_config.sta.pmf_cfg.required = false;
+    } else {
+        TS_LOGI(TAG, "Configuring for encrypted WiFi (password set)");
+        // 有密码时，接受 WPA2 及以上的认证方式
+        wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+        // PMF 设置为可选
+        wifi_config.sta.pmf_cfg.capable = true;
+        wifi_config.sta.pmf_cfg.required = false;
+    }
+    
+    return esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+}
+```
+
+#### 方案 2: 连接前预扫描
+
+添加预扫描可以帮助 WiFi 堆栈定位目标 AP，减少 `AUTH_EXPIRE` 错误：
+
+```c
+esp_err_t ts_wifi_sta_connect(void)
+{
+    esp_err_t ret = esp_wifi_start();
+    if (ret != ESP_OK) return ret;
+    
+    // ESP32 连接前建议先扫描，帮助 WiFi 堆栈找到目标 AP
+    TS_LOGI(TAG, "Performing WiFi scan before connect...");
+    wifi_scan_config_t scan_config = {
+        .show_hidden = true,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+    };
+    
+    ret = esp_wifi_scan_start(&scan_config, true);  // 阻塞扫描
+    if (ret == ESP_OK) {
+        TS_LOGI(TAG, "WiFi scan completed");
+        // 验证目标 AP 是否在扫描结果中
+        // ...
+    }
+    
+    return esp_wifi_connect();
+}
+```
+
+#### 方案 3: 增强断连日志
+
+添加详细的断连原因日志，帮助诊断问题：
+
+```c
+case WIFI_EVENT_STA_DISCONNECTED: {
+    wifi_event_sta_disconnected_t *disconn = (wifi_event_sta_disconnected_t *)event_data;
+    TS_LOGI(TAG, "WiFi STA disconnected, reason: %d (%s)", 
+            disconn->reason, 
+            esp_err_to_name(disconn->reason));
+    
+    // 常见原因码说明
+    const char *reason_str = "Unknown";
+    switch (disconn->reason) {
+        case WIFI_REASON_AUTH_EXPIRE: reason_str = "AUTH_EXPIRE (authentication timeout)"; break;
+        case WIFI_REASON_AUTH_FAIL: reason_str = "AUTH_FAIL (authentication failed)"; break;
+        case WIFI_REASON_NO_AP_FOUND: reason_str = "NO_AP_FOUND (AP not found)"; break;
+        // ...
+    }
+    TS_LOGI(TAG, "  -> Reason detail: %s", reason_str);
+    break;
+}
+```
+
+---
+
+### 10.5 WiFi 认证问题调试技巧
+
+#### 串口日志关键信息
+```
+I ts_wifi: Configuring for OPEN WiFi (no password)
+I ts_wifi: WiFi config: SSID='OpenNetwork', authmode=0, PMF capable=0 required=0
+I ts_wifi: Performing WiFi scan before connect...
+I ts_wifi: Found target AP 'OpenNetwork' in scan results (RSSI=-45, channel=6, authmode=0)
+I ts_wifi: WiFi STA connected
+```
+
+#### 常见断连原因码
+
+| 原因码 | 宏定义 | 说明 | 解决方案 |
+|--------|--------|------|----------|
+| 2 | `WIFI_REASON_AUTH_EXPIRE` | 认证超时 | 使用预扫描，检查 AP 信号强度 |
+| 15 | `WIFI_REASON_AUTH_FAIL` | 认证失败 | 检查密码是否正确 |
+| 201 | `WIFI_REASON_NO_AP_FOUND` | 未找到 AP | 检查 SSID 是否正确，信号是否覆盖 |
+| 204 | `WIFI_REASON_HANDSHAKE_TIMEOUT` | 4-way 握手超时 | 检查加密配置，重启 AP |
+
+---
+
+### 10.6 WiFi 连接最佳实践
+
+| 场景 | 配置建议 | 说明 |
+|------|---------|------|
+| 开放网络 | `authmode=OPEN`, `PMF disabled` | 无密码热点 |
+| WPA2 网络 | `authmode=WPA2_PSK`, `PMF capable` | 常规加密网络 |
+| WPA3 网络 | `authmode=WPA3_PSK`, `PMF required` | 新标准加密 |
+| 企业网络 | 使用 `esp_eap_client` | 需要用户名/密码 |
+
+**WebUI 操作**：
+1. 访问"网络配置" → "WiFi 设置"
+2. 扫描网络，选择目标 SSID
+3. 开放网络直接点击"连接"（密码字段留空）
+4. 加密网络输入密码后连接
+
 ---
 
 ## 11. WebSocket 连接管理与终端会话问题
@@ -1399,5 +1541,6 @@ ESP_LOGI(TAG, "Free heap: %d bytes", esp_get_free_heap_size());
 
 - 2026-01-22: 添加 SD 卡重挂载失败 (VFS_MAX_COUNT 限制) 和配置 double-free 问题修复记录
 - 2026-01-23: 添加 OTA 回滚机制误判问题、www 分区 OTA 实现、SSH 功能调试记录
-- 2026-01-23: 添加 SNTP 双服务器配置和 WiFi 开放网络连接问题记录
+- 2026-01-23: 添加 SNTP 双服务器配置问题和解决方案
+- 2026-01-23: 添加 WiFi 开放网络（无密码）连接问题和认证调试技巧
 - 2026-01-23: 添加 WebSocket 连接管理和终端会话问题完整调试过程

@@ -32,10 +32,34 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                 s_sta_connected = true;
                 // 不在事件处理器内发布事件，避免队列锁冲突
                 break;
-            case WIFI_EVENT_STA_DISCONNECTED:
-                TS_LOGI(TAG, "WiFi STA disconnected");
+            case WIFI_EVENT_STA_DISCONNECTED: {
+                wifi_event_sta_disconnected_t *disconn = (wifi_event_sta_disconnected_t *)event_data;
+                TS_LOGI(TAG, "WiFi STA disconnected, reason: %d (%s)", 
+                        disconn->reason, 
+                        esp_err_to_name(disconn->reason));
+                
+                // 常见原因码说明
+                const char *reason_str = "Unknown";
+                switch (disconn->reason) {
+                    case WIFI_REASON_AUTH_EXPIRE: reason_str = "AUTH_EXPIRE (authentication timeout)"; break;
+                    case WIFI_REASON_AUTH_LEAVE: reason_str = "AUTH_LEAVE (station leaving)"; break;
+                    case WIFI_REASON_ASSOC_EXPIRE: reason_str = "ASSOC_EXPIRE (association timeout)"; break;
+                    case WIFI_REASON_ASSOC_TOOMANY: reason_str = "ASSOC_TOOMANY (too many stations)"; break;
+                    case WIFI_REASON_NOT_AUTHED: reason_str = "NOT_AUTHED (not authenticated)"; break;
+                    case WIFI_REASON_NOT_ASSOCED: reason_str = "NOT_ASSOCED (not associated)"; break;
+                    case WIFI_REASON_ASSOC_LEAVE: reason_str = "ASSOC_LEAVE (station leaving)"; break;
+                    case WIFI_REASON_ASSOC_NOT_AUTHED: reason_str = "ASSOC_NOT_AUTHED (station not authenticated)"; break;
+                    case WIFI_REASON_BEACON_TIMEOUT: reason_str = "BEACON_TIMEOUT (beacon timeout)"; break;
+                    case WIFI_REASON_NO_AP_FOUND: reason_str = "NO_AP_FOUND (AP not found)"; break;
+                    case WIFI_REASON_AUTH_FAIL: reason_str = "AUTH_FAIL (authentication failed)"; break;
+                    case WIFI_REASON_HANDSHAKE_TIMEOUT: reason_str = "HANDSHAKE_TIMEOUT (4-way handshake timeout)"; break;
+                    case WIFI_REASON_CONNECTION_FAIL: reason_str = "CONNECTION_FAIL (connection failed)"; break;
+                }
+                TS_LOGI(TAG, "  -> Reason detail: %s", reason_str);
+                
                 s_sta_connected = false;
                 break;
+            }
             /* AP 事件由 ts_dhcp_server 处理 */
         }
     }
@@ -162,14 +186,92 @@ esp_err_t ts_wifi_sta_config(const ts_wifi_sta_config_t *config)
         wifi_config.sta.bssid_set = true;
     }
     
+    // 设置认证模式阈值：如果密码为空，使用 OPEN 模式
+    bool is_open = (strlen(config->password) == 0);
+    if (is_open) {
+        TS_LOGI(TAG, "Configuring for OPEN WiFi (no password)");
+        wifi_config.sta.threshold.authmode = WIFI_AUTH_OPEN;
+        // 对于开放网络，禁用 PMF
+        wifi_config.sta.pmf_cfg.capable = false;
+        wifi_config.sta.pmf_cfg.required = false;
+    } else {
+        TS_LOGI(TAG, "Configuring for encrypted WiFi (password set)");
+        // 有密码时，接受 WPA2 及以上的认证方式
+        wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+        // PMF 设置为可选
+        wifi_config.sta.pmf_cfg.capable = true;
+        wifi_config.sta.pmf_cfg.required = false;
+    }
+    
+    TS_LOGI(TAG, "WiFi config: SSID='%s', authmode=%d, PMF capable=%d required=%d",
+            wifi_config.sta.ssid, 
+            wifi_config.sta.threshold.authmode,
+            wifi_config.sta.pmf_cfg.capable,
+            wifi_config.sta.pmf_cfg.required);
+    
     return esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
 }
 
 esp_err_t ts_wifi_sta_connect(void)
 {
     esp_err_t ret = esp_wifi_start();
-    if (ret != ESP_OK) return ret;
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to start WiFi: %s", esp_err_to_name(ret));
+        return ret;
+    }
     
+    // ESP32 连接前建议先扫描，帮助 WiFi 堆栈找到目标 AP
+    // 这可以避免认证超时 (AUTH_EXPIRE) 问题
+    TS_LOGI(TAG, "Performing WiFi scan before connect...");
+    wifi_scan_config_t scan_config = {
+        .show_hidden = true,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+    };
+    
+    ret = esp_wifi_scan_start(&scan_config, true);  // 阻塞扫描
+    if (ret != ESP_OK) {
+        TS_LOGW(TAG, "WiFi scan failed: %s, trying to connect anyway", esp_err_to_name(ret));
+    } else {
+        TS_LOGI(TAG, "WiFi scan completed");
+        
+        // 获取当前配置的 SSID，检查是否在扫描结果中
+        wifi_config_t current_config;
+        if (esp_wifi_get_config(WIFI_IF_STA, &current_config) == ESP_OK) {
+            uint16_t ap_count = 0;
+            esp_wifi_scan_get_ap_num(&ap_count);
+            
+            if (ap_count > 0) {
+                wifi_ap_record_t *ap_list = malloc(ap_count * sizeof(wifi_ap_record_t));
+                if (ap_list) {
+                    uint16_t actual_count = ap_count;
+                    if (esp_wifi_scan_get_ap_records(&actual_count, ap_list) == ESP_OK) {
+                        bool found = false;
+                        for (int i = 0; i < actual_count; i++) {
+                            if (strcmp((char *)ap_list[i].ssid, (char *)current_config.sta.ssid) == 0) {
+                                TS_LOGI(TAG, "Target AP found: SSID=%s, RSSI=%d dBm, Channel=%d, AuthMode=%d",
+                                        ap_list[i].ssid, ap_list[i].rssi, ap_list[i].primary, ap_list[i].authmode);
+                                found = true;
+                                
+                                // 检查信号强度警告
+                                if (ap_list[i].rssi < -80) {
+                                    TS_LOGW(TAG, "WARNING: Signal is very weak (RSSI=%d), connection may fail", ap_list[i].rssi);
+                                }
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            TS_LOGW(TAG, "Target SSID '%s' NOT found in scan results!", current_config.sta.ssid);
+                        }
+                    }
+                    free(ap_list);
+                }
+            } else {
+                TS_LOGW(TAG, "No APs found in scan");
+            }
+        }
+    }
+    
+    TS_LOGI(TAG, "Connecting to WiFi...");
     return esp_wifi_connect();
 }
 
