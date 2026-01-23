@@ -139,12 +139,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // 注册路由（系统页面作为首页）
     router.register('/', loadSystemPage);
     router.register('/system', loadSystemPage);
-    router.register('/led', loadLedPage);
     router.register('/network', loadNetworkPage);
     router.register('/device', loadDevicePage);
     router.register('/ota', loadOtaPage);
     router.register('/files', loadFilesPage);
-    router.register('/logs', loadLogsPage);
+    // 日志页面已整合到终端页面模态框（重定向到终端并打开模态框）
+    router.register('/logs', () => {
+        window.location.hash = '#/terminal';
+        setTimeout(() => {
+            if (typeof showTerminalLogsModal === 'function') {
+                showTerminalLogsModal();
+            }
+        }, 100);
+    });
     router.register('/terminal', loadTerminalPage);
     router.register('/config', loadConfigPage);
     router.register('/security', loadSecurityPage);
@@ -253,8 +260,26 @@ function handleEvent(msg) {
     
     // 处理日志消息
     if (msg.type === 'log') {
+        console.log('[Debug] Received log message, type:', msg.type);
+        
+        // 日志页面处理
         if (typeof window.handleLogMessage === 'function') {
             window.handleLogMessage(msg);
+        }
+        
+        // 模态框实时日志处理
+        const modal = document.getElementById('terminal-logs-modal');
+        console.log('[Debug] Modal check - exists:', !!modal, 'display:', modal?.style.display);
+        
+        if (modal && modal.style.display === 'flex') {
+            console.log('[Debug] Modal is visible, calling handleModalLogMessage');
+            if (typeof window.handleModalLogMessage === 'function') {
+                window.handleModalLogMessage(msg);
+            } else {
+                console.error('[Debug] handleModalLogMessage function not found!');
+            }
+        } else {
+            console.log('[Debug] Modal not visible or not found');
         }
         return;
     }
@@ -270,6 +295,8 @@ function handleEvent(msg) {
     // 处理历史日志响应
     if (msg.type === 'log_history') {
         const logs = msg.logs || [];
+        
+        // 日志页面
         if (typeof window.logEntries !== 'undefined') {
             window.logEntries = logs;
             if (typeof window.renderFilteredLogs === 'function') {
@@ -277,6 +304,29 @@ function handleEvent(msg) {
             }
             showToast(`加载了 ${logs.length} 条历史日志`, 'success');
         }
+        
+        // 终端页面的日志模态框
+        const modal = document.getElementById('terminal-logs-modal');
+        console.log('[Modal] log_history received, modal:', modal, 'display:', modal?.style.display);
+        console.log('[Modal] logs count:', logs.length);
+        
+        if (modal && modal.style.display === 'flex') {
+            console.log('[Modal] Updating modalLogEntries...');
+            modalLogEntries.length = 0;  // 清空数组但保持引用
+            modalLogEntries.push(...logs.map(log => ({
+                level: log.level || 3,
+                levelName: getLevelName(log.level || 3),
+                tag: log.tag || 'unknown',
+                message: log.message || '',
+                timestamp: log.timestamp || Date.now(),
+                task: log.task || ''
+            })));
+            console.log('[Modal] After push, modalLogEntries length:', modalLogEntries.length);
+            renderModalLogs();
+        } else {
+            console.log('[Modal] Modal not visible, skipping update');
+        }
+        
         return;
     }
     
@@ -318,6 +368,7 @@ async function loadSystemPage() {
     
     // 取消之前的订阅
     if (subscriptionManager) {
+        subscriptionManager.unsubscribe('system.dashboard');  // 取消聚合订阅
         subscriptionManager.unsubscribe('system.memory');
         subscriptionManager.unsubscribe('system.cpu');
         subscriptionManager.unsubscribe('network.status');
@@ -999,6 +1050,11 @@ let ledEffects = [];
 
 async function loadLedPage() {
     clearInterval(refreshInterval);
+    
+    // 取消系统页面的订阅
+    if (subscriptionManager) {
+        subscriptionManager.unsubscribe('system.dashboard');
+    }
     
     const content = document.getElementById('page-content');
     content.innerHTML = `
@@ -2676,6 +2732,11 @@ async function stopFilter() {
 async function loadNetworkPage() {
     clearInterval(refreshInterval);
     
+    // 取消系统页面的订阅
+    if (subscriptionManager) {
+        subscriptionManager.unsubscribe('system.dashboard');
+    }
+    
     const content = document.getElementById('page-content');
     content.innerHTML = `
         <div class="page-network">
@@ -3394,6 +3455,11 @@ async function saveNatConfig() {
 async function loadDevicePage() {
     clearInterval(refreshInterval);
     
+    // 取消系统页面的订阅
+    if (subscriptionManager) {
+        subscriptionManager.unsubscribe('system.dashboard');
+    }
+    
     // 取消之前的订阅
     if (subscriptionManager) {
         subscriptionManager.unsubscribe('device.status');
@@ -3553,6 +3619,11 @@ let currentFilePath = '/sdcard';
 
 async function loadFilesPage() {
     clearInterval(refreshInterval);
+    
+    // 取消系统页面的订阅
+    if (subscriptionManager) {
+        subscriptionManager.unsubscribe('system.dashboard');
+    }
     
     const content = document.getElementById('page-content');
     content.innerHTML = `
@@ -4323,6 +4394,11 @@ const CONFIG_KEY_LABELS = {
 async function loadConfigPage() {
     clearInterval(refreshInterval);
     
+    // 取消系统页面的订阅
+    if (subscriptionManager) {
+        subscriptionManager.unsubscribe('system.dashboard');
+    }
+    
     const content = document.getElementById('page-content');
     content.innerHTML = `
         <div class="page-config">
@@ -4619,6 +4695,11 @@ async function syncConfigToSd() {
 
 async function loadSecurityPage() {
     clearInterval(refreshInterval);
+    
+    // 取消系统页面的订阅
+    if (subscriptionManager) {
+        subscriptionManager.unsubscribe('system.dashboard');
+    }
     
     const content = document.getElementById('page-content');
     content.innerHTML = `
@@ -5457,6 +5538,11 @@ function showToast(message, type = 'info') {
 // =========================================================================
 
 async function loadTerminalPage() {
+    // 取消系统页面的订阅
+    if (subscriptionManager) {
+        subscriptionManager.unsubscribe('system.dashboard');
+    }
+    
     // 清理之前的终端实例
     if (webTerminal) {
         webTerminal.destroy();
@@ -5469,6 +5555,7 @@ async function loadTerminalPage() {
             <div class="terminal-header">
                 <h1>🖥️ Web 终端</h1>
                 <div class="terminal-actions">
+                    <button class="btn btn-sm" onclick="console.log('Button clicked!'); window.showTerminalLogsModal();">📋 日志</button>
                     <button class="btn btn-sm" onclick="terminalClear()">清屏</button>
                     <button class="btn btn-sm btn-danger" onclick="terminalDisconnect()">断开</button>
                 </div>
@@ -5478,6 +5565,236 @@ async function loadTerminalPage() {
                 <span>💡 提示: 输入 <code>help</code> 查看命令 | <code>Ctrl+C</code> 中断 | <code>Ctrl+L</code> 清屏 | <code>↑↓</code> 历史</span>
             </div>
         </div>
+        
+        <!-- 日志模态框 -->
+        <div id="terminal-logs-modal" class="modal" style="display:none" onclick="if(event.target===this) closeTerminalLogsModal()">
+            <div class="modal-content" style="width:90%; max-width:1200px; height:85vh">
+                <div class="modal-header">
+                    <h2>📋 系统日志</h2>
+                    <button class="modal-close" onclick="closeTerminalLogsModal()">&times;</button>
+                </div>
+                <div class="modal-body" style="padding:0; display:flex; flex-direction:column; height:calc(100% - 60px)">
+                    <!-- 工具栏 -->
+                    <div class="log-toolbar" style="margin:15px; margin-bottom:10px">
+                        <div class="toolbar-left">
+                            <div class="toolbar-item">
+                                <label>级别</label>
+                                <select id="modal-log-level-filter" class="form-control" onchange="updateModalLogFilter()">
+                                    <option value="5">全部</option>
+                                    <option value="1">ERROR</option>
+                                    <option value="2">WARN+</option>
+                                    <option value="3" selected>INFO+</option>
+                                    <option value="4">DEBUG+</option>
+                                </select>
+                            </div>
+                            <div class="toolbar-item">
+                                <label>TAG</label>
+                                <input type="text" id="modal-log-tag-filter" class="form-control" 
+                                       placeholder="过滤TAG..." onkeyup="debounceRenderModalLogs()">
+                            </div>
+                            <div class="toolbar-item search">
+                                <label>搜索</label>
+                                <input type="text" id="modal-log-keyword-filter" class="form-control" 
+                                       placeholder="搜索日志..." onkeyup="debounceRenderModalLogs()">
+                            </div>
+                        </div>
+                        <div class="toolbar-right">
+                            <span id="modal-ws-status" class="ws-status connecting" title="WebSocket 连接状态">
+                                <span class="dot"></span>
+                            </span>
+                            <span id="modal-log-stats" class="log-stats"></span>
+                            <label class="auto-scroll-toggle">
+                                <input type="checkbox" id="modal-log-auto-scroll" checked>
+                                <span>自动滚动</span>
+                            </label>
+                            <button class="btn btn-small" onclick="loadModalHistoryLogs()" title="刷新日志">🔄</button>
+                            <button class="btn btn-small btn-danger" onclick="clearModalLogs()" title="清空日志">🗑️</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 日志内容 -->
+                    <div class="log-panel" style="flex:1; margin:0 15px 15px; overflow:hidden">
+                        <div id="modal-log-container" class="log-viewer">
+                            <div class="log-empty">
+                                <div class="icon">📋</div>
+                                <div class="text">等待日志...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <style>
+            /* 日志工具栏 */
+            .log-toolbar {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 15px;
+                padding: 12px 15px;
+                background: var(--card-bg);
+                border-radius: 8px;
+                flex-wrap: wrap;
+            }
+            .toolbar-left {
+                display: flex;
+                gap: 12px;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+            .toolbar-right {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+                flex-wrap: wrap;
+            }
+            .toolbar-item {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .toolbar-item label {
+                font-size: 0.85em;
+                color: var(--text-light);
+                white-space: nowrap;
+            }
+            .toolbar-item .form-control {
+                padding: 6px 10px;
+                font-size: 0.9em;
+                min-width: 100px;
+            }
+            .toolbar-item.search .form-control {
+                min-width: 150px;
+            }
+            
+            .log-stats {
+                font-size: 0.85em;
+                color: var(--text-light);
+            }
+            
+            .auto-scroll-toggle {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                font-size: 0.85em;
+                color: var(--text-light);
+                cursor: pointer;
+            }
+            .auto-scroll-toggle input {
+                cursor: pointer;
+            }
+            
+            /* 日志面板 */
+            .log-panel {
+                flex: 1;
+                background: var(--card-bg);
+                border-radius: 8px;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            }
+            
+            .log-viewer {
+                flex: 1;
+                font-family: 'SF Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+                font-size: 12px;
+                line-height: 1.6;
+                background: #1a1a2e;
+                color: #eee;
+                padding: 12px;
+                overflow-y: auto;
+                min-height: 400px;
+            }
+            
+            .log-entry {
+                padding: 3px 8px;
+                border-radius: 3px;
+                margin: 2px 0;
+                display: flex;
+                align-items: baseline;
+                gap: 8px;
+            }
+            .log-entry:hover {
+                background: rgba(255,255,255,0.05);
+            }
+            .log-time {
+                color: #666;
+                font-size: 0.9em;
+                flex-shrink: 0;
+            }
+            .log-level {
+                font-weight: 600;
+                font-size: 0.85em;
+                padding: 1px 6px;
+                border-radius: 3px;
+                flex-shrink: 0;
+                min-width: 55px;
+                text-align: center;
+            }
+            .log-tag {
+                color: #64b5f6;
+                flex-shrink: 0;
+                max-width: 150px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .log-message {
+                flex: 1;
+                word-break: break-word;
+            }
+            .log-task {
+                color: #666;
+                font-size: 0.85em;
+                flex-shrink: 0;
+            }
+            
+            /* 日志级别颜色 */
+            .level-error { border-left: 3px solid #ef5350; }
+            .level-error .log-level { background: #ef5350; color: #fff; }
+            .level-warn { border-left: 3px solid #ffa726; }
+            .level-warn .log-level { background: #ffa726; color: #000; }
+            .level-info { border-left: 3px solid #66bb6a; }
+            .level-info .log-level { background: rgba(102,187,106,0.2); color: #66bb6a; }
+            .level-debug { border-left: 3px solid #42a5f5; }
+            .level-debug .log-level { background: rgba(66,165,245,0.2); color: #42a5f5; }
+            .level-verbose { border-left: 3px solid #78909c; }
+            .level-verbose .log-level { background: rgba(120,144,156,0.2); color: #78909c; }
+            
+            .log-empty {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 200px;
+                color: #666;
+            }
+            .log-empty .icon {
+                font-size: 3em;
+                margin-bottom: 10px;
+                opacity: 0.5;
+            }
+            .log-empty .text {
+                font-size: 1.1em;
+            }
+            
+            .log-highlight {
+                background: #ffeb3b;
+                color: #000;
+                padding: 0 3px;
+                border-radius: 2px;
+            }
+            
+            /* WebSocket 状态动画 */
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.5; }
+            }
+            @keyframes blink {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.3; }
+            }
+        </style>
     `;
     
     // 初始化终端
@@ -5502,7 +5819,262 @@ function terminalDisconnect() {
     }
 }
 
+// 终端页面日志模态框
+let modalLogEntries = [];
+let modalLogDebounceTimer = null;
+let modalLogSubscribed = false;
+const MAX_MODAL_LOG_ENTRIES = 1000;
+
+function showTerminalLogsModal() {
+    console.log('[Modal] showTerminalLogsModal called - START');
+    const modal = document.getElementById('terminal-logs-modal');
+    console.log('[Modal] showTerminalLogsModal called, modal:', modal);
+    
+    if (!modal) {
+        console.error('[Modal] Modal element not found!');
+        return;
+    }
+    
+    modal.style.display = 'flex';
+    console.log('[Modal] Modal display set to flex');
+    modalLogEntries.length = 0;  // 清空但保持引用
+    
+    console.log('[Modal] About to call subscribeToModalLogs...');
+    console.log('[Modal] typeof subscribeToModalLogs:', typeof subscribeToModalLogs);
+    
+    // 启动实时订阅
+    subscribeToModalLogs();
+    
+    console.log('[Modal] showTerminalLogsModal - END');
+}
+
+function closeTerminalLogsModal() {
+    const modal = document.getElementById('terminal-logs-modal');
+    if (modal) {
+        modal.style.display = 'none';
+        unsubscribeFromModalLogs();
+        modalLogEntries.length = 0;
+    }
+}
+
+// 订阅模态框日志
+function subscribeToModalLogs() {
+    console.log('[Modal] subscribeToModalLogs called');
+    const levelFilter = document.getElementById('modal-log-level-filter')?.value || '3';
+    const minLevel = parseInt(levelFilter);
+    console.log('[Modal] Level filter:', minLevel);
+    
+    if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+        console.log('[Modal] WebSocket is open, sending log_subscribe...');
+        window.ws.send({
+            type: 'log_subscribe',
+            minLevel: minLevel
+        });
+        modalLogSubscribed = true;
+        updateModalWsStatus(true);
+        console.log('[Modal] Subscription sent, loading history...');
+        // 订阅成功后加载历史日志
+        loadModalHistoryLogs();
+    } else {
+        console.warn('[Modal] WebSocket not ready, readyState:', window.ws?.readyState);
+        updateModalWsStatus(false);
+        setTimeout(subscribeToModalLogs, 1000);
+    }
+}
+
+// 取消订阅模态框日志
+function unsubscribeFromModalLogs() {
+    console.log('[Modal] unsubscribeFromModalLogs called, subscribed:', modalLogSubscribed);
+    if (window.ws && window.ws.readyState === WebSocket.OPEN && modalLogSubscribed) {
+        console.log('[Modal] Sending log_unsubscribe...');
+        window.ws.send({ type: 'log_unsubscribe' });
+    }
+    modalLogSubscribed = false;
+    updateModalWsStatus(false);
+}
+
+// 加载历史日志
+async function loadModalHistoryLogs() {
+    if (!window.ws || window.ws.readyState !== WebSocket.OPEN) {
+        console.error('[Modal] WebSocket 未连接');
+        return;
+    }
+    
+    const levelFilter = document.getElementById('modal-log-level-filter')?.value || '3';
+    
+    // 通过 WebSocket 请求历史日志
+    window.ws.send({
+        type: 'log_get_history',
+        limit: 500,
+        minLevel: 1,
+        maxLevel: parseInt(levelFilter)
+    });
+}
+
+// 更新模态框WebSocket状态显示
+function updateModalWsStatus(connected) {
+    const statusEl = document.getElementById('modal-ws-status');
+    if (statusEl) {
+        if (connected) {
+            statusEl.className = 'ws-status connected';
+            statusEl.title = 'WebSocket 已连接 - 实时日志';
+        } else {
+            statusEl.className = 'ws-status connecting';
+            statusEl.title = 'WebSocket 连接中...';
+        }
+    }
+}
+
+function updateModalLogFilter() {
+    const levelFilter = document.getElementById('modal-log-level-filter')?.value || '3';
+    const minLevel = parseInt(levelFilter);
+    
+    // 更新 WebSocket 订阅级别
+    if (window.ws && window.ws.readyState === WebSocket.OPEN && modalLogSubscribed) {
+        window.ws.send({
+            type: 'log_set_level',
+            minLevel: minLevel
+        });
+    }
+    
+    // 重新渲染现有日志
+    renderModalLogs();
+}
+
+function debounceRenderModalLogs() {
+    if (modalLogDebounceTimer) clearTimeout(modalLogDebounceTimer);
+    modalLogDebounceTimer = setTimeout(renderModalLogs, 300);
+}
+
+function renderModalLogs() {
+    const container = document.getElementById('modal-log-container');
+    console.log('[Modal] renderModalLogs called, container:', container);
+    console.log('[Modal] modalLogEntries length:', modalLogEntries.length);
+    
+    if (!container) {
+        console.error('[Modal] Container not found!');
+        return;
+    }
+    
+    // 获取过滤条件
+    const levelFilter = parseInt(document.getElementById('modal-log-level-filter')?.value || '3');
+    const tagFilter = document.getElementById('modal-log-tag-filter')?.value.toLowerCase().trim() || '';
+    const keywordFilter = document.getElementById('modal-log-keyword-filter')?.value.toLowerCase().trim() || '';
+    
+    // 过滤日志
+    let filtered = modalLogEntries.filter(entry => {
+        // 级别过滤
+        if (entry.level > levelFilter) return false;
+        // TAG 过滤
+        if (tagFilter && !entry.tag.toLowerCase().includes(tagFilter)) return false;
+        // 关键词过滤
+        if (keywordFilter && !entry.message.toLowerCase().includes(keywordFilter)) return false;
+        return true;
+    });
+    
+    // 更新统计
+    const statsElem = document.getElementById('modal-log-stats');
+    if (statsElem) {
+        statsElem.textContent = `显示 ${filtered.length}/${modalLogEntries.length} 条`;
+    }
+    
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div class="log-empty">
+                <div class="icon">📋</div>
+                <div class="text">暂无日志</div>
+            </div>
+        `;
+        return;
+    }
+    
+    // 渲染日志
+    const html = filtered.map(entry => {
+        const time = new Date(entry.timestamp).toLocaleTimeString('zh-CN', { hour12: false });
+        const levelClass = `level-${entry.levelName.toLowerCase()}`;
+        
+        // 高亮关键词
+        let message = escapeHtml(entry.message);
+        if (keywordFilter) {
+            const regex = new RegExp(`(${escapeRegex(keywordFilter)})`, 'gi');
+            message = message.replace(regex, '<span class="log-highlight">$1</span>');
+        }
+        
+        return `
+            <div class="log-entry ${levelClass}">
+                <span class="log-time">${time}</span>
+                <span class="log-level">${entry.levelName}</span>
+                <span class="log-tag">${escapeHtml(entry.tag)}</span>
+                <span class="log-message">${message}</span>
+                ${entry.task ? `<span class="log-task">[${escapeHtml(entry.task)}]</span>` : ''}
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = html;
+    
+    // 自动滚动
+    const autoScroll = document.getElementById('modal-log-auto-scroll')?.checked;
+    if (autoScroll) {
+        container.scrollTop = container.scrollHeight;
+    }
+}
+
+function clearModalLogs() {
+    modalLogEntries.length = 0;
+    renderModalLogs();
+}
+
+// 处理模态框实时日志消息
+function handleModalLogMessage(msg) {
+    console.log('[Modal] Received log message:', msg);
+    
+    const logEntry = {
+        level: msg.level || 3,
+        levelName: getLevelName(msg.level || 3),
+        tag: msg.tag || 'unknown',
+        message: msg.message || '',
+        timestamp: msg.timestamp || Date.now(),
+        task: msg.task || ''
+    };
+    
+    // 追加日志（限制最大数量）
+    modalLogEntries.push(logEntry);
+    console.log('[Modal] Added log, total entries:', modalLogEntries.length);
+    
+    if (modalLogEntries.length > MAX_MODAL_LOG_ENTRIES) {
+        modalLogEntries.shift();  // 移除最旧的日志
+    }
+    
+    // 重新渲染
+    renderModalLogs();
+}
+
+function getLevelName(level) {
+    const names = { 1: 'ERROR', 2: 'WARN', 3: 'INFO', 4: 'DEBUG', 5: 'VERBOSE' };
+    return names[level] || 'UNKNOWN';
+}
+
+function escapeHtml(text) {
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+    return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+function escapeRegex(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// 暴露给全局作用域（WebSocket 处理需要）
+window.getLevelName = getLevelName;
+window.handleModalLogMessage = handleModalLogMessage;
+
 // 暴露给 HTML onclick
+window.showTerminalLogsModal = showTerminalLogsModal;
+window.closeTerminalLogsModal = closeTerminalLogsModal;
+window.loadModalHistoryLogs = loadModalHistoryLogs;
+window.updateModalLogFilter = updateModalLogFilter;
+window.debounceRenderModalLogs = debounceRenderModalLogs;
+window.clearModalLogs = clearModalLogs;
 window.closeLoginModal = closeLoginModal;
 window.confirmReboot = confirmReboot;
 window.syncTimeFromBrowser = syncTimeFromBrowser;
@@ -5639,6 +6211,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
 async function loadOtaPage() {
     clearInterval(refreshInterval);
+    
+    // 取消系统页面的订阅
+    if (subscriptionManager) {
+        subscriptionManager.unsubscribe('system.dashboard');
+    }
     
     const content = document.getElementById('page-content');
     content.innerHTML = `
@@ -6935,578 +7512,7 @@ let logRefreshInterval = null;
 let logAutoScroll = true;
 let logLastTimestamp = 0;
 let logWsConnected = false;
-let logEntries = [];  // 存储日志条目用于前端过滤
-const MAX_LOG_ENTRIES = 1000;  // 最大显示条数
-
-async function loadLogsPage() {
-    stopLogRefresh();
-    logEntries = [];
-    
-    const container = document.getElementById('page-content');
-    container.innerHTML = `
-        <div class="page-logs">
-            <h1>📋 系统日志</h1>
-            
-            <!-- 工具栏 -->
-            <div class="log-toolbar">
-                <div class="toolbar-left">
-                    <div class="toolbar-item">
-                        <label>级别</label>
-                        <select id="log-level-filter" class="form-control" onchange="updateLogLevelFilter()">
-                            <option value="5">全部</option>
-                            <option value="1">ERROR</option>
-                            <option value="2">WARN+</option>
-                            <option value="3" selected>INFO+</option>
-                            <option value="4">DEBUG+</option>
-                        </select>
-                    </div>
-                    <div class="toolbar-item">
-                        <label>TAG</label>
-                        <input type="text" id="log-tag-filter" class="form-control" 
-                               placeholder="过滤TAG..." onkeyup="debounceRenderLogs()">
-                    </div>
-                    <div class="toolbar-item search">
-                        <label>搜索</label>
-                        <input type="text" id="log-keyword-filter" class="form-control" 
-                               placeholder="搜索日志..." onkeyup="debounceRenderLogs()">
-                    </div>
-                </div>
-                <div class="toolbar-right">
-                    <span id="log-ws-status" class="ws-status connecting" title="WebSocket 连接状态">
-                        <span class="dot"></span>
-                    </span>
-                    <span id="log-stats" class="log-stats"></span>
-                    <label class="auto-scroll-toggle">
-                        <input type="checkbox" id="log-auto-scroll" checked onchange="logAutoScroll=this.checked">
-                        <span>自动滚动</span>
-                    </label>
-                    <button class="btn btn-small" onclick="loadHistoryLogs()" title="加载历史日志">📥</button>
-                    <button class="btn btn-small btn-danger" onclick="clearLogs()" title="清空日志">🗑️</button>
-                </div>
-            </div>
-            
-            <!-- 日志内容 -->
-            <div class="log-panel">
-                <div id="log-container" class="log-viewer">
-                    <div class="log-empty">
-                        <div class="icon">📋</div>
-                        <div class="text">等待日志...</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <style>
-            .page-logs {
-                display: flex;
-                flex-direction: column;
-                height: calc(100vh - var(--header-height) - var(--footer-height) - 40px);
-            }
-            .page-logs h1 {
-                margin-bottom: 15px;
-                font-size: 1.5rem;
-            }
-            
-            /* 工具栏 */
-            .log-toolbar {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                gap: 15px;
-                padding: 12px 15px;
-                background: var(--card-bg);
-                border-radius: 8px;
-                margin-bottom: 15px;
-                flex-wrap: wrap;
-            }
-            .toolbar-left {
-                display: flex;
-                gap: 12px;
-                flex-wrap: wrap;
-                align-items: center;
-            }
-            .toolbar-right {
-                display: flex;
-                gap: 10px;
-                align-items: center;
-                flex-wrap: wrap;
-            }
-            .toolbar-item {
-                display: flex;
-                align-items: center;
-                gap: 6px;
-            }
-            .toolbar-item label {
-                font-size: 0.85em;
-                color: var(--text-light);
-                white-space: nowrap;
-            }
-            .toolbar-item .form-control {
-                padding: 6px 10px;
-                font-size: 0.9em;
-                min-width: 100px;
-            }
-            .toolbar-item.search .form-control {
-                min-width: 150px;
-            }
-            
-            /* WebSocket 状态 */
-            .ws-status {
-                display: flex;
-                align-items: center;
-                gap: 5px;
-                font-size: 0.85em;
-                padding: 4px 10px;
-                border-radius: 12px;
-                background: #f0f0f0;
-            }
-            .ws-status .dot {
-                width: 8px;
-                height: 8px;
-                border-radius: 50%;
-                background: #888;
-            }
-            .ws-status.connected {
-                background: #e8f5e9;
-                color: #2e7d32;
-            }
-            .ws-status.connected .dot {
-                background: #4caf50;
-                animation: pulse 2s infinite;
-            }
-            .ws-status.connecting .dot {
-                background: #ff9800;
-                animation: blink 1s infinite;
-            }
-            @keyframes pulse {
-                0%, 100% { opacity: 1; }
-                50% { opacity: 0.5; }
-            }
-            @keyframes blink {
-                0%, 100% { opacity: 1; }
-                50% { opacity: 0.3; }
-            }
-            
-            .log-stats {
-                font-size: 0.85em;
-                color: var(--text-light);
-            }
-            
-            .auto-scroll-toggle {
-                display: flex;
-                align-items: center;
-                gap: 4px;
-                font-size: 0.85em;
-                color: var(--text-light);
-                cursor: pointer;
-            }
-            .auto-scroll-toggle input {
-                cursor: pointer;
-            }
-            
-            /* 日志面板 */
-            .log-panel {
-                flex: 1;
-                background: var(--card-bg);
-                border-radius: 8px;
-                overflow: hidden;
-                display: flex;
-                flex-direction: column;
-            }
-            
-            .log-viewer {
-                flex: 1;
-                font-family: 'SF Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
-                font-size: 12px;
-                line-height: 1.6;
-                background: #1a1a2e;
-                color: #eee;
-                padding: 12px;
-                overflow-y: auto;
-                min-height: 400px;
-                max-height: calc(100vh - 280px);
-            }
-            
-            .log-entry {
-                padding: 3px 8px;
-                border-radius: 3px;
-                margin: 2px 0;
-                display: flex;
-                align-items: baseline;
-                gap: 8px;
-            }
-            .log-entry:hover {
-                background: rgba(255,255,255,0.05);
-            }
-            .log-time {
-                color: #666;
-                font-size: 0.9em;
-                flex-shrink: 0;
-            }
-            .log-level {
-                font-weight: 600;
-                font-size: 0.85em;
-                padding: 1px 6px;
-                border-radius: 3px;
-                flex-shrink: 0;
-                min-width: 55px;
-                text-align: center;
-            }
-            .log-tag {
-                color: #64b5f6;
-                flex-shrink: 0;
-                max-width: 150px;
-                overflow: hidden;
-                text-overflow: ellipsis;
-            }
-            .log-message {
-                flex: 1;
-                word-break: break-word;
-            }
-            .log-task {
-                color: #666;
-                font-size: 0.85em;
-                flex-shrink: 0;
-            }
-            
-            /* 日志级别颜色 */
-            .level-error { border-left: 3px solid #ef5350; }
-            .level-error .log-level { background: #ef5350; color: #fff; }
-            .level-warn { border-left: 3px solid #ffa726; }
-            .level-warn .log-level { background: #ffa726; color: #000; }
-            .level-info { border-left: 3px solid #66bb6a; }
-            .level-info .log-level { background: rgba(102,187,106,0.2); color: #66bb6a; }
-            .level-debug { border-left: 3px solid #42a5f5; }
-            .level-debug .log-level { background: rgba(66,165,245,0.2); color: #42a5f5; }
-            .level-verbose { border-left: 3px solid #78909c; }
-            .level-verbose .log-level { background: rgba(120,144,156,0.2); color: #78909c; }
-            
-            .log-empty {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                height: 200px;
-                color: #666;
-            }
-            .log-empty .icon {
-                font-size: 3em;
-                margin-bottom: 10px;
-                opacity: 0.5;
-            }
-            .log-empty .text {
-                font-size: 1.1em;
-            }
-            
-            .log-highlight {
-                background: #ffeb3b;
-                color: #000;
-                padding: 0 3px;
-                border-radius: 2px;
-            }
-            
-            /* 响应式 */
-            @media (max-width: 768px) {
-                .log-toolbar {
-                    flex-direction: column;
-                    align-items: stretch;
-                }
-                .toolbar-left, .toolbar-right {
-                    justify-content: center;
-                }
-                .toolbar-item.search .form-control {
-                    min-width: 120px;
-                }
-            }
-        </style>
-    `;
-    
-    // 订阅日志 WebSocket（会在连接成功后自动加载历史）
-    subscribeToLogs();
-}
-
-let logDebounceTimer = null;
-function debounceRenderLogs() {
-    if (logDebounceTimer) clearTimeout(logDebounceTimer);
-    logDebounceTimer = setTimeout(renderFilteredLogs, 300);
-}
-
-// 订阅日志 WebSocket
-function subscribeToLogs() {
-    const levelFilter = document.getElementById('log-level-filter')?.value || '3';
-    const minLevel = parseInt(levelFilter);
-    
-    // 通过全局 WebSocket 发送订阅请求
-    if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-        window.ws.send({
-            type: 'log_subscribe',
-            minLevel: minLevel
-        });
-        updateWsStatus(true);
-        // 订阅成功后自动加载历史日志
-        loadHistoryLogs();
-    } else {
-        // 等待 WebSocket 连接
-        updateWsStatus(false);
-        setTimeout(subscribeToLogs, 1000);
-    }
-}
-
-// 取消订阅日志
-function unsubscribeFromLogs() {
-    if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-        window.ws.send({ type: 'log_unsubscribe' });
-    }
-    logWsConnected = false;
-}
-
-// 更新 WebSocket 级别过滤
-function updateLogLevelFilter() {
-    const levelFilter = document.getElementById('log-level-filter')?.value || '3';
-    const minLevel = parseInt(levelFilter);
-    
-    if (window.ws && window.ws.readyState === WebSocket.OPEN) {
-        window.ws.send({
-            type: 'log_set_level',
-            minLevel: minLevel
-        });
-    }
-    
-    // 同时重新渲染现有日志
-    renderFilteredLogs();
-}
-
-// 更新 WebSocket 状态显示
-function updateWsStatus(connected) {
-    logWsConnected = connected;
-    const statusEl = document.getElementById('log-ws-status');
-    if (statusEl) {
-        if (connected) {
-            statusEl.className = 'ws-status connected';
-            statusEl.title = '实时连接';
-        } else {
-            statusEl.className = 'ws-status connecting';
-            statusEl.title = '连接中...';
-        }
-    }
-}
-
-// 处理收到的日志消息（从全局 WebSocket 调用）
-function handleLogMessage(log) {
-    // 添加到日志数组
-    logEntries.push(log);
-    
-    // 限制最大条数
-    while (logEntries.length > MAX_LOG_ENTRIES) {
-        logEntries.shift();
-    }
-    
-    // 检查是否通过当前过滤
-    if (logPassesFilter(log)) {
-        appendLogEntry(log);
-    }
-    
-    // 更新统计
-    updateLogStats();
-}
-
-// 检查日志是否通过过滤
-function logPassesFilter(log) {
-    const levelFilter = parseInt(document.getElementById('log-level-filter')?.value || '3');
-    const tagFilter = document.getElementById('log-tag-filter')?.value.trim().toLowerCase() || '';
-    const keyword = document.getElementById('log-keyword-filter')?.value.trim().toLowerCase() || '';
-    
-    // 级别过滤
-    if (log.level > levelFilter) return false;
-    
-    // TAG 过滤
-    if (tagFilter && !log.tag.toLowerCase().includes(tagFilter)) return false;
-    
-    // 关键字过滤
-    if (keyword) {
-        const inMsg = log.message.toLowerCase().includes(keyword);
-        const inTag = log.tag.toLowerCase().includes(keyword);
-        if (!inMsg && !inTag) return false;
-    }
-    
-    return true;
-}
-
-// 追加单条日志到显示区
-function appendLogEntry(log) {
-    const container = document.getElementById('log-container');
-    if (!container) return;
-    
-    // 移除空状态提示
-    const empty = container.querySelector('.log-empty');
-    if (empty) empty.remove();
-    
-    const keyword = document.getElementById('log-keyword-filter')?.value.trim() || '';
-    const html = renderLogEntry(log, keyword);
-    
-    container.insertAdjacentHTML('beforeend', html);
-    
-    // 限制显示条数
-    while (container.children.length > MAX_LOG_ENTRIES) {
-        container.removeChild(container.firstChild);
-    }
-    
-    // 自动滚动
-    if (logAutoScroll) {
-        container.scrollTop = container.scrollHeight;
-    }
-}
-
-// 渲染过滤后的日志（用于过滤条件改变时）
-function renderFilteredLogs() {
-    const container = document.getElementById('log-container');
-    if (!container) return;
-    
-    const keyword = document.getElementById('log-keyword-filter')?.value.trim() || '';
-    
-    const filteredLogs = logEntries.filter(logPassesFilter);
-    
-    if (filteredLogs.length === 0) {
-        container.innerHTML = `<div class="log-empty">
-            <div class="icon">🔍</div>
-            <div class="text">没有匹配的日志</div>
-        </div>`;
-    } else {
-        const html = filteredLogs.map(log => renderLogEntry(log, keyword)).join('');
-        container.innerHTML = html;
-        
-        if (logAutoScroll) {
-            container.scrollTop = container.scrollHeight;
-        }
-    }
-    
-    updateLogStats();
-}
-
-// 更新日志统计
-function updateLogStats() {
-    const statsEl = document.getElementById('log-stats');
-    if (statsEl) {
-        const filteredCount = logEntries.filter(logPassesFilter).length;
-        statsEl.textContent = `显示 ${filteredCount} / ${logEntries.length} 条`;
-    }
-}
-
-// 加载历史日志 (通过 WebSocket)
-async function loadHistoryLogs() {
-    const container = document.getElementById('log-container');
-    
-    if (!window.ws || window.ws.readyState !== WebSocket.OPEN) {
-        // WebSocket 未连接，稍后重试
-        setTimeout(loadHistoryLogs, 500);
-        return;
-    }
-    
-    const levelFilter = document.getElementById('log-level-filter')?.value || '3';
-    
-    // 通过 WebSocket 请求历史日志
-    window.ws.send({
-        type: 'log_get_history',
-        limit: 1000,
-        minLevel: 1,
-        maxLevel: parseInt(levelFilter)
-    });
-    
-    // 响应将在 handleEvent 中处理
-}
-
-async function refreshLogs() {
-    // 兼容旧接口，现在改为加载历史
-    await loadHistoryLogs();
-}
-
-function renderLogEntry(log, keyword) {
-    const levelNames = ['NONE', 'ERROR', 'WARN', 'INFO', 'DEBUG', 'VERBOSE'];
-    const levelClasses = ['none', 'error', 'warn', 'info', 'debug', 'verbose'];
-    
-    const levelClass = levelClasses[log.level] || 'info';
-    const levelName = levelNames[log.level] || 'UNKNOWN';
-    
-    // 格式化时间戳（毫秒转为 HH:MM:SS.mmm 格式）
-    const totalMs = log.timestamp || 0;
-    const totalSec = Math.floor(totalMs / 1000);
-    const hours = Math.floor(totalSec / 3600);
-    const min = Math.floor((totalSec % 3600) / 60);
-    const sec = totalSec % 60;
-    const ms = totalMs % 1000;
-    const timeStr = `${String(hours).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
-    
-    // 高亮关键字
-    let message = escapeHtml(log.message);
-    if (keyword) {
-        const regex = new RegExp(`(${escapeRegExp(keyword)})`, 'gi');
-        message = message.replace(regex, '<span class="log-highlight">$1</span>');
-    }
-    
-    return `<div class="log-entry level-${levelClass}">
-        <span class="log-time">${timeStr}</span>
-        <span class="log-level">${levelName}</span>
-        <span class="log-tag">${escapeHtml(log.tag)}</span>
-        <span class="log-message">${message}</span>
-        ${log.task ? `<span class="log-task">[${escapeHtml(log.task)}]</span>` : ''}
-    </div>`;
-}
-
-function escapeHtml(str) {
-    if (!str) return '';
-    return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
-
-function escapeRegExp(str) {
-    return str.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
-}
-
-function toggleLogAutoRefresh(enable) {
-    // WebSocket 模式下不需要轮询，保留函数以兼容
-    stopLogRefresh();
-}
-
-function stopLogRefresh() {
-    if (logRefreshInterval) {
-        clearInterval(logRefreshInterval);
-        logRefreshInterval = null;
-    }
-}
-
-async function clearLogs() {
-    if (!confirm('确定要清空日志缓冲区吗？')) return;
-    
-    try {
-        await api.call('log.clear');
-        logEntries = [];
-        const container = document.getElementById('log-container');
-        if (container) {
-            container.innerHTML = '<div class="log-empty">日志已清空</div>';
-        }
-        updateLogStats();
-        showToast('日志已清空', 'success');
-    } catch (error) {
-        showToast('清空失败: ' + error.message, 'error');
-    }
-}
-
-// 导出日志页面函数和变量
-window.loadLogsPage = loadLogsPage;
-window.refreshLogs = refreshLogs;
-window.clearLogs = clearLogs;
-window.debounceRenderLogs = debounceRenderLogs;
-window.toggleLogAutoRefresh = toggleLogAutoRefresh;
-window.handleLogMessage = handleLogMessage;
-window.updateLogLevelFilter = updateLogLevelFilter;
-window.loadHistoryLogs = loadHistoryLogs;
-window.unsubscribeFromLogs = unsubscribeFromLogs;
-window.renderFilteredLogs = renderFilteredLogs;
-// logEntries 通过 getter/setter 暴露
-Object.defineProperty(window, 'logEntries', {
-    get: () => logEntries,
-    set: (val) => { logEntries = val; }
-});
+// =========================================================================
+// 日志页面已废弃 - 功能已整合到终端页面的日志模态框
+// 旧路由 #/logs 会自动重定向到 #/terminal 并打开日志模态框
+// =========================================================================

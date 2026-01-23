@@ -945,13 +945,21 @@ static esp_err_t ws_handler(httpd_req_t *req)
                     min_level = (ts_log_level_t)level->valueint;
                 }
                 
+                bool client_found = false;
                 for (int i = 0; i < MAX_WS_CLIENTS; i++) {
                     if (s_clients[i].active && s_clients[i].fd == fd) {
                         s_clients[i].type = WS_CLIENT_TYPE_LOG;
                         s_clients[i].log_min_level = min_level;
+                        client_found = true;
+                        TS_LOGI(TAG, "Client %d subscribed to logs (minLevel=%d)", i, min_level);
                         break;
                     }
                 }
+                
+                if (!client_found) {
+                    TS_LOGW(TAG, "log_subscribe: Client fd=%d not found in active clients", fd);
+                }
+                
                 // 更新日志流状态
                 update_log_stream_state();
                 
@@ -1195,7 +1203,13 @@ static void log_ws_callback(const ts_log_entry_t *entry, void *user_data)
 {
     (void)user_data;
     
-    if (!entry || !s_server || !s_log_streaming_enabled) return;
+    if (!entry || !s_server || !s_log_streaming_enabled) {
+        // Debug: log why callback is skipped
+        if (!entry) TS_LOGD(TAG, "log_ws_callback: entry is NULL");
+        if (!s_server) TS_LOGD(TAG, "log_ws_callback: s_server is NULL");
+        if (!s_log_streaming_enabled) TS_LOGD(TAG, "log_ws_callback: streaming disabled");
+        return;
+    }
     
     // 构造日志消息
     cJSON *msg = cJSON_CreateObject();
@@ -1220,13 +1234,20 @@ static void log_ws_callback(const ts_log_entry_t *entry, void *user_data)
     };
     
     // 发送给所有日志订阅客户端（根据级别过滤）
+    int sent_count = 0;
     for (int i = 0; i < MAX_WS_CLIENTS; i++) {
         if (s_clients[i].active && s_clients[i].type == WS_CLIENT_TYPE_LOG) {
             // 检查级别过滤
             if (entry->level <= s_clients[i].log_min_level) {
                 httpd_ws_send_frame_async(s_clients[i].hd, s_clients[i].fd, &ws_pkt);
+                sent_count++;
             }
         }
+    }
+    
+    // Debug: Log if no clients received the message
+    if (sent_count == 0) {
+        TS_LOGD(TAG, "log_ws_callback: No clients received log (level=%d)", entry->level);
     }
     
     free(json);
@@ -1238,18 +1259,20 @@ static void log_ws_callback(const ts_log_entry_t *entry, void *user_data)
 esp_err_t ts_webui_log_stream_enable(bool enable)
 {
     if (enable && !s_log_callback_handle) {
-        // 注册日志回调 (min_level=TS_LOG_ERROR, 接收所有级别)
-        esp_err_t ret = ts_log_add_callback(log_ws_callback, TS_LOG_ERROR, NULL, &s_log_callback_handle);
+        // 注册日志回调 (min_level=TS_LOG_VERBOSE, 接收所有级别)
+        esp_err_t ret = ts_log_add_callback(log_ws_callback, TS_LOG_VERBOSE, NULL, &s_log_callback_handle);
         if (ret != ESP_OK) {
             TS_LOGE(TAG, "Failed to register log callback: %s", esp_err_to_name(ret));
             return ret;
         }
         s_log_streaming_enabled = true;
+        TS_LOGI(TAG, "Log streaming enabled (receiving all levels)");
     } else if (!enable && s_log_callback_handle) {
         // 移除日志回调
         s_log_streaming_enabled = false;
         ts_log_remove_callback(s_log_callback_handle);
         s_log_callback_handle = NULL;
+        TS_LOGI(TAG, "Log streaming disabled");
     }
     return ESP_OK;
 }
@@ -1273,6 +1296,8 @@ static bool has_log_clients(void)
 static void update_log_stream_state(void)
 {
     bool need_streaming = has_log_clients();
+    TS_LOGI(TAG, "update_log_stream_state: need_streaming=%d, current=%d", 
+            need_streaming, s_log_streaming_enabled);
     if (need_streaming != s_log_streaming_enabled) {
         ts_webui_log_stream_enable(need_streaming);
     }

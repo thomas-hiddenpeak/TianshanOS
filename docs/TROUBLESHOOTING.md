@@ -4,7 +4,115 @@
 
 ---
 
-## 1. ESP-IDF 事件系统与 DHCP 服务器崩溃问题
+## 1. WebSocket 日志流不工作 - 日志回调级别配置错误
+
+### 问题描述
+
+**症状**：
+- WebSocket 订阅日志流成功（`log_subscribe` → `log_subscribed`）
+- 历史日志加载正常（`log_get_history` 返回数据）
+- 但执行命令后**没有实时日志消息**推送到前端
+- 浏览器控制台从未收到 `type: 'log'` 的 WebSocket 消息
+
+**调试过程**：
+1. 前端确认订阅请求发送成功，收到 `log_subscribed` 确认
+2. 模态框正确显示历史日志（433 条）
+3. 前端 WebSocket 消息处理器 `handleEvent()` 中添加调试日志，确认没有 `type: 'log'` 消息到达
+4. 审计后端 C 代码 `ts_webui_ws.c`，发现日志回调注册函数 `log_ws_callback()` 存在
+
+**根本原因**：
+
+在 `ts_webui_log_stream_enable()` 中注册日志回调时，错误使用了 `TS_LOG_ERROR` 作为 `min_level` 参数：
+
+```c
+// 错误代码（第 1242 行）
+ts_log_add_callback(log_ws_callback, TS_LOG_ERROR, NULL, &s_log_callback_handle);
+```
+
+**TianShanOS 日志级别定义**（数值越小优先级越高）：
+```c
+TS_LOG_NONE = 0,     // 禁用
+TS_LOG_ERROR = 1,    // 最高优先级
+TS_LOG_WARN = 2,
+TS_LOG_INFO = 3,
+TS_LOG_DEBUG = 4,
+TS_LOG_VERBOSE = 5,  // 最低优先级
+```
+
+使用 `TS_LOG_ERROR` 作为 `min_level` 意味着**只接收 ERROR 级别的日志**，所有 WARN、INFO、DEBUG、VERBOSE 级别的日志都被过滤掉了。而系统大部分日志是 INFO/DEBUG 级别，因此回调函数从未被触发。
+
+### 解决方案
+
+**修复代码**（components/ts_webui/src/ts_webui_ws.c:1242）：
+
+```c
+// 正确：使用 TS_LOG_VERBOSE 接收所有级别
+ts_log_add_callback(log_ws_callback, TS_LOG_VERBOSE, NULL, &s_log_callback_handle);
+```
+
+**完整修复要点**：
+1. 注册回调时使用 `TS_LOG_VERBOSE` 来接收**所有级别**的日志
+2. 在 `log_ws_callback()` 函数内部，根据每个客户端的 `log_min_level` 进行过滤：
+   ```c
+   if (entry->level <= s_clients[i].log_min_level) {
+       httpd_ws_send_frame_async(...);
+   }
+   ```
+3. 这样既保证能接收到所有日志，又能根据客户端需求进行精确过滤
+
+**添加的调试日志**（用于未来问题排查）：
+```c
+// 在 ts_webui_log_stream_enable() 中
+TS_LOGI(TAG, "Log streaming enabled (receiving all levels)");
+
+// 在 update_log_stream_state() 中
+TS_LOGI(TAG, "update_log_stream_state: need_streaming=%d, current=%d", 
+        need_streaming, s_log_streaming_enabled);
+
+// 在 log_subscribe 处理器中
+TS_LOGI(TAG, "Client %d subscribed to logs (minLevel=%d)", i, min_level);
+
+// 在 log_ws_callback() 中
+if (sent_count == 0) {
+    TS_LOGD(TAG, "log_ws_callback: No clients received log (level=%d)", entry->level);
+}
+```
+
+### 最佳实践
+
+1. **日志回调注册原则**：
+   - 使用 **最宽松的级别**（`TS_LOG_VERBOSE`）注册回调，以接收所有日志
+   - 在回调函数内部根据具体需求进行过滤
+   - 避免在注册时限制级别，导致丢失重要日志
+
+2. **WebSocket 日志流架构**：
+   - 后端通过 `ts_log_add_callback()` 注册统一回调
+   - 回调中遍历所有 `WS_CLIENT_TYPE_LOG` 类型的客户端
+   - 根据每个客户端的 `log_min_level` 独立过滤和推送
+
+3. **调试日志策略**：
+   - 关键路径添加 INFO 级别日志（订阅、启用流）
+   - 异常情况添加 WARN 级别日志（客户端未找到、发送失败）
+   - 高频事件使用 DEBUG 级别（避免日志洪泛）
+
+4. **级别过滤逻辑**：
+   ```c
+   // 正确：数值越小优先级越高，显示 <= min_level 的日志
+   if (entry->level <= client_min_level) { /* 显示此日志 */ }
+   
+   // 示例：min_level=3 (INFO) 时
+   // ERROR(1) ✓, WARN(2) ✓, INFO(3) ✓, DEBUG(4) ✗, VERBOSE(5) ✗
+   ```
+
+### 相关文件
+
+- `components/ts_webui/src/ts_webui_ws.c` - WebSocket 日志流后端实现
+- `components/ts_core/ts_log/include/ts_log.h` - 日志系统 API 定义
+- `components/ts_webui/web/js/app.js` - 前端日志订阅实现
+
+---
+
+## 2. ESP-IDF 事件系统与 DHCP 服务器崩溃问题
 
 ### 问题描述
 

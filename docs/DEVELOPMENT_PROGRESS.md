@@ -1,8 +1,8 @@
 # TianShanOS 开发进度跟踪
 
 > **项目**：TianShanOS（天山操作系统）  
-> **版本**：0.2.0  
-> **最后更新**：2026年1月23日  
+> **版本**：0.2.1  
+> **最后更新**：2026年1月24日  
 > **代码统计**：100+ 个 C 源文件，75+ 个头文件
 
 ---
@@ -26,6 +26,121 @@
 | Phase 12: OTA 增强 & Bug修复 | ✅ 完成 | 100% | 2026-01-23 |
 | Phase 13: 日志系统增强 | ✅ 完成 | 100% | 2026-01-23 |
 | Phase 14: LED 滤镜系统优化 | ✅ 完成 | 100% | 2026-01-23 |
+| Phase 15: WebUI 日志流修复 & 导航栏清理 | ✅ 完成 | 100% | 2026-01-24 |
+
+---
+
+## 📋 Phase 15: WebUI 日志流修复 & 导航栏清理 ✅
+
+**时间**：2026年1月24日  
+**目标**：修复 WebSocket 日志流根本问题，优化 WebUI 用户界面
+
+### 问题诊断与修复
+
+#### 1. WebSocket 日志流 Bug 修复 🐛
+**问题症状**：
+- WebSocket 订阅成功（`log_subscribe` → `log_subscribed`）
+- 历史日志加载正常（433 条）
+- 但**没有实时日志消息推送到前端**
+
+**根本原因**：
+```c
+// 错误代码（components/ts_webui/src/ts_webui_ws.c:1242）
+ts_log_add_callback(log_ws_callback, TS_LOG_ERROR, NULL, &s_log_callback_handle);
+//                                     ^^^^^^^^^^^
+// 使用 TS_LOG_ERROR 导致只接收 ERROR 级别的日志
+```
+
+**修复方案**：
+```c
+// 正确代码
+ts_log_add_callback(log_ws_callback, TS_LOG_VERBOSE, NULL, &s_log_callback_handle);
+//                                     ^^^^^^^^^^^^^
+// 使用 TS_LOG_VERBOSE 接收所有级别，然后在回调中根据客户端需求过滤
+```
+
+**调试日志增强**：
+- 订阅处理：`Client %d subscribed to logs (minLevel=%d)`
+- 流状态管理：`update_log_stream_state: need_streaming=%d, current=%d`
+- 流启用/禁用：`Log streaming enabled (receiving all levels)`
+- 回调过滤：`log_ws_callback: No clients received log (level=%d)`
+
+#### 2. WebUI 导航栏清理 🎨
+**删除的导航链接**：
+- ❌ `#/logs`（日志页面）- 功能已整合到终端页面模态框
+- ❌ `#/ota`（OTA 页面）- 降低误操作风险
+
+**优化后导航**（9个 → 7个链接）：
+```
+系统 | 网络 | 监控 | 文件 | 终端 | 配置 | 安全
+```
+
+**向后兼容**：
+```javascript
+// 旧书签 #/logs 自动重定向到终端页面并打开日志模态框
+router.register('/logs', () => {
+    window.location.hash = '#/terminal';
+    setTimeout(() => showTerminalLogsModal(), 100);
+});
+```
+
+#### 3. 代码清理 🧹
+**删除代码**：
+- 删除 `loadLogsPage()` 函数及其所有依赖（~580 行）
+- 删除日志页面 HTML 模板和 CSS 样式
+- 删除日志页面相关的工具函数
+
+**保留功能**：
+- 终端页面的日志模态框完整保留
+- WebSocket 日志流基础设施保留
+- 日志相关 API 和后端功能完整保留
+
+### 文档更新
+
+#### 新增/更新文档
+1. **TROUBLESHOOTING.md**
+   - 新增章节：WebSocket 日志流不工作 - 日志回调级别配置错误
+   - 记录完整 debug 过程和解决方案
+   - 提供最佳实践和代码示例
+
+2. **WEBUI_CLEANUP_PROPOSAL.md**（新文档）
+   - 日志页面删除可行性评估
+   - OTA 导航链接删除方案
+   - 导航栏优化建议
+   - 实施优先级和兼容性考虑
+
+3. **QUICK_START.md**
+   - 新增"WebUI 页面导航"章节
+   - 新增"日志查看"说明（通过终端页面）
+   - 更新"固件升级 (OTA)"访问方式
+
+### 技术收益
+
+**用户体验**：
+- ✅ 更简洁的导航栏（7 个核心功能）
+- ✅ 日志查看无需页面切换（模态框）
+- ✅ 实时日志流正常工作
+
+**代码质量**：
+- ✅ 减少重复代码（~580 行）
+- ✅ 统一日志查看入口
+- ✅ 降低维护成本
+
+**性能优化**：
+- ✅ WebSocket 连接数优化（模态框与终端共享连接）
+- ✅ 日志回调正确配置，接收所有级别
+
+### 相关文件
+
+**修改文件**：
+- `components/ts_webui/src/ts_webui_ws.c` - 日志回调级别修复
+- `components/ts_webui/web/index.html` - 删除导航链接
+- `components/ts_webui/web/js/app.js` - 删除日志页面代码，添加路由重定向
+- `docs/TROUBLESHOOTING.md` - 新增日志流问题排查
+- `docs/QUICK_START.md` - 更新 WebUI 使用说明
+
+**新增文档**：
+- `docs/WEBUI_CLEANUP_PROPOSAL.md` - WebUI 清理方案
 
 ---
 
