@@ -4704,71 +4704,105 @@ async function loadSecurityPage() {
     const content = document.getElementById('page-content');
     content.innerHTML = `
         <div class="page-security">
-            <h1>安全与连接</h1>
-            
-            <div class="section">
-                <h2>🔑 SSH 连接测试</h2>
-                <form id="ssh-test-form" class="ssh-form" onsubmit="testSsh(event)">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>主机</label>
-                            <input type="text" id="ssh-host" required placeholder="192.168.1.100">
-                        </div>
-                        <div class="form-group" style="width:80px">
-                            <label>端口</label>
-                            <input type="number" id="ssh-port" value="22">
-                        </div>
-                        <div class="form-group">
-                            <label>用户名</label>
-                            <input type="text" id="ssh-user" required placeholder="root">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label>认证方式</label>
-                        <select id="ssh-auth-type" onchange="toggleSshAuthType()">
-                            <option value="password">密码</option>
-                            <option value="keyid">密钥 (安全存储)</option>
-                        </select>
-                    </div>
-                    <div class="form-group" id="ssh-password-group">
-                        <label>密码</label>
-                        <input type="password" id="ssh-password" placeholder="输入 SSH 密码">
-                    </div>
-                    <div class="form-group hidden" id="ssh-keyid-group">
-                        <label>密钥</label>
-                        <select id="ssh-keyid">
-                            <option value="">-- 选择密钥 --</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="btn btn-primary">测试连接</button>
-                </form>
-                <div id="ssh-result" class="result-box hidden"></div>
+            <div class="page-header">
+                <h1>🔐 安全管理</h1>
+                <p class="subtitle">SSH 密钥管理、连接测试与主机验证</p>
             </div>
             
-            <div class="section">
-                <h2>🔐 密钥管理</h2>
-                <div class="button-group" style="margin-bottom:15px">
-                    <button class="btn btn-primary" onclick="showGenerateKeyModal()">➕ 生成新密钥</button>
+            <!-- SSH 连接与主机管理（合并区域） -->
+            <div class="card">
+                <div class="card-header-tabs">
+                    <button class="tab-btn active" onclick="switchSecurityTab('connection')">🔌 连接测试</button>
+                    <button class="tab-btn" onclick="switchSecurityTab('hosts')">📡 已知主机</button>
                 </div>
-                <table class="data-table">
-                    <thead>
-                        <tr><th>ID</th><th>类型</th><th>备注</th><th>创建时间</th><th>可导出</th><th>操作</th></tr>
-                    </thead>
-                    <tbody id="keys-table-body"></tbody>
-                </table>
+                
+                <!-- Tab: 连接测试 -->
+                <div class="tab-content" id="security-tab-connection">
+                <!-- Tab: 连接测试 -->
+                <div class="tab-content" id="security-tab-connection">
+                    <form id="ssh-test-form" class="compact-form" onsubmit="testSsh(event)">
+                        <div class="form-grid-3">
+                            <div class="form-group">
+                                <label>主机地址</label>
+                                <input type="text" id="ssh-host" required placeholder="192.168.1.100">
+                            </div>
+                            <div class="form-group">
+                                <label>用户名</label>
+                                <input type="text" id="ssh-user" required placeholder="root">
+                            </div>
+                            <div class="form-group">
+                                <label>端口</label>
+                                <input type="number" id="ssh-port" value="22" min="1" max="65535">
+                            </div>
+                        </div>
+                        <div class="form-grid-2">
+                            <div class="form-group">
+                                <label>认证方式</label>
+                                <select id="ssh-auth-type" onchange="toggleSshAuthType()">
+                                    <option value="password">🔑 密码</option>
+                                    <option value="keyid">🔐 密钥（安全存储）</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="ssh-password-group">
+                                <label>密码</label>
+                                <input type="password" id="ssh-password" placeholder="输入 SSH 密码">
+                            </div>
+                            <div class="form-group hidden" id="ssh-keyid-group">
+                                <label>选择密钥</label>
+                                <select id="ssh-keyid">
+                                    <option value="">-- 选择密钥 --</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">🚀 测试连接</button>
+                    </form>
+                    <div id="ssh-result" class="result-box hidden"></div>
+                </div>
+                
+                <!-- Tab: 已知主机 -->
+                <div class="tab-content hidden" id="security-tab-hosts">
+                    <div class="toolbar">
+                        <span class="info-text">已验证的 SSH 服务器指纹列表</span>
+                        <button class="btn btn-small btn-danger" onclick="clearAllHosts()">🗑️ 清除所有</button>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table compact">
+                            <thead>
+                                <tr>
+                                    <th>主机</th>
+                                    <th>端口</th>
+                                    <th>密钥类型</th>
+                                    <th>指纹（SHA256）</th>
+                                    <th width="80">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="hosts-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
             
-            <div class="section">
-                <h2>📡 已知主机</h2>
-                <div class="button-group" style="margin-bottom:15px">
-                    <button class="btn btn-danger" onclick="clearAllHosts()">🗑️ 清除所有</button>
+            <!-- 密钥管理 -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>🔑 SSH 密钥管理</h2>
+                    <button class="btn btn-primary btn-small" onclick="showGenerateKeyModal()">➕ 生成密钥</button>
                 </div>
-                <table class="data-table">
-                    <thead>
-                        <tr><th>主机</th><th>端口</th><th>密钥类型</th><th>指纹</th><th>操作</th></tr>
-                    </thead>
-                    <tbody id="hosts-table-body"></tbody>
-                </table>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>密钥标识</th>
+                                <th>类型</th>
+                                <th>备注</th>
+                                <th>创建时间</th>
+                                <th>可导出</th>
+                                <th width="360">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="keys-table-body"></tbody>
+                    </table>
+                </div>
             </div>
             
             <!-- 生成密钥弹窗 -->
@@ -4957,17 +4991,19 @@ async function refreshSecurityPage() {
                     <td>${formatTimestamp(key.created)}</td>
                     <td>${key.exportable ? '✅ 是' : '❌ 否'}</td>
                     <td>
-                        <button class="btn btn-small" onclick="exportKey('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'}>📤 公钥</button>
-                        <button class="btn btn-small" onclick="exportPrivateKey('${escapeHtml(key.id)}')" ${key.exportable ? '' : 'disabled'} title="${key.exportable ? '导出私钥' : '此密钥不可导出私钥'}">🔐 私钥</button>
-                        <button class="btn btn-small btn-primary" onclick="showDeployKeyModal('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'} title="部署公钥到远程服务器">🚀 部署</button>
-                        <button class="btn btn-small" onclick="showRevokeKeyModal('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'} title="从远程服务器撤销公钥" style="background:#ff9800;color:white">⚠️ 撤销</button>
-                        <button class="btn btn-small btn-danger" onclick="deleteKey('${escapeHtml(key.id)}')">🗑️ 删除</button>
+                        <div style="display:flex;gap:4px;flex-wrap:wrap">
+                            <button class="btn btn-small" onclick="exportKey('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'} title="导出公钥">📤</button>
+                            <button class="btn btn-small" onclick="exportPrivateKey('${escapeHtml(key.id)}')" ${key.exportable ? '' : 'disabled'} title="${key.exportable ? '导出私钥' : '不可导出'}">🔐</button>
+                            <button class="btn btn-small btn-primary" onclick="showDeployKeyModal('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'} title="部署到服务器">🚀</button>
+                            <button class="btn btn-small" onclick="showRevokeKeyModal('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'} title="撤销部署" style="background:#ff9800;color:white">⚠️</button>
+                            <button class="btn btn-small btn-danger" onclick="deleteKey('${escapeHtml(key.id)}')" title="删除密钥">🗑️</button>
+                        </div>
                     </td>
                 </tr>
                 `;
             }).join('');
         } else {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888">暂无密钥，点击上方按钮生成新密钥</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;padding:20px">暂无密钥<br><span style="font-size:0.9em">点击右上角"➕ 生成密钥"按钮创建新密钥</span></td></tr>';
         }
     } catch (e) {
         document.getElementById('keys-table-body').innerHTML = '<tr><td colspan="6" style="color:red">加载失败: ' + e.message + '</td></tr>';
@@ -4982,17 +5018,31 @@ async function refreshSecurityPage() {
                 <tr>
                     <td><code>${escapeHtml(host.host)}</code></td>
                     <td>${host.port}</td>
-                    <td>${escapeHtml(host.type) || '-'}</td>
-                    <td><code title="${escapeHtml(host.fingerprint)}">${host.fingerprint ? host.fingerprint.substring(0, 24) + '...' : '-'}</code></td>
+                    <td><span style="font-family:monospace;font-size:0.9em">${escapeHtml(host.type) || '-'}</span></td>
+                    <td><code style="font-size:0.85em" title="${escapeHtml(host.fingerprint)}">${host.fingerprint ? host.fingerprint.substring(7, 50) + '...' : '-'}</code></td>
                     <td><button class="btn btn-small btn-danger" onclick="removeHost('${escapeHtml(host.host)}', ${host.port})">移除</button></td>
                 </tr>
             `).join('');
         } else {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888">暂无已知主机</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:20px">暂无已知主机<br><span style="font-size:0.9em">首次连接新主机时会自动添加</span></td></tr>';
         }
     } catch (e) {
         document.getElementById('hosts-table-body').innerHTML = '<tr><td colspan="5" style="color:red">加载失败: ' + e.message + '</td></tr>';
     }
+}
+
+function switchSecurityTab(tab) {
+    // 更新tab按钮状态
+    document.querySelectorAll('.card-header-tabs .tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+    
+    // 显示对应tab内容
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.add('hidden');
+    });
+    document.getElementById(`security-tab-${tab}`).classList.remove('hidden');
 }
 
 function toggleSshAuthType() {
