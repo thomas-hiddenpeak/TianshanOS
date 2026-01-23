@@ -244,47 +244,56 @@ static void dashboard_timer_callback(void *arg)
     // 1. CPU 统计（高频数据）
     ret = ts_api_call("system.cpu", NULL, &result);
     if (ret == ESP_OK && result.code == 0 && result.data) {
-        cJSON_AddItemToObject(dashboard, "cpu", cJSON_Duplicate(result.data, 1));
+        cJSON_AddItemToObject(dashboard, "cpu", result.data);
+        result.data = NULL;  // 所有权转移，防止重复释放
     }
     
     // 2. 内存信息
     ret = ts_api_call("system.memory", NULL, &result);
     if (ret == ESP_OK && result.code == 0 && result.data) {
-        cJSON_AddItemToObject(dashboard, "memory", cJSON_Duplicate(result.data, 1));
+        cJSON_AddItemToObject(dashboard, "memory", result.data);
+        result.data = NULL;
     }
     
     // 3. 系统信息（uptime 等）
     ret = ts_api_call("system.info", NULL, &result);
     if (ret == ESP_OK && result.code == 0 && result.data) {
-        cJSON_AddItemToObject(dashboard, "info", cJSON_Duplicate(result.data, 1));
+        cJSON_AddItemToObject(dashboard, "info", result.data);
+        result.data = NULL;
     }
     
     // 4. 网络状态
     ret = ts_api_call("network.status", NULL, &result);
     if (ret == ESP_OK && result.code == 0 && result.data) {
-        cJSON_AddItemToObject(dashboard, "network", cJSON_Duplicate(result.data, 1));
+        cJSON_AddItemToObject(dashboard, "network", result.data);
+        result.data = NULL;
     }
     
-    // 6. 电源状态
+    // 5. 电源状态
     ret = ts_api_call("power.status", NULL, &result);
     if (ret == ESP_OK && result.code == 0 && result.data) {
-        cJSON_AddItemToObject(dashboard, "power", cJSON_Duplicate(result.data, 1));
+        cJSON_AddItemToObject(dashboard, "power", result.data);
+        result.data = NULL;
     }
     
     // 6. 风扇状态
     ret = ts_api_call("fan.status", NULL, &result);
     if (ret == ESP_OK && result.code == 0 && result.data) {
-        cJSON_AddItemToObject(dashboard, "fan", cJSON_Duplicate(result.data, 1));
+        cJSON_AddItemToObject(dashboard, "fan", result.data);
+        result.data = NULL;
     }
     
     // 7. 服务列表
     ret = ts_api_call("service.list", NULL, &result);
     if (ret == ESP_OK && result.code == 0 && result.data) {
-        cJSON_AddItemToObject(dashboard, "services", cJSON_Duplicate(result.data, 1));
+        cJSON_AddItemToObject(dashboard, "services", result.data);
+        result.data = NULL;
     }
     
-    // 广播聚合数据
+    // 广播聚合数据（会复制一次数据）
     ts_ws_broadcast_to_topic("system.dashboard", dashboard);
+    
+    // 释放聚合对象（包含所有子对象）
     cJSON_Delete(dashboard);
 }
 

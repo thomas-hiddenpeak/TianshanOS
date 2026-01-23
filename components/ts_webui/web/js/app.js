@@ -337,86 +337,80 @@ async function loadSystemPage() {
         <div class="page-system">
             <h1>🖥️ 系统</h1>
             
-            <!-- 系统概览卡片 -->
+            <!-- 紧凑式系统概览 -->
             <div class="cards">
+                <!-- 资源监控 (标题栏含服务状态) - 放首位，高频被动观察 -->
                 <div class="card">
-                    <h3>📟 系统信息</h3>
-                    <div class="card-content">
-                        <p><strong>芯片:</strong> <span id="sys-chip">-</span></p>
-                        <p><strong>固件:</strong> <span id="sys-version">-</span></p>
-                        <p><strong>IDF:</strong> <span id="sys-idf">-</span></p>
-                        <p><strong>编译:</strong> <span id="sys-compile">-</span></p>
-                        <p><strong>运行时间:</strong> <span id="sys-uptime">-</span></p>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                        <h3 style="margin:0">📊 资源监控</h3>
+                        <div onclick="showServicesModal()" style="cursor:pointer;font-size:0.9em;color:#007bff;padding:4px 12px;border-radius:4px;background:#f0f8ff">
+                            📋 服务 <span id="services-running" style="color:#2ecc71;font-weight:bold">-</span>/<span id="services-total">-</span>
+                        </div>
+                    </div>
+                    <div class="card-content" style="display:flex;gap:20px">
+                        <div style="flex:1">
+                            <p><strong>CPU</strong></p>
+                            <div id="cpu-cores" style="margin-top:5px">
+                                <div class="loading-small">加载中...</div>
+                            </div>
+                        </div>
+                        <div style="flex:1;border-left:1px solid #e0e0e0;padding-left:20px">
+                            <p><strong>内存</strong></p>
+                            <div style="margin-top:5px">
+                                <p style="font-size:0.85em;margin:3px 0">DRAM:</p>
+                                <div class="progress-bar" style="height:12px"><div class="progress" id="heap-progress"></div></div>
+                                <p style="font-size:0.8em;margin:2px 0" id="heap-text">-</p>
+                                <p style="font-size:0.85em;margin:8px 0 3px">PSRAM:</p>
+                                <div class="progress-bar" style="height:12px"><div class="progress" id="psram-progress"></div></div>
+                                <p style="font-size:0.8em;margin:2px 0" id="psram-text">-</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
+                <!-- 系统总览 (包含电源) - 第二位，操作按钮在右手热区 -->
                 <div class="card">
-                    <h3>🕐 系统时间</h3>
-                    <div class="card-content">
-                        <p><strong>当前:</strong> <span id="sys-datetime">-</span></p>
-                        <p><strong>状态:</strong> <span id="sys-time-status">-</span></p>
-                        <p><strong>来源:</strong> <span id="sys-time-source">-</span></p>
-                        <p><strong>时区:</strong> <span id="sys-timezone">-</span></p>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                        <h3 style="margin:0">📟 系统总览</h3>
+                        <button class="btn btn-warning btn-small" onclick="confirmReboot()" style="font-size:0.85em">🔄 重启</button>
                     </div>
-                    <div class="button-group" style="margin-top:10px">
-                        <button class="btn btn-small" onclick="syncTimeFromBrowser()">🔄 浏览器同步</button>
-                        <button class="btn btn-small" onclick="showTimezoneModal()">⚙️ 时区</button>
+                    <div class="card-content" style="display:flex;gap:20px">
+                        <div style="flex:1">
+                            <p><strong>芯片:</strong> <span id="sys-chip">-</span></p>
+                            <p><strong>固件:</strong> <span id="sys-version">-</span> / <span id="sys-idf" style="font-size:0.85em;color:#888">-</span></p>
+                            <p><strong>运行:</strong> <span id="sys-uptime">-</span></p>
+                            <p style="font-size:0.8em;color:#888;margin-top:5px" id="sys-compile">-</p>
+                        </div>
+                        <div style="flex:1;border-left:1px solid #e0e0e0;padding-left:20px">
+                            <p style="font-size:0.9em;color:#888;margin-bottom:5px">电源状态</p>
+                            <p><strong>输入:</strong> <span id="voltage">-</span> <span style="font-size:0.85em;color:#888">/ 内部 <span id="internal-voltage">-</span></span></p>
+                            <p><strong>电流:</strong> <span id="current">-</span></p>
+                            <p><strong>功率:</strong> <span id="power-watts">-</span></p>
+                            <p><strong>保护:</strong> <span id="protection-status">-</span></p>
+                        </div>
                     </div>
                 </div>
                 
+                <!-- 网络 & 时间 -->
                 <div class="card">
-                    <h3>💾 内存</h3>
-                    <div class="card-content">
-                        <p><strong>堆内存:</strong></p>
-                        <div class="progress-bar"><div class="progress" id="heap-progress"></div></div>
-                        <p style="font-size:0.9em" id="heap-text">-</p>
-                        <p><strong>PSRAM:</strong></p>
-                        <div class="progress-bar"><div class="progress" id="psram-progress"></div></div>
-                        <p style="font-size:0.9em" id="psram-text">-</p>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h3>💻 CPU</h3>
-                    <div class="card-content" id="cpu-cores">
-                        <div class="loading-small">加载中...</div>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h3>🌐 网络</h3>
-                    <div class="card-content">
-                        <p><strong>以太网:</strong> <span id="eth-status">-</span></p>
-                        <p><strong>WiFi:</strong> <span id="wifi-status">-</span></p>
-                        <p><strong>IP:</strong> <span id="ip-addr">-</span></p>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h3>⚡ 电源</h3>
-                    <div class="card-content">
-                        <p><strong>电压:</strong> <span id="voltage">-</span></p>
-                        <p><strong>电流:</strong> <span id="current">-</span></p>
-                        <p><strong>功率:</strong> <span id="power-watts">-</span></p>
-                        <p><strong>保护:</strong> <span id="protection-status">-</span></p>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h3>🖲️ 设备</h3>
-                    <div class="card-content">
-                        <p><strong>AGX:</strong> <span id="agx-status">-</span></p>
-                        <p><strong>LPMU:</strong> <span id="lpmu-status">-</span></p>
-                    </div>
-                </div>
-                
-                <div class="card">
-                    <h3>⚙️ 系统操作</h3>
-                    <div class="card-content">
-                        <p style="color:#888;font-size:0.9em">管理 ESP32 系统</p>
-                    </div>
-                    <div class="button-group" style="margin-top:10px">
-                        <button class="btn btn-warning btn-small" onclick="confirmReboot()">🔄 重启系统</button>
+                    <h3>🌐 网络 & 时间</h3>
+                    <div class="card-content" style="display:flex;gap:20px">
+                        <div style="flex:1">
+                            <p style="font-size:0.9em;color:#888;margin-bottom:5px">网络连接</p>
+                            <p><strong>以太网:</strong> <span id="eth-status">-</span></p>
+                            <p><strong>WiFi:</strong> <span id="wifi-status">-</span></p>
+                            <p><strong>IP:</strong> <span id="ip-addr" style="font-size:0.9em">-</span></p>
+                        </div>
+                        <div style="flex:1;border-left:1px solid #e0e0e0;padding-left:20px">
+                            <p style="font-size:0.9em;color:#888;margin-bottom:5px">时间同步</p>
+                            <p><strong>当前:</strong> <span id="sys-datetime" style="font-size:0.9em">-</span></p>
+                            <p><strong>状态:</strong> <span id="sys-time-status">-</span> <span style="font-size:0.85em;color:#888">(<span id="sys-time-source">-</span>)</span></p>
+                            <p><strong>时区:</strong> <span id="sys-timezone">-</span></p>
+                            <div style="margin-top:8px;display:flex;gap:5px">
+                                <button class="btn btn-small" onclick="syncTimeFromBrowser()" style="font-size:0.85em;padding:4px 8px">🔄 同步</button>
+                                <button class="btn btn-small" onclick="showTimezoneModal()" style="font-size:0.85em;padding:4px 8px">⚙️ 时区</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -428,22 +422,29 @@ async function loadSystemPage() {
                     <div class="loading">加载中...</div>
                 </div>
             </div>
-            
-            <!-- 服务状态 -->
-            <div class="section">
-                <h2>📋 服务状态</h2>
-                <table class="data-table" id="services-table">
-                    <thead>
-                        <tr>
-                            <th>服务名称</th>
-                            <th>状态</th>
-                            <th>阶段</th>
-                            <th>健康</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="services-body"></tbody>
-                </table>
+        </div>
+        
+        <!-- 服务详情模态框 -->
+        <div id="services-modal" class="modal hidden">
+            <div class="modal-content" style="max-width:900px">
+                <div class="modal-header">
+                    <h2>📋 服务状态</h2>
+                    <button class="modal-close" onclick="hideServicesModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <table class="data-table" id="services-table">
+                        <thead>
+                            <tr>
+                                <th>服务名称</th>
+                                <th>状态</th>
+                                <th>阶段</th>
+                                <th>健康</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="services-body"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
     `;
@@ -527,17 +528,6 @@ async function refreshSystemPageOnce() {
         document.getElementById('voltage').textContent = '-'; 
         document.getElementById('current').textContent = '-'; 
         document.getElementById('power-watts').textContent = '-'; 
-    }
-    
-    // 设备状态
-    try {
-        const devStatus = await api.deviceStatus();
-        if (devStatus.data?.devices) {
-            updateDeviceInfo(devStatus.data.devices);
-        }
-    } catch (e) {
-        document.getElementById('agx-status').textContent = '-';
-        document.getElementById('lpmu-status').textContent = '-';
     }
     
     // 风扇
@@ -676,8 +666,8 @@ function updateCpuInfo(data) {
         const usage = Math.round(core.usage || 0);
         const color = usage > 80 ? '#e74c3c' : (usage > 50 ? '#f39c12' : '#2ecc71');
         html += `
-            <p><strong>Core ${core.id}:</strong> ${usage}%</p>
-            <div class="progress-bar">
+            <p style="font-size:0.85em;margin:3px 0"><strong>Core ${core.id}:</strong> ${usage}%</p>
+            <div class="progress-bar" style="height:10px">
                 <div class="progress" style="width:${usage}%;background-color:${color}"></div>
             </div>
         `;
@@ -685,7 +675,7 @@ function updateCpuInfo(data) {
     
     if (data.total_usage !== undefined) {
         const avgUsage = Math.round(data.total_usage);
-        html += `<p style="margin-top:8px;font-size:0.9em;color:#888">平均: ${avgUsage}%</p>`;
+        html += `<p style="margin-top:5px;font-size:0.8em;color:#888">平均: ${avgUsage}%</p>`;
     }
     
     container.innerHTML = html;
@@ -704,29 +694,30 @@ function updateNetworkInfo(data) {
 // 更新电源信息
 function updatePowerInfo(data) {
     if (!data) return;
-    const voltage = data.power_chip?.voltage_v || 
-                   data.voltage?.supply_v || 
-                   data.stats?.avg_voltage_v;
-    const current = data.power_chip?.current_a ||
-                   data.current?.value_a;
-    const power = data.power_chip?.power_w ||
-                 data.power?.value_w;
     
+    // 输入电压：来自电源芯片 (GPIO47 UART)
+    const inputVoltage = data.power_chip?.voltage_v;
+    // 内部电压：来自 ADC 监控 (GPIO18 ADC)
+    const internalVoltage = data.voltage?.supply_v;
+    
+    const current = data.power_chip?.current_a || data.current?.value_a;
+    const power = data.power_chip?.power_w || data.power?.value_w;
+    
+    // 显示输入电压（主电压）
     document.getElementById('voltage').textContent = 
-        (typeof voltage === 'number' ? voltage.toFixed(1) + ' V' : '-');
+        (typeof inputVoltage === 'number' ? inputVoltage.toFixed(1) + ' V' : '-');
+    
+    // 显示内部电压（如果可用）
+    const internalVoltageElem = document.getElementById('internal-voltage');
+    if (internalVoltageElem) {
+        internalVoltageElem.textContent = 
+            (typeof internalVoltage === 'number' ? internalVoltage.toFixed(2) + ' V' : '-');
+    }
+    
     document.getElementById('current').textContent = 
         (typeof current === 'number' ? current.toFixed(2) + ' A' : '-');
     document.getElementById('power-watts').textContent = 
         (typeof power === 'number' ? power.toFixed(1) + ' W' : '-');
-}
-
-// 更新设备信息
-function updateDeviceInfo(devices) {
-    if (!devices) return;
-    const agx = devices.find(d => d.name === 'agx');
-    const lpmu = devices.find(d => d.name === 'lpmu');
-    document.getElementById('agx-status').textContent = agx?.powered ? '🟢 运行中' : '⚫ 关机';
-    document.getElementById('lpmu-status').textContent = lpmu?.powered ? '🟢 运行中' : '⚫ 关机';
 }
 
 // 更新风扇信息
@@ -754,26 +745,49 @@ function updateFanInfo(data) {
 
 // 更新服务列表
 function updateServiceList(data) {
-    const tbody = document.getElementById('services-body');
-    tbody.innerHTML = '';
+    if (!data || !data.services) return;
     
-    if (data && data.services) {
-        data.services.forEach(svc => {
-            const tr = document.createElement('tr');
-            const stateClass = svc.state === 'RUNNING' ? 'status-ok' : 
-                              svc.state === 'ERROR' ? 'status-error' : 'status-warn';
-            tr.innerHTML = `
-                <td>${svc.name}</td>
-                <td><span class="status-badge ${stateClass}">${svc.state}</span></td>
-                <td>${svc.phase}</td>
-                <td>${svc.healthy ? '✅' : '❌'}</td>
-                <td>
-                    <button class="btn btn-small" onclick="serviceAction('${svc.name}', 'restart')">重启</button>
-                </td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
+    const services = data.services;
+    const runningCount = services.filter(s => s.state === 'RUNNING').length;
+    const totalCount = services.length;
+    
+    // 更新卡片统计
+    const runningElem = document.getElementById('services-running');
+    const totalElem = document.getElementById('services-total');
+    if (runningElem) runningElem.textContent = runningCount;
+    if (totalElem) totalElem.textContent = totalCount;
+    
+    // 更新模态框表格
+    const tbody = document.getElementById('services-body');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    services.forEach(svc => {
+        const tr = document.createElement('tr');
+        const stateClass = svc.state === 'RUNNING' ? 'status-ok' : 
+                          svc.state === 'ERROR' ? 'status-error' : 'status-warn';
+        tr.innerHTML = `
+            <td>${svc.name}</td>
+            <td><span class="status-badge ${stateClass}">${svc.state}</span></td>
+            <td>${svc.phase}</td>
+            <td>${svc.healthy ? '✅' : '❌'}</td>
+            <td>
+                <button class="btn btn-small" onclick="serviceAction('${svc.name}', 'restart')">重启</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// 显示/隐藏服务模态框
+function showServicesModal() {
+    const modal = document.getElementById('services-modal');
+    if (modal) modal.classList.remove('hidden');
+}
+
+function hideServicesModal() {
+    const modal = document.getElementById('services-modal');
+    if (modal) modal.classList.add('hidden');
 }
 
 async function setFanSpeed(id, speed) {
