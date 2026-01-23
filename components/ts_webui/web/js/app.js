@@ -781,9 +781,6 @@ function generateLedDeviceCard(dev) {
                     <span class="power-text">${isOn ? '关闭' : '开启'}</span>
                 </button>
                 ${matrixButtons}
-                <button class="led-func-btn" onclick="openLedModal('${dev.name}', 'effect')" title="全部特效">
-                    <span class="func-icon">🎬</span>
-                </button>
                 <button class="led-save-btn" onclick="saveLedConfig('${dev.name}')" title="保存配置">
                     💾
                 </button>
@@ -1214,7 +1211,7 @@ function openLedModal(device, type) {
     
     const titleMap = {
         'effect': `🎬 ${device} - 程序动画`,
-        'content': `🎬 ${device} - 内容`,
+        'content': `📷 ${device} - 图像/QR码`,
         'text': `📝 ${device} - 文本显示`,
         'filter': `🎨 ${device} - 后处理滤镜`
     };
@@ -1353,7 +1350,7 @@ async function generateQrCodeFromModal() {
     }
     
     try {
-        await api.call('led.qr', { device: 'matrix', text, ecc, fg_color: fg, bg_image: bgImage || undefined });
+        await api.call('led.qrcode', { device: 'matrix', text, ecc, fg_color: fg, bg_image: bgImage || undefined });
         showToast('QR 码已生成', 'success');
     } catch (e) {
         showToast(`生成 QR 码失败: ${e.message}`, 'error');
@@ -1418,7 +1415,7 @@ async function displayTextFromModal() {
 // 模态框内停止文本
 async function stopTextFromModal() {
     try {
-        await api.call('led.text_stop', { device: 'matrix' });
+        await api.call('led.text.stop', { device: 'matrix' });
         showToast('文本滚动已停止', 'success');
     } catch (e) {
         showToast(`停止文本失败: ${e.message}`, 'error');
@@ -1452,7 +1449,7 @@ async function applyFilterFromModal() {
     const speed = parseInt(document.getElementById('modal-filter-speed')?.value || '50');
     
     try {
-        await api.call('led.filter', { device: 'matrix', filter: selectedModalFilter, speed });
+        await api.call('led.filter.start', { device: 'matrix', filter: selectedModalFilter, speed });
         showToast(`滤镜 ${selectedModalFilter} 已应用`, 'success');
     } catch (e) {
         showToast(`应用滤镜失败: ${e.message}`, 'error');
@@ -1462,7 +1459,7 @@ async function applyFilterFromModal() {
 // 模态框内停止滤镜
 async function stopFilterFromModal() {
     try {
-        await api.call('led.filter_stop', { device: 'matrix' });
+        await api.call('led.filter.stop', { device: 'matrix' });
         showToast('滤镜已停止', 'success');
     } catch (e) {
         showToast(`停止滤镜失败: ${e.message}`, 'error');
