@@ -14,6 +14,7 @@
 #include "ts_log.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -172,13 +173,22 @@ esp_err_t ts_log_init(void)
     s_log_ctx.task_name_enabled = false;
 #endif
 
-    // 初始化日志缓冲区
+    // 初始化日志缓冲区（优先使用 PSRAM）
     if (s_log_ctx.output_mask & TS_LOG_OUTPUT_BUFFER) {
         s_log_ctx.buffer.capacity = TS_LOG_BUFFER_SIZE;
-        s_log_ctx.buffer.entries = calloc(TS_LOG_BUFFER_SIZE, sizeof(ts_log_entry_t));
+        s_log_ctx.buffer.entries = heap_caps_calloc(TS_LOG_BUFFER_SIZE, sizeof(ts_log_entry_t), 
+                                                     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (s_log_ctx.buffer.entries == NULL) {
-            ESP_LOGW(TAG, "Failed to allocate log buffer");
-            s_log_ctx.output_mask &= ~TS_LOG_OUTPUT_BUFFER;
+            // Fallback 到 DRAM
+            ESP_LOGW(TAG, "PSRAM not available, using DRAM for log buffer");
+            s_log_ctx.buffer.entries = calloc(TS_LOG_BUFFER_SIZE, sizeof(ts_log_entry_t));
+            if (s_log_ctx.buffer.entries == NULL) {
+                ESP_LOGW(TAG, "Failed to allocate log buffer");
+                s_log_ctx.output_mask &= ~TS_LOG_OUTPUT_BUFFER;
+            }
+        } else {
+            ESP_LOGI(TAG, "Log buffer allocated in PSRAM (%zu entries, %zu bytes)",
+                     TS_LOG_BUFFER_SIZE, TS_LOG_BUFFER_SIZE * sizeof(ts_log_entry_t));
         }
         s_log_ctx.buffer.head = 0;
         s_log_ctx.buffer.count = 0;

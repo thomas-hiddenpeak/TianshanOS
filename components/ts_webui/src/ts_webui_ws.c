@@ -17,6 +17,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "esp_heap_caps.h"
 #include <string.h>
 #include <sys/socket.h>
 #include <errno.h>
@@ -1084,12 +1085,19 @@ esp_err_t ts_webui_ws_init(void)
         s_output_mutex = xSemaphoreCreateMutex();
     }
     
-    // 分配终端输出缓冲区
+    // 分配终端输出缓冲区（优先使用 PSRAM）
     if (!s_terminal_output_buf) {
-        s_terminal_output_buf = malloc(TERMINAL_OUTPUT_BUF_SIZE);
+        s_terminal_output_buf = heap_caps_malloc(TERMINAL_OUTPUT_BUF_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         if (!s_terminal_output_buf) {
-            TS_LOGE(TAG, "Failed to allocate terminal output buffer");
-            return ESP_ERR_NO_MEM;
+            // Fallback 到 DRAM
+            TS_LOGW(TAG, "PSRAM not available, using DRAM for terminal buffer");
+            s_terminal_output_buf = malloc(TERMINAL_OUTPUT_BUF_SIZE);
+            if (!s_terminal_output_buf) {
+                TS_LOGE(TAG, "Failed to allocate terminal output buffer");
+                return ESP_ERR_NO_MEM;
+            }
+        } else {
+            TS_LOGI(TAG, "Terminal buffer allocated in PSRAM (%d bytes)", TERMINAL_OUTPUT_BUF_SIZE);
         }
         s_terminal_output_buf[0] = '\0';
         s_terminal_output_len = 0;
