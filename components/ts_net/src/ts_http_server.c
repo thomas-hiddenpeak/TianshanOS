@@ -1,9 +1,12 @@
 /**
  * @file ts_http_server.c
  * @brief HTTP Server Implementation
+ * 
+ * 请求体和响应缓冲区优先分配到 PSRAM
  */
 
 #include "ts_http_server.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM */
 #include "ts_log.h"
 #include "ts_storage.h"
 #include "esp_log.h"
@@ -101,7 +104,7 @@ static esp_err_t http_handler_wrapper(httpd_req_t *req)
     
     // Read body if present - must loop to receive all data
     if (req->content_len > 0) {
-        ts_req.body = malloc(req->content_len + 1);
+        ts_req.body = TS_MALLOC_PSRAM(req->content_len + 1);
         if (ts_req.body) {
             size_t total_received = 0;
             while (total_received < req->content_len) {
@@ -141,8 +144,8 @@ esp_err_t ts_http_server_register_route(const ts_http_route_t *route)
 {
     if (!s_server || !route) return ESP_ERR_INVALID_STATE;
     
-    // Allocate persistent copy of route
-    ts_http_route_t *route_copy = malloc(sizeof(ts_http_route_t));
+    // Allocate persistent copy of route (prefer PSRAM)
+    ts_http_route_t *route_copy = TS_MALLOC_PSRAM(sizeof(ts_http_route_t));
     if (!route_copy) return ESP_ERR_NO_MEM;
     *route_copy = *route;
     
@@ -221,7 +224,7 @@ esp_err_t ts_http_send_file(ts_http_request_t *req, const char *filepath)
         return ts_http_send_error(req, 404, "File not found");
     }
     
-    char *buf = malloc(size);
+    char *buf = TS_MALLOC_PSRAM(size);
     if (!buf) {
         return ts_http_send_error(req, 500, "Memory allocation failed");
     }
@@ -267,7 +270,7 @@ esp_err_t ts_http_get_query_param(ts_http_request_t *req, const char *key,
     size_t buf_len = httpd_req_get_url_query_len(req->req) + 1;
     if (buf_len <= 1) return ESP_ERR_NOT_FOUND;
     
-    char *buf = malloc(buf_len);
+    char *buf = TS_MALLOC_PSRAM(buf_len);
     if (!buf) return ESP_ERR_NO_MEM;
     
     esp_err_t ret = httpd_req_get_url_query_str(req->req, buf, buf_len);

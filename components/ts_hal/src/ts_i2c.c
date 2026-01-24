@@ -15,6 +15,11 @@
 #include "freertos/semphr.h"
 #include <string.h>
 #include <stdlib.h>
+#include "esp_heap_caps.h"
+
+/* PSRAM 优先分配宏 */
+#define TS_HAL_CALLOC(n, size) ({ void *p = heap_caps_calloc((n), (size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : calloc((n), (size)); })
+#define TS_HAL_MALLOC(size) ({ void *p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : malloc(size); })
 
 #define TAG "ts_i2c"
 
@@ -160,8 +165,8 @@ ts_i2c_handle_t ts_i2c_create(const ts_i2c_config_t *config, const char *owner)
         return NULL;
     }
     
-    /* Allocate handle */
-    ts_i2c_handle_t handle = calloc(1, sizeof(struct ts_i2c_s));
+    /* Allocate handle (prefer PSRAM) */
+    ts_i2c_handle_t handle = TS_HAL_CALLOC(1, sizeof(struct ts_i2c_s));
     if (handle == NULL) {
         ts_pin_manager_release(config->sda_function);
         ts_pin_manager_release(config->scl_function);
@@ -293,8 +298,8 @@ esp_err_t ts_i2c_write_reg(ts_i2c_handle_t handle, uint8_t dev_addr,
         return ESP_ERR_INVALID_ARG;
     }
     
-    /* Combine reg_addr and data */
-    uint8_t *buf = malloc(len + 1);
+    /* Combine reg_addr and data (prefer PSRAM) */
+    uint8_t *buf = TS_HAL_MALLOC(len + 1);
     if (buf == NULL) {
         return ESP_ERR_NO_MEM;
     }

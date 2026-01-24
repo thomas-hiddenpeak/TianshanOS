@@ -10,8 +10,12 @@
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
 #include "esp_crt_bundle.h"
+#include "esp_heap_caps.h"
 #include "ts_ota.h"
 #include "ts_event.h"
+
+/* PSRAM-first allocation */
+#define OTA_STRDUP(s) ({ const char *_s = (s); size_t _len = _s ? strlen(_s) + 1 : 0; char *_p = _len ? heap_caps_malloc(_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) : NULL; if (_p) memcpy(_p, _s, _len); else if (_len) { _p = strdup(_s); } _p; })
 
 static const char *TAG = "ts_ota_https";
 
@@ -47,7 +51,7 @@ esp_err_t ts_ota_start_https(const ts_ota_config_t *config)
     if (s_ota_url) {
         free(s_ota_url);
     }
-    s_ota_url = strdup(config->url);
+    s_ota_url = OTA_STRDUP(config->url);
     if (!s_ota_url) {
         ESP_LOGE(TAG, "Failed to allocate URL buffer");
         return ESP_ERR_NO_MEM;

@@ -1,9 +1,12 @@
 /**
  * @file ts_crypto.c
  * @brief Cryptographic Utilities Implementation
+ * 
+ * 密钥和临时缓冲区优先分配到 PSRAM
  */
 
 #include "ts_crypto.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM, TS_CALLOC_PSRAM */
 #include "mbedtls/sha256.h"
 #include "mbedtls/sha512.h"
 #include "mbedtls/md.h"
@@ -240,7 +243,7 @@ esp_err_t ts_crypto_keypair_generate(ts_crypto_key_type_t type, ts_keypair_t *ke
     esp_err_t err = init_rng();
     if (err != ESP_OK) return err;
     
-    struct ts_keypair_s *kp = calloc(1, sizeof(struct ts_keypair_s));
+    struct ts_keypair_s *kp = TS_CALLOC_PSRAM(1, sizeof(struct ts_keypair_s));
     if (!kp) return ESP_ERR_NO_MEM;
     
     mbedtls_pk_init(&kp->pk);
@@ -366,7 +369,7 @@ esp_err_t ts_crypto_keypair_export_openssh(ts_keypair_t keypair, char *openssh, 
     esp_err_t result = ESP_FAIL;
     
     /* Allocate temporary buffer for binary blob */
-    blob = malloc(4096);
+    blob = TS_MALLOC_PSRAM(4096);
     if (!blob) return ESP_ERR_NO_MEM;
     
     size_t pos = 0;
@@ -385,8 +388,8 @@ esp_err_t ts_crypto_keypair_export_openssh(ts_keypair_t keypair, char *openssh, 
         
         /* Get RSA parameters */
         size_t n_len = mbedtls_rsa_get_len(rsa);
-        uint8_t *n_buf = malloc(n_len);
-        uint8_t *e_buf = malloc(n_len);  /* e is smaller but reuse buffer size */
+        uint8_t *n_buf = TS_MALLOC_PSRAM(n_len);
+        uint8_t *e_buf = TS_MALLOC_PSRAM(n_len);  /* e is smaller but reuse buffer size */
         
         if (!n_buf || !e_buf) {
             free(n_buf);
@@ -456,7 +459,7 @@ esp_err_t ts_crypto_keypair_export_openssh(ts_keypair_t keypair, char *openssh, 
         
         /* Write public point Q (uncompressed: 0x04 || X || Y) */
         size_t q_len = 1 + 2 * coord_len;
-        uint8_t *q_buf = malloc(q_len);
+        uint8_t *q_buf = TS_MALLOC_PSRAM(q_len);
         if (!q_buf) {
             free(blob);
             return ESP_ERR_NO_MEM;
@@ -484,7 +487,7 @@ esp_err_t ts_crypto_keypair_export_openssh(ts_keypair_t keypair, char *openssh, 
     
     /* Base64 encode the blob */
     size_t b64_len = ((blob_len + 2) / 3) * 4 + 1;
-    char *b64 = malloc(b64_len);
+    char *b64 = TS_MALLOC_PSRAM(b64_len);
     if (!b64) {
         free(blob);
         return ESP_ERR_NO_MEM;
@@ -553,7 +556,7 @@ esp_err_t ts_crypto_keypair_import(const char *pem, size_t pem_len, ts_keypair_t
     esp_err_t err = init_rng();
     if (err != ESP_OK) return err;
     
-    struct ts_keypair_s *kp = calloc(1, sizeof(struct ts_keypair_s));
+    struct ts_keypair_s *kp = TS_CALLOC_PSRAM(1, sizeof(struct ts_keypair_s));
     if (!kp) return ESP_ERR_NO_MEM;
     
     mbedtls_pk_init(&kp->pk);

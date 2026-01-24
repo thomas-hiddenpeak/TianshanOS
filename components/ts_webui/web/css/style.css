@@ -3348,3 +3348,385 @@ body {
         height: 24px;
     }
 }
+
+/* =========================================================================
+   内存详情模态框样式
+   ========================================================================= */
+
+.memory-detail-modal {
+    min-width: 600px;
+    max-width: 800px;
+}
+
+.memory-overview {
+    display: flex;
+    gap: 30px;
+    justify-content: center;
+    margin-bottom: 24px;
+    padding: 20px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 12px;
+}
+
+.memory-gauge {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.gauge-ring {
+    position: relative;
+    width: 100px;
+    height: 100px;
+}
+
+.gauge-ring svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+
+.gauge-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+}
+
+.gauge-percent {
+    display: block;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--text-color);
+}
+
+.gauge-label {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.gauge-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 0.85rem;
+}
+
+.info-row span {
+    color: var(--text-light);
+}
+
+.info-row strong {
+    font-weight: 600;
+}
+
+.memory-details {
+    margin-bottom: 20px;
+}
+
+.memory-details h4,
+.memory-dma-info h4,
+.memory-tips h4,
+.memory-history h4 {
+    font-size: 0.95rem;
+    margin-bottom: 12px;
+    color: var(--text-color);
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.memory-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.memory-table th,
+.memory-table td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.memory-table th {
+    background: var(--bg-color);
+    font-weight: 600;
+    color: var(--text-light);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+}
+
+.memory-table tr:hover {
+    background: #f8f9fa;
+}
+
+.memory-dma-info {
+    margin-bottom: 20px;
+}
+
+.dma-bar {
+    background: var(--card-bg);
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.dma-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-size: 0.8rem;
+    color: var(--text-light);
+}
+
+.memory-tips {
+    margin-bottom: 20px;
+}
+
+.memory-tip {
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    border-left: 3px solid currentColor;
+}
+
+/* 任务内存统计 */
+.memory-tasks {
+    margin-top: 16px;
+}
+
+.memory-tasks .task-table code {
+    background: #e8e8e8;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+/* 可排序表头 */
+.sortable-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+}
+
+.sortable-table th.sortable:hover {
+    background: #e0e8f0;
+}
+
+/* 静态内存段 */
+.memory-static-sections {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #e8f4f8 0%, #f0f7fa 100%);
+    border-radius: 8px;
+    border: 1px solid #d0e8f0;
+}
+
+.static-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.static-item {
+    background: #fff;
+    padding: 10px 12px;
+    border-radius: 6px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.static-item.highlight {
+    background: #e3f2fd;
+    border: 1px solid #90caf9;
+}
+
+.static-label {
+    display: block;
+    font-size: 0.75rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.static-value {
+    display: block;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #2c3e50;
+    margin: 4px 0;
+}
+
+.static-desc {
+    display: block;
+    font-size: 0.7rem;
+    color: #888;
+}
+
+/* IRAM 信息 */
+.memory-iram {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #fff3e0 0%, #fff8e1 100%);
+    border-radius: 8px;
+    border: 1px solid #ffe0b2;
+}
+
+.iram-grid {
+    display: flex;
+    gap: 20px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.iram-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 16px;
+    background: #fff;
+    border-radius: 6px;
+    min-width: 100px;
+}
+
+.iram-label {
+    font-size: 0.75rem;
+    color: #666;
+}
+
+.iram-value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #e65100;
+}
+
+/* RTC 内存 */
+.memory-rtc {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #f3e5f5 0%, #fce4ec 100%);
+    border-radius: 8px;
+    border: 1px solid #e1bee7;
+}
+
+.rtc-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-size: 0.85rem;
+    color: #666;
+}
+
+/* 内存能力分布 */
+.memory-caps {
+    margin-top: 16px;
+}
+
+/* NVS 存储 */
+.memory-nvs {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: #f5f5f5;
+    border-radius: 8px;
+}
+
+.nvs-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 8px;
+    font-size: 0.85rem;
+}
+
+.nvs-stats span {
+    color: #666;
+}
+
+.nvs-stats strong {
+    color: #333;
+}
+
+/* 历史统计 */
+.memory-history {
+    padding: 12px 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-top: 16px;
+}
+
+.history-stats {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+}
+
+.history-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.history-label {
+    font-size: 0.75rem;
+    color: #666;
+}
+
+.history-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.memory-history p {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.error-message {
+    padding: 24px;
+    text-align: center;
+    color: var(--danger-color);
+}
+
+/* 响应式设计 */
+@media (max-width: 700px) {
+    .memory-detail-modal {
+        min-width: 95%;
+        max-width: 95%;
+    }
+    
+    .memory-overview {
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+    }
+    
+    .memory-gauge {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .gauge-info {
+        align-items: center;
+    }
+    
+    .memory-table {
+        font-size: 0.75rem;
+    }
+    
+    .memory-table th,
+    .memory-table td {
+        padding: 8px 6px;
+    }
+}

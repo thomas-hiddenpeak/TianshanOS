@@ -15,6 +15,10 @@
 #include "ts_config.h"
 #include "cJSON.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
+
+/* PSRAM 优先分配宏 */
+#define TS_JSON_MALLOC(size) ({ void *p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : malloc(size); })
 
 static const char *TAG = "ts_config_json";
 
@@ -220,8 +224,8 @@ static char *read_file_content(const char *filepath, size_t *size)
         return NULL;
     }
 
-    // 分配内存
-    char *content = malloc(file_size + 1);
+    // 分配内存（优先使用 PSRAM）
+    char *content = TS_JSON_MALLOC(file_size + 1);
     if (content == NULL) {
         fclose(fp);
         return NULL;

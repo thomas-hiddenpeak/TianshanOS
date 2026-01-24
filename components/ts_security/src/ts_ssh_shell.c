@@ -11,6 +11,7 @@
 
 #include "ts_ssh_shell.h"
 #include "ts_ssh_client.h"
+#include "ts_core.h"  /* TS_CALLOC_PSRAM */
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -122,7 +123,7 @@ esp_err_t ts_ssh_shell_open(ts_ssh_session_t session,
     int sock = ts_ssh_get_socket(session);
 
     /* 分配 Shell 结构 */
-    ts_ssh_shell_t shell = calloc(1, sizeof(struct ts_ssh_shell_s));
+    ts_ssh_shell_t shell = TS_CALLOC_PSRAM(1, sizeof(struct ts_ssh_shell_s));
     if (!shell) {
         return ESP_ERR_NO_MEM;
     }

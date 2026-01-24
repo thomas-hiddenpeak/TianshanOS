@@ -24,6 +24,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include "esp_heap_caps.h"
+
+/* PSRAM 优先分配宏 */
+#define TS_SCRIPT_CALLOC(n, size) ({ void *p = heap_caps_calloc((n), (size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : calloc((n), (size)); })
+#define TS_SCRIPT_STRDUP(s) ({ const char *_s = (s); size_t _len = _s ? strlen(_s) + 1 : 0; char *_p = _len ? heap_caps_malloc(_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) : NULL; if (_p) memcpy(_p, _s, _len); else if (_len) { _p = strdup(_s); } _p; })
 
 #define TAG "ts_script"
 
@@ -182,7 +187,7 @@ esp_err_t ts_script_deinit(void)
 
 ts_script_ctx_t ts_script_ctx_create(void)
 {
-    ts_script_ctx_t ctx = calloc(1, sizeof(struct ts_script_ctx_s));
+    ts_script_ctx_t ctx = TS_SCRIPT_CALLOC(1, sizeof(struct ts_script_ctx_s));
     if (!ctx) return NULL;
     
     ctx->block_depth = 0;
@@ -383,7 +388,7 @@ esp_err_t ts_script_exec_string(const char *script)
     ts_script_ctx_t ctx = ts_script_ctx_create();
     if (!ctx) return ESP_ERR_NO_MEM;
     
-    char *copy = strdup(script);
+    char *copy = TS_SCRIPT_STRDUP(script);
     if (!copy) {
         ts_script_ctx_destroy(ctx);
         return ESP_ERR_NO_MEM;

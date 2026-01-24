@@ -19,6 +19,9 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
+/* PSRAM 优先分配宏 */
+#define TS_LOG_CALLOC(n, size) ({ void *p = heap_caps_calloc((n), (size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : calloc((n), (size)); })
+
 static const char *TAG = "ts_log";
 
 /* ============================================================================
@@ -434,8 +437,8 @@ esp_err_t ts_log_set_tag_level(const char *tag, ts_log_level_t level)
         node = node->next;
     }
 
-    // 创建新节点
-    node = calloc(1, sizeof(ts_log_tag_level_t));
+    // 创建新节点（优先使用 PSRAM）
+    node = TS_LOG_CALLOC(1, sizeof(ts_log_tag_level_t));
     if (node == NULL) {
         xSemaphoreGive(s_log_ctx.mutex);
         return ESP_ERR_NO_MEM;
@@ -600,7 +603,7 @@ esp_err_t ts_log_add_callback(ts_log_callback_t callback,
         return ESP_ERR_INVALID_ARG;
     }
 
-    ts_log_callback_node_t *node = calloc(1, sizeof(ts_log_callback_node_t));
+    ts_log_callback_node_t *node = TS_LOG_CALLOC(1, sizeof(ts_log_callback_node_t));
     if (node == NULL) {
         return ESP_ERR_NO_MEM;
     }

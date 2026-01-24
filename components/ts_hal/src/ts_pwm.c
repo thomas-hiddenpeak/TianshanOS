@@ -17,6 +17,10 @@
 #include "freertos/semphr.h"
 #include <string.h>
 #include <stdlib.h>
+#include "esp_heap_caps.h"
+
+/* PSRAM 优先分配宏 */
+#define TS_HAL_CALLOC(n, size) ({ void *p = heap_caps_calloc((n), (size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : calloc((n), (size)); })
 
 #define TAG "ts_pwm"
 
@@ -199,8 +203,8 @@ ts_pwm_handle_t ts_pwm_create(ts_pin_function_t function, const char *owner)
         return NULL;
     }
     
-    /* Allocate handle */
-    ts_pwm_handle_t handle = calloc(1, sizeof(struct ts_pwm_s));
+    /* Allocate handle (prefer PSRAM) */
+    ts_pwm_handle_t handle = TS_HAL_CALLOC(1, sizeof(struct ts_pwm_s));
     if (handle == NULL) {
         free_channel(channel);
         xSemaphoreGive(s_mutex);
@@ -257,8 +261,8 @@ ts_pwm_handle_t ts_pwm_create_raw(int gpio_num, const char *owner)
         return NULL;
     }
     
-    /* Allocate handle */
-    ts_pwm_handle_t handle = calloc(1, sizeof(struct ts_pwm_s));
+    /* Allocate handle (prefer PSRAM) */
+    ts_pwm_handle_t handle = TS_HAL_CALLOC(1, sizeof(struct ts_pwm_s));
     if (handle == NULL) {
         free_channel(channel);
         xSemaphoreGive(s_mutex);

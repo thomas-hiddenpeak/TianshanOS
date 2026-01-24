@@ -5,6 +5,7 @@
 
 #include "ts_security.h"
 #include "ts_crypto.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM */
 #include "ts_log.h"
 #include "nvs_flash.h"
 #include "nvs.h"
@@ -71,7 +72,7 @@ esp_err_t ts_security_generate_key(const char *name, ts_key_type_t type)
             return ESP_ERR_NOT_SUPPORTED;
     }
     
-    uint8_t *key = malloc(key_len);
+    uint8_t *key = TS_MALLOC_PSRAM(key_len);
     if (!key) return ESP_ERR_NO_MEM;
     
     ts_security_random(key, key_len);

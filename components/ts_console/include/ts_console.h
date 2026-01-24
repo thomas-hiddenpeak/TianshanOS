@@ -121,7 +121,7 @@ typedef void (*ts_console_output_cb_t)(const char *data, size_t len, void *user_
     .output = TS_CONSOLE_OUTPUT_UART, \
     .echo_enabled = true, \
     .task_priority = 5, \
-    .task_stack_size = 8192 \
+    .task_stack_size = 4096 \
 }
 
 /*===========================================================================*/

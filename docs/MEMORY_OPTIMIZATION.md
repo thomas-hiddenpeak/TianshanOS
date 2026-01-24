@@ -1,23 +1,26 @@
 # TianShanOS 内存优化方案
 
 **日期**：2026年1月24日  
-**问题**：DRAM 使用率 86%（257.7 KB / 301.3 KB），接近上限
+**状态**：✅ 已完成 - DRAM 碎片率从 ~60% 降至 42.1%
 
 ---
 
-## 📊 当前内存状态
+## 📊 当前内存状态（优化后）
 
 ### DRAM（内部 RAM）
-- **已用**：257.7 KB
-- **总量**：301.3 KB
-- **使用率**：**86%** ⚠️ 告急
-- **剩余**：43.6 KB
+- **已用**：184.4 KB
+- **总量**：302.0 KB
+- **使用率**：**61%** ✅ 健康
+- **空闲**：117.6 KB
+- **最大连续块**：68 KB ✅
+- **碎片率**：42.1%
 
 ### PSRAM（外部 RAM）
-- **已用**：2.4 MB
+- **已用**：~2.6 MB
 - **总量**：8.0 MB
-- **使用率**：30% ✅ 充足
-- **剩余**：5.6 MB
+- **使用率**：~33% ✅ 充足
+- **空闲**：~5.4 MB
+- **碎片率**：2.7%
 
 ---
 
@@ -100,25 +103,47 @@ static int cmd_system_memory_detail(void) {
 
 ---
 
-### 策略 2：启用 ESP-IDF PSRAM 配置
+### 策略 2：启用 ESP-IDF PSRAM 配置 ✅ 已实施
 
-#### Kconfig 选项（`sdkconfig`）
+#### 实际配置（`sdkconfig.defaults`）
 
 ```kconfig
-# 启用 PSRAM malloc 默认分配
-CONFIG_SPIRAM_USE_MALLOC=y
+# ============================================================================
+# PSRAM 优化 - 激进配置减少 DRAM 碎片（2026-01-24 优化）
+# ============================================================================
 
-# PSRAM 分配策略
-CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0
-CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768  # 保留 32KB DRAM
+# 核心配置：只有 <128 字节的分配才强制使用 DRAM（默认 16KB）
+# 这是效果最明显的配置，绝大多数分配将自动使用 PSRAM
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=128
 
-# 将 WiFi/BT 数据放入 PSRAM
-CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+# 保留 8KB DRAM 用于 DMA 和关键分配
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=8192
+
+# 允许 WiFi/LWIP 缓冲区使用 PSRAM（关键！）
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 
-# 将任务栈放入 PSRAM（需要谨慎）
-CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=n  # 建议关闭，影响性能
+# 允许任务栈在 PSRAM（可选，会略微影响性能）
+CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
+
+# 允许 BSS 段使用 PSRAM
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+
+# NVS 索引缓存放到 PSRAM
+CONFIG_NVS_ALLOCATE_CACHE_IN_SPIRAM=y
+
+# mbedTLS 使用外部 PSRAM
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 ```
+
+#### 配置说明
+
+| 配置项 | 默认值 | 优化值 | 效果 |
+|--------|--------|--------|------|
+| `SPIRAM_MALLOC_ALWAYSINTERNAL` | 16384 | 128 | **最关键** - 仅 <128B 分配用 DRAM |
+| `SPIRAM_MALLOC_RESERVE_INTERNAL` | 32768 | 8192 | 减少 DRAM 保留，更多空间可用 |
+| `SPIRAM_TRY_ALLOCATE_WIFI_LWIP` | n | y | WiFi 缓冲区优先用 PSRAM |
+| `NVS_ALLOCATE_CACHE_IN_SPIRAM` | n | y | NVS 缓存移至 PSRAM |
+| `MBEDTLS_EXTERNAL_MEM_ALLOC` | n | y | TLS 缓冲区移至 PSRAM |
 
 ---
 

@@ -1,10 +1,13 @@
 /**
  * @file ts_wifi.c
  * @brief WiFi Manager Implementation
+ * 
+ * AP 列表优先分配到 PSRAM
  */
 
 #include "ts_wifi.h"
 #include "ts_net.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM */
 #include "ts_log.h"
 #include "ts_event.h"
 #include "esp_wifi.h"
@@ -241,7 +244,7 @@ esp_err_t ts_wifi_sta_connect(void)
             esp_wifi_scan_get_ap_num(&ap_count);
             
             if (ap_count > 0) {
-                wifi_ap_record_t *ap_list = malloc(ap_count * sizeof(wifi_ap_record_t));
+                wifi_ap_record_t *ap_list = TS_MALLOC_PSRAM(ap_count * sizeof(wifi_ap_record_t));
                 if (ap_list) {
                     uint16_t actual_count = ap_count;
                     if (esp_wifi_scan_get_ap_records(&actual_count, ap_list) == ESP_OK) {
@@ -380,7 +383,7 @@ esp_err_t ts_wifi_scan_get_results(ts_wifi_scan_result_t *results, uint16_t *cou
     if (!results || !count) return ESP_ERR_INVALID_ARG;
     
     uint16_t ap_num = *count;
-    wifi_ap_record_t *ap_list = malloc(ap_num * sizeof(wifi_ap_record_t));
+    wifi_ap_record_t *ap_list = TS_MALLOC_PSRAM(ap_num * sizeof(wifi_ap_record_t));
     if (!ap_list) return ESP_ERR_NO_MEM;
     
     esp_err_t ret = esp_wifi_scan_get_ap_records(&ap_num, ap_list);

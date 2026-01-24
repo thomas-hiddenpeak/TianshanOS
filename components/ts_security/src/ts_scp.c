@@ -4,10 +4,13 @@
  *
  * SCP（安全复制协议）实现，用于简单的单文件传输。
  * 如需目录操作或复杂文件管理，请使用 SFTP。
+ * 
+ * 传输缓冲区优先分配到 PSRAM
  */
 
 #include "ts_scp.h"
 #include "ts_ssh_client.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM */
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -141,7 +144,7 @@ esp_err_t ts_scp_send(ts_ssh_session_t ssh_session, const char *local_path,
     }
     
     /* 分配传输缓冲区 */
-    buffer = malloc(SCP_BUFFER_SIZE);
+    buffer = TS_MALLOC_PSRAM(SCP_BUFFER_SIZE);
     if (!buffer) {
         ret = ESP_ERR_NO_MEM;
         goto cleanup;
@@ -288,7 +291,7 @@ esp_err_t ts_scp_recv(ts_ssh_session_t ssh_session, const char *remote_path,
     }
     
     /* 分配传输缓冲区 */
-    buffer = malloc(SCP_BUFFER_SIZE);
+    buffer = TS_MALLOC_PSRAM(SCP_BUFFER_SIZE);
     if (!buffer) {
         ret = ESP_ERR_NO_MEM;
         goto cleanup;
@@ -489,7 +492,7 @@ esp_err_t ts_scp_recv_buffer(ts_ssh_session_t ssh_session, const char *remote_pa
              remote_path, (unsigned long long)file_size);
     
     /* 分配缓冲区 */
-    buf = malloc((size_t)file_size);
+    buf = TS_MALLOC_PSRAM((size_t)file_size);
     if (!buf) {
         ret = ESP_ERR_NO_MEM;
         goto cleanup;

@@ -406,7 +406,10 @@ async function loadSystemPage() {
                             </div>
                         </div>
                         <div style="flex:1;border-left:1px solid #e0e0e0;padding-left:20px">
-                            <p><strong>内存</strong></p>
+                            <div style="display:flex;justify-content:space-between;align-items:center">
+                                <p><strong>内存</strong></p>
+                                <button class="btn btn-sm" onclick="showMemoryDetailModal()" style="font-size:0.75em;padding:2px 8px" title="查看详细内存分析">📊 详情</button>
+                            </div>
                             <div style="margin-top:5px">
                                 <p style="font-size:0.85em;margin:3px 0">DRAM:</p>
                                 <div class="progress-bar" style="height:12px"><div class="progress" id="heap-progress"></div></div>
@@ -7514,5 +7517,523 @@ let logLastTimestamp = 0;
 let logWsConnected = false;
 // =========================================================================
 // 日志页面已废弃 - 功能已整合到终端页面的日志模态框
+
+// =========================================================================
+//                         内存详情模态框
+// =========================================================================
+
+// 任务排序状态
+let taskSortState = { key: 'stack_hwm', ascending: true };  // 默认按剩余栈升序（最危险的在前）
+let cachedTasksData = [];  // 缓存任务数据用于排序
+
+/**
+ * 渲染任务行 HTML
+ */
+function renderTaskRows(tasks, formatBytes) {
+    return tasks.map(task => {
+        const hwm = task.stack_hwm || 0;
+        const alloc = task.stack_alloc || 0;
+        const used = task.stack_used || 0;
+        const usagePct = task.stack_usage_pct || 0;
+        const hwmColor = hwm < 256 ? '#e74c3c' : hwm < 512 ? '#f39c12' : '#2ecc71';
+        const usageColor = usagePct >= 90 ? '#e74c3c' : usagePct >= 75 ? '#f39c12' : '#2ecc71';
+        const stateIcon = {
+            'Running': '🟢',
+            'Ready': '🔵', 
+            'Blocked': '🟡',
+            'Suspended': '⚪',
+            'Deleted': '🔴'
+        }[task.state] || '⚫';
+        return `
+        <tr>
+            <td><code>${task.name}</code></td>
+            <td>${alloc ? formatBytes(alloc) : '-'}</td>
+            <td>${used ? formatBytes(used) : '-'}</td>
+            <td style="color:${hwmColor};font-weight:bold">${formatBytes(hwm)}</td>
+            <td><span style="color:${usageColor}">${usagePct}%</span></td>
+            <td>${task.priority}</td>
+            <td>${stateIcon} ${task.state}</td>
+            ${task.cpu_percent !== undefined ? `<td>${task.cpu_percent}%</td>` : ''}
+        </tr>
+        `;
+    }).join('');
+}
+
+/**
+ * 对任务列表排序
+ */
+function sortTasks(tasks, key, ascending) {
+    const stateOrder = { 'Running': 0, 'Ready': 1, 'Blocked': 2, 'Suspended': 3, 'Deleted': 4 };
+    
+    return [...tasks].sort((a, b) => {
+        let valA, valB;
+        
+        if (key === 'state') {
+            valA = stateOrder[a.state] ?? 5;
+            valB = stateOrder[b.state] ?? 5;
+        } else {
+            valA = a[key] || 0;
+            valB = b[key] || 0;
+        }
+        
+        if (ascending) {
+            return valA - valB;
+        } else {
+            return valB - valA;
+        }
+    });
+}
+
+/**
+ * 初始化任务表格排序
+ */
+function initTaskTableSort() {
+    const table = document.getElementById('task-memory-table');
+    if (!table) return;
+    
+    const headers = table.querySelectorAll('th.sortable');
+    headers.forEach(th => {
+        th.style.cursor = 'pointer';
+        th.addEventListener('click', () => {
+            const key = th.dataset.sort;
+            
+            // 切换排序方向
+            if (taskSortState.key === key) {
+                taskSortState.ascending = !taskSortState.ascending;
+            } else {
+                taskSortState.key = key;
+                taskSortState.ascending = true;
+            }
+            
+            // 更新表头指示器
+            headers.forEach(h => {
+                const baseText = h.textContent.replace(/ [↑↓⇅]$/, '');
+                if (h.dataset.sort === key) {
+                    h.textContent = baseText + (taskSortState.ascending ? ' ↑' : ' ↓');
+                } else {
+                    h.textContent = baseText + ' ⇅';
+                }
+            });
+            
+            // 重新排序并渲染
+            const sortedTasks = sortTasks(cachedTasksData, key, taskSortState.ascending);
+            const tbody = document.getElementById('task-table-body');
+            if (tbody) {
+                // 复用已定义的 formatBytes
+                const formatBytes = (bytes) => {
+                    if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+                    if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+                    return bytes + ' B';
+                };
+                tbody.innerHTML = renderTaskRows(sortedTasks, formatBytes);
+            }
+        });
+    });
+}
+
+/**
+ * 显示内存详情模态框
+ */
+async function showMemoryDetailModal() {
+    const modal = document.getElementById('memory-detail-modal');
+    modal.classList.remove('hidden');
+    await refreshMemoryDetail();
+}
+
+/**
+ * 隐藏内存详情模态框
+ */
+function hideMemoryDetailModal() {
+    const modal = document.getElementById('memory-detail-modal');
+    modal.classList.add('hidden');
+}
+
+/**
+ * 刷新内存详情数据
+ */
+async function refreshMemoryDetail() {
+    const body = document.getElementById('memory-detail-body');
+    const timestamp = document.getElementById('memory-detail-timestamp');
+    
+    body.innerHTML = '<div class="loading">加载中...</div>';
+    
+    try {
+        const result = await api.getMemoryDetail();
+        if (result.code !== 0 || !result.data) {
+            throw new Error(result.message || '获取数据失败');
+        }
+        
+        const data = result.data;
+        const dram = data.dram || {};
+        const psram = data.psram || {};
+        const dma = data.dma || {};
+        const tips = data.tips || [];
+        const staticMem = data.static || {};
+        const iram = data.iram || {};
+        const rtc = data.rtc || {};
+        const nvs = data.nvs || {};
+        const caps = data.caps || {};
+        
+        // 格式化字节数
+        const formatBytes = (bytes) => {
+            if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+            if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return bytes + ' B';
+        };
+        
+        // 获取进度条颜色
+        const getProgressColor = (percent) => {
+            if (percent >= 85) return '#e74c3c';  // 红色 - 危险
+            if (percent >= 70) return '#f39c12';  // 橙色 - 警告
+            return '#2ecc71';  // 绿色 - 正常
+        };
+        
+        // 获取碎片化颜色
+        const getFragColor = (frag) => {
+            if (frag >= 60) return '#e74c3c';
+            if (frag >= 40) return '#f39c12';
+            return '#2ecc71';
+        };
+        
+        // 构建提示信息 HTML
+        let tipsHtml = '';
+        if (tips.length > 0) {
+            tipsHtml = `
+                <div class="memory-tips">
+                    <h4>💡 优化建议</h4>
+                    ${tips.map(tip => {
+                        const [level, msg] = tip.split(':');
+                        const icon = level === 'critical' ? '🔴' : level === 'warning' ? '🟠' : '🔵';
+                        const bgColor = level === 'critical' ? '#fff5f5' : level === 'warning' ? '#fffbf0' : '#f0f8ff';
+                        return `<div class="memory-tip" style="background:${bgColor}">${icon} ${msg}</div>`;
+                    }).join('')}
+                </div>
+            `;
+        }
+        
+        body.innerHTML = `
+            <!-- 概览卡片 -->
+            <div class="memory-overview">
+                <div class="memory-gauge dram">
+                    <div class="gauge-ring">
+                        <svg viewBox="0 0 100 100">
+                            <circle cx="50" cy="50" r="45" fill="none" stroke="#e0e0e0" stroke-width="8"/>
+                            <circle cx="50" cy="50" r="45" fill="none" stroke="${getProgressColor(dram.used_percent || 0)}" stroke-width="8"
+                                stroke-dasharray="${(dram.used_percent || 0) * 2.83} 283" stroke-linecap="round"
+                                transform="rotate(-90 50 50)"/>
+                        </svg>
+                        <div class="gauge-text">
+                            <span class="gauge-percent">${dram.used_percent || 0}%</span>
+                            <span class="gauge-label">DRAM</span>
+                        </div>
+                    </div>
+                    <div class="gauge-info">
+                        <div class="info-row">
+                            <span>总计</span>
+                            <strong>${formatBytes(dram.total || 0)}</strong>
+                        </div>
+                        <div class="info-row">
+                            <span>已用</span>
+                            <strong style="color:${getProgressColor(dram.used_percent || 0)}">${formatBytes(dram.used || 0)}</strong>
+                        </div>
+                        <div class="info-row">
+                            <span>空闲</span>
+                            <strong style="color:#2ecc71">${formatBytes(dram.free || 0)}</strong>
+                        </div>
+                    </div>
+                </div>
+                
+                ${psram.total ? `
+                <div class="memory-gauge psram">
+                    <div class="gauge-ring">
+                        <svg viewBox="0 0 100 100">
+                            <circle cx="50" cy="50" r="45" fill="none" stroke="#e0e0e0" stroke-width="8"/>
+                            <circle cx="50" cy="50" r="45" fill="none" stroke="${getProgressColor(psram.used_percent || 0)}" stroke-width="8"
+                                stroke-dasharray="${(psram.used_percent || 0) * 2.83} 283" stroke-linecap="round"
+                                transform="rotate(-90 50 50)"/>
+                        </svg>
+                        <div class="gauge-text">
+                            <span class="gauge-percent">${psram.used_percent || 0}%</span>
+                            <span class="gauge-label">PSRAM</span>
+                        </div>
+                    </div>
+                    <div class="gauge-info">
+                        <div class="info-row">
+                            <span>总计</span>
+                            <strong>${formatBytes(psram.total || 0)}</strong>
+                        </div>
+                        <div class="info-row">
+                            <span>已用</span>
+                            <strong>${formatBytes(psram.used || 0)}</strong>
+                        </div>
+                        <div class="info-row">
+                            <span>空闲</span>
+                            <strong style="color:#2ecc71">${formatBytes(psram.free || 0)}</strong>
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
+            </div>
+            
+            <!-- 静态内存段 (关键优化信息) -->
+            <div class="memory-static-sections">
+                <h4>📦 静态内存占用 (编译时固定)</h4>
+                <div class="static-grid">
+                    <div class="static-item">
+                        <span class="static-label">.data</span>
+                        <span class="static-value">${formatBytes(staticMem.data_size || 0)}</span>
+                        <span class="static-desc">初始化全局变量</span>
+                    </div>
+                    <div class="static-item">
+                        <span class="static-label">.bss</span>
+                        <span class="static-value">${formatBytes(staticMem.bss_size || 0)}</span>
+                        <span class="static-desc">未初始化全局变量</span>
+                    </div>
+                    <div class="static-item">
+                        <span class="static-label">.rodata</span>
+                        <span class="static-value">${formatBytes(staticMem.rodata_size || 0)}</span>
+                        <span class="static-desc">只读数据 (Flash)</span>
+                    </div>
+                    <div class="static-item highlight">
+                        <span class="static-label">DRAM 静态总计</span>
+                        <span class="static-value">${formatBytes(staticMem.total_dram_static || 0)}</span>
+                        <span class="static-desc">.data + .bss</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- IRAM 信息 -->
+            <div class="memory-iram">
+                <h4>⚡ IRAM (指令内存)</h4>
+                <div class="iram-grid">
+                    <div class="iram-item">
+                        <span class="iram-label">代码段</span>
+                        <span class="iram-value">${formatBytes(iram.text_size || 0)}</span>
+                    </div>
+                    <div class="iram-item">
+                        <span class="iram-label">堆总计</span>
+                        <span class="iram-value">${formatBytes(iram.heap_total || 0)}</span>
+                    </div>
+                    <div class="iram-item">
+                        <span class="iram-label">堆空闲</span>
+                        <span class="iram-value" style="color:#2ecc71">${formatBytes(iram.heap_free || 0)}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- RTC 内存 -->
+            ${rtc.total_available ? `
+            <div class="memory-rtc">
+                <h4>🔋 RTC 内存 (深度睡眠保持)</h4>
+                <div class="rtc-bar">
+                    <div class="progress-bar" style="height:12px;background:#f0f0f0">
+                        <div class="progress" style="width:${(rtc.total_used / rtc.total_available * 100) || 0}%;background:#9b59b6"></div>
+                    </div>
+                    <div class="rtc-labels">
+                        <span>已用 ${formatBytes(rtc.total_used || 0)}</span>
+                        <span>总计 ${formatBytes(rtc.total_available)}</span>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+            
+            <!-- 详细数据表格 -->
+            <div class="memory-details">
+                <h4>📊 堆内存详细统计</h4>
+                <table class="memory-table">
+                    <thead>
+                        <tr>
+                            <th>类型</th>
+                            <th>最大块</th>
+                            <th>碎片率</th>
+                            <th>分配块</th>
+                            <th>空闲块</th>
+                            <th>历史最低</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>DRAM</strong></td>
+                            <td>${formatBytes(dram.largest_block || 0)}</td>
+                            <td><span style="color:${getFragColor(dram.fragmentation || 0)}">${(dram.fragmentation || 0).toFixed(1)}%</span></td>
+                            <td>${dram.alloc_blocks || '-'}</td>
+                            <td>${dram.free_blocks || '-'}</td>
+                            <td>${formatBytes(dram.min_free_ever || 0)}</td>
+                        </tr>
+                        ${psram.total ? `
+                        <tr>
+                            <td><strong>PSRAM</strong></td>
+                            <td>${formatBytes(psram.largest_block || 0)}</td>
+                            <td><span style="color:${getFragColor(psram.fragmentation || 0)}">${(psram.fragmentation || 0).toFixed(1)}%</span></td>
+                            <td>${psram.alloc_blocks || '-'}</td>
+                            <td>${psram.free_blocks || '-'}</td>
+                            <td>${formatBytes(psram.min_free_ever || 0)}</td>
+                        </tr>
+                        ` : ''}
+                        ${dma.total ? `
+                        <tr>
+                            <td><strong>DMA</strong></td>
+                            <td>${formatBytes(dma.largest_block || 0)}</td>
+                            <td>-</td>
+                            <td>-</td>
+                            <td>-</td>
+                            <td>-</td>
+                        </tr>
+                        ` : ''}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- 内存能力汇总 -->
+            <div class="memory-caps">
+                <h4>🎯 内存能力分布</h4>
+                <table class="memory-table">
+                    <thead>
+                        <tr>
+                            <th>能力类型</th>
+                            <th>空闲</th>
+                            <th>总计</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>8-bit 可访问</td>
+                            <td>${formatBytes(caps.d8_free || 0)}</td>
+                            <td>${formatBytes(caps.d8_total || 0)}</td>
+                            <td>char/byte 数组</td>
+                        </tr>
+                        <tr>
+                            <td>32-bit 可访问</td>
+                            <td>${formatBytes(caps.d32_free || 0)}</td>
+                            <td>${formatBytes(caps.d32_total || 0)}</td>
+                            <td>int/指针</td>
+                        </tr>
+                        <tr>
+                            <td>默认 (malloc)</td>
+                            <td>${formatBytes(caps.default_free || 0)}</td>
+                            <td>${formatBytes(caps.default_total || 0)}</td>
+                            <td>普通 malloc()</td>
+                        </tr>
+                        ${dma.total ? `
+                        <tr>
+                            <td>DMA 可用</td>
+                            <td>${formatBytes(dma.free || 0)}</td>
+                            <td>${formatBytes(dma.total || 0)}</td>
+                            <td>DMA 传输缓冲</td>
+                        </tr>
+                        ` : ''}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- NVS 使用统计 -->
+            ${nvs.total_entries ? `
+            <div class="memory-nvs">
+                <h4>💾 NVS 存储使用</h4>
+                <div class="nvs-bar">
+                    <div class="progress-bar" style="height:16px;background:#f0f0f0">
+                        <div class="progress" style="width:${nvs.used_percent || 0}%;background:${getProgressColor(nvs.used_percent || 0)}"></div>
+                    </div>
+                    <div class="nvs-stats">
+                        <span>已用条目: <strong>${nvs.used_entries}</strong></span>
+                        <span>空闲条目: <strong>${nvs.free_entries}</strong></span>
+                        <span>命名空间: <strong>${nvs.namespace_count}</strong></span>
+                        <span>使用率: <strong>${nvs.used_percent}%</strong></span>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+            
+            <!-- 优化建议 -->
+            ${tipsHtml}
+            
+            <!-- 任务内存占用 -->
+            ${data.tasks && data.tasks.length > 0 ? `
+            <div class="memory-tasks">
+                <h4>🔧 任务栈使用 (共 ${data.tasks.length} 个任务) <span style="font-size:0.8em;color:#888;font-weight:normal">点击表头排序</span></h4>
+                <table class="memory-table task-table sortable-table" id="task-memory-table">
+                    <thead>
+                        <tr>
+                            <th>任务名</th>
+                            <th data-sort="stack_alloc" class="sortable">分配栈 ⇅</th>
+                            <th data-sort="stack_used" class="sortable">已用栈 ⇅</th>
+                            <th data-sort="stack_hwm" class="sortable">剩余栈 ⇅</th>
+                            <th data-sort="stack_usage_pct" class="sortable">使用率 ⇅</th>
+                            <th data-sort="priority" class="sortable">优先级 ⇅</th>
+                            <th data-sort="state" class="sortable">状态 ⇅</th>
+                            ${data.tasks[0]?.cpu_percent !== undefined ? '<th data-sort="cpu_percent" class="sortable">CPU ⇅</th>' : ''}
+                        </tr>
+                    </thead>
+                    <tbody id="task-table-body">
+                        ${renderTaskRows(data.tasks, formatBytes)}
+                    </tbody>
+                </table>
+                ${data.total_stack_allocated ? `
+                <p style="font-size:0.85em;color:#666;margin-top:8px">
+                    📊 任务栈总分配: <strong>${formatBytes(data.total_stack_allocated)}</strong> | 
+                    任务总数: <strong>${data.task_count}</strong>
+                </p>
+                ` : ''}
+                <p style="font-size:0.85em;color:#888;margin-top:4px">
+                    💡 剩余栈 &lt;256B 为危险区域，&lt;512B 为警告区域
+                </p>
+            </div>
+            ` : ''}
+            
+            <!-- 历史记录 -->
+            <div class="memory-history">
+                <h4>📈 运行时统计</h4>
+                <div class="history-stats">
+                    <div class="history-item">
+                        <span class="history-label">历史最低空闲堆</span>
+                        <span class="history-value">${formatBytes(data.history?.min_free_heap_ever || 0)}</span>
+                    </div>
+                    <div class="history-item">
+                        <span class="history-label">当前运行任务数</span>
+                        <span class="history-value">${data.task_count || 0}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // 缓存任务数据并初始化排序
+        if (data.tasks && data.tasks.length > 0) {
+            cachedTasksData = data.tasks;
+            // 应用默认排序
+            const sortedTasks = sortTasks(cachedTasksData, taskSortState.key, taskSortState.ascending);
+            const tbody = document.getElementById('task-table-body');
+            if (tbody) {
+                tbody.innerHTML = renderTaskRows(sortedTasks, formatBytes);
+            }
+            // 初始化排序事件
+            initTaskTableSort();
+        }
+        
+        timestamp.textContent = '更新时间: ' + new Date().toLocaleTimeString();
+        
+    } catch (error) {
+        console.error('Memory detail error:', error);
+        body.innerHTML = `
+            <div class="error-message">
+                <p>❌ 获取内存详情失败</p>
+                <p style="font-size:0.9em;color:#666">${error.message}</p>
+            </div>
+        `;
+    }
+}
+
+// 点击模态框背景关闭
+document.addEventListener('click', (e) => {
+    const modal = document.getElementById('memory-detail-modal');
+    if (e.target === modal) {
+        hideMemoryDetailModal();
+    }
+});
+
+// 导出全局函数
+window.showMemoryDetailModal = showMemoryDetailModal;
+window.hideMemoryDetailModal = hideMemoryDetailModal;
+window.refreshMemoryDetail = refreshMemoryDetail;
 // 旧路由 #/logs 会自动重定向到 #/terminal 并打开日志模态框
 // =========================================================================

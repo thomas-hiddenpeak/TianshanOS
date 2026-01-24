@@ -19,6 +19,7 @@
  */
 
 #include "ts_agx_monitor.h"
+#include "ts_core.h"  /* TS_CALLOC_PSRAM */
 #include "ts_temp_source.h"
 #include "ts_event.h"
 #include "esp_log.h"
@@ -142,8 +143,8 @@ esp_err_t ts_agx_monitor_init(const ts_agx_config_t *config)
     
     ESP_LOGI(TAG, "Initializing AGX monitor v%s", TS_AGX_MONITOR_VERSION);
     
-    /* 分配上下文 */
-    s_ctx = calloc(1, sizeof(agx_monitor_ctx_t));
+    /* 分配上下文（优先使用 PSRAM）*/
+    s_ctx = TS_CALLOC_PSRAM(1, sizeof(agx_monitor_ctx_t));
     if (s_ctx == NULL) {
         ESP_LOGE(TAG, "Failed to allocate context");
         return ESP_ERR_NO_MEM;

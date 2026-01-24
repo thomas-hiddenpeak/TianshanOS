@@ -18,6 +18,7 @@
 #include "ts_console.h"
 #include "ts_api.h"
 #include "ts_log.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM, TS_STRDUP_PSRAM */
 #include "ts_ssh_client.h"
 #include "ts_ssh_shell.h"
 #include "ts_port_forward.h"
@@ -769,7 +770,7 @@ static esp_err_t load_public_key(const char *path, char **pubkey_data)
     }
 
     /* 分配内存并读取 */
-    char *data = malloc(fsize + 1);
+    char *data = TS_MALLOC_PSRAM(fsize + 1);
     if (!data) {
         fclose(fp);
         return ESP_ERR_NO_MEM;
@@ -877,7 +878,7 @@ static int do_ssh_copy_id(const char *host, int port, const char *user,
     ts_console_printf("[3/4] Deploying public key... ");
     
     /* 命令：创建 .ssh 目录并追加公钥到 authorized_keys */
-    char *deploy_cmd = malloc(strlen(pubkey_data) + 512);
+    char *deploy_cmd = TS_MALLOC_PSRAM(strlen(pubkey_data) + 512);
     if (!deploy_cmd) {
         ts_console_printf("FAILED (out of memory)\n");
         ts_ssh_disconnect(session);
@@ -1114,7 +1115,7 @@ static int do_ssh_revoke(const char *host, int port, const char *user,
         pubkey_len = ftell(f);
         fseek(f, 0, SEEK_SET);
         
-        pubkey_data = malloc(pubkey_len + 1);
+        pubkey_data = TS_MALLOC_PSRAM(pubkey_len + 1);
         if (!pubkey_data) {
             fclose(f);
             ts_console_printf("FAILED\n");
@@ -1133,7 +1134,7 @@ static int do_ssh_revoke(const char *host, int port, const char *user,
      * 我们需要 "ssh-rsa AAAAB3Nza..." 部分来匹配 */
     char *key_type = NULL;
     char *key_data = NULL;
-    char *pubkey_copy = strdup(pubkey_data);
+    char *pubkey_copy = TS_STRDUP_PSRAM(pubkey_data);
     if (!pubkey_copy) {
         free(pubkey_data);
         ts_console_printf("Error: Memory allocation failed\n");
@@ -1419,7 +1420,7 @@ static int do_ssh_keygen(const char *type_str, const char *output_path, const ch
     /* 导出私钥 (PEM 格式) */
     ts_console_printf("[2/4] Saving private key... ");
     
-    char *private_pem = malloc(8192);
+    char *private_pem = TS_MALLOC_PSRAM(8192);
     if (!private_pem) {
         ts_console_printf("FAILED (out of memory)\n");
         ts_crypto_keypair_free(keypair);
@@ -1453,7 +1454,7 @@ static int do_ssh_keygen(const char *type_str, const char *output_path, const ch
     /* 导出公钥 (OpenSSH 格式) */
     ts_console_printf("[3/4] Saving public key... ");
     
-    char *openssh_pub = malloc(4096);
+    char *openssh_pub = TS_MALLOC_PSRAM(4096);
     if (!openssh_pub) {
         ts_console_printf("FAILED (out of memory)\n");
         ts_crypto_keypair_free(keypair);

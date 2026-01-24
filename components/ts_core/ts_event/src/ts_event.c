@@ -13,6 +13,10 @@
 #include "ts_event.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
+
+/* PSRAM-first allocation for reduced DRAM fragmentation */
+#define TS_EVT_CALLOC(n, size) ({ void *p = heap_caps_calloc((n), (size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : calloc((n), (size)); })
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -251,7 +255,7 @@ esp_err_t ts_event_register_with_priority(ts_event_base_t event_base,
         return ESP_ERR_NO_MEM;
     }
 
-    ts_event_handler_instance_t *node = calloc(1, sizeof(ts_event_handler_instance_t));
+    ts_event_handler_instance_t *node = TS_EVT_CALLOC(1, sizeof(ts_event_handler_instance_t));
     if (node == NULL) {
         return ESP_ERR_NO_MEM;
     }
@@ -497,7 +501,7 @@ esp_err_t ts_event_transaction_begin(ts_event_transaction_t *transaction)
         return ESP_ERR_INVALID_ARG;
     }
 
-    ts_event_transaction_impl_t *tx = calloc(1, sizeof(ts_event_transaction_impl_t));
+    ts_event_transaction_impl_t *tx = TS_EVT_CALLOC(1, sizeof(ts_event_transaction_impl_t));
     if (tx == NULL) {
         return ESP_ERR_NO_MEM;
     }
@@ -525,7 +529,7 @@ esp_err_t ts_event_transaction_post(ts_event_transaction_t transaction,
 
     ts_event_transaction_impl_t *tx = (ts_event_transaction_impl_t *)transaction;
 
-    ts_event_transaction_node_t *node = calloc(1, sizeof(ts_event_transaction_node_t));
+    ts_event_transaction_node_t *node = TS_EVT_CALLOC(1, sizeof(ts_event_transaction_node_t));
     if (node == NULL) {
         return ESP_ERR_NO_MEM;
     }

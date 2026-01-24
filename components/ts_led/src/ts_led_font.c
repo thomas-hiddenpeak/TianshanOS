@@ -2,11 +2,14 @@
  * @file ts_led_font.c
  * @brief TianShanOS LED Font Management Implementation
  * 
+ * 字体缓存和结构优先分配到 PSRAM
+ * 
  * @author TianShanOS Team
  * @version 1.0.0
  */
 
 #include "ts_led_font.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM, TS_CALLOC_PSRAM */
 #include "esp_log.h"
 #include "esp_timer.h"
 #include <string.h>
@@ -135,7 +138,7 @@ static int alloc_cache_slot(ts_font_t *font)
 static void precache_ascii(ts_font_t *font)
 {
     if (!font->ascii_index) {
-        font->ascii_index = malloc(95 * sizeof(ts_font_index_entry_t));
+        font->ascii_index = TS_MALLOC_PSRAM(95 * sizeof(ts_font_index_entry_t));
         if (!font->ascii_index) {
             ESP_LOGW(TAG, "Failed to allocate ASCII index cache");
             return;
@@ -177,7 +180,7 @@ ts_font_t *ts_font_load(const char *path, const ts_font_config_t *config)
     }
     
     // Allocate font structure
-    ts_font_t *font = calloc(1, sizeof(ts_font_t));
+    ts_font_t *font = TS_CALLOC_PSRAM(1, sizeof(ts_font_t));
     if (!font) {
         ESP_LOGE(TAG, "Failed to allocate font structure");
         return NULL;
@@ -222,10 +225,10 @@ ts_font_t *ts_font_load(const char *path, const ts_font_config_t *config)
     
     // Allocate glyph cache
     if (cfg.cache_size > 0) {
-        font->cache = calloc(cfg.cache_size, sizeof(ts_font_glyph_cache_t));
+        font->cache = TS_CALLOC_PSRAM(cfg.cache_size, sizeof(ts_font_glyph_cache_t));
         if (font->cache) {
             font->cache_size = cfg.cache_size;
-            ESP_LOGD(TAG, "Allocated cache for %d glyphs", cfg.cache_size);
+            ESP_LOGD(TAG, "Allocated cache for %d glyphs");
         } else {
             ESP_LOGW(TAG, "Failed to allocate glyph cache");
         }

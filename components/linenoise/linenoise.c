@@ -109,6 +109,13 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include "sdkconfig.h"
+#include "esp_heap_caps.h"
+
+/* PSRAM-first allocation macros for linenoise */
+#define LN_MALLOC(size) ({ void *_p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); _p ? _p : malloc(size); })
+#define LN_CALLOC(n, size) ({ void *_p = heap_caps_calloc((n), (size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); _p ? _p : calloc((n), (size)); })
+#define LN_STRDUP(s) ({ const char *_s = (s); size_t _len = _s ? strlen(_s) + 1 : 0; char *_p = _len ? heap_caps_malloc(_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) : NULL; if (_p) memcpy(_p, _s, _len); else if (_len) { _p = strdup(_s); } _p; })
+#define LN_REALLOC(ptr, size) ({ void *_old = (ptr); size_t _sz = (size); void *_new = heap_caps_realloc(_old, _sz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); _new ? _new : realloc(_old, _sz); })
 #if !CONFIG_IDF_TARGET_LINUX
 // On Linux, we don't need __fbufsize (see comments below), and
 // __fbufsize not available on MacOS (which is also considered "Linux" target)
@@ -487,10 +494,10 @@ void linenoiseAddCompletion(linenoiseCompletions *lc, const char *str) {
     size_t len = strlen(str);
     char *copy, **cvec;
 
-    copy = malloc(len+1);
+    copy = LN_MALLOC(len+1);
     if (copy == NULL) return;
     memcpy(copy,str,len+1);
-    cvec = realloc(lc->cvec,sizeof(char*)*(lc->len+1));
+    cvec = LN_REALLOC(lc->cvec,sizeof(char*)*(lc->len+1));
     if (cvec == NULL) {
         free(copy);
         return;
@@ -516,7 +523,7 @@ static void abInit(struct abuf *ab) {
 }
 
 static void abAppend(struct abuf *ab, const char *s, int len) {
-    char *new = realloc(ab->b,ab->len+len);
+    char *new = LN_REALLOC(ab->b,ab->len+len);
 
     if (new == NULL) return;
     memcpy(new+ab->len,s,len);
@@ -782,7 +789,7 @@ void linenoiseEditHistoryNext(struct linenoiseState *l, int dir) {
         /* Update the current history entry before to
          * overwrite it with the next one. */
         free(history[history_len - 1 - l->history_index]);
-        history[history_len - 1 - l->history_index] = strdup(l->buf);
+        history[history_len - 1 - l->history_index] = LN_STRDUP(l->buf);
         /* Show the new entry */
         l->history_index += (dir == LINENOISE_HISTORY_PREV) ? 1 : -1;
         if (l->history_index < 0) {
@@ -1247,7 +1254,7 @@ static void sanitize(char* src) {
 
 /* The high level function that is the main API of the linenoise library. */
 char *linenoise(const char *prompt) {
-    char *buf = calloc(1, max_cmdline_length);
+    char *buf = LN_CALLOC(1, max_cmdline_length);
     int count = 0;
     if (buf == NULL) {
         return NULL;
@@ -1304,7 +1311,7 @@ int linenoiseHistoryAdd(const char *line) {
 
     /* Initialization on first call. */
     if (history == NULL) {
-        history = malloc(sizeof(char*)*history_max_len);
+        history = LN_MALLOC(sizeof(char*)*history_max_len);
         if (history == NULL) return 0;
         memset(history,0,(sizeof(char*)*history_max_len));
     }
@@ -1314,7 +1321,7 @@ int linenoiseHistoryAdd(const char *line) {
 
     /* Add an heap allocated copy of the line in the history.
      * If we reached the max length, remove the older line. */
-    linecopy = strdup(line);
+    linecopy = LN_STRDUP(line);
     if (!linecopy) return 0;
     if (history_len == history_max_len) {
         free(history[0]);
@@ -1337,7 +1344,7 @@ int linenoiseHistorySetMaxLen(int len) {
     if (history) {
         int tocopy = history_len;
 
-        new = malloc(sizeof(char*)*len);
+        new = LN_MALLOC(sizeof(char*)*len);
         if (new == NULL) return 0;
 
         /* If we can't copy everything, free the elements we'll not use. */
@@ -1383,7 +1390,7 @@ int linenoiseHistoryLoad(const char *filename) {
         return -1;
     }
 
-    char *buf = calloc(1, max_cmdline_length);
+    char *buf = LN_CALLOC(1, max_cmdline_length);
     if (buf == NULL) {
         fclose(fp);
         return -1;

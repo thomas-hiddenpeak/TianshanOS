@@ -10,6 +10,7 @@
 
 #include "ts_port_forward.h"
 #include "ts_ssh_client.h"
+#include "ts_core.h"  /* TS_CALLOC_PSRAM */
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -279,7 +280,7 @@ static void accept_new_connection(ts_port_forward_t forward)
     }
 
     /* 创建连接记录 */
-    forward_conn_t *conn = calloc(1, sizeof(forward_conn_t));
+    forward_conn_t *conn = TS_CALLOC_PSRAM(1, sizeof(forward_conn_t));
     if (!conn) {
         libssh2_channel_free(channel);
         close(client_sock);
@@ -444,7 +445,7 @@ esp_err_t ts_port_forward_create(ts_ssh_session_t session,
         return ESP_ERR_NOT_SUPPORTED;
     }
 
-    ts_port_forward_t forward = calloc(1, sizeof(struct ts_port_forward_s));
+    ts_port_forward_t forward = TS_CALLOC_PSRAM(1, sizeof(struct ts_port_forward_s));
     if (!forward) {
         return ESP_ERR_NO_MEM;
     }
@@ -469,8 +470,8 @@ esp_err_t ts_port_forward_create(ts_ssh_session_t session,
     }
 
     /* 复制字符串 */
-    forward->local_host_copy = strdup(forward->config.local_host);
-    forward->remote_host_copy = strdup(config->remote_host);
+    forward->local_host_copy = TS_STRDUP_PSRAM(forward->config.local_host);
+    forward->remote_host_copy = TS_STRDUP_PSRAM(config->remote_host);
     forward->config.local_host = forward->local_host_copy;
     
     if (!forward->local_host_copy || !forward->remote_host_copy) {

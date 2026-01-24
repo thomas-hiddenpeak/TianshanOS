@@ -157,8 +157,9 @@ static void ssh_send_output(const char *data, size_t len)
     cJSON *msg = cJSON_CreateObject();
     cJSON_AddStringToObject(msg, "type", "ssh_output");
     
-    // 复制数据并确保 null 结尾
-    char *buf = malloc(len + 1);
+    // 复制数据并确保 null 结尾 (PSRAM first)
+    char *buf = heap_caps_malloc(len + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf) buf = malloc(len + 1);
     if (buf) {
         memcpy(buf, data, len);
         buf[len] = '\0';
@@ -399,7 +400,7 @@ static void handle_ssh_connect(httpd_req_t *req, cJSON *params)
     
     // 启动轮询任务（栈需要足够大以容纳 libssh2 缓冲区）
     s_ssh_running = true;
-    xTaskCreate(ssh_poll_task, "ssh_poll", 8192, NULL, 5, &s_ssh_poll_task);
+    xTaskCreate(ssh_poll_task, "ssh_poll", 4096, NULL, 5, &s_ssh_poll_task);
 }
 
 /* 处理 SSH Shell 输入 */
@@ -781,8 +782,11 @@ static esp_err_t ws_handler(httpd_req_t *req)
         return ESP_OK;
     }
     
-    // Allocate buffer for payload
-    uint8_t *buf = malloc(ws_pkt.len + 1);
+    // Allocate buffer for payload (PSRAM first)
+    uint8_t *buf = heap_caps_malloc(ws_pkt.len + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf) {
+        buf = malloc(ws_pkt.len + 1);
+    }
     if (!buf) {
         return ESP_ERR_NO_MEM;
     }

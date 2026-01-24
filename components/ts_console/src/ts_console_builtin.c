@@ -21,6 +21,9 @@
 #include <string.h>
 #include <stdio.h>
 
+/* PSRAM 优先分配宏 */
+#define TS_BUILTIN_MALLOC(size) ({ void *p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : malloc(size); })
+
 #define TAG "console_builtin"
 
 /*===========================================================================*/
@@ -151,7 +154,7 @@ static int cmd_tasks(int argc, char **argv)
     TaskStatus_t *task_array;
     UBaseType_t task_count = uxTaskGetNumberOfTasks();
     
-    task_array = malloc(task_count * sizeof(TaskStatus_t));
+    task_array = TS_BUILTIN_MALLOC(task_count * sizeof(TaskStatus_t));
     if (task_array == NULL) {
         ts_console_error("Failed to allocate memory\n");
         return 1;

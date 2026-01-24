@@ -6,6 +6,7 @@
 #include "ts_led_private.h"
 #include "ts_log.h"
 #include "freertos/task.h"
+#include "esp_heap_caps.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -95,7 +96,7 @@ esp_err_t ts_led_init(void)
     s_led.initialized = true;
     
     s_led.render_running = true;
-    xTaskCreate(render_task, "led_render", 4096, NULL, 5, &s_led.render_task);
+    xTaskCreate(render_task, "led_render", 2560, NULL, 5, &s_led.render_task);
     
     TS_LOGI(TAG, "LED subsystem initialized");
     return ESP_OK;
@@ -143,7 +144,14 @@ esp_err_t ts_led_device_create(const ts_led_config_t *config, ts_led_device_t *d
     strncpy(dev->name, config->name ? config->name : "led", TS_LED_MAX_NAME - 1);
     dev->brightness = config->brightness;
     
-    dev->framebuffer = calloc(config->led_count, sizeof(ts_led_rgb_t));
+    /* 优先使用 PSRAM，如果没有则退回 DMA 内存 */
+    dev->framebuffer = heap_caps_calloc(config->led_count, sizeof(ts_led_rgb_t),
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!dev->framebuffer) {
+        /* PSRAM 不可用，使用 DMA 内存 */
+        dev->framebuffer = heap_caps_calloc(config->led_count, sizeof(ts_led_rgb_t),
+                                            MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+    }
     if (!dev->framebuffer) {
         xSemaphoreGive(s_led.mutex);
         return ESP_ERR_NO_MEM;

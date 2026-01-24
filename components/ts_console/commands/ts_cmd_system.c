@@ -504,7 +504,8 @@ static int do_system_tasks(bool json)
     ts_console_printf("──────────────────────────────────────────────\n");
     
 #if configUSE_TRACE_FACILITY
-    TaskStatus_t *tasks = malloc(num_tasks * sizeof(TaskStatus_t));
+    TaskStatus_t *tasks = heap_caps_malloc(num_tasks * sizeof(TaskStatus_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!tasks) tasks = malloc(num_tasks * sizeof(TaskStatus_t));
     if (!tasks) {
         ts_console_error("Out of memory\n");
         return 1;

@@ -20,6 +20,7 @@
  */
 
 #include "ts_api.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM, TS_STRDUP_PSRAM */
 #include "ts_ssh_client.h"
 #include "ts_keystore.h"
 #include "ts_known_hosts.h"
@@ -189,7 +190,7 @@ static esp_err_t verify_host_fingerprint(ts_ssh_session_t session,
                 cJSON_AddStringToObject(data, "message", 
                     "New host - set trust_new=true or use hosts.add to trust this host");
                 result->code = TS_API_ERR_HOST_NEW;
-                result->message = strdup("New host requires confirmation");
+                result->message = TS_STRDUP_PSRAM("New host requires confirmation");
                 result->data = data;
                 return ESP_ERR_INVALID_STATE;
             }
@@ -224,7 +225,7 @@ static esp_err_t verify_host_fingerprint(ts_ssh_session_t session,
                     "WARNING: Host key has changed! This could indicate a man-in-the-middle attack. "
                     "Set accept_changed=true only if you are sure the server was reinstalled.");
                 result->code = TS_API_ERR_HOST_MISMATCH;
-                result->message = strdup("Host key mismatch - possible MITM attack");
+                result->message = TS_STRDUP_PSRAM("Host key mismatch - possible MITM attack");
                 result->data = data;
                 return ESP_ERR_INVALID_STATE;
             }
@@ -568,7 +569,7 @@ static esp_err_t api_ssh_copyid(const cJSON *params, ts_api_result_t *result)
     }
     
     /* 构建部署命令（与 CLI 逻辑一致） */
-    char *deploy_cmd = malloc(pubkey_len + 512);
+    char *deploy_cmd = TS_MALLOC_PSRAM(pubkey_len + 512);
     if (!deploy_cmd) {
         ts_api_result_error(result, TS_API_ERR_INTERNAL, "Out of memory");
         ts_ssh_disconnect(session);
@@ -592,7 +593,7 @@ static esp_err_t api_ssh_copyid(const cJSON *params, ts_api_result_t *result)
     bool deploy_ok = (ret == ESP_OK && exec_result.exit_code == 0);
     char *stderr_msg = NULL;
     if (exec_result.stderr_data && strlen(exec_result.stderr_data) > 0) {
-        stderr_msg = strdup(exec_result.stderr_data);
+        stderr_msg = TS_STRDUP_PSRAM(exec_result.stderr_data);
     }
     ts_ssh_exec_result_free(&exec_result);
     
@@ -710,7 +711,7 @@ static esp_err_t api_ssh_revoke(const cJSON *params, ts_api_result_t *result)
     }
     
     /* 解析公钥：提取 key_type 和 key_data */
-    char *pubkey_copy = strdup(pubkey_data);
+    char *pubkey_copy = TS_STRDUP_PSRAM(pubkey_data);
     if (!pubkey_copy) {
         free(pubkey_data);
         ts_api_result_error(result, TS_API_ERR_NO_MEM, "Out of memory");
@@ -777,7 +778,7 @@ static esp_err_t api_ssh_revoke(const cJSON *params, ts_api_result_t *result)
     }
     
     /* 1. 检查密钥是否存在 */
-    char *check_cmd = malloc(512);
+    char *check_cmd = TS_MALLOC_PSRAM(512);
     if (!check_cmd) {
         ts_api_result_error(result, TS_API_ERR_NO_MEM, "Out of memory");
         ts_ssh_disconnect(session);
@@ -828,7 +829,7 @@ static esp_err_t api_ssh_revoke(const cJSON *params, ts_api_result_t *result)
     }
     
     /* 2. 执行删除操作 */
-    char *revoke_cmd = malloc(512);
+    char *revoke_cmd = TS_MALLOC_PSRAM(512);
     if (!revoke_cmd) {
         ts_api_result_error(result, TS_API_ERR_NO_MEM, "Out of memory");
         ts_ssh_disconnect(session);

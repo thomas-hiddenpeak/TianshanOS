@@ -10,6 +10,10 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "esp_heap_caps.h"
+
+/* PSRAM-first allocation for OTA buffers */
+#define OTA_MALLOC(size) ({ void *p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : malloc(size); })
 #include "esp_app_format.h"
 #include "ts_ota.h"
 #include "ts_event.h"
@@ -100,8 +104,8 @@ static void sdcard_ota_task(void *arg)
 
     ESP_LOGI(TAG, "Firmware size: %zu bytes", file_size);
 
-    // Allocate buffer
-    buffer = malloc(CONFIG_TS_OTA_BUFFER_SIZE);
+    // Allocate buffer (PSRAM first)
+    buffer = OTA_MALLOC(CONFIG_TS_OTA_BUFFER_SIZE);
     if (!buffer) {
         ESP_LOGE(TAG, "Failed to allocate buffer");
         ret = ESP_ERR_NO_MEM;

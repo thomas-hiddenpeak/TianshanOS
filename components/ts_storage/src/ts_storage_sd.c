@@ -424,7 +424,10 @@ esp_err_t ts_storage_format_sd(void)
     
     /* Format */
     const size_t workbuf_size = 4096;
-    void *workbuf = malloc(workbuf_size);
+    void *workbuf = heap_caps_malloc(workbuf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (workbuf == NULL) {
+        workbuf = malloc(workbuf_size);  /* Fallback to DRAM */
+    }
     if (workbuf == NULL) {
         return ESP_ERR_NO_MEM;
     }

@@ -15,6 +15,10 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
+
+/* PSRAM 优先分配宏 */
+#define TS_NVS_MALLOC(size) ({ void *p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : malloc(size); })
 
 static const char *TAG = "ts_config_nvs";
 
@@ -161,7 +165,7 @@ static esp_err_t nvs_backend_get(const char *key, ts_config_type_t type,
                     *size = len;
                     return ESP_ERR_INVALID_SIZE;
                 }
-                value->val_string = malloc(len);
+                value->val_string = TS_NVS_MALLOC(len);
                 if (value->val_string == NULL) {
                     return ESP_ERR_NO_MEM;
                 }
@@ -181,7 +185,7 @@ static esp_err_t nvs_backend_get(const char *key, ts_config_type_t type,
                     *size = len;
                     return ESP_ERR_INVALID_SIZE;
                 }
-                value->val_blob.data = malloc(len);
+                value->val_blob.data = TS_NVS_MALLOC(len);
                 if (value->val_blob.data == NULL) {
                     return ESP_ERR_NO_MEM;
                 }

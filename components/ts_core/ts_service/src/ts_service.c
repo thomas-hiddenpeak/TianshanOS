@@ -14,6 +14,10 @@
 #include "ts_event.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
+
+/* PSRAM-first allocation for reduced DRAM fragmentation */
+#define TS_SVC_CALLOC(n, size) ({ void *p = heap_caps_calloc((n), (size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : calloc((n), (size)); })
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -196,8 +200,8 @@ esp_err_t ts_service_register(const ts_service_def_t *def, ts_service_handle_t *
         return ESP_ERR_INVALID_STATE;
     }
 
-    // 创建服务实例
-    ts_service_instance_t *service = calloc(1, sizeof(ts_service_instance_t));
+    // 创建服务实例 (PSRAM 优先，减少 DRAM 碎片)
+    ts_service_instance_t *service = TS_SVC_CALLOC(1, sizeof(ts_service_instance_t));
     if (service == NULL) {
         return ESP_ERR_NO_MEM;
     }

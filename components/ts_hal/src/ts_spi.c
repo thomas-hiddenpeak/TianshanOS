@@ -15,6 +15,11 @@
 #include "freertos/semphr.h"
 #include <string.h>
 #include <stdlib.h>
+#include "esp_heap_caps.h"
+
+/* PSRAM 优先分配宏 */
+#define TS_HAL_CALLOC(n, size) ({ void *p = heap_caps_calloc((n), (size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : calloc((n), (size)); })
+#define TS_HAL_MALLOC(size) ({ void *p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : malloc(size); })
 
 #define TAG "ts_spi"
 
@@ -178,8 +183,8 @@ ts_spi_bus_handle_t ts_spi_bus_create(const ts_spi_bus_config_t *config,
         return NULL;
     }
     
-    /* Allocate handle */
-    ts_spi_bus_handle_t bus = calloc(1, sizeof(struct ts_spi_bus_s));
+    /* Allocate handle (prefer PSRAM) */
+    ts_spi_bus_handle_t bus = TS_HAL_CALLOC(1, sizeof(struct ts_spi_bus_s));
     if (bus == NULL) {
         ts_pin_manager_release(config->miso_function);
         ts_pin_manager_release(config->mosi_function);
@@ -249,8 +254,8 @@ ts_spi_device_handle_t ts_spi_device_add(ts_spi_bus_handle_t bus,
         return NULL;
     }
     
-    /* Allocate device */
-    ts_spi_device_handle_t device = calloc(1, sizeof(struct ts_spi_device_s));
+    /* Allocate device (prefer PSRAM) */
+    ts_spi_device_handle_t device = TS_HAL_CALLOC(1, sizeof(struct ts_spi_device_s));
     if (device == NULL) {
         ts_pin_manager_release(config->cs_function);
         return NULL;
@@ -354,7 +359,7 @@ esp_err_t ts_spi_write_reg(ts_spi_device_handle_t device, uint8_t reg_addr,
         return ESP_ERR_INVALID_ARG;
     }
     
-    uint8_t *buf = malloc(len + 1);
+    uint8_t *buf = TS_HAL_MALLOC(len + 1);
     if (buf == NULL) {
         return ESP_ERR_NO_MEM;
     }
@@ -375,7 +380,7 @@ esp_err_t ts_spi_read_reg(ts_spi_device_handle_t device, uint8_t reg_addr,
         return ESP_ERR_INVALID_ARG;
     }
     
-    uint8_t *buf = malloc(len + 1);
+    uint8_t *buf = TS_HAL_MALLOC(len + 1);
     if (buf == NULL) {
         return ESP_ERR_NO_MEM;
     }

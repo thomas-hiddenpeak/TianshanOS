@@ -14,6 +14,10 @@
 #include "freertos/semphr.h"
 #include "esp_log.h"
 #include "esp_http_client.h"
+#include "esp_heap_caps.h"
+
+/* PSRAM-first allocation for OTA buffers */
+#define OTA_MALLOC(size) ({ void *p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : malloc(size); })
 #include "esp_crt_bundle.h"
 #include "esp_partition.h"
 #include "ts_ota.h"
@@ -227,8 +231,8 @@ static void www_ota_task(void *arg)
     ESP_LOGI(TAG, "WWW partition: addr=0x%lx, size=%lu", 
              www_partition->address, www_partition->size);
     
-    // Allocate download buffer
-    buffer = malloc(buffer_size);
+    // Allocate download buffer (PSRAM first)
+    buffer = OTA_MALLOC(buffer_size);
     if (!buffer) {
         ESP_LOGE(TAG, "Failed to allocate buffer");
         www_ota_update_progress(TS_OTA_STATE_ERROR, 0, 0, "内存不足");
@@ -523,8 +527,8 @@ static void www_ota_sdcard_task(void *arg)
         goto cleanup;
     }
     
-    // Allocate buffer
-    buffer = malloc(buffer_size);
+    // Allocate buffer (PSRAM first)
+    buffer = OTA_MALLOC(buffer_size);
     if (!buffer) {
         ESP_LOGE(TAG, "Failed to allocate buffer");
         www_ota_update_progress(TS_OTA_STATE_ERROR, 0, 0, "内存不足");

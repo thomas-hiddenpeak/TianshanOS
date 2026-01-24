@@ -17,6 +17,10 @@
 #include "freertos/task.h"
 #include <string.h>
 #include <stdlib.h>
+#include "esp_heap_caps.h"
+
+/* PSRAM 优先分配宏 */
+#define TS_HAL_CALLOC(n, size) ({ void *p = heap_caps_calloc((n), (size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : calloc((n), (size)); })
 
 #define TAG "ts_uart"
 
@@ -246,8 +250,8 @@ ts_uart_handle_t ts_uart_create(const ts_uart_config_t *config, const char *owne
         return NULL;
     }
     
-    /* Allocate handle */
-    ts_uart_handle_t handle = calloc(1, sizeof(struct ts_uart_s));
+    /* Allocate handle (prefer PSRAM) */
+    ts_uart_handle_t handle = TS_HAL_CALLOC(1, sizeof(struct ts_uart_s));
     if (handle == NULL) {
         ts_pin_manager_release(config->tx_function);
         ts_pin_manager_release(config->rx_function);

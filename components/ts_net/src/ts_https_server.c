@@ -1,9 +1,12 @@
 /**
  * @file ts_https_server.c
  * @brief HTTPS Server Implementation with TLS and mTLS support
+ * 
+ * 证书和请求体优先分配到 PSRAM
  */
 
 #include "ts_https_server.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM */
 #include "ts_log.h"
 #include "ts_storage.h"
 #include <string.h>
@@ -142,7 +145,7 @@ static esp_err_t https_handler_wrapper(httpd_req_t *req)
     
     // Read body if present - must loop to receive all data
     if (req->content_len > 0) {
-        ts_req.body = malloc(req->content_len + 1);
+        ts_req.body = TS_MALLOC_PSRAM(req->content_len + 1);
         if (ts_req.body) {
             size_t total_received = 0;
             while (total_received < req->content_len) {
@@ -175,8 +178,8 @@ esp_err_t ts_https_server_register_route(const ts_http_route_t *route)
         return ESP_ERR_INVALID_STATE;
     }
     
-    // Allocate persistent copy of route
-    ts_http_route_t *route_copy = malloc(sizeof(ts_http_route_t));
+    // Allocate persistent copy of route (prefer PSRAM)
+    ts_http_route_t *route_copy = TS_MALLOC_PSRAM(sizeof(ts_http_route_t));
     if (!route_copy) {
         return ESP_ERR_NO_MEM;
     }
@@ -218,7 +221,7 @@ esp_err_t ts_https_load_certs_from_files(ts_https_config_t *config,
         return ESP_ERR_NOT_FOUND;
     }
     
-    uint8_t *cert = malloc(cert_size + 1);
+    uint8_t *cert = TS_MALLOC_PSRAM(cert_size + 1);
     if (!cert) {
         return ESP_ERR_NO_MEM;
     }
@@ -240,7 +243,7 @@ esp_err_t ts_https_load_certs_from_files(ts_https_config_t *config,
         return ESP_ERR_NOT_FOUND;
     }
     
-    uint8_t *key = malloc(key_size + 1);
+    uint8_t *key = TS_MALLOC_PSRAM(key_size + 1);
     if (!key) {
         free((void*)config->server_cert);
         config->server_cert = NULL;
@@ -261,7 +264,7 @@ esp_err_t ts_https_load_certs_from_files(ts_https_config_t *config,
     if (ca_path) {
         ssize_t ca_size = ts_storage_size(ca_path);
         if (ca_size > 0) {
-            uint8_t *ca = malloc(ca_size + 1);
+            uint8_t *ca = TS_MALLOC_PSRAM(ca_size + 1);
             if (ca && ts_storage_read_file(ca_path, ca, ca_size) == ca_size) {
                 ca[ca_size] = '\0';
                 config->ca_cert = ca;

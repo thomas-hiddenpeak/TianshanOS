@@ -6,10 +6,13 @@
  * - 文件读写操作
  * - 目录遍历和管理
  * - 高级文件传输（上传/下载）
+ * 
+ * 大缓冲区优先分配到 PSRAM
  */
 
 #include "ts_sftp.h"
 #include "ts_ssh_client.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM, TS_CALLOC_PSRAM */
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -183,7 +186,7 @@ esp_err_t ts_sftp_open(ts_ssh_session_t ssh_session, ts_sftp_session_t *sftp_out
     }
     
     /* 分配 SFTP 会话结构 */
-    ts_sftp_session_t sftp = calloc(1, sizeof(struct ts_sftp_session_s));
+    ts_sftp_session_t sftp = TS_CALLOC_PSRAM(1, sizeof(struct ts_sftp_session_s));
     if (!sftp) {
         ESP_LOGE(TAG, "Failed to allocate SFTP session");
         return ESP_ERR_NO_MEM;
@@ -266,7 +269,7 @@ esp_err_t ts_sftp_file_open(ts_sftp_session_t sftp, const char *path,
     }
     
     /* 分配文件结构 */
-    ts_sftp_file_t file = calloc(1, sizeof(struct ts_sftp_file_s));
+    ts_sftp_file_t file = TS_CALLOC_PSRAM(1, sizeof(struct ts_sftp_file_s));
     if (!file) {
         return ESP_ERR_NO_MEM;
     }
@@ -499,7 +502,7 @@ esp_err_t ts_sftp_dir_open(ts_sftp_session_t sftp, const char *path, ts_sftp_dir
     }
     
     /* 分配目录结构 */
-    ts_sftp_dir_t dir = calloc(1, sizeof(struct ts_sftp_dir_s));
+    ts_sftp_dir_t dir = TS_CALLOC_PSRAM(1, sizeof(struct ts_sftp_dir_s));
     if (!dir) {
         return ESP_ERR_NO_MEM;
     }
@@ -680,7 +683,7 @@ esp_err_t ts_sftp_get(ts_sftp_session_t sftp, const char *remote_path,
     }
     
     /* 分配传输缓冲区 */
-    buffer = malloc(SFTP_BUFFER_SIZE);
+    buffer = TS_MALLOC_PSRAM(SFTP_BUFFER_SIZE);
     if (!buffer) {
         ret = ESP_ERR_NO_MEM;
         goto cleanup;
@@ -764,7 +767,7 @@ esp_err_t ts_sftp_put(ts_sftp_session_t sftp, const char *local_path,
     }
     
     /* 分配传输缓冲区 */
-    buffer = malloc(SFTP_BUFFER_SIZE);
+    buffer = TS_MALLOC_PSRAM(SFTP_BUFFER_SIZE);
     if (!buffer) {
         ret = ESP_ERR_NO_MEM;
         goto cleanup;
@@ -833,7 +836,7 @@ esp_err_t ts_sftp_get_to_buffer(ts_sftp_session_t sftp, const char *remote_path,
     }
     
     /* 分配缓冲区 */
-    uint8_t *buf = malloc(attrs.size);
+    uint8_t *buf = TS_MALLOC_PSRAM(attrs.size);
     if (!buf) {
         return ESP_ERR_NO_MEM;
     }

@@ -17,6 +17,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include "esp_heap_caps.h"
+
+/* PSRAM 优先分配宏 */
+#define TS_STG_MALLOC(size) ({ void *p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : malloc(size); })
 
 #define TAG "ts_storage"
 
@@ -174,7 +178,7 @@ char *ts_storage_read_string(const char *path)
         return NULL;
     }
     
-    char *str = malloc(size + 1);
+    char *str = TS_STG_MALLOC(size + 1);
     if (str == NULL) {
         return NULL;
     }

@@ -107,6 +107,23 @@
         </div>
     </div>
     
+    <!-- 内存详情模态框 -->
+    <div id="memory-detail-modal" class="modal hidden">
+        <div class="modal-content memory-detail-modal">
+            <div class="modal-header">
+                <h2>🧠 内存详细分析</h2>
+                <button class="modal-close" onclick="hideMemoryDetailModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="memory-detail-body">
+                <div class="loading">加载中...</div>
+            </div>
+            <div class="modal-footer" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center">
+                <span id="memory-detail-timestamp" style="font-size:0.8em;color:#888">-</span>
+                <button class="btn btn-primary" onclick="refreshMemoryDetail()">🔄 刷新</button>
+            </div>
+        </div>
+    </div>
+    
     <script src="/js/api.js"></script>
     <script src="/js/router.js"></script>
     <script src="/js/terminal.js"></script>

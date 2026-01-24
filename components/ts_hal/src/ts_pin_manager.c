@@ -10,6 +10,7 @@
  */
 
 #include "ts_pin_manager.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM */
 #include "ts_log.h"
 #include "ts_config.h"
 #include "cJSON.h"
@@ -285,7 +286,7 @@ esp_err_t ts_pin_manager_load_config(const char *path)
         return ESP_ERR_INVALID_SIZE;
     }
     
-    char *content = malloc(fsize + 1);
+    char *content = TS_MALLOC_PSRAM(fsize + 1);
     if (content == NULL) {
         fclose(f);
         return ESP_ERR_NO_MEM;
@@ -380,7 +381,7 @@ esp_err_t ts_pin_manager_load_nvs(void)
     }
     
     /* Read and apply mappings */
-    uint8_t *data = malloc(size);
+    uint8_t *data = TS_MALLOC_PSRAM(size);
     if (data == NULL) {
         nvs_close(nvs);
         return ESP_ERR_NO_MEM;

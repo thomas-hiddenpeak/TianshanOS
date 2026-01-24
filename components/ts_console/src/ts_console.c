@@ -11,6 +11,7 @@
 #include "ts_log.h"
 #include "esp_console.h"
 #include "esp_vfs_dev.h"
+#include "esp_heap_caps.h"
 #include "linenoise.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -193,7 +194,9 @@ static void console_task(void *arg)
 
 static void add_cmd_to_registry(const char *name, ts_cmd_category_t category)
 {
-    cmd_entry_t *entry = malloc(sizeof(cmd_entry_t));
+    /* PSRAM first for reduced DRAM fragmentation */
+    cmd_entry_t *entry = heap_caps_malloc(sizeof(cmd_entry_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!entry) entry = malloc(sizeof(cmd_entry_t));
     if (entry == NULL) {
         return;
     }

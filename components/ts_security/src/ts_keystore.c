@@ -15,6 +15,7 @@
 
 #include "ts_keystore.h"
 #include "ts_crypto.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM */
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
@@ -86,7 +87,7 @@ static int parse_index(const char *index_str, char ids[][TS_KEYSTORE_ID_MAX_LEN]
     }
     
     int count = 0;
-    char *copy = strdup(index_str);
+    char *copy = TS_STRDUP_PSRAM(index_str);
     if (!copy) return 0;
     
     char *token = strtok(copy, ",");
@@ -204,7 +205,7 @@ static esp_err_t load_metadata(const char *id, ts_keystore_key_info_t *info)
     esp_err_t ret = nvs_get_str(s_keystore.nvs_handle, key, NULL, &len);
     if (ret != ESP_OK) return ret;
     
-    char *str = malloc(len);
+    char *str = TS_MALLOC_PSRAM(len);
     if (!str) return ESP_ERR_NO_MEM;
     
     ret = nvs_get_str(s_keystore.nvs_handle, key, str, &len);
@@ -426,7 +427,7 @@ esp_err_t ts_keystore_load_private_key(const char *id,
     }
     
     /* 分配内存并读取 */
-    char *buf = malloc(len + 1);  /* +1 for null terminator */
+    char *buf = TS_MALLOC_PSRAM(len + 1);  /* +1 for null terminator */
     if (!buf) {
         return ESP_ERR_NO_MEM;
     }
@@ -477,7 +478,7 @@ esp_err_t ts_keystore_load_public_key(const char *id,
     }
     
     /* 分配内存并读取 */
-    char *buf = malloc(len + 1);
+    char *buf = TS_MALLOC_PSRAM(len + 1);
     if (!buf) {
         return ESP_ERR_NO_MEM;
     }
@@ -705,7 +706,7 @@ esp_err_t ts_keystore_import_from_file(const char *id,
         return ESP_ERR_INVALID_SIZE;
     }
     
-    char *priv_key = malloc(priv_len + 1);
+    char *priv_key = TS_MALLOC_PSRAM(priv_len + 1);
     if (!priv_key) {
         fclose(f);
         return ESP_ERR_NO_MEM;
@@ -729,7 +730,7 @@ esp_err_t ts_keystore_import_from_file(const char *id,
         fseek(f, 0, SEEK_SET);
         
         if (pub_len > 0 && pub_len < TS_KEYSTORE_PUBKEY_MAX_LEN) {
-            pub_key = malloc(pub_len + 1);
+            pub_key = TS_MALLOC_PSRAM(pub_len + 1);
             if (pub_key) {
                 size_t read = fread(pub_key, 1, pub_len, f);
                 pub_key[read] = '\0';
@@ -951,7 +952,7 @@ esp_err_t ts_keystore_generate_key_ex(const char *id,
     }
     
     /* 导出私钥 PEM */
-    char *priv_key = malloc(TS_KEYSTORE_PRIVKEY_MAX_LEN);
+    char *priv_key = TS_MALLOC_PSRAM(TS_KEYSTORE_PRIVKEY_MAX_LEN);
     if (!priv_key) {
         ts_crypto_keypair_free(keypair);
         return ESP_ERR_NO_MEM;
@@ -966,7 +967,7 @@ esp_err_t ts_keystore_generate_key_ex(const char *id,
     }
     
     /* 导出公钥 OpenSSH 格式 */
-    char *pub_key = malloc(TS_KEYSTORE_PUBKEY_MAX_LEN);
+    char *pub_key = TS_MALLOC_PSRAM(TS_KEYSTORE_PUBKEY_MAX_LEN);
     size_t pub_len = 0;
     if (pub_key) {
         pub_len = TS_KEYSTORE_PUBKEY_MAX_LEN;

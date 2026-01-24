@@ -8,6 +8,7 @@
  */
 
 #include "ts_api.h"
+#include "ts_core.h"  /* TS_STRDUP_PSRAM, TS_CALLOC_PSRAM */
 #include "ts_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -205,11 +206,11 @@ esp_err_t ts_api_register(const ts_api_endpoint_t *endpoint)
     strncpy(entry->name, endpoint->name, CONFIG_TS_API_MAX_NAME_LENGTH - 1);
     entry->name[CONFIG_TS_API_MAX_NAME_LENGTH - 1] = '\0';
     
-    entry->description = endpoint->description ? strdup(endpoint->description) : NULL;
+    entry->description = endpoint->description ? TS_STRDUP_PSRAM(endpoint->description) : NULL;
     entry->category = endpoint->category;
     entry->handler = endpoint->handler;
     entry->requires_auth = endpoint->requires_auth;
-    entry->permission = endpoint->permission ? strdup(endpoint->permission) : NULL;
+    entry->permission = endpoint->permission ? TS_STRDUP_PSRAM(endpoint->permission) : NULL;
     entry->used = true;
     
     s_api.endpoint_count++;
@@ -436,7 +437,7 @@ void ts_api_result_error(ts_api_result_t *result, ts_api_result_code_t code,
     if (result) {
         result->code = code;
         free(result->message);
-        result->message = message ? strdup(message) : NULL;
+        result->message = message ? TS_STRDUP_PSRAM(message) : NULL;
         if (result->data) {
             cJSON_Delete(result->data);
             result->data = NULL;

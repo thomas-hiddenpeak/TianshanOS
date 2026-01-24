@@ -4,9 +4,12 @@
  *
  * This module provides SSH client functionality for TianShanOS,
  * using libssh2 library for full SSH2 protocol support.
+ * 
+ * 会话结构和缓冲区优先分配到 PSRAM
  */
 
 #include "ts_ssh_client.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM, TS_CALLOC_PSRAM */
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -104,7 +107,7 @@ static char *strdup_safe(const char *str)
     if (str == NULL) {
         return NULL;
     }
-    char *copy = malloc(strlen(str) + 1);
+    char *copy = TS_MALLOC_PSRAM(strlen(str) + 1);
     if (copy) {
         strcpy(copy, str);
     }
@@ -164,7 +167,7 @@ esp_err_t ts_ssh_session_create(const ts_ssh_config_t *config, ts_ssh_session_t 
     }
 
     /* 分配会话结构 */
-    ts_ssh_session_t session = calloc(1, sizeof(struct ts_ssh_session_s));
+    ts_ssh_session_t session = TS_CALLOC_PSRAM(1, sizeof(struct ts_ssh_session_s));
     if (!session) {
         return ESP_ERR_NO_MEM;
     }
@@ -602,8 +605,8 @@ esp_err_t ts_ssh_exec(ts_ssh_session_t session, const char *command, ts_ssh_exec
     /* 读取输出 */
     size_t stdout_capacity = 4096;
     size_t stderr_capacity = 1024;
-    result->stdout_data = malloc(stdout_capacity);
-    result->stderr_data = malloc(stderr_capacity);
+    result->stdout_data = TS_MALLOC_PSRAM(stdout_capacity);
+    result->stderr_data = TS_MALLOC_PSRAM(stderr_capacity);
     
     if (!result->stdout_data || !result->stderr_data) {
         free(result->stdout_data);
@@ -628,7 +631,7 @@ esp_err_t ts_ssh_exec(ts_ssh_session_t session, const char *command, ts_ssh_exec
                 /* 扩展缓冲区 */
                 while (result->stdout_len + rc >= stdout_capacity) {
                     stdout_capacity *= 2;
-                    char *new_buf = realloc(result->stdout_data, stdout_capacity);
+                    char *new_buf = TS_REALLOC_PSRAM(result->stdout_data, stdout_capacity);
                     if (!new_buf) {
                         set_error(session, "Out of memory");
                         ts_ssh_exec_result_free(result);
@@ -649,7 +652,7 @@ esp_err_t ts_ssh_exec(ts_ssh_session_t session, const char *command, ts_ssh_exec
                 /* 扩展缓冲区 */
                 while (result->stderr_len + rc >= stderr_capacity) {
                     stderr_capacity *= 2;
-                    char *new_buf = realloc(result->stderr_data, stderr_capacity);
+                    char *new_buf = TS_REALLOC_PSRAM(result->stderr_data, stderr_capacity);
                     if (!new_buf) {
                         set_error(session, "Out of memory");
                         ts_ssh_exec_result_free(result);

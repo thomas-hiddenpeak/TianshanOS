@@ -5,10 +5,14 @@
 
 #include "ts_led_private.h"
 #include "ts_log.h"
+#include "esp_heap_caps.h"
 #include <stdlib.h>
 #include <string.h>
 
 #define TAG "led_layer"
+
+/* PSRAM 优先分配宏 */
+#define TS_LAYER_CALLOC(n, size) ({ void *p = heap_caps_calloc((n), (size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : calloc((n), (size)); })
 
 esp_err_t ts_led_layer_create(ts_led_device_t device, 
                                const ts_led_layer_config_t *config,
@@ -19,10 +23,17 @@ esp_err_t ts_led_layer_create(ts_led_device_t device,
     
     if (dev->layer_count >= TS_LED_MAX_LAYERS) return ESP_ERR_NO_MEM;
     
-    ts_led_layer_impl_t *l = calloc(1, sizeof(ts_led_layer_impl_t));
+    ts_led_layer_impl_t *l = TS_LAYER_CALLOC(1, sizeof(ts_led_layer_impl_t));
     if (!l) return ESP_ERR_NO_MEM;
     
-    l->buffer = calloc(dev->config.led_count, sizeof(ts_led_rgb_t));
+    /* 优先使用 PSRAM，如果没有则退回 DMA 内存 */
+    l->buffer = heap_caps_calloc(dev->config.led_count, sizeof(ts_led_rgb_t),
+                                  MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!l->buffer) {
+        /* PSRAM 不可用，使用 DMA 内存 */
+        l->buffer = heap_caps_calloc(dev->config.led_count, sizeof(ts_led_rgb_t),
+                                      MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+    }
     if (!l->buffer) {
         free(l);
         return ESP_ERR_NO_MEM;

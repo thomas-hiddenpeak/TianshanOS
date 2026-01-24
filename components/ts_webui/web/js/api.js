@@ -118,6 +118,7 @@ class TianShanAPI {
     
     async getSystemInfo() { return this.call('system.info'); }
     async getMemoryInfo() { return this.call('system.memory'); }
+    async getMemoryDetail() { return this.call('system.memory_detail'); }
     async getTasks() { return this.call('system.tasks'); }
     async reboot(delay = 0) { return this.call('system.reboot', { delay }, 'POST'); }
     

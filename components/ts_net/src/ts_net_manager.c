@@ -30,6 +30,10 @@
 #include "lwip/ip4_addr.h"
 #include <string.h>
 #include <stdio.h>
+#include "esp_heap_caps.h"
+
+/* PSRAM 优先分配宏 */
+#define TS_NET_MALLOC(size) ({ void *p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : malloc(size); })
 
 #define TAG "ts_net_mgr"
 
@@ -1212,7 +1216,7 @@ esp_err_t ts_net_manager_register_event_callback(ts_net_event_cb_t callback, voi
 {
     if (!callback) return ESP_ERR_INVALID_ARG;
     
-    ts_net_cb_node_t *node = malloc(sizeof(ts_net_cb_node_t));
+    ts_net_cb_node_t *node = TS_NET_MALLOC(sizeof(ts_net_cb_node_t));
     if (!node) return ESP_ERR_NO_MEM;
     
     node->callback = callback;

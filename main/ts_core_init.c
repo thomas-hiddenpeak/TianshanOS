@@ -13,11 +13,28 @@
 #include "ts_config_file.h"
 #include "ts_config_schemas.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
+#include "cJSON.h"
 
 static const char *TAG = "ts_core";
 
 static bool s_core_initialized = false;
 static bool s_core_started = false;
+
+/* ============================================================================
+ * cJSON PSRAM 内存钩子 - 减少 DRAM 碎片
+ * ========================================================================== */
+
+static void *cjson_psram_malloc(size_t size)
+{
+    void *p = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return p ? p : malloc(size);  /* 回退到 DRAM */
+}
+
+static void cjson_psram_free(void *ptr)
+{
+    free(ptr);  /* heap_caps 分配的内存可以用 free() 释放 */
+}
 
 /* ============================================================================
  * 版本信息
@@ -49,6 +66,14 @@ esp_err_t ts_core_init(void)
     }
 
     ESP_LOGI(TAG, "TianShanOS Core v%s initializing...", TIANSHAN_OS_VERSION_STRING);
+
+    // 0. 配置 cJSON 使用 PSRAM（必须在任何 JSON 操作之前）
+    cJSON_Hooks hooks = {
+        .malloc_fn = cjson_psram_malloc,
+        .free_fn = cjson_psram_free
+    };
+    cJSON_InitHooks(&hooks);
+    ESP_LOGI(TAG, "cJSON PSRAM hooks installed");
 
     // 1. 初始化配置管理
     ESP_LOGI(TAG, "Initializing configuration system...");

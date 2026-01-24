@@ -32,6 +32,10 @@
 #include <string.h>
 #include <stdio.h>
 #include <time.h>
+#include "esp_heap_caps.h"
+
+/* PSRAM 优先分配宏 */
+#define TS_DHCP_MALLOC(size) ({ void *p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : malloc(size); })
 
 #define TAG "ts_dhcps"
 
@@ -1445,7 +1449,7 @@ esp_err_t ts_dhcp_server_register_event_cb(ts_dhcp_event_cb_t callback, void *us
 {
     if (!callback) return ESP_ERR_INVALID_ARG;
     
-    ts_dhcp_cb_node_t *node = malloc(sizeof(ts_dhcp_cb_node_t));
+    ts_dhcp_cb_node_t *node = TS_DHCP_MALLOC(sizeof(ts_dhcp_cb_node_t));
     if (!node) return ESP_ERR_NO_MEM;
     
     node->callback = callback;

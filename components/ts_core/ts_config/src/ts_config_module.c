@@ -26,6 +26,10 @@
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "esp_heap_caps.h"
+
+/* PSRAM 优先分配宏 */
+#define TS_MOD_MALLOC(size) ({ void *p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : malloc(size); })
 
 static const char *TAG = "ts_config_module";
 
@@ -345,7 +349,7 @@ esp_err_t ts_config_module_load_from_nvs(ts_config_module_t module)
     size_t blob_len = 0;
     ret = nvs_get_blob(handle, "config", NULL, &blob_len);
     if (ret == ESP_OK && blob_len > 0) {
-        char *json_str = malloc(blob_len + 1);
+        char *json_str = TS_MOD_MALLOC(blob_len + 1);
         if (json_str != NULL) {
             ret = nvs_get_blob(handle, "config", json_str, &blob_len);
             if (ret == ESP_OK) {
@@ -418,7 +422,7 @@ esp_err_t ts_config_module_load_from_nvs(ts_config_module_t module)
             case TS_CONFIG_TYPE_STRING: {
                 size_t len = 0;
                 if (nvs_get_str(handle, entry->key, NULL, &len) == ESP_OK && len > 0) {
-                    char *buf = malloc(len);
+                    char *buf = TS_MOD_MALLOC(len);
                     if (buf && nvs_get_str(handle, entry->key, buf, &len) == ESP_OK) {
                         ts_config_set_string(cache_key, buf);
                         has_legacy_data = true;
@@ -1002,8 +1006,8 @@ static esp_err_t read_json_file(const char *path, cJSON **root)
         return TS_CONFIG_ERR_PARSE_FAILED;
     }
     
-    /* 读取内容 */
-    char *buf = malloc(size + 1);
+    /* 读取内容（优先使用 PSRAM）*/
+    char *buf = TS_MOD_MALLOC(size + 1);
     if (buf == NULL) {
         fclose(f);
         return ESP_ERR_NO_MEM;

@@ -13,6 +13,10 @@
 #include "esp_http_server.h"
 #include <string.h>
 #include <sys/stat.h>
+#include "esp_heap_caps.h"
+
+/* PSRAM 优先分配宏 */
+#define TS_API_MALLOC(size) ({ void *p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : malloc(size); })
 
 #define TAG "webui_api"
 
@@ -98,7 +102,7 @@ static esp_err_t api_handler(ts_http_request_t *req, void *user_data)
     // Parse URL query string parameters (for GET requests)
     size_t query_len = httpd_req_get_url_query_len(req->req);
     if (query_len > 0) {
-        char *query_buf = malloc(query_len + 1);
+        char *query_buf = TS_API_MALLOC(query_len + 1);
         if (query_buf) {
             if (httpd_req_get_url_query_str(req->req, query_buf, query_len + 1) == ESP_OK) {
                 // Parse query string parameters

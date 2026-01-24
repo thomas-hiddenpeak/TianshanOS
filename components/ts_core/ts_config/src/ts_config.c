@@ -13,9 +13,15 @@
 #include <stdlib.h>
 #include "ts_config.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/timers.h"
+
+/* PSRAM-first allocation for reduced DRAM fragmentation */
+#define TS_CFG_MALLOC(size)    ({ void *p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : malloc(size); })
+#define TS_CFG_CALLOC(n, size) ({ void *p = heap_caps_calloc((n), (size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); p ? p : calloc((n), (size)); })
+#define TS_CFG_STRDUP(s) ({ const char *_s = (s); size_t _len = _s ? strlen(_s) + 1 : 0; char *_p = _len ? heap_caps_malloc(_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) : NULL; if (_p) memcpy(_p, _s, _len); else if (_len) { _p = strdup(_s); } _p; })
 
 static const char *TAG = "ts_config";
 
@@ -775,13 +781,13 @@ esp_err_t ts_config_add_listener(const char *key_prefix,
         return ESP_ERR_NO_MEM;
     }
 
-    ts_config_listener_node_t *node = calloc(1, sizeof(ts_config_listener_node_t));
+    ts_config_listener_node_t *node = TS_CFG_CALLOC(1, sizeof(ts_config_listener_node_t));
     if (node == NULL) {
         return ESP_ERR_NO_MEM;
     }
 
     if (key_prefix != NULL) {
-        node->key_prefix = strdup(key_prefix);
+        node->key_prefix = TS_CFG_STRDUP(key_prefix);
         if (node->key_prefix == NULL) {
             free(node);
             return ESP_ERR_NO_MEM;
@@ -1007,7 +1013,7 @@ static ts_config_node_t *find_config_node(const char *key)
 
 static ts_config_node_t *create_config_node(const char *key, ts_config_type_t type)
 {
-    ts_config_node_t *node = calloc(1, sizeof(ts_config_node_t));
+    ts_config_node_t *node = TS_CFG_CALLOC(1, sizeof(ts_config_node_t));
     if (node == NULL) {
         return NULL;
     }
@@ -1134,7 +1140,7 @@ static bool copy_value(ts_config_value_t *dst, const ts_config_value_t *src,
                 if (dst->val_string != NULL) {
                     free(dst->val_string);
                 }
-                dst->val_string = strdup(src->val_string);
+                dst->val_string = TS_CFG_STRDUP(src->val_string);
                 if (dst->val_string == NULL) {
                     return false;
                 }
@@ -1146,7 +1152,7 @@ static bool copy_value(ts_config_value_t *dst, const ts_config_value_t *src,
                 if (dst->val_blob.data != NULL) {
                     free(dst->val_blob.data);
                 }
-                dst->val_blob.data = malloc(src->val_blob.size);
+                dst->val_blob.data = TS_CFG_MALLOC(src->val_blob.size);
                 if (dst->val_blob.data == NULL) {
                     return false;
                 }

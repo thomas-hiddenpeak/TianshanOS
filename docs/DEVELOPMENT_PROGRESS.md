@@ -27,6 +27,130 @@
 | Phase 13: 日志系统增强 | ✅ 完成 | 100% | 2026-01-23 |
 | Phase 14: LED 滤镜系统优化 | ✅ 完成 | 100% | 2026-01-23 |
 | Phase 15: WebUI 日志流修复 & 导航栏清理 | ✅ 完成 | 100% | 2026-01-24 |
+| Phase 16: DRAM 碎片优化 | ✅ 完成 | 100% | 2026-01-24 |
+
+---
+
+## 📋 Phase 16: DRAM 碎片优化 ✅
+
+**时间**：2026年1月24日  
+**目标**：降低 DRAM 碎片率，提升最大连续块大小以满足 DMA 需求
+
+### 优化背景
+
+**问题**：DRAM 碎片率高达 ~60%，最大连续块仅 ~40KB，影响 DMA 和大缓冲区分配。
+
+**目标**：碎片率降至 <50%，最大连续块 >60KB。
+
+### 优化过程
+
+#### 第一轮：PSRAM 基础配置
+```
+碎片率: 60% → 51.6%
+最大块: ~40KB → 46KB
+```
+- `SPIRAM_MALLOC_ALWAYSINTERNAL`: 16384 → 512
+- `SPIRAM_TRY_ALLOCATE_WIFI_LWIP`: 启用
+- `NVS_ALLOCATE_CACHE_IN_SPIRAM`: 启用
+
+#### 第二轮：激进优化
+```
+碎片率: 51.6% → 44.5%
+最大块: 46KB → 60KB
+```
+- `SPIRAM_MALLOC_ALWAYSINTERNAL`: 512 → 256
+- `FREERTOS_TIMER_TASK_STACK_DEPTH`: 4096 → 3072
+- `ESP_WIFI_CACHE_TX_BUFFER_NUM`: 32 → 16
+- 任务栈优化（console/led/event）
+
+#### 第三轮：进一步压缩
+```
+碎片率: 44.5% → 43.2%
+最大块: 60KB → 64KB
+```
+- `SPIRAM_MALLOC_ALWAYSINTERNAL`: 256 → 128
+- WiFi 管理帧缓冲区减少
+- LWIP RECVMBOX 优化
+- ⚠️ HTTPD_MAX_REQ_HDR_LEN=512 过于激进，已回退至 1024
+
+#### 最终结果
+```
+碎片率: 43.2% → 42.1%
+最大块: 64KB → 68KB
+```
+
+### 最终配置（sdkconfig.defaults）
+
+```kconfig
+# PSRAM 核心配置
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=128    # 关键：仅 <128B 用 DRAM
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=8192
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
+
+# WiFi 缓冲区优化
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_CACHE_TX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_MGMT_SBUF_NUM=8
+
+# LWIP 优化
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=4096
+CONFIG_LWIP_TCP_WND_DEFAULT=4096
+CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=8
+
+# 任务栈优化
+CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=3072
+CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=3584
+CONFIG_TS_CONSOLE_TASK_STACK_SIZE=6144
+CONFIG_TS_LED_TASK_STACK_SIZE=3072
+
+# 其他 PSRAM 迁移
+CONFIG_NVS_ALLOCATE_CACHE_IN_SPIRAM=y
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+```
+
+### 优化效果总结
+
+| 指标 | 优化前 | 优化后 | 改善 |
+|------|--------|--------|------|
+| DRAM 碎片率 | ~60% | 42.1% | ↓18% |
+| DRAM 最大块 | ~40KB | 68KB | ↑70% |
+| DRAM 分配块数 | ~1000 | 842 | ↓16% |
+| PSRAM 碎片率 | ~5% | 2.7% | ↓2.3% |
+
+### 配置影响分类
+
+**只影响性能（安全）**：
+- `SPIRAM_MALLOC_ALWAYSINTERNAL` - PSRAM 访问略慢但功能正常
+- WiFi 缓冲区减少 - 吞吐量可能降低
+- LWIP 缓冲区减少 - TCP 传输速度降低
+
+**可能导致功能失效（需注意）**：
+- ~~`HTTPD_MAX_REQ_HDR_LEN=512`~~ - 已回退，HTTP 头太长会被拒绝
+- `HTTPD_MAX_URI_LEN=256` - URI 超长会失败（一般够用）
+
+### 关键经验
+
+1. **`SPIRAM_MALLOC_ALWAYSINTERNAL` 是最有效的配置**
+   - 默认 16KB → 128 字节
+   - 将数百个中等分配从 DRAM 转移到 PSRAM
+   - 性能代价很小（PSRAM 仅慢 2-3 倍）
+
+2. **WiFi/LWIP 缓冲区优化有收益但有限**
+   - 主要影响网络吞吐量
+   - 对嵌入式管理场景影响不大
+
+3. **HTTP 服务器缓冲区不宜过小**
+   - `HTTPD_MAX_REQ_HDR_LEN` 最小建议 1024
+   - 浏览器请求头通常 500-800 字节
+
+### 相关文件
+
+- `sdkconfig.defaults` - 所有配置修改
+- `docs/MEMORY_STATUS.md` - 内存状态报告
+- `docs/MEMORY_OPTIMIZATION.md` - 优化方案文档
 
 ---
 

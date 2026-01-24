@@ -18,9 +18,87 @@
 #include "ts_event.h"
 #include "ts_service.h"
 
+/* PSRAM 内存管理 */
+#include "esp_heap_caps.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* ============================================================================
+ * PSRAM 优先内存分配宏
+ * 用于将非关键数据从 DRAM 迁移到 PSRAM，节省 DRAM 空间
+ * ========================================================================== */
+
+/**
+ * @brief PSRAM 优先分配（带回退）
+ * 
+ * 优先从 PSRAM 分配，失败时回退到 DRAM
+ * 适用于大缓冲区、缓存、图像数据等非 DMA 数据
+ * 
+ * @param size 分配大小（字节）
+ * @return 指针或 NULL
+ */
+#define TS_MALLOC_PSRAM(size) \
+    ({ void *_p = heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); \
+       _p ? _p : malloc(size); })
+
+/**
+ * @brief PSRAM 优先 calloc（带回退）
+ * 
+ * @param n 元素数量
+ * @param size 每个元素大小
+ * @return 指针或 NULL（内存已清零）
+ */
+#define TS_CALLOC_PSRAM(n, size) \
+    ({ void *_p = heap_caps_calloc((n), (size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); \
+       _p ? _p : calloc((n), (size)); })
+
+/**
+ * @brief 强制 PSRAM 分配（无回退）
+ * 
+ * 仅从 PSRAM 分配，失败返回 NULL
+ * 用于必须在 PSRAM 的大数据
+ * 
+ * @param size 分配大小
+ * @return 指针或 NULL
+ */
+#define TS_MALLOC_PSRAM_ONLY(size) \
+    heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+
+#define TS_CALLOC_PSRAM_ONLY(n, size) \
+    heap_caps_calloc((n), (size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+
+/**
+ * @brief PSRAM 优先 strdup（带回退）
+ * 
+ * 复制字符串到 PSRAM，失败时回退到 DRAM
+ * 
+ * @param s 源字符串
+ * @return 复制的字符串或 NULL
+ */
+#define TS_STRDUP_PSRAM(s) \
+    ({ const char *_s = (s); \
+       size_t _len = _s ? strlen(_s) + 1 : 0; \
+       char *_p = _len ? heap_caps_malloc(_len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) : NULL; \
+       if (_p) memcpy(_p, _s, _len); \
+       else if (_len) { _p = strdup(_s); } \
+       _p; })
+
+/**
+ * @brief PSRAM 优先 realloc（带回退）
+ * 
+ * 重新分配内存到 PSRAM，失败时回退到 DRAM
+ * 注意：如果原内存在 DRAM 且需要扩展，会复制到 PSRAM
+ * 
+ * @param ptr 原指针（可为 NULL）
+ * @param size 新大小
+ * @return 新指针或 NULL
+ */
+#define TS_REALLOC_PSRAM(ptr, size) \
+    ({ void *_old = (ptr); size_t _sz = (size); \
+       void *_new = heap_caps_realloc(_old, _sz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); \
+       _new ? _new : realloc(_old, _sz); })
 
 /* ============================================================================
  * 版本信息 - 由 CMakeLists.txt 从 version.txt 自动生成

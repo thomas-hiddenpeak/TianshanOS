@@ -2,12 +2,15 @@
  * @file ts_api_system.c
  * @brief System API Handlers
  * 
+ * 任务列表等大缓冲区优先分配到 PSRAM
+ * 
  * @author TianShanOS Team
  * @version 1.0.0
  * @date 2026-01-15
  */
 
 #include "ts_api.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM */
 #include "ts_log.h"
 #include "esp_system.h"
 #include "esp_chip_info.h"
@@ -18,9 +21,19 @@
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
+
+/* Linker symbols for static memory sections */
+extern uint32_t _data_start, _data_end;
+extern uint32_t _bss_start, _bss_end;
+extern uint32_t _rodata_start, _rodata_end;
+extern uint32_t _iram_text_start, _iram_text_end;
+extern uint32_t _rtc_data_start, _rtc_data_end;
+extern uint32_t _rtc_bss_start, _rtc_bss_end;
 
 #define TAG "api_system"
 
@@ -167,7 +180,7 @@ static esp_err_t api_system_tasks(const cJSON *params, ts_api_result_t *result)
     
 #if configUSE_TRACE_FACILITY
     UBaseType_t task_count = uxTaskGetNumberOfTasks();
-    TaskStatus_t *task_array = malloc(task_count * sizeof(TaskStatus_t));
+    TaskStatus_t *task_array = TS_MALLOC_PSRAM(task_count * sizeof(TaskStatus_t));
     
     if (task_array == NULL) {
         cJSON_Delete(data);
@@ -233,7 +246,7 @@ static esp_err_t api_system_cpu(const cJSON *params, ts_api_result_t *result)
     
 #if configUSE_TRACE_FACILITY && configGENERATE_RUN_TIME_STATS
     UBaseType_t task_count = uxTaskGetNumberOfTasks();
-    TaskStatus_t *task_array = malloc(task_count * sizeof(TaskStatus_t));
+    TaskStatus_t *task_array = TS_MALLOC_PSRAM(task_count * sizeof(TaskStatus_t));
     
     if (task_array == NULL) {
         cJSON_Delete(data);
@@ -375,6 +388,329 @@ static esp_err_t api_system_log_level(const cJSON *params, ts_api_result_t *resu
     return ESP_OK;
 }
 
+/**
+ * @brief Helper to add heap region info to JSON
+ */
+static void add_heap_regions(cJSON *regions_array, uint32_t caps)
+{
+    /* Use heap_caps_walk to get detailed region info */
+    multi_heap_info_t info;
+    heap_caps_get_info(&info, caps);
+    
+    /* Since we can't easily enumerate all regions, we provide aggregate info */
+    cJSON *region = cJSON_CreateObject();
+    cJSON_AddNumberToObject(region, "total_free", info.total_free_bytes);
+    cJSON_AddNumberToObject(region, "total_allocated", info.total_allocated_bytes);
+    cJSON_AddNumberToObject(region, "largest_free_block", info.largest_free_block);
+    cJSON_AddNumberToObject(region, "minimum_free", info.minimum_free_bytes);
+    cJSON_AddNumberToObject(region, "alloc_blocks", info.allocated_blocks);
+    cJSON_AddNumberToObject(region, "free_blocks", info.free_blocks);
+    cJSON_AddNumberToObject(region, "total_blocks", info.total_blocks);
+    cJSON_AddItemToArray(regions_array, region);
+}
+
+/**
+ * @brief system.memory_detail - Get detailed memory analysis
+ * 
+ * Returns comprehensive heap information including:
+ * - DRAM (Internal RAM) statistics
+ * - PSRAM (External RAM) statistics  
+ * - DMA capable memory statistics
+ * - IRAM (Instruction RAM) statistics
+ * - Static memory sections (.data, .bss, .rodata)
+ * - RTC memory usage
+ * - Fragmentation analysis
+ * - Task stack information with allocation size
+ * - NVS usage statistics
+ * - Optimization recommendations
+ */
+static esp_err_t api_system_memory_detail(const cJSON *params, ts_api_result_t *result)
+{
+    cJSON *data = cJSON_CreateObject();
+    if (data == NULL) {
+        ts_api_result_error(result, TS_API_ERR_NO_MEM, "Memory allocation failed");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    /* === Static Memory Sections === */
+    cJSON *static_mem = cJSON_AddObjectToObject(data, "static");
+    
+    /* .data section (initialized data) */
+    size_t data_size = (size_t)(&_data_end - &_data_start) * sizeof(uint32_t);
+    cJSON_AddNumberToObject(static_mem, "data_size", data_size);
+    
+    /* .bss section (uninitialized data) */
+    size_t bss_size = (size_t)(&_bss_end - &_bss_start) * sizeof(uint32_t);
+    cJSON_AddNumberToObject(static_mem, "bss_size", bss_size);
+    
+    /* .rodata section (read-only data, in flash) */
+    size_t rodata_size = (size_t)(&_rodata_end - &_rodata_start) * sizeof(uint32_t);
+    cJSON_AddNumberToObject(static_mem, "rodata_size", rodata_size);
+    
+    /* Total static DRAM usage */
+    cJSON_AddNumberToObject(static_mem, "total_dram_static", data_size + bss_size);
+    
+    /* === IRAM (Instruction RAM) === */
+    cJSON *iram = cJSON_AddObjectToObject(data, "iram");
+    size_t iram_text_size = (size_t)(&_iram_text_end - &_iram_text_start) * sizeof(uint32_t);
+    cJSON_AddNumberToObject(iram, "text_size", iram_text_size);
+    
+    /* IRAM heap (8-bit capable internal) */
+    size_t iram_free = heap_caps_get_free_size(MALLOC_CAP_32BIT | MALLOC_CAP_EXEC);
+    size_t iram_total = heap_caps_get_total_size(MALLOC_CAP_32BIT | MALLOC_CAP_EXEC);
+    cJSON_AddNumberToObject(iram, "heap_total", iram_total);
+    cJSON_AddNumberToObject(iram, "heap_free", iram_free);
+    
+    /* === RTC Memory === */
+    cJSON *rtc = cJSON_AddObjectToObject(data, "rtc");
+    size_t rtc_data_size = (size_t)(&_rtc_data_end - &_rtc_data_start) * sizeof(uint32_t);
+    size_t rtc_bss_size = (size_t)(&_rtc_bss_end - &_rtc_bss_start) * sizeof(uint32_t);
+    cJSON_AddNumberToObject(rtc, "data_size", rtc_data_size);
+    cJSON_AddNumberToObject(rtc, "bss_size", rtc_bss_size);
+    cJSON_AddNumberToObject(rtc, "total_used", rtc_data_size + rtc_bss_size);
+    cJSON_AddNumberToObject(rtc, "total_available", 8192);  /* RTC slow memory is 8KB */
+    
+    /* === DRAM (Internal RAM) === */
+    size_t dram_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t dram_total = heap_caps_get_total_size(MALLOC_CAP_INTERNAL);
+    size_t dram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+    size_t dram_min_free = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+    
+    multi_heap_info_t dram_info;
+    heap_caps_get_info(&dram_info, MALLOC_CAP_INTERNAL);
+    
+    cJSON *dram = cJSON_AddObjectToObject(data, "dram");
+    cJSON_AddNumberToObject(dram, "total", dram_total);
+    cJSON_AddNumberToObject(dram, "free", dram_free);
+    cJSON_AddNumberToObject(dram, "used", dram_total - dram_free);
+    cJSON_AddNumberToObject(dram, "used_percent", dram_total > 0 ? (100 * (dram_total - dram_free) / dram_total) : 0);
+    cJSON_AddNumberToObject(dram, "largest_block", dram_largest);
+    cJSON_AddNumberToObject(dram, "min_free_ever", dram_min_free);
+    cJSON_AddNumberToObject(dram, "alloc_blocks", dram_info.allocated_blocks);
+    cJSON_AddNumberToObject(dram, "free_blocks", dram_info.free_blocks);
+    
+    /* Fragmentation: (1 - largest_free / total_free) * 100 */
+    if (dram_free > 0) {
+        float frag = 100.0f * (1.0f - (float)dram_largest / (float)dram_free);
+        cJSON_AddNumberToObject(dram, "fragmentation", (int)(frag * 10) / 10.0);
+    } else {
+        cJSON_AddNumberToObject(dram, "fragmentation", 0);
+    }
+    
+    /* === PSRAM (External RAM) === */
+    size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    size_t psram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+    size_t psram_min_free = heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM);
+    
+    if (psram_total > 0) {
+        multi_heap_info_t psram_info;
+        heap_caps_get_info(&psram_info, MALLOC_CAP_SPIRAM);
+        
+        cJSON *psram = cJSON_AddObjectToObject(data, "psram");
+        cJSON_AddNumberToObject(psram, "total", psram_total);
+        cJSON_AddNumberToObject(psram, "free", psram_free);
+        cJSON_AddNumberToObject(psram, "used", psram_total - psram_free);
+        cJSON_AddNumberToObject(psram, "used_percent", 100 * (psram_total - psram_free) / psram_total);
+        cJSON_AddNumberToObject(psram, "largest_block", psram_largest);
+        cJSON_AddNumberToObject(psram, "min_free_ever", psram_min_free);
+        cJSON_AddNumberToObject(psram, "alloc_blocks", psram_info.allocated_blocks);
+        cJSON_AddNumberToObject(psram, "free_blocks", psram_info.free_blocks);
+        
+        if (psram_free > 0) {
+            float frag = 100.0f * (1.0f - (float)psram_largest / (float)psram_free);
+            cJSON_AddNumberToObject(psram, "fragmentation", (int)(frag * 10) / 10.0);
+        } else {
+            cJSON_AddNumberToObject(psram, "fragmentation", 0);
+        }
+    }
+    
+    /* === DMA Capable Memory === */
+    size_t dma_free = heap_caps_get_free_size(MALLOC_CAP_DMA);
+    size_t dma_total = heap_caps_get_total_size(MALLOC_CAP_DMA);
+    size_t dma_largest = heap_caps_get_largest_free_block(MALLOC_CAP_DMA);
+    
+    if (dma_total > 0) {
+        cJSON *dma = cJSON_AddObjectToObject(data, "dma");
+        cJSON_AddNumberToObject(dma, "total", dma_total);
+        cJSON_AddNumberToObject(dma, "free", dma_free);
+        cJSON_AddNumberToObject(dma, "used", dma_total - dma_free);
+        cJSON_AddNumberToObject(dma, "used_percent", 100 * (dma_total - dma_free) / dma_total);
+        cJSON_AddNumberToObject(dma, "largest_block", dma_largest);
+    }
+    
+    /* === Historical Data === */
+    cJSON *history = cJSON_AddObjectToObject(data, "history");
+    cJSON_AddNumberToObject(history, "min_free_heap_ever", esp_get_minimum_free_heap_size());
+    
+    /* === Task Memory Usage (Top consumers) === */
+    UBaseType_t task_count = uxTaskGetNumberOfTasks();
+    if (task_count > 0) {
+        TaskStatus_t *task_array = TS_MALLOC_PSRAM(task_count * sizeof(TaskStatus_t));
+        if (task_array) {
+            uint32_t total_runtime;
+            UBaseType_t actual_count = uxTaskGetSystemState(task_array, task_count, &total_runtime);
+            
+            /* Sort by stack high water mark (lower = more stack used) */
+            /* We'll calculate stack usage = stack size - high water mark */
+            /* Since we don't have stack size, we use high water mark directly (lower is worse) */
+            
+            /* Simple bubble sort for top tasks - sort by stack usage (ascending high water = more used) */
+            for (UBaseType_t i = 0; i < actual_count - 1; i++) {
+                for (UBaseType_t j = 0; j < actual_count - i - 1; j++) {
+                    if (task_array[j].usStackHighWaterMark > task_array[j + 1].usStackHighWaterMark) {
+                        TaskStatus_t temp = task_array[j];
+                        task_array[j] = task_array[j + 1];
+                        task_array[j + 1] = temp;
+                    }
+                }
+            }
+            
+            cJSON *tasks = cJSON_AddArrayToObject(data, "tasks");
+            
+            /* Calculate total stack memory used by all tasks */
+            uint32_t total_stack_allocated = 0;
+            
+            /* Report ALL tasks sorted by stack high water mark (lowest first = most used) */
+            for (UBaseType_t i = 0; i < actual_count; i++) {
+                cJSON *task = cJSON_CreateObject();
+                cJSON_AddStringToObject(task, "name", task_array[i].pcTaskName);
+                
+                /* Stack high water mark in bytes */
+                uint32_t hwm_bytes = task_array[i].usStackHighWaterMark * sizeof(StackType_t);
+                cJSON_AddNumberToObject(task, "stack_hwm", hwm_bytes);
+                
+                /* Try to get stack allocation size from task handle */
+                TaskHandle_t task_handle = task_array[i].xHandle;
+                if (task_handle != NULL) {
+                    /* Get stack size using FreeRTOS API if available */
+                    /* Note: pxTaskGetStackStart returns the start, we need to calculate size */
+                    StackType_t *stack_start = (StackType_t *)task_array[i].pxStackBase;
+                    if (stack_start != NULL) {
+                        /* Estimate stack size based on known task configurations */
+                        uint32_t stack_size = 0;
+                        const char *name = task_array[i].pcTaskName;
+                        
+                        /* Known task stack sizes from sdkconfig and code */
+                        if (strcmp(name, "main") == 0) stack_size = CONFIG_ESP_MAIN_TASK_STACK_SIZE;
+                        else if (strcmp(name, "esp_timer") == 0) stack_size = CONFIG_ESP_TIMER_TASK_STACK_SIZE;
+                        else if (strncmp(name, "ipc", 3) == 0) stack_size = CONFIG_ESP_IPC_TASK_STACK_SIZE;
+                        else if (strncmp(name, "IDLE", 4) == 0) stack_size = CONFIG_FREERTOS_IDLE_TASK_STACKSIZE;
+                        else if (strcmp(name, "Tmr Svc") == 0) stack_size = CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH;
+                        else if (strcmp(name, "wifi") == 0) stack_size = 4096;  /* Default WiFi task */
+                        else if (strcmp(name, "httpd") == 0 || strncmp(name, "http", 4) == 0) stack_size = 4096;
+                        else if (strcmp(name, "console") == 0) stack_size = 4096;
+                        else stack_size = 2048;  /* Default assumption */
+                        
+                        /* hwm_bytes is the REMAINING stack (high water mark = minimum free ever)
+                         * If hwm > stack_size, our estimate is wrong - use hwm as minimum size */
+                        if (hwm_bytes > stack_size) {
+                            stack_size = hwm_bytes + 512;  /* Adjust estimate with some used margin */
+                        }
+                        uint32_t stack_used = stack_size - hwm_bytes;
+                        uint32_t usage_pct = stack_size > 0 ? (100 * stack_used / stack_size) : 0;
+                        
+                        cJSON_AddNumberToObject(task, "stack_alloc", stack_size);
+                        cJSON_AddNumberToObject(task, "stack_used", stack_used);
+                        cJSON_AddNumberToObject(task, "stack_usage_pct", usage_pct);
+                        total_stack_allocated += stack_size;
+                    }
+                }
+                
+                cJSON_AddNumberToObject(task, "priority", task_array[i].uxCurrentPriority);
+                cJSON_AddNumberToObject(task, "core", task_array[i].xCoreID);
+                
+                /* State string */
+                const char *state_str = "Unknown";
+                switch (task_array[i].eCurrentState) {
+                    case eRunning:   state_str = "Running"; break;
+                    case eReady:     state_str = "Ready"; break;
+                    case eBlocked:   state_str = "Blocked"; break;
+                    case eSuspended: state_str = "Suspended"; break;
+                    case eDeleted:   state_str = "Deleted"; break;
+                    default: break;
+                }
+                cJSON_AddStringToObject(task, "state", state_str);
+                
+#if configGENERATE_RUN_TIME_STATS
+                /* CPU usage percentage */
+                if (total_runtime > 0) {
+                    uint32_t cpu_percent = (task_array[i].ulRunTimeCounter * 100) / total_runtime;
+                    cJSON_AddNumberToObject(task, "cpu_percent", cpu_percent);
+                }
+#endif
+                cJSON_AddItemToArray(tasks, task);
+            }
+            
+            cJSON_AddNumberToObject(data, "task_count", actual_count);
+            cJSON_AddNumberToObject(data, "total_stack_allocated", total_stack_allocated);
+            free(task_array);
+        }
+    }
+    
+    /* === NVS Usage Statistics === */
+    nvs_stats_t nvs_stats;
+    if (nvs_get_stats(NULL, &nvs_stats) == ESP_OK) {
+        cJSON *nvs = cJSON_AddObjectToObject(data, "nvs");
+        cJSON_AddNumberToObject(nvs, "used_entries", nvs_stats.used_entries);
+        cJSON_AddNumberToObject(nvs, "free_entries", nvs_stats.free_entries);
+        cJSON_AddNumberToObject(nvs, "total_entries", nvs_stats.total_entries);
+        cJSON_AddNumberToObject(nvs, "namespace_count", nvs_stats.namespace_count);
+        cJSON_AddNumberToObject(nvs, "used_percent", nvs_stats.total_entries > 0 ?
+            100 * nvs_stats.used_entries / nvs_stats.total_entries : 0);
+    }
+    
+    /* === Memory Capability Summary === */
+    cJSON *caps = cJSON_AddObjectToObject(data, "caps");
+    
+    /* 8-bit accessible memory */
+    size_t d8_free = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    size_t d8_total = heap_caps_get_total_size(MALLOC_CAP_8BIT);
+    cJSON_AddNumberToObject(caps, "d8_free", d8_free);
+    cJSON_AddNumberToObject(caps, "d8_total", d8_total);
+    
+    /* 32-bit accessible memory */
+    size_t d32_free = heap_caps_get_free_size(MALLOC_CAP_32BIT);
+    size_t d32_total = heap_caps_get_total_size(MALLOC_CAP_32BIT);
+    cJSON_AddNumberToObject(caps, "d32_free", d32_free);
+    cJSON_AddNumberToObject(caps, "d32_total", d32_total);
+    
+    /* Default caps (what malloc uses) */
+    size_t default_free = heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
+    size_t default_total = heap_caps_get_total_size(MALLOC_CAP_DEFAULT);
+    cJSON_AddNumberToObject(caps, "default_free", default_free);
+    cJSON_AddNumberToObject(caps, "default_total", default_total);
+    
+    /* === Optimization Tips === */
+    cJSON *tips = cJSON_AddArrayToObject(data, "tips");
+    
+    if (dram_total > 0) {
+        int dram_used_pct = 100 * (dram_total - dram_free) / dram_total;
+        if (dram_used_pct > 85) {
+            cJSON_AddItemToArray(tips, cJSON_CreateString("critical:DRAM 使用率超过 85%，系统可能不稳定"));
+        } else if (dram_used_pct > 80) {
+            cJSON_AddItemToArray(tips, cJSON_CreateString("warning:DRAM 使用率超过 80%，建议将缓冲区迁移到 PSRAM"));
+        }
+        
+        if (dram_free > 0) {
+            float frag = 100.0f * (1.0f - (float)dram_largest / (float)dram_free);
+            if (frag > 60) {
+                cJSON_AddItemToArray(tips, cJSON_CreateString("warning:DRAM 碎片化严重，建议重启系统"));
+            }
+        }
+    }
+    
+    if (psram_total > 0) {
+        int psram_used_pct = 100 * (psram_total - psram_free) / psram_total;
+        if (psram_used_pct < 50) {
+            cJSON_AddItemToArray(tips, cJSON_CreateString("info:PSRAM 空间充足，可用于大型缓冲区"));
+        }
+    }
+    
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
 /*===========================================================================*/
 /*                      Register System APIs                                  */
 /*===========================================================================*/
@@ -395,6 +731,14 @@ esp_err_t ts_api_system_register(void)
             .description = "Get memory information",
             .category = TS_API_CAT_SYSTEM,
             .handler = api_system_memory,
+            .requires_auth = false,
+            .permission = NULL
+        },
+        {
+            .name = "system.memory_detail",
+            .description = "Get detailed memory analysis",
+            .category = TS_API_CAT_SYSTEM,
+            .handler = api_system_memory_detail,
             .requires_auth = false,
             .permission = NULL
         },

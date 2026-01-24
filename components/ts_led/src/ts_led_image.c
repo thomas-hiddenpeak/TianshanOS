@@ -1,12 +1,15 @@
 /**
  * @file ts_led_image.c
  * @brief Image Loading and Display
+ * 
+ * 图像数据优先分配到 PSRAM 以节省 DRAM
  */
 
 #include "ts_led_image.h"
 #include "ts_led_private.h"
 #include "ts_storage.h"
 #include "ts_log.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM, TS_CALLOC_PSRAM */
 #include <stdlib.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -80,7 +83,7 @@ static esp_err_t load_bmp(const uint8_t *data, size_t size, ts_led_image_t *out)
     bool flip = height > 0;
     if (height < 0) height = -height;
     
-    struct ts_led_image *img = calloc(1, sizeof(struct ts_led_image));
+    struct ts_led_image *img = TS_CALLOC_PSRAM(1, sizeof(struct ts_led_image));
     if (!img) return ESP_ERR_NO_MEM;
     
     img->width = width;
@@ -88,7 +91,7 @@ static esp_err_t load_bmp(const uint8_t *data, size_t size, ts_led_image_t *out)
     img->format = TS_LED_IMG_FMT_BMP;
     img->frame_count = 1;
     
-    img->pixels = calloc(width * height, sizeof(ts_led_rgb_t));
+    img->pixels = TS_CALLOC_PSRAM(width * height, sizeof(ts_led_rgb_t));
     if (!img->pixels) {
         free(img);
         return ESP_ERR_NO_MEM;
@@ -202,7 +205,7 @@ static esp_err_t load_png(const uint8_t *data, size_t size, ts_led_image_t *out)
         }
         else if (chunk_type == PNG_IDAT) {
             /* Accumulate IDAT chunks */
-            uint8_t *new_data = realloc(idat_data, idat_size + chunk_len);
+            uint8_t *new_data = TS_REALLOC_PSRAM(idat_data, idat_size + chunk_len);
             if (!new_data) {
                 free(idat_data);
                 return ESP_ERR_NO_MEM;
@@ -236,7 +239,7 @@ static esp_err_t load_png(const uint8_t *data, size_t size, ts_led_image_t *out)
     size_t row_bytes = width * bpp + 1;  /* +1 for filter byte */
     size_t raw_size = row_bytes * height;
     
-    uint8_t *raw_data = malloc(raw_size);
+    uint8_t *raw_data = TS_MALLOC_PSRAM(raw_size);
     if (!raw_data) {
         free(idat_data);
         return ESP_ERR_NO_MEM;
@@ -266,7 +269,7 @@ static esp_err_t load_png(const uint8_t *data, size_t size, ts_led_image_t *out)
     }
     
     /* Create image */
-    struct ts_led_image *img = calloc(1, sizeof(struct ts_led_image));
+    struct ts_led_image *img = TS_CALLOC_PSRAM(1, sizeof(struct ts_led_image));
     if (!img) {
         free(raw_data);
         return ESP_ERR_NO_MEM;
@@ -278,7 +281,7 @@ static esp_err_t load_png(const uint8_t *data, size_t size, ts_led_image_t *out)
     img->frame_count = 1;
     img->has_alpha = (color_type == 6);  /* RGBA has alpha */
     
-    img->pixels = calloc(width * height, sizeof(ts_led_rgb_t));
+    img->pixels = TS_CALLOC_PSRAM(width * height, sizeof(ts_led_rgb_t));
     if (!img->pixels) {
         free(img);
         free(raw_data);
@@ -287,7 +290,7 @@ static esp_err_t load_png(const uint8_t *data, size_t size, ts_led_image_t *out)
     
     /* Allocate alpha channel for RGBA images */
     if (img->has_alpha) {
-        img->alpha = calloc(width * height, sizeof(uint8_t));
+        img->alpha = TS_CALLOC_PSRAM(width * height, sizeof(uint8_t));
         if (!img->alpha) {
             free(img->pixels);
             free(img);
@@ -297,7 +300,7 @@ static esp_err_t load_png(const uint8_t *data, size_t size, ts_led_image_t *out)
     }
     
     /* Unfilter and convert to RGB */
-    uint8_t *prev_row = calloc(width * bpp, 1);
+    uint8_t *prev_row = TS_CALLOC_PSRAM(width * bpp, 1);
     if (!prev_row) {
         free(img->pixels);
         free(img);
@@ -397,7 +400,7 @@ static esp_err_t load_jpg(const uint8_t *data, size_t size, ts_led_image_t *out)
     uint32_t width = img_info.width;
     uint32_t height = img_info.height;
     
-    struct ts_led_image *img = calloc(1, sizeof(struct ts_led_image));
+    struct ts_led_image *img = TS_CALLOC_PSRAM(1, sizeof(struct ts_led_image));
     if (!img) {
         return ESP_ERR_NO_MEM;
     }
@@ -409,13 +412,13 @@ static esp_err_t load_jpg(const uint8_t *data, size_t size, ts_led_image_t *out)
     
     /* Allocate output buffer for RGB888 data */
     size_t outbuf_size = width * height * 3;
-    uint8_t *outbuf = malloc(outbuf_size);
+    uint8_t *outbuf = TS_MALLOC_PSRAM(outbuf_size);
     if (!outbuf) {
         free(img);
         return ESP_ERR_NO_MEM;
     }
     
-    img->pixels = calloc(width * height, sizeof(ts_led_rgb_t));
+    img->pixels = TS_CALLOC_PSRAM(width * height, sizeof(ts_led_rgb_t));
     if (!img->pixels) {
         free(outbuf);
         free(img);
@@ -484,8 +487,8 @@ static int lzw_decode(const uint8_t *data, size_t size, const uint8_t **ptr_io,
     int max_code = (1 << code_size) - 1;
     
     /* Allocate LZW table and stack once */
-    lzw_entry_t *table = malloc(4096 * sizeof(lzw_entry_t));
-    uint8_t *stack = malloc(4096);
+    lzw_entry_t *table = TS_MALLOC_PSRAM(4096 * sizeof(lzw_entry_t));
+    uint8_t *stack = TS_MALLOC_PSRAM(4096);
     if (!table || !stack) {
         free(table);
         free(stack);
@@ -693,7 +696,7 @@ static esp_err_t load_gif(const uint8_t *data, size_t size, ts_led_image_t *out)
     }
     
     /* Create image structure */
-    struct ts_led_image *img = calloc(1, sizeof(struct ts_led_image));
+    struct ts_led_image *img = TS_CALLOC_PSRAM(1, sizeof(struct ts_led_image));
     if (!img) return ESP_ERR_NO_MEM;
     
     img->width = width;
@@ -703,8 +706,8 @@ static esp_err_t load_gif(const uint8_t *data, size_t size, ts_led_image_t *out)
     img->has_alpha = false;
     
     /* Allocate frame arrays */
-    img->frames = calloc(frame_count, sizeof(ts_led_rgb_t *));
-    img->frame_delays = calloc(frame_count, sizeof(uint32_t));
+    img->frames = TS_CALLOC_PSRAM(frame_count, sizeof(ts_led_rgb_t *));
+    img->frame_delays = TS_CALLOC_PSRAM(frame_count, sizeof(uint32_t));
     if (!img->frames || !img->frame_delays) {
         free(img->frames);
         free(img->frame_delays);
@@ -715,7 +718,7 @@ static esp_err_t load_gif(const uint8_t *data, size_t size, ts_led_image_t *out)
     /* Allocate each frame (at scaled size) */
     size_t frame_size = (size_t)width * height;
     for (int i = 0; i < frame_count; i++) {
-        img->frames[i] = calloc(frame_size, sizeof(ts_led_rgb_t));
+        img->frames[i] = TS_CALLOC_PSRAM(frame_size, sizeof(ts_led_rgb_t));
         if (!img->frames[i]) {
             for (int j = 0; j < i; j++) free(img->frames[j]);
             free(img->frames);
@@ -731,7 +734,7 @@ static esp_err_t load_gif(const uint8_t *data, size_t size, ts_led_image_t *out)
     }
     
     /* Allocate alpha channel */
-    img->alpha = calloc(frame_size, sizeof(uint8_t));
+    img->alpha = TS_CALLOC_PSRAM(frame_size, sizeof(uint8_t));
     if (!img->alpha) {
         for (int i = 0; i < frame_count; i++) free(img->frames[i]);
         free(img->frames);
@@ -749,7 +752,7 @@ static esp_err_t load_gif(const uint8_t *data, size_t size, ts_led_image_t *out)
     
     /* Canvas for frame composition (at original size) */
     size_t orig_canvas_size = (size_t)orig_width * orig_height;
-    ts_led_rgb_t *canvas = calloc(orig_canvas_size, sizeof(ts_led_rgb_t));
+    ts_led_rgb_t *canvas = TS_CALLOC_PSRAM(orig_canvas_size, sizeof(ts_led_rgb_t));
     if (!canvas) {
         free(img->alpha);
         for (int i = 0; i < frame_count; i++) free(img->frames[i]);
@@ -781,7 +784,7 @@ static esp_err_t load_gif(const uint8_t *data, size_t size, ts_led_image_t *out)
             ts_led_rgb_t *lct = NULL;
             if (img_flags & 0x80) {
                 int lct_size = 1 << ((img_flags & 0x07) + 1);
-                lct = malloc(lct_size * sizeof(ts_led_rgb_t));
+                lct = TS_MALLOC_PSRAM(lct_size * sizeof(ts_led_rgb_t));
                 if (lct) {
                     for (int i = 0; i < lct_size && ptr + 3 <= data + size; i++) {
                         lct[i].r = ptr[0];
@@ -799,7 +802,7 @@ static esp_err_t load_gif(const uint8_t *data, size_t size, ts_led_image_t *out)
             
             /* Decode LZW data */
             size_t pixel_count = (size_t)img_width * img_height;
-            uint8_t *indices = malloc(pixel_count);
+            uint8_t *indices = TS_MALLOC_PSRAM(pixel_count);
             if (indices) {
                 int decoded = lzw_decode(data, size, &ptr, indices, pixel_count, lzw_min);
                 if (decoded > 0) {
@@ -942,7 +945,8 @@ esp_err_t ts_led_image_load(const char *path, ts_led_image_format_t format,
     ssize_t size = ts_storage_size(path);
     if (size < 0) return ESP_ERR_NOT_FOUND;
     
-    uint8_t *data = malloc(size);
+    /* 文件数据加载到 PSRAM（临时缓冲区） */
+    uint8_t *data = TS_MALLOC_PSRAM(size);
     if (!data) return ESP_ERR_NO_MEM;
     
     if (ts_storage_read_file(path, data, size) != size) {
@@ -991,7 +995,7 @@ esp_err_t ts_led_image_create(const ts_led_rgb_t *data, uint16_t width,
 {
     if (!data || !image) return ESP_ERR_INVALID_ARG;
     
-    struct ts_led_image *img = calloc(1, sizeof(struct ts_led_image));
+    struct ts_led_image *img = TS_CALLOC_PSRAM(1, sizeof(struct ts_led_image));
     if (!img) return ESP_ERR_NO_MEM;
     
     img->width = width;
@@ -1000,7 +1004,7 @@ esp_err_t ts_led_image_create(const ts_led_rgb_t *data, uint16_t width,
     img->frame_count = 1;
     
     size_t px_size = width * height * sizeof(ts_led_rgb_t);
-    img->pixels = malloc(px_size);
+    img->pixels = TS_MALLOC_PSRAM(px_size);
     if (!img->pixels) {
         free(img);
         return ESP_ERR_NO_MEM;
@@ -1451,7 +1455,7 @@ esp_err_t ts_led_image_animate_start(ts_led_layer_t layer, ts_led_image_t image,
     ts_led_image_animate_stop(layer);
     
     /* Create animation context */
-    ts_led_anim_ctx_t *ctx = calloc(1, sizeof(ts_led_anim_ctx_t));
+    ts_led_anim_ctx_t *ctx = TS_CALLOC_PSRAM(1, sizeof(ts_led_anim_ctx_t));
     if (!ctx) return ESP_ERR_NO_MEM;
     
     ctx->image = image;

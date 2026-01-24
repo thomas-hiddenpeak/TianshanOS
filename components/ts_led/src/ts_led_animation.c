@@ -18,10 +18,58 @@
 #include "ts_led_animation.h"
 #include "esp_timer.h"
 #include "esp_random.h"
+#include "esp_heap_caps.h"
 #include <string.h>
 #include <math.h>
 
 #define TAG "led_animation"
+
+/*===========================================================================*/
+/*                     动画状态缓冲区 (分配到 PSRAM)                           */
+/*===========================================================================*/
+
+/* 动画状态结构体 - 集中管理所有动画需要的静态数据 */
+typedef struct {
+    /* Fire 动画 */
+    uint8_t fire_heat[1024];    // 32x32 max
+    
+    /* Rain 动画 */
+    uint8_t rain_drop_y[32];
+    uint8_t rain_drop_life[32];
+    bool rain_drop_active[32];
+    ts_led_rgb_t rain_color;
+    
+    /* Coderain 动画 */
+    int8_t code_drop_y[64];
+    uint8_t code_drop_len[64];
+    uint8_t code_drop_wait[64];
+    uint8_t code_drop_speed[64];
+    uint8_t code_drop_life[64];
+    bool code_initialized;
+} anim_state_t;
+
+static anim_state_t *s_anim_state = NULL;
+
+/* 初始化动画状态（分配到 PSRAM） */
+static anim_state_t *get_anim_state(void)
+{
+    if (!s_anim_state) {
+        /* 优先使用 PSRAM */
+        s_anim_state = heap_caps_calloc(1, sizeof(anim_state_t), 
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!s_anim_state) {
+            /* 回退到普通内存 */
+            s_anim_state = calloc(1, sizeof(anim_state_t));
+        }
+        if (s_anim_state) {
+            /* 初始化 coderain */
+            for (int i = 0; i < 64; i++) {
+                s_anim_state->code_drop_y[i] = -1;
+            }
+        }
+    }
+    return s_anim_state;
+}
 
 /*===========================================================================*/
 /*                       通用动画 (所有设备)                                   */
@@ -192,7 +240,10 @@ static void anim_fire(ts_led_layer_t layer, uint32_t time_ms, void *data)
     ts_led_layer_impl_t *l = (ts_led_layer_impl_t *)layer;
     uint16_t width = l->device->config.width > 0 ? l->device->config.width : 32;
     uint16_t height = l->device->config.height > 0 ? l->device->config.height : 32;
-    static uint8_t heat[1024];  // 32x32 max
+    
+    anim_state_t *state = get_anim_state();
+    if (!state) return;
+    uint8_t *heat = state->fire_heat;
     
     // 冷却
     for (int i = 0; i < width * height; i++) {
@@ -238,11 +289,13 @@ static void anim_rain(ts_led_layer_t layer, uint32_t time_ms, void *data)
     uint16_t width = l->device->config.width > 0 ? l->device->config.width : 32;
     uint16_t height = l->device->config.height > 0 ? l->device->config.height : 32;
     
-    // 每列雨滴状态
-    static uint8_t drop_y[32];       // 雨滴位置
-    static uint8_t drop_life[32];    // 剩余寿命
-    static bool drop_active[32];     // 是否活跃
-    static ts_led_rgb_t rain_color;  // 雨滴颜色
+    anim_state_t *state = get_anim_state();
+    if (!state) return;
+    
+    // 使用 PSRAM 中的状态
+    uint8_t *drop_y = state->rain_drop_y;
+    uint8_t *drop_life = state->rain_drop_life;
+    bool *drop_active = state->rain_drop_active;
     
     // 检测动画刚启动（anim_last_time == 0 表示刚启动）
     if (l->anim_last_time == 0) {
@@ -257,10 +310,10 @@ static void anim_rain(ts_led_layer_t layer, uint32_t time_ms, void *data)
         // 确定雨滴颜色
         if (data != NULL) {
             // 使用传入的颜色（通过 --color 参数）
-            rain_color = *(ts_led_rgb_t *)data;
+            state->rain_color = *(ts_led_rgb_t *)data;
         } else {
             // 默认淡蓝色
-            rain_color = TS_LED_RGB(100, 150, 255);
+            state->rain_color = TS_LED_RGB(100, 150, 255);
         }
     }
     
@@ -292,7 +345,7 @@ static void anim_rain(ts_led_layer_t layer, uint32_t time_ms, void *data)
         // 绘制雨滴
         if (drop_active[x] && drop_y[x] < height) {
             int idx = drop_y[x] * width + x;
-            ts_led_set_pixel(layer, idx, rain_color);
+            ts_led_set_pixel(layer, idx, state->rain_color);
         }
     }
 }
@@ -304,20 +357,22 @@ static void anim_coderain(ts_led_layer_t layer, uint32_t time_ms, void *data)
     uint16_t width = l->device->config.width > 0 ? l->device->config.width : 32;
     uint16_t height = l->device->config.height > 0 ? l->device->config.height : 32;
     
-    // 每列维护雨滴状态（最大64列）
-    static int8_t drop_y[64];        // 雨滴头部 Y 位置（-1=不活跃）
-    static uint8_t drop_len[64];     // 雨滴尾巴长度
-    static uint8_t drop_wait[64];    // 等待帧数
-    static uint8_t drop_speed[64];   // 速度（帧/步）
-    static uint8_t drop_life[64];    // 剩余寿命
-    static bool initialized = false;
+    anim_state_t *state = get_anim_state();
+    if (!state) return;
     
-    if (!initialized) {
+    // 使用 PSRAM 中的状态
+    int8_t *drop_y = state->code_drop_y;
+    uint8_t *drop_len = state->code_drop_len;
+    uint8_t *drop_wait = state->code_drop_wait;
+    uint8_t *drop_speed = state->code_drop_speed;
+    uint8_t *drop_life = state->code_drop_life;
+    
+    if (!state->code_initialized) {
         for (int i = 0; i < 64; i++) {
             drop_y[i] = -1;
             drop_wait[i] = 0;
         }
-        initialized = true;
+        state->code_initialized = true;
     }
     
     // 余晖衰减

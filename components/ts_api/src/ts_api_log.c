@@ -3,6 +3,7 @@
  * @brief Log API Handlers - 日志查询和管理 API
  *
  * 提供 WebUI 和 CLI 访问系统日志的接口
+ * 日志缓冲区优先分配到 PSRAM
  *
  * @author TianShanOS Team
  * @version 1.0.0
@@ -10,6 +11,7 @@
  */
 
 #include "ts_api.h"
+#include "ts_core.h"  /* TS_MALLOC_PSRAM */
 #include "ts_log.h"
 #include "cJSON.h"
 #include <string.h>
@@ -103,7 +105,7 @@ static esp_err_t api_log_list(const cJSON *params, ts_api_result_t *result)
     }
 
     // 分配临时缓冲区
-    ts_log_entry_t *entries = malloc(limit * sizeof(ts_log_entry_t));
+    ts_log_entry_t *entries = TS_MALLOC_PSRAM(limit * sizeof(ts_log_entry_t));
     if (entries == NULL) {
         ts_api_result_error(result, TS_API_ERR_NO_MEM, "Memory allocation failed");
         return ESP_ERR_NO_MEM;

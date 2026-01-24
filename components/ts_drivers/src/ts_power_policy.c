@@ -195,7 +195,7 @@ esp_err_t ts_power_policy_start(void)
     BaseType_t ret = xTaskCreate(
         power_policy_task,
         "power_policy",
-        8192,
+        3072,
         NULL,
         5,
         &s_pp.monitor_task_handle
