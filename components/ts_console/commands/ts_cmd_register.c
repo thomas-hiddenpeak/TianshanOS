@@ -110,6 +110,10 @@ esp_err_t ts_cmd_register_all(void)
     ret = ts_cmd_ota_register();
     if (ret == ESP_OK) success_count++; else fail_count++;
 
+    // PKI 证书管理命令
+    ret = ts_cmd_pki_register();
+    if (ret == ESP_OK) success_count++; else fail_count++;
+
     TS_LOGI(TAG, "Command registration complete: %d succeeded, %d failed",
         success_count, fail_count);
     

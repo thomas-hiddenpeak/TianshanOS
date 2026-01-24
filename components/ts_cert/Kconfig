@@ -1,0 +1,38 @@
+menu "TianShanOS PKI Certificate"
+
+    config TS_CERT_ENABLED
+        bool "Enable PKI certificate management"
+        default y
+        help
+            Enable X.509 certificate and CSR management for mTLS.
+
+    config TS_CERT_DEFAULT_ORG
+        string "Default organization name for CSR"
+        default "TianShanOS"
+        depends on TS_CERT_ENABLED
+        help
+            Organization (O) field in certificate subject.
+
+    config TS_CERT_DEFAULT_OU
+        string "Default organizational unit for CSR"
+        default "Device"
+        depends on TS_CERT_ENABLED
+        help
+            Organizational Unit (OU) field in certificate subject.
+
+    config TS_CERT_AUTO_INIT
+        bool "Auto-initialize certificate component"
+        default y
+        depends on TS_CERT_ENABLED
+        help
+            Automatically initialize ts_cert during system startup.
+
+    config TS_CERT_EXPIRY_WARNING_DAYS
+        int "Certificate expiry warning threshold (days)"
+        default 30
+        range 7 365
+        depends on TS_CERT_ENABLED
+        help
+            Number of days before certificate expiry to trigger warning.
+
+endmenu

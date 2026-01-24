@@ -27,6 +27,7 @@
 #include "ts_security.h"
 #include "ts_keystore.h"
 #include "ts_known_hosts.h"
+#include "ts_cert.h"
 #include "ts_api.h"
 #include "ts_webui.h"
 #include "ts_power_monitor.h"
@@ -453,6 +454,13 @@ static esp_err_t security_service_init(ts_service_handle_t handle, void *user_da
         /* 不是致命错误，继续 */
     }
     
+    /* 初始化 PKI 证书管理 */
+    ret = ts_cert_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to init cert manager: %s", esp_err_to_name(ret));
+        /* 不是致命错误，继续 */
+    }
+    
     return ESP_OK;
 }
 
@@ -468,6 +476,7 @@ static esp_err_t security_service_stop(ts_service_handle_t handle, void *user_da
     (void)handle;
     (void)user_data;
     
+    ts_cert_deinit();
     ts_known_hosts_deinit();
     ts_keystore_deinit();
     ts_security_deinit();

@@ -1,0 +1,16 @@
+# TianShanOS Certificate/PKI Component
+
+idf_component_register(
+    SRCS
+        "src/ts_cert.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        ts_core
+        ts_security
+        mbedtls
+        nvs_flash
+        esp_netif
+    PRIV_REQUIRES
+        lwip
+)

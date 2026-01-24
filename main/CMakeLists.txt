@@ -22,6 +22,7 @@ idf_component_register(
         ts_net
         ts_api
         ts_security
+        ts_cert
         ts_webui
         json  # cJSON for PSRAM hooks
 )

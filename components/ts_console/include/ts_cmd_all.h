@@ -158,6 +158,12 @@ esp_err_t ts_cmd_agx_register(void);
 esp_err_t ts_cmd_ota_register(void);
 
 /**
+ * @brief 注册 pki 命令（PKI 证书管理）
+ * pki --status/--generate/--csr/--install/--install-ca/--export-csr/--info/--reset
+ */
+esp_err_t ts_cmd_pki_register(void);
+
+/**
  * @brief 注册所有扩展命令
  * 一次性注册所有非内置命令
  */
