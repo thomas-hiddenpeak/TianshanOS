@@ -107,6 +107,59 @@ if (ret != ESP_OK) {
 - 头文件：Doxygen 注释（`@brief`, `@param`, `@return`），**英文**
 - 源文件：中文注释用于架构说明
 
+## 内存分配规范（PSRAM 优先）
+
+ESP32-S3 配备 8MB PSRAM，**所有 ≥128 字节的动态分配应优先使用 PSRAM**，以减少 DRAM 碎片。
+
+### 强制规则
+
+```c
+// ❌ 禁止：大型静态数组直接占用 DRAM
+static char large_buffer[8192];
+static uint8_t frame_buffer[32 * 8 * 3];
+
+// ✅ 正确：动态分配到 PSRAM
+static char *large_buffer = NULL;
+void init(void) {
+    large_buffer = heap_caps_malloc(8192, MALLOC_CAP_SPIRAM);
+}
+
+// ✅ 正确：带 fallback 的安全分配
+void *buf = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+if (!buf) {
+    buf = malloc(size);  // Fallback to DRAM
+    ESP_LOGW(TAG, "PSRAM unavailable, using DRAM");
+}
+```
+
+### 分配策略
+
+| 大小 | 分配方式 | 说明 |
+|------|---------|------|
+| < 128 字节 | `malloc()` | 小分配用 DRAM（速度快） |
+| ≥ 128 字节 | `heap_caps_malloc(MALLOC_CAP_SPIRAM)` | 中大分配用 PSRAM |
+| DMA 缓冲区 | `heap_caps_malloc(MALLOC_CAP_DMA)` | DMA 必须用 DRAM |
+| 任务栈 | 默认 DRAM，大栈可用 PSRAM | 使用 `xTaskCreateWithCaps()` |
+
+### sdkconfig.defaults 关键配置
+
+```kconfig
+# PSRAM 分配策略（已配置，勿修改）
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=128    # <128B 用 DRAM
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=8192 # 保留 8KB DRAM
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y     # WiFi 缓冲区优先 PSRAM
+CONFIG_NVS_ALLOCATE_CACHE_IN_SPIRAM=y      # NVS 缓存用 PSRAM
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y        # TLS 用 PSRAM
+```
+
+### 检查清单（Code Review）
+
+新增代码时检查：
+- [ ] 无 `static char xxx[>128]` 大型静态数组
+- [ ] 无 `malloc(>1024)` 直接调用（应使用 `heap_caps_malloc`）
+- [ ] 帧缓冲区、日志缓冲区、网络缓冲区使用 PSRAM
+- [ ] DMA 缓冲区显式使用 `MALLOC_CAP_DMA`
+
 ## 组件结构模板
 
 ```
