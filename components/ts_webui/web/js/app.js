@@ -148,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 100);
     });
     router.register('/terminal', loadTerminalPage);
-    router.register('/config', loadConfigPage);
+    router.register('/commands', loadCommandsPage);
     router.register('/security', loadSecurityPage);
     router.register('/automation', loadAutomationPage);
     
@@ -4390,302 +4390,502 @@ const CONFIG_KEY_LABELS = {
     'webui.port': { label: 'WebUI 端口', type: 'number', min: 1, max: 65535 }
 };
 
-async function loadConfigPage() {
+// =========================================================================
+//                         指令页面
+// =========================================================================
+
+// SSH 指令存储（localStorage 持久化）
+let sshCommands = {};
+
+function loadSshCommands() {
+    try {
+        const saved = localStorage.getItem('ts_ssh_commands');
+        sshCommands = saved ? JSON.parse(saved) : {};
+    } catch (e) {
+        console.error('Failed to load SSH commands:', e);
+        sshCommands = {};
+    }
+}
+
+function saveSshCommands() {
+    try {
+        localStorage.setItem('ts_ssh_commands', JSON.stringify(sshCommands));
+    } catch (e) {
+        console.error('Failed to save SSH commands:', e);
+    }
+}
+
+async function loadCommandsPage() {
     clearInterval(refreshInterval);
     
-    // 取消系统页面的订阅
     if (subscriptionManager) {
         subscriptionManager.unsubscribe('system.dashboard');
     }
     
+    // 加载已保存的指令
+    loadSshCommands();
+    
     const content = document.getElementById('page-content');
     content.innerHTML = `
-        <div class="page-config">
-            <h1>⚙️ 系统配置</h1>
+        <div class="page-commands">
+            <h1>📜 SSH 指令管理</h1>
+            <p style="color:#666;margin-bottom:20px">为已部署的 SSH 主机创建和管理快捷指令，一键执行远程命令</p>
             
-            <!-- 模块概览 -->
+            <!-- 主机选择和指令列表 -->
             <div class="section">
                 <div class="section-header">
-                    <h2>配置模块</h2>
+                    <h2>🖥️ 选择主机</h2>
                     <div class="section-actions">
-                        <button class="btn btn-small" onclick="saveAllModules()">💾 保存全部</button>
-                        <button class="btn btn-small" onclick="syncConfigToSd()">📤 同步到 SD 卡</button>
+                        <button class="btn btn-primary" onclick="showAddCommandModal()">➕ 新建指令</button>
                     </div>
                 </div>
-                <div id="module-cards" class="module-cards">
-                    <div class="loading">加载中...</div>
+                <div id="host-selector" class="host-selector">
+                    <div class="loading">加载主机列表...</div>
                 </div>
             </div>
             
-            <!-- 模块详情 -->
-            <div class="section" id="module-detail-section" style="display:none">
+            <!-- 指令列表 -->
+            <div class="section">
+                <h2>📋 指令列表</h2>
+                <div id="commands-list" class="commands-list">
+                    <div class="empty-state">请先选择一个主机</div>
+                </div>
+            </div>
+            
+            <!-- 执行结果 -->
+            <div class="section" id="exec-result-section" style="display:none">
                 <div class="section-header">
-                    <h2 id="module-detail-title">模块配置</h2>
+                    <h2>📤 执行结果</h2>
                     <div class="section-actions">
-                        <button class="btn btn-small" id="btn-save-module" onclick="saveCurrentModule()">💾 保存</button>
-                        <button class="btn btn-small btn-danger" id="btn-reset-module" onclick="resetCurrentModule()">🔄 重置</button>
+                        <button class="btn btn-sm" onclick="clearExecResult()">🗑️ 清除</button>
                     </div>
                 </div>
-                <div id="module-detail-content"></div>
+                <pre id="exec-result" class="exec-result"></pre>
+            </div>
+        </div>
+        
+        <!-- 新建/编辑指令模态框 -->
+        <div id="command-modal" class="modal hidden">
+            <div class="modal-content" style="max-width:500px">
+                <div class="modal-header">
+                    <h2 id="command-modal-title">➕ 新建指令</h2>
+                    <button class="modal-close" onclick="closeCommandModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="command-form" onsubmit="return false;">
+                        <input type="hidden" id="cmd-edit-id">
+                        <div class="form-group">
+                            <label>指令名称 *</label>
+                            <input type="text" id="cmd-name" placeholder="例如：重启服务" required>
+                        </div>
+                        <div class="form-group">
+                            <label>SSH 命令 *</label>
+                            <textarea id="cmd-command" rows="3" placeholder="例如：sudo systemctl restart nginx" required></textarea>
+                            <small style="color:#666">支持多行命令，每行一条</small>
+                        </div>
+                        <div class="form-group">
+                            <label>描述（可选）</label>
+                            <input type="text" id="cmd-desc" placeholder="简要说明这个指令的作用">
+                        </div>
+                        <div class="form-group">
+                            <label>图标</label>
+                            <div class="icon-picker">
+                                ${['🚀', '🔄', '⚡', '🛠️', '📊', '🔍', '💾', '🗑️', '⏹️', '▶️', '📦', '🔧'].map(icon => 
+                                    `<button type="button" class="icon-btn" onclick="selectCmdIcon('${icon}')">${icon}</button>`
+                                ).join('')}
+                            </div>
+                            <input type="hidden" id="cmd-icon" value="🚀">
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn" onclick="closeCommandModal()">取消</button>
+                            <button type="submit" class="btn btn-primary" onclick="saveCommand()">保存</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
     `;
     
-    await loadModuleCards();
+    // 添加指令页面专用样式
+    addCommandsPageStyles();
+    
+    // 加载主机列表
+    await loadHostSelector();
 }
 
-async function loadModuleCards() {
-    const container = document.getElementById('module-cards');
+function addCommandsPageStyles() {
+    if (document.getElementById('commands-page-styles')) return;
+    
+    const style = document.createElement('style');
+    style.id = 'commands-page-styles';
+    style.textContent = `
+        .host-selector {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .host-card {
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-width: 180px;
+        }
+        .host-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+        }
+        .host-card.selected {
+            border-color: var(--primary);
+            background: rgba(var(--primary-rgb), 0.1);
+        }
+        .host-card .host-name {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        .host-card .host-info {
+            font-size: 0.85em;
+            color: #666;
+        }
+        
+        .commands-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .command-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .command-card .cmd-icon {
+            font-size: 2em;
+            width: 50px;
+            text-align: center;
+        }
+        .command-card .cmd-info {
+            flex: 1;
+        }
+        .command-card .cmd-name {
+            font-weight: bold;
+            font-size: 1.1em;
+            margin-bottom: 4px;
+        }
+        .command-card .cmd-desc {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 6px;
+        }
+        .command-card .cmd-code {
+            font-family: monospace;
+            font-size: 0.85em;
+            color: #888;
+            background: rgba(0,0,0,0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+            max-width: 400px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .command-card .cmd-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .command-card .btn-exec {
+            background: var(--success);
+            color: white;
+        }
+        
+        .exec-result {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 0.9em;
+            max-height: 400px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        .icon-picker {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .icon-btn {
+            width: 36px;
+            height: 36px;
+            font-size: 1.2em;
+            border: 2px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--bg-secondary);
+            cursor: pointer;
+        }
+        .icon-btn:hover, .icon-btn.selected {
+            border-color: var(--primary);
+            background: rgba(var(--primary-rgb), 0.1);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// 当前选中的主机
+let selectedHostId = null;
+
+async function loadHostSelector() {
+    const container = document.getElementById('host-selector');
     
     try {
-        const result = await api.configModuleList();
-        const modules = result.data?.modules || result.modules || [];
+        const result = await api.call('ssh.hosts.list', {});
+        const hosts = result.data?.hosts || [];
         
-        if (modules.length === 0) {
-            container.innerHTML = '<div class="empty">没有注册的配置模块</div>';
+        if (hosts.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state" style="width:100%">
+                    <p>暂无已部署主机</p>
+                    <p style="font-size:0.9em">请先到 <a href="#/security">安全</a> 页面部署 SSH 公钥</p>
+                </div>
+            `;
             return;
         }
         
-        container.innerHTML = modules.map(mod => {
-            const info = CONFIG_MODULE_INFO[mod.name] || { name: mod.name, icon: '📦', description: '' };
-            const statusClass = mod.registered ? (mod.dirty ? 'dirty' : 'clean') : 'disabled';
-            const statusText = !mod.registered ? '未注册' : (mod.dirty ? '有修改' : '已同步');
-            const pendingBadge = mod.pending_sync ? '<span class="badge badge-warning">待同步</span>' : '';
-            
-            return `
-                <div class="module-card ${statusClass}" onclick="showModuleDetail('${mod.name}')" ${!mod.registered ? 'style="opacity:0.5;pointer-events:none"' : ''}>
-                    <div class="module-icon">${info.icon}</div>
-                    <div class="module-info">
-                        <div class="module-name">${info.name}</div>
-                        <div class="module-desc">${info.description}</div>
-                        <div class="module-status">
-                            <span class="status-dot ${statusClass}"></span>
-                            <span>${statusText}</span>
-                            ${pendingBadge}
-                        </div>
-                    </div>
-                </div>
-            `;
-        }).join('');
+        // 存储主机数据
+        window._cmdHostsList = hosts;
+        
+        container.innerHTML = hosts.map(h => `
+            <div class="host-card ${selectedHostId === h.id ? 'selected' : ''}" 
+                 onclick="selectHost('${escapeHtml(h.id)}')" 
+                 data-host-id="${escapeHtml(h.id)}">
+                <div class="host-name">🖥️ ${escapeHtml(h.id)}</div>
+                <div class="host-info">${escapeHtml(h.username)}@${escapeHtml(h.host)}:${h.port}</div>
+            </div>
+        `).join('');
+        
+        // 如果之前有选中的主机，刷新指令列表
+        if (selectedHostId) {
+            refreshCommandsList();
+        }
         
     } catch (e) {
         container.innerHTML = `<div class="error">加载失败: ${e.message}</div>`;
     }
 }
 
-// 当前选中的模块
-let currentConfigModule = null;
+function selectHost(hostId) {
+    selectedHostId = hostId;
+    
+    // 更新选中状态
+    document.querySelectorAll('.host-card').forEach(card => {
+        card.classList.toggle('selected', card.dataset.hostId === hostId);
+    });
+    
+    // 刷新指令列表
+    refreshCommandsList();
+}
 
-async function showModuleDetail(moduleName) {
-    currentConfigModule = moduleName;
-    const info = CONFIG_MODULE_INFO[moduleName] || { name: moduleName, icon: '📦' };
+function refreshCommandsList() {
+    const container = document.getElementById('commands-list');
     
-    document.getElementById('module-detail-title').textContent = `${info.icon} ${info.name} 配置`;
-    document.getElementById('module-detail-section').style.display = 'block';
+    if (!selectedHostId) {
+        container.innerHTML = '<div class="empty-state">请先选择一个主机</div>';
+        return;
+    }
     
-    const contentDiv = document.getElementById('module-detail-content');
-    contentDiv.innerHTML = '<div class="loading">加载中...</div>';
+    const hostCommands = sshCommands[selectedHostId] || [];
     
-    try {
-        const result = await api.configModuleShow(moduleName);
-        const config = result.data?.config || result.config || {};
-        const dirty = result.data?.dirty || result.dirty || false;
-        
-        // 生成配置表单
-        const keys = Object.keys(config);
-        if (keys.length === 0) {
-            contentDiv.innerHTML = '<div class="empty">此模块暂无配置项</div>';
-            return;
-        }
-        
-        contentDiv.innerHTML = `
-            <form id="module-config-form" class="config-form" onsubmit="return false;">
-                <div class="config-grid">
-                    ${keys.map(key => generateConfigInput(moduleName, key, config[key])).join('')}
-                </div>
-                ${dirty ? '<div class="form-note">⚠️ 有未保存的修改</div>' : ''}
-            </form>
+    if (hostCommands.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <p>该主机暂无指令</p>
+                <button class="btn btn-primary" onclick="showAddCommandModal()">➕ 创建第一个指令</button>
+            </div>
         `;
-        
-        // 滚动到详情区域
-        document.getElementById('module-detail-section').scrollIntoView({ behavior: 'smooth' });
-        
-    } catch (e) {
-        contentDiv.innerHTML = `<div class="error">加载失败: ${e.message}</div>`;
-    }
-}
-
-function generateConfigInput(module, key, value) {
-    const meta = CONFIG_KEY_LABELS[key] || { label: key, type: 'string' };
-    const inputId = `cfg-${module}-${key.replace(/\./g, '-')}`;
-    
-    let inputHtml = '';
-    
-    switch (meta.type) {
-        case 'bool':
-            inputHtml = `
-                <label class="toggle-switch">
-                    <input type="checkbox" id="${inputId}" data-module="${module}" data-key="${key}" 
-                           ${value ? 'checked' : ''} onchange="markModuleConfigChanged('${module}', '${key}', this.checked)">
-                    <span class="toggle-slider"></span>
-                </label>`;
-            break;
-            
-        case 'select':
-            inputHtml = `
-                <select id="${inputId}" data-module="${module}" data-key="${key}" 
-                        onchange="markModuleConfigChanged('${module}', '${key}', this.value)">
-                    ${meta.options.map(opt => `<option value="${opt}" ${value == opt ? 'selected' : ''}>${opt}</option>`).join('')}
-                </select>`;
-            break;
-            
-        case 'number':
-            const min = meta.min !== undefined ? `min="${meta.min}"` : '';
-            const max = meta.max !== undefined ? `max="${meta.max}"` : '';
-            inputHtml = `
-                <input type="number" id="${inputId}" data-module="${module}" data-key="${key}" 
-                       value="${value}" ${min} ${max}
-                       onchange="markModuleConfigChanged('${module}', '${key}', parseInt(this.value))">`;
-            break;
-            
-        case 'password':
-            inputHtml = `
-                <input type="password" id="${inputId}" data-module="${module}" data-key="${key}" 
-                       value="${value}" autocomplete="new-password"
-                       onchange="markModuleConfigChanged('${module}', '${key}', this.value)">`;
-            break;
-            
-        case 'ip':
-            inputHtml = `
-                <input type="text" id="${inputId}" data-module="${module}" data-key="${key}" 
-                       value="${value}" pattern="^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$" 
-                       placeholder="192.168.1.1"
-                       onchange="markModuleConfigChanged('${module}', '${key}', this.value)">`;
-            break;
-            
-        default: // string
-            inputHtml = `
-                <input type="text" id="${inputId}" data-module="${module}" data-key="${key}" 
-                       value="${value}"
-                       onchange="markModuleConfigChanged('${module}', '${key}', this.value)">`;
+        return;
     }
     
-    return `
-        <div class="config-item">
-            <label for="${inputId}">${meta.label}</label>
-            ${inputHtml}
+    container.innerHTML = hostCommands.map((cmd, idx) => `
+        <div class="command-card">
+            <div class="cmd-icon">${cmd.icon || '🚀'}</div>
+            <div class="cmd-info">
+                <div class="cmd-name">${escapeHtml(cmd.name)}</div>
+                ${cmd.desc ? `<div class="cmd-desc">${escapeHtml(cmd.desc)}</div>` : ''}
+                <div class="cmd-code">${escapeHtml(cmd.command.split('\n')[0])}${cmd.command.includes('\n') ? ' ...' : ''}</div>
+            </div>
+            <div class="cmd-actions">
+                <button class="btn btn-sm btn-exec" onclick="executeCommand(${idx})" title="执行">▶️ 执行</button>
+                <button class="btn btn-sm" onclick="editCommand(${idx})" title="编辑">✏️</button>
+                <button class="btn btn-sm" onclick="deleteCommand(${idx})" title="删除" style="background:#dc3545;color:white">🗑️</button>
+            </div>
         </div>
-    `;
+    `).join('');
 }
 
-// 待保存的修改
-const pendingConfigChanges = {};
-
-function markModuleConfigChanged(module, key, value) {
-    if (!pendingConfigChanges[module]) {
-        pendingConfigChanges[module] = {};
-    }
-    pendingConfigChanges[module][key] = value;
-    
-    // 更新保存按钮状态
-    const saveBtn = document.getElementById('btn-save-module');
-    if (saveBtn) {
-        saveBtn.classList.add('btn-primary');
-        saveBtn.textContent = '💾 保存 *';
-    }
-}
-
-async function saveCurrentModule() {
-    if (!currentConfigModule) return;
-    
-    const changes = pendingConfigChanges[currentConfigModule];
-    if (!changes || Object.keys(changes).length === 0) {
-        showToast('没有需要保存的修改', 'info');
+function showAddCommandModal() {
+    if (!selectedHostId) {
+        showToast('请先选择一个主机', 'warning');
         return;
     }
     
-    try {
-        // 先设置所有修改
-        for (const [key, value] of Object.entries(changes)) {
-            await api.configModuleSet(currentConfigModule, key, value);
-        }
-        
-        // 然后保存到 NVS
-        await api.configModuleSave(currentConfigModule);
-        
-        // 清除待保存的修改
-        delete pendingConfigChanges[currentConfigModule];
-        
-        showToast(`${CONFIG_MODULE_INFO[currentConfigModule]?.name || currentConfigModule} 配置已保存`, 'success');
-        
-        // 刷新
-        await loadModuleCards();
-        await showModuleDetail(currentConfigModule);
-        
-    } catch (e) {
-        showToast('保存失败: ' + e.message, 'error');
-    }
+    document.getElementById('command-modal-title').textContent = '➕ 新建指令';
+    document.getElementById('cmd-edit-id').value = '';
+    document.getElementById('cmd-name').value = '';
+    document.getElementById('cmd-command').value = '';
+    document.getElementById('cmd-desc').value = '';
+    document.getElementById('cmd-icon').value = '🚀';
+    
+    // 重置图标选中状态
+    document.querySelectorAll('.icon-btn').forEach(btn => btn.classList.remove('selected'));
+    document.querySelector('.icon-btn')?.classList.add('selected');
+    
+    document.getElementById('command-modal').classList.remove('hidden');
 }
 
-async function resetCurrentModule() {
-    if (!currentConfigModule) return;
+function closeCommandModal() {
+    document.getElementById('command-modal').classList.add('hidden');
+}
+
+function selectCmdIcon(icon) {
+    document.getElementById('cmd-icon').value = icon;
+    document.querySelectorAll('.icon-btn').forEach(btn => {
+        btn.classList.toggle('selected', btn.textContent === icon);
+    });
+}
+
+function saveCommand() {
+    const name = document.getElementById('cmd-name').value.trim();
+    const command = document.getElementById('cmd-command').value.trim();
+    const desc = document.getElementById('cmd-desc').value.trim();
+    const icon = document.getElementById('cmd-icon').value;
+    const editId = document.getElementById('cmd-edit-id').value;
     
-    const info = CONFIG_MODULE_INFO[currentConfigModule] || { name: currentConfigModule };
-    if (!confirm(`确定要重置 ${info.name} 模块的所有配置为默认值吗？`)) {
+    if (!name || !command) {
+        showToast('请填写指令名称和命令', 'warning');
         return;
     }
     
+    if (!sshCommands[selectedHostId]) {
+        sshCommands[selectedHostId] = [];
+    }
+    
+    const cmdData = { name, command, desc, icon };
+    
+    if (editId !== '') {
+        // 编辑模式
+        sshCommands[selectedHostId][parseInt(editId)] = cmdData;
+        showToast('指令已更新', 'success');
+    } else {
+        // 新建模式
+        sshCommands[selectedHostId].push(cmdData);
+        showToast('指令已创建', 'success');
+    }
+    
+    saveSshCommands();
+    closeCommandModal();
+    refreshCommandsList();
+}
+
+function editCommand(idx) {
+    const cmd = sshCommands[selectedHostId]?.[idx];
+    if (!cmd) return;
+    
+    document.getElementById('command-modal-title').textContent = '✏️ 编辑指令';
+    document.getElementById('cmd-edit-id').value = idx;
+    document.getElementById('cmd-name').value = cmd.name;
+    document.getElementById('cmd-command').value = cmd.command;
+    document.getElementById('cmd-desc').value = cmd.desc || '';
+    document.getElementById('cmd-icon').value = cmd.icon || '🚀';
+    
+    // 更新图标选中状态
+    document.querySelectorAll('.icon-btn').forEach(btn => {
+        btn.classList.toggle('selected', btn.textContent === (cmd.icon || '🚀'));
+    });
+    
+    document.getElementById('command-modal').classList.remove('hidden');
+}
+
+function deleteCommand(idx) {
+    const cmd = sshCommands[selectedHostId]?.[idx];
+    if (!cmd) return;
+    
+    if (!confirm(`确定要删除指令「${cmd.name}」吗？`)) return;
+    
+    sshCommands[selectedHostId].splice(idx, 1);
+    saveSshCommands();
+    refreshCommandsList();
+    showToast('指令已删除', 'success');
+}
+
+async function executeCommand(idx) {
+    const cmd = sshCommands[selectedHostId]?.[idx];
+    if (!cmd) return;
+    
+    const host = window._cmdHostsList?.find(h => h.id === selectedHostId);
+    if (!host) {
+        showToast('主机信息不存在', 'error');
+        return;
+    }
+    
+    // 显示结果区域
+    const resultSection = document.getElementById('exec-result-section');
+    const resultPre = document.getElementById('exec-result');
+    resultSection.style.display = 'block';
+    resultPre.textContent = `⏳ 正在执行: ${cmd.name}\n主机: ${host.username}@${host.host}:${host.port}\n命令: ${cmd.command}\n\n--- 等待响应 ---\n`;
+    
+    // 滚动到结果区域
+    resultSection.scrollIntoView({ behavior: 'smooth' });
+    
     try {
-        await api.configModuleReset(currentConfigModule, true);
-        delete pendingConfigChanges[currentConfigModule];
+        const result = await api.call('ssh.exec', {
+            host: host.host,
+            port: host.port,
+            username: host.username,
+            keyid: host.keyid,
+            command: cmd.command
+        });
         
-        showToast(`${info.name} 配置已重置`, 'success');
+        const data = result.data || {};
+        let output = `✅ 执行完成\n`;
+        output += `退出码: ${data.exit_code}\n`;
+        output += `耗时: ${data.exec_time_ms || 0}ms\n`;
+        output += `\n--- 输出 ---\n`;
+        output += data.stdout || '(无输出)';
         
-        await loadModuleCards();
-        await showModuleDetail(currentConfigModule);
+        if (data.stderr) {
+            output += `\n\n--- 错误输出 ---\n${data.stderr}`;
+        }
+        
+        resultPre.textContent = output;
+        
+        if (data.exit_code === 0) {
+            showToast(`指令「${cmd.name}」执行成功`, 'success');
+        } else {
+            showToast(`指令执行完成，退出码: ${data.exit_code}`, 'warning');
+        }
         
     } catch (e) {
-        showToast('重置失败: ' + e.message, 'error');
+        resultPre.textContent = `❌ 执行失败\n\n${e.message}`;
+        showToast('执行失败: ' + e.message, 'error');
     }
 }
 
-async function saveAllModules() {
-    try {
-        const result = await api.configModuleSave();
-        const data = result.data || result;
-        
-        if (data.fail_count > 0) {
-            showToast(`保存完成，${data.success_count} 成功，${data.fail_count} 失败`, 'warning');
-        } else {
-            showToast(`已保存 ${data.success_count} 个模块`, 'success');
-        }
-        
-        // 清除所有待保存修改
-        Object.keys(pendingConfigChanges).forEach(k => delete pendingConfigChanges[k]);
-        
-        await loadModuleCards();
-        
-    } catch (e) {
-        showToast('保存失败: ' + e.message, 'error');
-    }
-}
-
-async function syncConfigToSd() {
-    try {
-        const result = await api.configSync();
-        const data = result.data || result;
-        
-        if (data.synced) {
-            showToast('配置已同步到 SD 卡', 'success');
-        } else {
-            showToast(data.message || '无需同步', 'info');
-        }
-        
-        await loadModuleCards();
-        
-    } catch (e) {
-        showToast('同步失败: ' + e.message, 'error');
-    }
+function clearExecResult() {
+    document.getElementById('exec-result-section').style.display = 'none';
+    document.getElementById('exec-result').textContent = '';
 }
 
 // =========================================================================
@@ -6879,13 +7079,18 @@ window.toggleNat = toggleNat;
 window.devicePower = devicePower;
 window.deviceReset = deviceReset;
 window.setFanSpeed = setFanSpeed;
-// Config module functions
-window.showModuleDetail = showModuleDetail;
-window.saveCurrentModule = saveCurrentModule;
-window.resetCurrentModule = resetCurrentModule;
-window.saveAllModules = saveAllModules;
-window.syncConfigToSd = syncConfigToSd;
-window.markModuleConfigChanged = markModuleConfigChanged;
+// Commands page functions
+window.loadCommandsPage = loadCommandsPage;
+window.selectHost = selectHost;
+window.showAddCommandModal = showAddCommandModal;
+window.closeCommandModal = closeCommandModal;
+window.selectCmdIcon = selectCmdIcon;
+window.saveCommand = saveCommand;
+window.editCommand = editCommand;
+window.deleteCommand = deleteCommand;
+window.executeCommand = executeCommand;
+window.clearExecResult = clearExecResult;
+// Security page functions
 window.refreshSshHostsList = refreshSshHostsList;
 window.refreshKnownHostsList = refreshKnownHostsList;
 window.showFullFingerprint = showFullFingerprint;
