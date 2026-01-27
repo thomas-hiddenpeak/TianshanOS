@@ -17,6 +17,8 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_http_client.h"
+#include "nvs_flash.h"
+#include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -25,6 +27,7 @@
 #include "ts_hal_gpio.h"
 #include "ts_device_ctrl.h"
 #include "ts_ssh_client.h"
+#include "ts_action_manager.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -39,6 +42,15 @@ static const char *TAG = "ts_rule_engine";
 #ifndef CONFIG_TS_AUTOMATION_MAX_RULES
 #define CONFIG_TS_AUTOMATION_MAX_RULES  32
 #endif
+
+/** NVS namespace for rules */
+#define NVS_NAMESPACE_RULES         "auto_rules"
+
+/** NVS key for rule count */
+#define NVS_KEY_RULE_COUNT          "count"
+
+/** NVS key prefix for rules */
+#define NVS_KEY_RULE_PREFIX         "rule_"
 
 /*===========================================================================*/
 /*                              内部状态                                      */
@@ -71,6 +83,8 @@ static esp_err_t execute_led_action(const ts_auto_action_t *action);
 static esp_err_t execute_gpio_action(const ts_auto_action_t *action);
 static esp_err_t execute_device_action(const ts_auto_action_t *action);
 static esp_err_t execute_ssh_action(const ts_auto_action_t *action);
+static esp_err_t execute_ssh_ref_action(const ts_auto_action_t *action);
+static esp_err_t execute_cli_action(const ts_auto_action_t *action);
 static esp_err_t execute_webhook_action(const ts_auto_action_t *action);
 
 /*===========================================================================*/
@@ -184,6 +198,9 @@ esp_err_t ts_rule_engine_init(void)
     s_rule_ctx.count = 0;
     s_rule_ctx.initialized = true;
 
+    // 从 NVS 加载已保存的规则
+    ts_rules_load();
+
     ESP_LOGI(TAG, "Rule engine initialized");
     return ESP_OK;
 }
@@ -249,14 +266,53 @@ esp_err_t ts_rule_register(const ts_auto_rule_t *rule)
         // 释放旧规则的动态内存
         if (s_rule_ctx.rules[idx].conditions.conditions) {
             free(s_rule_ctx.rules[idx].conditions.conditions);
+            s_rule_ctx.rules[idx].conditions.conditions = NULL;
         }
         if (s_rule_ctx.rules[idx].actions) {
             free(s_rule_ctx.rules[idx].actions);
+            s_rule_ctx.rules[idx].actions = NULL;
         }
         
-        // 更新规则
-        memcpy(&s_rule_ctx.rules[idx], rule, sizeof(ts_auto_rule_t));
+        // 复制基本数据
+        strncpy(s_rule_ctx.rules[idx].id, rule->id, sizeof(s_rule_ctx.rules[idx].id) - 1);
+        strncpy(s_rule_ctx.rules[idx].name, rule->name, sizeof(s_rule_ctx.rules[idx].name) - 1);
+        s_rule_ctx.rules[idx].enabled = rule->enabled;
+        s_rule_ctx.rules[idx].cooldown_ms = rule->cooldown_ms;
+        s_rule_ctx.rules[idx].conditions.logic = rule->conditions.logic;
+        s_rule_ctx.rules[idx].conditions.count = 0;
+        s_rule_ctx.rules[idx].action_count = 0;
+        
+        // 深拷贝条件数组
+        if (rule->conditions.count > 0 && rule->conditions.conditions) {
+            s_rule_ctx.rules[idx].conditions.conditions = heap_caps_calloc(
+                rule->conditions.count, sizeof(ts_auto_condition_t), 
+                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (s_rule_ctx.rules[idx].conditions.conditions) {
+                memcpy(s_rule_ctx.rules[idx].conditions.conditions, 
+                       rule->conditions.conditions, 
+                       rule->conditions.count * sizeof(ts_auto_condition_t));
+                s_rule_ctx.rules[idx].conditions.count = rule->conditions.count;
+            }
+        }
+        
+        // 深拷贝动作数组
+        if (rule->action_count > 0 && rule->actions) {
+            s_rule_ctx.rules[idx].actions = heap_caps_calloc(
+                rule->action_count, sizeof(ts_auto_action_t), 
+                MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (s_rule_ctx.rules[idx].actions) {
+                memcpy(s_rule_ctx.rules[idx].actions, 
+                       rule->actions, 
+                       rule->action_count * sizeof(ts_auto_action_t));
+                s_rule_ctx.rules[idx].action_count = rule->action_count;
+            }
+        }
+        
         xSemaphoreGive(s_rule_ctx.mutex);
+        
+        // 保存到 NVS
+        ts_rules_save();
+        
         ESP_LOGD(TAG, "Updated rule: %s", rule->id);
         return ESP_OK;
     }
@@ -268,11 +324,49 @@ esp_err_t ts_rule_register(const ts_auto_rule_t *rule)
         return ESP_ERR_NO_MEM;
     }
 
-    // 添加新规则
-    memcpy(&s_rule_ctx.rules[s_rule_ctx.count], rule, sizeof(ts_auto_rule_t));
+    // 添加新规则 - 深拷贝
+    ts_auto_rule_t *new_rule = &s_rule_ctx.rules[s_rule_ctx.count];
+    memset(new_rule, 0, sizeof(ts_auto_rule_t));
+    
+    // 复制基本数据
+    strncpy(new_rule->id, rule->id, sizeof(new_rule->id) - 1);
+    strncpy(new_rule->name, rule->name, sizeof(new_rule->name) - 1);
+    new_rule->enabled = rule->enabled;
+    new_rule->cooldown_ms = rule->cooldown_ms;
+    new_rule->conditions.logic = rule->conditions.logic;
+    
+    // 深拷贝条件数组
+    if (rule->conditions.count > 0 && rule->conditions.conditions) {
+        new_rule->conditions.conditions = heap_caps_calloc(
+            rule->conditions.count, sizeof(ts_auto_condition_t), 
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (new_rule->conditions.conditions) {
+            memcpy(new_rule->conditions.conditions, 
+                   rule->conditions.conditions, 
+                   rule->conditions.count * sizeof(ts_auto_condition_t));
+            new_rule->conditions.count = rule->conditions.count;
+        }
+    }
+    
+    // 深拷贝动作数组
+    if (rule->action_count > 0 && rule->actions) {
+        new_rule->actions = heap_caps_calloc(
+            rule->action_count, sizeof(ts_auto_action_t), 
+            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (new_rule->actions) {
+            memcpy(new_rule->actions, 
+                   rule->actions, 
+                   rule->action_count * sizeof(ts_auto_action_t));
+            new_rule->action_count = rule->action_count;
+        }
+    }
+    
     s_rule_ctx.count++;
 
     xSemaphoreGive(s_rule_ctx.mutex);
+
+    // 保存到 NVS
+    ts_rules_save();
 
     ESP_LOGI(TAG, "Registered rule: %s (%s)", rule->id, rule->name);
     return ESP_OK;
@@ -310,6 +404,9 @@ esp_err_t ts_rule_unregister(const char *id)
 
     xSemaphoreGive(s_rule_ctx.mutex);
 
+    // 保存到 NVS
+    ts_rules_save();
+
     ESP_LOGD(TAG, "Unregistered rule: %s", id);
     return ESP_OK;
 }
@@ -331,6 +428,10 @@ esp_err_t ts_rule_enable(const char *id)
     s_rule_ctx.rules[idx].enabled = true;
 
     xSemaphoreGive(s_rule_ctx.mutex);
+    
+    // 保存状态变更到 NVS
+    ts_rules_save();
+    
     return ESP_OK;
 }
 
@@ -351,6 +452,10 @@ esp_err_t ts_rule_disable(const char *id)
     s_rule_ctx.rules[idx].enabled = false;
 
     xSemaphoreGive(s_rule_ctx.mutex);
+    
+    // 保存状态变更到 NVS
+    ts_rules_save();
+    
     return ESP_OK;
 }
 
@@ -446,7 +551,7 @@ bool ts_rule_eval_condition(const ts_auto_condition_t *condition)
 bool ts_rule_eval_condition_group(const ts_auto_condition_group_t *group)
 {
     if (!group || !group->conditions || group->count == 0) {
-        return true;  // 空条件组视为始终满足
+        return false;  // 空条件组视为不满足（仅手动触发的规则）
     }
 
     if (group->logic == TS_AUTO_LOGIC_AND) {
@@ -691,6 +796,83 @@ static esp_err_t execute_gpio_action(const ts_auto_action_t *action)
 }
 
 /**
+ * @brief 执行 SSH 命令引用动作
+ * 
+ * 通过 cmd_id 查找已注册的 SSH 命令并执行
+ */
+static esp_err_t execute_ssh_ref_action(const ts_auto_action_t *action)
+{
+    if (!action || action->type != TS_AUTO_ACT_SSH_CMD_REF) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const char *cmd_id = action->ssh_ref.cmd_id;
+    ESP_LOGI(TAG, "SSH command ref action: cmd_id=%s", cmd_id);
+
+    if (!cmd_id || cmd_id[0] == '\0') {
+        ESP_LOGE(TAG, "Empty SSH command ID");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // 使用 ts_action_exec_ssh_ref 执行命令
+    ts_action_result_t result = {0};
+    esp_err_t ret = ts_action_exec_ssh_ref(&action->ssh_ref, &result);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "SSH command '%s' executed, exit_code=%d", cmd_id, result.exit_code);
+        if (result.output[0]) {
+            ESP_LOGD(TAG, "SSH output: %.200s%s", result.output, 
+                     strlen(result.output) > 200 ? "..." : "");
+        }
+    } else {
+        ESP_LOGE(TAG, "SSH command '%s' failed: %s", cmd_id, esp_err_to_name(ret));
+    }
+
+    return ret;
+}
+
+/**
+ * @brief 执行 CLI 命令动作
+ * 
+ * 在本地执行 TianShanOS CLI 命令
+ */
+static esp_err_t execute_cli_action(const ts_auto_action_t *action)
+{
+    if (!action || action->type != TS_AUTO_ACT_CLI) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const char *command = action->cli.command;
+    ESP_LOGI(TAG, "CLI action: command=%s", command);
+
+    if (!command || command[0] == '\0') {
+        ESP_LOGE(TAG, "Empty CLI command");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // 使用 ts_action_exec_cli 执行 CLI 命令
+    ts_action_result_t result = {0};
+    esp_err_t ret = ts_action_exec_cli(&action->cli, &result);
+
+    if (ret == ESP_OK && result.exit_code == 0) {
+        ESP_LOGI(TAG, "CLI command executed successfully");
+    } else {
+        ESP_LOGW(TAG, "CLI command returned: %d", result.exit_code);
+    }
+
+    // 如果指定了变量名，存储执行结果
+    if (action->cli.var_name[0] != '\0') {
+        ts_auto_value_t val = {
+            .type = TS_AUTO_VAL_INT,
+            .int_val = result.exit_code
+        };
+        ts_variable_set(action->cli.var_name, &val);
+    }
+
+    return ret;
+}
+
+/**
  * @brief 执行设备控制动作
  */
 static esp_err_t execute_device_action(const ts_auto_action_t *action)
@@ -925,6 +1107,14 @@ esp_err_t ts_action_execute(const ts_auto_action_t *action)
             ret = execute_device_action(action);
             break;
 
+        case TS_AUTO_ACT_SSH_CMD_REF:
+            ret = execute_ssh_ref_action(action);
+            break;
+
+        case TS_AUTO_ACT_CLI:
+            ret = execute_cli_action(action);
+            break;
+
         default:
             ESP_LOGW(TAG, "Unknown action type: %d", action->type);
             ret = ESP_ERR_NOT_SUPPORTED;
@@ -1017,5 +1207,540 @@ esp_err_t ts_rule_engine_reset_stats(void)
     memset(&s_rule_ctx.stats, 0, sizeof(s_rule_ctx.stats));
     xSemaphoreGive(s_rule_ctx.mutex);
 
+    return ESP_OK;
+}
+
+/*===========================================================================*/
+/*                              NVS 持久化                                    */
+/*===========================================================================*/
+
+/**
+ * @brief 操作符转字符串
+ */
+static const char *operator_to_str(ts_auto_operator_t op)
+{
+    switch (op) {
+        case TS_AUTO_OP_EQ:       return "eq";
+        case TS_AUTO_OP_NE:       return "ne";
+        case TS_AUTO_OP_GT:       return "gt";
+        case TS_AUTO_OP_GE:       return "ge";
+        case TS_AUTO_OP_LT:       return "lt";
+        case TS_AUTO_OP_LE:       return "le";
+        case TS_AUTO_OP_CONTAINS: return "contains";
+        case TS_AUTO_OP_CHANGED:  return "changed";
+        default:                  return "eq";
+    }
+}
+
+/**
+ * @brief 字符串转操作符
+ */
+static ts_auto_operator_t str_to_operator(const char *str)
+{
+    if (!str) return TS_AUTO_OP_EQ;
+    if (strcmp(str, "ne") == 0) return TS_AUTO_OP_NE;
+    if (strcmp(str, "gt") == 0) return TS_AUTO_OP_GT;
+    if (strcmp(str, "ge") == 0) return TS_AUTO_OP_GE;
+    if (strcmp(str, "lt") == 0) return TS_AUTO_OP_LT;
+    if (strcmp(str, "le") == 0) return TS_AUTO_OP_LE;
+    if (strcmp(str, "contains") == 0) return TS_AUTO_OP_CONTAINS;
+    if (strcmp(str, "changed") == 0) return TS_AUTO_OP_CHANGED;
+    return TS_AUTO_OP_EQ;
+}
+
+/**
+ * @brief 动作类型转字符串
+ */
+static const char *action_type_to_str(ts_auto_action_type_t type)
+{
+    switch (type) {
+        case TS_AUTO_ACT_LED:         return "led";
+        case TS_AUTO_ACT_GPIO:        return "gpio";
+        case TS_AUTO_ACT_DEVICE_CTRL: return "device_ctrl";
+        case TS_AUTO_ACT_SSH_CMD_REF: return "ssh_cmd_ref";
+        case TS_AUTO_ACT_CLI:         return "cli";
+        case TS_AUTO_ACT_WEBHOOK:     return "webhook";
+        case TS_AUTO_ACT_LOG:         return "log";
+        case TS_AUTO_ACT_SET_VAR:     return "set_var";
+        default:                      return "log";
+    }
+}
+
+/**
+ * @brief 字符串转动作类型
+ */
+static ts_auto_action_type_t str_to_action_type(const char *str)
+{
+    if (!str) return TS_AUTO_ACT_LOG;
+    if (strcmp(str, "led") == 0)         return TS_AUTO_ACT_LED;
+    if (strcmp(str, "gpio") == 0)        return TS_AUTO_ACT_GPIO;
+    if (strcmp(str, "device_ctrl") == 0) return TS_AUTO_ACT_DEVICE_CTRL;
+    if (strcmp(str, "ssh_cmd_ref") == 0) return TS_AUTO_ACT_SSH_CMD_REF;
+    if (strcmp(str, "cli") == 0)         return TS_AUTO_ACT_CLI;
+    if (strcmp(str, "webhook") == 0)     return TS_AUTO_ACT_WEBHOOK;
+    if (strcmp(str, "log") == 0)         return TS_AUTO_ACT_LOG;
+    if (strcmp(str, "set_var") == 0)     return TS_AUTO_ACT_SET_VAR;
+    return TS_AUTO_ACT_LOG;
+}
+
+/**
+ * @brief 将值序列化为 JSON 对象
+ */
+static cJSON *value_to_json(const ts_auto_value_t *val)
+{
+    switch (val->type) {
+        case TS_AUTO_VAL_BOOL:
+            return cJSON_CreateBool(val->bool_val);
+        case TS_AUTO_VAL_INT:
+            return cJSON_CreateNumber(val->int_val);
+        case TS_AUTO_VAL_FLOAT:
+            return cJSON_CreateNumber(val->float_val);
+        case TS_AUTO_VAL_STRING:
+            return cJSON_CreateString(val->str_val);
+        default:
+            return cJSON_CreateNull();
+    }
+}
+
+/**
+ * @brief 从 JSON 对象反序列化值
+ */
+static void json_to_value(cJSON *json, ts_auto_value_t *val)
+{
+    if (!json || !val) return;
+    
+    if (cJSON_IsBool(json)) {
+        val->type = TS_AUTO_VAL_BOOL;
+        val->bool_val = cJSON_IsTrue(json);
+    } else if (cJSON_IsNumber(json)) {
+        // 判断是整数还是浮点数
+        double d = json->valuedouble;
+        if (d == (int64_t)d && d >= INT32_MIN && d <= INT32_MAX) {
+            val->type = TS_AUTO_VAL_INT;
+            val->int_val = (int32_t)d;
+        } else {
+            val->type = TS_AUTO_VAL_FLOAT;
+            val->float_val = d;
+        }
+    } else if (cJSON_IsString(json)) {
+        val->type = TS_AUTO_VAL_STRING;
+        strncpy(val->str_val, json->valuestring, sizeof(val->str_val) - 1);
+    }
+}
+
+/**
+ * @brief 将规则序列化为 JSON 字符串
+ */
+static char *rule_to_json(const ts_auto_rule_t *rule)
+{
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return NULL;
+    
+    // 基本信息
+    cJSON_AddStringToObject(root, "id", rule->id);
+    cJSON_AddStringToObject(root, "name", rule->name);
+    cJSON_AddBoolToObject(root, "enabled", rule->enabled);
+    cJSON_AddNumberToObject(root, "cooldown_ms", rule->cooldown_ms);
+    
+    // 条件组
+    cJSON *conditions = cJSON_CreateObject();
+    cJSON_AddStringToObject(conditions, "logic", 
+                            rule->conditions.logic == TS_AUTO_LOGIC_OR ? "or" : "and");
+    
+    cJSON *cond_array = cJSON_CreateArray();
+    for (int i = 0; i < rule->conditions.count; i++) {
+        const ts_auto_condition_t *c = &rule->conditions.conditions[i];
+        cJSON *cond = cJSON_CreateObject();
+        cJSON_AddStringToObject(cond, "variable", c->variable);
+        cJSON_AddStringToObject(cond, "operator", operator_to_str(c->op));
+        cJSON_AddItemToObject(cond, "value", value_to_json(&c->value));
+        cJSON_AddItemToArray(cond_array, cond);
+    }
+    cJSON_AddItemToObject(conditions, "items", cond_array);
+    cJSON_AddItemToObject(root, "conditions", conditions);
+    
+    // 动作数组
+    cJSON *actions = cJSON_CreateArray();
+    for (int i = 0; i < rule->action_count; i++) {
+        const ts_auto_action_t *a = &rule->actions[i];
+        cJSON *action = cJSON_CreateObject();
+        
+        cJSON_AddStringToObject(action, "type", action_type_to_str(a->type));
+        cJSON_AddNumberToObject(action, "delay_ms", a->delay_ms);
+        
+        // 根据类型保存特定字段
+        switch (a->type) {
+            case TS_AUTO_ACT_LED:
+                cJSON_AddStringToObject(action, "device", a->led.device);
+                cJSON_AddNumberToObject(action, "index", a->led.index);
+                cJSON_AddNumberToObject(action, "r", a->led.r);
+                cJSON_AddNumberToObject(action, "g", a->led.g);
+                cJSON_AddNumberToObject(action, "b", a->led.b);
+                break;
+                
+            case TS_AUTO_ACT_GPIO:
+                cJSON_AddNumberToObject(action, "pin", a->gpio.pin);
+                cJSON_AddBoolToObject(action, "level", a->gpio.level);
+                cJSON_AddNumberToObject(action, "pulse_ms", a->gpio.pulse_ms);
+                break;
+                
+            case TS_AUTO_ACT_DEVICE_CTRL:
+                cJSON_AddStringToObject(action, "device", a->device.device);
+                cJSON_AddStringToObject(action, "action", a->device.action);
+                break;
+                
+            case TS_AUTO_ACT_CLI:
+                cJSON_AddStringToObject(action, "command", a->cli.command);
+                cJSON_AddStringToObject(action, "var_name", a->cli.var_name);
+                cJSON_AddNumberToObject(action, "timeout_ms", a->cli.timeout_ms);
+                break;
+                
+            case TS_AUTO_ACT_LOG:
+                cJSON_AddStringToObject(action, "message", a->log.message);
+                cJSON_AddNumberToObject(action, "level", a->log.level);
+                break;
+                
+            case TS_AUTO_ACT_SET_VAR:
+                cJSON_AddStringToObject(action, "variable", a->set_var.variable);
+                cJSON_AddItemToObject(action, "value", value_to_json(&a->set_var.value));
+                break;
+                
+            case TS_AUTO_ACT_WEBHOOK:
+                cJSON_AddStringToObject(action, "url", a->webhook.url);
+                cJSON_AddStringToObject(action, "method", a->webhook.method);
+                cJSON_AddStringToObject(action, "body_template", a->webhook.body_template);
+                break;
+                
+            case TS_AUTO_ACT_SSH_CMD_REF:
+                cJSON_AddStringToObject(action, "cmd_id", a->ssh_ref.cmd_id);
+                break;
+                
+            default:
+                break;
+        }
+        
+        cJSON_AddItemToArray(actions, action);
+    }
+    cJSON_AddItemToObject(root, "actions", actions);
+    
+    char *json_str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    return json_str;
+}
+
+/**
+ * @brief 从 JSON 字符串反序列化规则
+ */
+static esp_err_t json_to_rule(const char *json_str, ts_auto_rule_t *rule)
+{
+    if (!json_str || !rule) return ESP_ERR_INVALID_ARG;
+    
+    cJSON *root = cJSON_Parse(json_str);
+    if (!root) return ESP_ERR_INVALID_ARG;
+    
+    memset(rule, 0, sizeof(ts_auto_rule_t));
+    
+    // 基本信息
+    cJSON *item;
+    if ((item = cJSON_GetObjectItem(root, "id")) && cJSON_IsString(item)) {
+        strncpy(rule->id, item->valuestring, sizeof(rule->id) - 1);
+    }
+    if ((item = cJSON_GetObjectItem(root, "name")) && cJSON_IsString(item)) {
+        strncpy(rule->name, item->valuestring, sizeof(rule->name) - 1);
+    }
+    if ((item = cJSON_GetObjectItem(root, "enabled"))) {
+        rule->enabled = cJSON_IsTrue(item);
+    }
+    if ((item = cJSON_GetObjectItem(root, "cooldown_ms")) && cJSON_IsNumber(item)) {
+        rule->cooldown_ms = (uint32_t)item->valueint;
+    }
+    
+    // 条件组
+    cJSON *conditions = cJSON_GetObjectItem(root, "conditions");
+    if (conditions) {
+        if ((item = cJSON_GetObjectItem(conditions, "logic")) && cJSON_IsString(item)) {
+            rule->conditions.logic = strcmp(item->valuestring, "or") == 0 ? 
+                                     TS_AUTO_LOGIC_OR : TS_AUTO_LOGIC_AND;
+        }
+        
+        cJSON *items = cJSON_GetObjectItem(conditions, "items");
+        if (items && cJSON_IsArray(items)) {
+            int count = cJSON_GetArraySize(items);
+            if (count > 0) {
+                rule->conditions.conditions = heap_caps_calloc(count, 
+                    sizeof(ts_auto_condition_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+                if (rule->conditions.conditions) {
+                    rule->conditions.count = count;
+                    
+                    int idx = 0;
+                    cJSON *cond_item;
+                    cJSON_ArrayForEach(cond_item, items) {
+                        ts_auto_condition_t *c = &rule->conditions.conditions[idx];
+                        
+                        if ((item = cJSON_GetObjectItem(cond_item, "variable")) && cJSON_IsString(item)) {
+                            strncpy(c->variable, item->valuestring, sizeof(c->variable) - 1);
+                        }
+                        if ((item = cJSON_GetObjectItem(cond_item, "operator")) && cJSON_IsString(item)) {
+                            c->op = str_to_operator(item->valuestring);
+                        }
+                        if ((item = cJSON_GetObjectItem(cond_item, "value"))) {
+                            json_to_value(item, &c->value);
+                        }
+                        idx++;
+                    }
+                }
+            }
+        }
+    }
+    
+    // 动作数组
+    cJSON *actions = cJSON_GetObjectItem(root, "actions");
+    if (actions && cJSON_IsArray(actions)) {
+        int count = cJSON_GetArraySize(actions);
+        if (count > 0) {
+            rule->actions = heap_caps_calloc(count, sizeof(ts_auto_action_t), 
+                                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (rule->actions) {
+                rule->action_count = count;
+                
+                int idx = 0;
+                cJSON *act_item;
+                cJSON_ArrayForEach(act_item, actions) {
+                    ts_auto_action_t *a = &rule->actions[idx];
+                    
+                    if ((item = cJSON_GetObjectItem(act_item, "type")) && cJSON_IsString(item)) {
+                        a->type = str_to_action_type(item->valuestring);
+                    }
+                    if ((item = cJSON_GetObjectItem(act_item, "delay_ms")) && cJSON_IsNumber(item)) {
+                        a->delay_ms = (uint16_t)item->valueint;
+                    }
+                    
+                    // 根据类型解析特定字段
+                    switch (a->type) {
+                        case TS_AUTO_ACT_LED:
+                            if ((item = cJSON_GetObjectItem(act_item, "device")) && cJSON_IsString(item)) {
+                                strncpy(a->led.device, item->valuestring, sizeof(a->led.device) - 1);
+                            }
+                            if ((item = cJSON_GetObjectItem(act_item, "index")) && cJSON_IsNumber(item)) {
+                                a->led.index = (uint8_t)item->valueint;
+                            }
+                            if ((item = cJSON_GetObjectItem(act_item, "r")) && cJSON_IsNumber(item)) {
+                                a->led.r = (uint8_t)item->valueint;
+                            }
+                            if ((item = cJSON_GetObjectItem(act_item, "g")) && cJSON_IsNumber(item)) {
+                                a->led.g = (uint8_t)item->valueint;
+                            }
+                            if ((item = cJSON_GetObjectItem(act_item, "b")) && cJSON_IsNumber(item)) {
+                                a->led.b = (uint8_t)item->valueint;
+                            }
+                            break;
+                            
+                        case TS_AUTO_ACT_GPIO:
+                            if ((item = cJSON_GetObjectItem(act_item, "pin")) && cJSON_IsNumber(item)) {
+                                a->gpio.pin = (uint8_t)item->valueint;
+                            }
+                            if ((item = cJSON_GetObjectItem(act_item, "level"))) {
+                                a->gpio.level = cJSON_IsTrue(item);
+                            }
+                            if ((item = cJSON_GetObjectItem(act_item, "pulse_ms")) && cJSON_IsNumber(item)) {
+                                a->gpio.pulse_ms = (uint32_t)item->valueint;
+                            }
+                            break;
+                            
+                        case TS_AUTO_ACT_DEVICE_CTRL:
+                            if ((item = cJSON_GetObjectItem(act_item, "device")) && cJSON_IsString(item)) {
+                                strncpy(a->device.device, item->valuestring, sizeof(a->device.device) - 1);
+                            }
+                            if ((item = cJSON_GetObjectItem(act_item, "action")) && cJSON_IsString(item)) {
+                                strncpy(a->device.action, item->valuestring, sizeof(a->device.action) - 1);
+                            }
+                            break;
+                            
+                        case TS_AUTO_ACT_CLI:
+                            if ((item = cJSON_GetObjectItem(act_item, "command")) && cJSON_IsString(item)) {
+                                strncpy(a->cli.command, item->valuestring, sizeof(a->cli.command) - 1);
+                            }
+                            if ((item = cJSON_GetObjectItem(act_item, "var_name")) && cJSON_IsString(item)) {
+                                strncpy(a->cli.var_name, item->valuestring, sizeof(a->cli.var_name) - 1);
+                            }
+                            if ((item = cJSON_GetObjectItem(act_item, "timeout_ms")) && cJSON_IsNumber(item)) {
+                                a->cli.timeout_ms = (uint32_t)item->valueint;
+                            }
+                            break;
+                            
+                        case TS_AUTO_ACT_LOG:
+                            if ((item = cJSON_GetObjectItem(act_item, "message")) && cJSON_IsString(item)) {
+                                strncpy(a->log.message, item->valuestring, sizeof(a->log.message) - 1);
+                            }
+                            if ((item = cJSON_GetObjectItem(act_item, "level")) && cJSON_IsNumber(item)) {
+                                a->log.level = (uint8_t)item->valueint;
+                            }
+                            break;
+                            
+                        case TS_AUTO_ACT_SET_VAR:
+                            if ((item = cJSON_GetObjectItem(act_item, "variable")) && cJSON_IsString(item)) {
+                                strncpy(a->set_var.variable, item->valuestring, sizeof(a->set_var.variable) - 1);
+                            }
+                            if ((item = cJSON_GetObjectItem(act_item, "value"))) {
+                                json_to_value(item, &a->set_var.value);
+                            }
+                            break;
+                            
+                        case TS_AUTO_ACT_WEBHOOK:
+                            if ((item = cJSON_GetObjectItem(act_item, "url")) && cJSON_IsString(item)) {
+                                strncpy(a->webhook.url, item->valuestring, sizeof(a->webhook.url) - 1);
+                            }
+                            if ((item = cJSON_GetObjectItem(act_item, "method")) && cJSON_IsString(item)) {
+                                strncpy(a->webhook.method, item->valuestring, sizeof(a->webhook.method) - 1);
+                            }
+                            if ((item = cJSON_GetObjectItem(act_item, "body_template")) && cJSON_IsString(item)) {
+                                strncpy(a->webhook.body_template, item->valuestring, sizeof(a->webhook.body_template) - 1);
+                            }
+                            break;
+                            
+                        case TS_AUTO_ACT_SSH_CMD_REF:
+                            if ((item = cJSON_GetObjectItem(act_item, "cmd_id")) && cJSON_IsString(item)) {
+                                strncpy(a->ssh_ref.cmd_id, item->valuestring, sizeof(a->ssh_ref.cmd_id) - 1);
+                            }
+                            break;
+                            
+                        default:
+                            break;
+                    }
+                    idx++;
+                }
+            }
+        }
+    }
+    
+    cJSON_Delete(root);
+    return ESP_OK;
+}
+
+/**
+ * @brief 保存所有规则到 NVS
+ */
+esp_err_t ts_rules_save(void)
+{
+    if (!s_rule_ctx.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    nvs_handle_t handle;
+    esp_err_t ret = nvs_open(NVS_NAMESPACE_RULES, NVS_READWRITE, &handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS for rules: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // 先清除旧数据
+    nvs_erase_all(handle);
+    
+    xSemaphoreTake(s_rule_ctx.mutex, portMAX_DELAY);
+    
+    // 保存数量
+    ret = nvs_set_u8(handle, NVS_KEY_RULE_COUNT, (uint8_t)s_rule_ctx.count);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to save rule count: %s", esp_err_to_name(ret));
+        xSemaphoreGive(s_rule_ctx.mutex);
+        nvs_close(handle);
+        return ret;
+    }
+    
+    // 保存每条规则
+    for (int i = 0; i < s_rule_ctx.count; i++) {
+        char key[16];
+        snprintf(key, sizeof(key), "%s%d", NVS_KEY_RULE_PREFIX, i);
+        
+        char *json = rule_to_json(&s_rule_ctx.rules[i]);
+        if (!json) {
+            ESP_LOGW(TAG, "Failed to serialize rule %d", i);
+            continue;
+        }
+        
+        ret = nvs_set_str(handle, key, json);
+        free(json);
+        
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to save rule %d: %s", i, esp_err_to_name(ret));
+        }
+    }
+    
+    xSemaphoreGive(s_rule_ctx.mutex);
+    
+    ret = nvs_commit(handle);
+    nvs_close(handle);
+    
+    ESP_LOGI(TAG, "Saved %d rules to NVS", s_rule_ctx.count);
+    return ret;
+}
+
+/**
+ * @brief 从 NVS 加载所有规则
+ */
+esp_err_t ts_rules_load(void)
+{
+    if (!s_rule_ctx.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    nvs_handle_t handle;
+    esp_err_t ret = nvs_open(NVS_NAMESPACE_RULES, NVS_READONLY, &handle);
+    if (ret == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGI(TAG, "No saved rules found in NVS");
+        return ESP_OK;
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS for rules: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    // 读取数量
+    uint8_t count = 0;
+    ret = nvs_get_u8(handle, NVS_KEY_RULE_COUNT, &count);
+    if (ret != ESP_OK || count == 0) {
+        nvs_close(handle);
+        return ESP_OK;
+    }
+    
+    ESP_LOGI(TAG, "Loading %d rules from NVS", count);
+    
+    // 加载每条规则
+    for (int i = 0; i < count && s_rule_ctx.count < s_rule_ctx.capacity; i++) {
+        char key[16];
+        snprintf(key, sizeof(key), "%s%d", NVS_KEY_RULE_PREFIX, i);
+        
+        // 获取字符串长度
+        size_t len = 0;
+        ret = nvs_get_str(handle, key, NULL, &len);
+        if (ret != ESP_OK || len == 0) {
+            continue;
+        }
+        
+        char *json = malloc(len);
+        if (!json) {
+            ESP_LOGW(TAG, "Failed to allocate memory for rule %d", i);
+            continue;
+        }
+        
+        ret = nvs_get_str(handle, key, json, &len);
+        if (ret == ESP_OK) {
+            ts_auto_rule_t rule;
+            if (json_to_rule(json, &rule) == ESP_OK) {
+                // 直接添加到数组（不调用 ts_rule_register 避免重复保存）
+                xSemaphoreTake(s_rule_ctx.mutex, portMAX_DELAY);
+                memcpy(&s_rule_ctx.rules[s_rule_ctx.count], &rule, sizeof(ts_auto_rule_t));
+                s_rule_ctx.count++;
+                xSemaphoreGive(s_rule_ctx.mutex);
+                ESP_LOGD(TAG, "Loaded rule: %s", rule.id);
+            }
+        }
+        
+        free(json);
+    }
+    
+    nvs_close(handle);
+    
+    ESP_LOGI(TAG, "Loaded %d rules from NVS", s_rule_ctx.count);
     return ESP_OK;
 }

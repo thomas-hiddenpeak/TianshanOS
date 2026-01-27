@@ -227,6 +227,24 @@ esp_err_t ts_rule_engine_get_stats(ts_rule_engine_stats_t *stats);
  */
 esp_err_t ts_rule_engine_reset_stats(void);
 
+/*===========================================================================*/
+/*                           Persistence                                      */
+/*===========================================================================*/
+
+/**
+ * @brief Save all rules to NVS
+ *
+ * @return ESP_OK on success
+ */
+esp_err_t ts_rules_save(void);
+
+/**
+ * @brief Load all rules from NVS
+ *
+ * @return ESP_OK on success
+ */
+esp_err_t ts_rules_load(void);
+
 #ifdef __cplusplus
 }
 #endif

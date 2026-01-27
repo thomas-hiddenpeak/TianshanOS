@@ -515,6 +515,149 @@ static esp_err_t api_automation_rules_trigger(const cJSON *params, ts_api_result
 }
 
 /**
+ * @brief Convert operator to string
+ */
+static const char *operator_to_string(ts_auto_operator_t op)
+{
+    switch (op) {
+        case TS_AUTO_OP_EQ: return "eq";
+        case TS_AUTO_OP_NE: return "ne";
+        case TS_AUTO_OP_LT: return "lt";
+        case TS_AUTO_OP_LE: return "le";
+        case TS_AUTO_OP_GT: return "gt";
+        case TS_AUTO_OP_GE: return "ge";
+        case TS_AUTO_OP_CONTAINS: return "contains";
+        case TS_AUTO_OP_CHANGED: return "changed";
+        case TS_AUTO_OP_CHANGED_TO: return "changed_to";
+        default: return "eq";
+    }
+}
+
+/**
+ * @brief automation.rules.get - Get rule details by ID
+ */
+static esp_err_t api_automation_rules_get(const cJSON *params, ts_api_result_t *result)
+{
+    cJSON *id_param = cJSON_GetObjectItem(params, "id");
+    if (!id_param || !cJSON_IsString(id_param)) {
+        result->code = TS_API_ERR_INVALID_ARG;
+        result->message = strdup("Missing 'id' parameter");
+        return ESP_OK;
+    }
+
+    const ts_auto_rule_t *rule = ts_rule_get(id_param->valuestring);
+    if (!rule) {
+        result->code = TS_API_ERR_NOT_FOUND;
+        result->message = strdup("Rule not found");
+        return ESP_OK;
+    }
+
+    result->data = cJSON_CreateObject();
+    cJSON_AddStringToObject(result->data, "id", rule->id);
+    cJSON_AddStringToObject(result->data, "name", rule->name);
+    cJSON_AddBoolToObject(result->data, "enabled", rule->enabled);
+    cJSON_AddNumberToObject(result->data, "cooldown_ms", rule->cooldown_ms);
+    cJSON_AddStringToObject(result->data, "logic", 
+                            rule->conditions.logic == TS_AUTO_LOGIC_OR ? "or" : "and");
+    cJSON_AddNumberToObject(result->data, "trigger_count", rule->trigger_count);
+    cJSON_AddNumberToObject(result->data, "last_trigger_ms", (double)rule->last_trigger_ms);
+
+    // 添加条件数组
+    cJSON *conditions = cJSON_AddArrayToObject(result->data, "conditions");
+    for (int i = 0; i < rule->conditions.count; i++) {
+        const ts_auto_condition_t *c = &rule->conditions.conditions[i];
+        cJSON *cond = cJSON_CreateObject();
+        cJSON_AddStringToObject(cond, "variable", c->variable);
+        cJSON_AddStringToObject(cond, "operator", operator_to_string(c->op));
+        
+        // 根据值类型添加值
+        switch (c->value.type) {
+            case TS_AUTO_VAL_BOOL:
+                cJSON_AddBoolToObject(cond, "value", c->value.bool_val);
+                break;
+            case TS_AUTO_VAL_INT:
+                cJSON_AddNumberToObject(cond, "value", c->value.int_val);
+                break;
+            case TS_AUTO_VAL_FLOAT:
+                cJSON_AddNumberToObject(cond, "value", c->value.float_val);
+                break;
+            case TS_AUTO_VAL_STRING:
+                cJSON_AddStringToObject(cond, "value", c->value.str_val);
+                break;
+            default:
+                cJSON_AddNullToObject(cond, "value");
+                break;
+        }
+        
+        cJSON_AddItemToArray(conditions, cond);
+    }
+
+    // 获取所有动作模板用于匹配
+    int tpl_count = ts_action_template_count();
+    ts_action_template_t *templates = NULL;
+    if (tpl_count > 0) {
+        templates = heap_caps_malloc(sizeof(ts_action_template_t) * tpl_count, MALLOC_CAP_SPIRAM);
+        if (templates) {
+            size_t out_count = 0;
+            ts_action_template_list(templates, tpl_count, &out_count);
+            tpl_count = out_count;
+        } else {
+            tpl_count = 0;
+        }
+    }
+
+    // 添加动作数组 - 查找匹配的动作模板
+    cJSON *actions = cJSON_AddArrayToObject(result->data, "actions");
+    for (int i = 0; i < rule->action_count; i++) {
+        const ts_auto_action_t *a = &rule->actions[i];
+        cJSON *act = cJSON_CreateObject();
+        
+        // 尝试通过动作配置查找匹配的模板 ID
+        const char *found_template_id = NULL;
+        for (int j = 0; j < tpl_count && templates; j++) {
+            ts_action_template_t *tpl = &templates[j];
+            // 比较动作类型和关键字段
+            if (tpl->action.type == a->type) {
+                bool match = false;
+                switch (a->type) {
+                    case TS_AUTO_ACT_CLI:
+                        match = (strcmp(tpl->action.cli.command, a->cli.command) == 0);
+                        break;
+                    case TS_AUTO_ACT_LED:
+                        match = (strcmp(tpl->action.led.device, a->led.device) == 0);
+                        break;
+                    case TS_AUTO_ACT_LOG:
+                        match = (strcmp(tpl->action.log.message, a->log.message) == 0);
+                        break;
+                    default:
+                        match = true; // 其他类型简单匹配
+                        break;
+                }
+                if (match) {
+                    found_template_id = tpl->id;
+                    break;
+                }
+            }
+        }
+        
+        if (found_template_id) {
+            cJSON_AddStringToObject(act, "template_id", found_template_id);
+        }
+        cJSON_AddNumberToObject(act, "delay_ms", a->delay_ms);
+        
+        cJSON_AddItemToArray(actions, act);
+    }
+
+    // 释放模板列表
+    if (templates) {
+        free(templates);
+    }
+
+    result->code = TS_API_OK;
+    return ESP_OK;
+}
+
+/**
  * @brief Parse operator from string
  */
 static ts_auto_operator_t parse_operator(const char *op_str)
@@ -631,6 +774,9 @@ static esp_err_t api_automation_rules_add(const cJSON *params, ts_api_result_t *
     }
 
     // 解析动作数组
+    // 支持两种格式：
+    // 1. 模板引用: { "template_id": "xxx", "delay_ms": 0 }
+    // 2. 内联定义: { "type": "led", "device": "board", ... } (向后兼容)
     cJSON *actions = cJSON_GetObjectItem(params, "actions");
     if (actions && cJSON_IsArray(actions)) {
         int act_count = cJSON_GetArraySize(actions);
@@ -644,6 +790,37 @@ static esp_err_t api_automation_rules_add(const cJSON *params, ts_api_result_t *
                 cJSON_ArrayForEach(act, actions) {
                     ts_auto_action_t *a = &rule.actions[idx];
                     
+                    // 检查是否是模板引用
+                    cJSON *template_id = cJSON_GetObjectItem(act, "template_id");
+                    if (template_id && cJSON_IsString(template_id)) {
+                        // 从动作模板获取配置
+                        ts_action_template_t tpl;
+                        if (ts_action_template_get(template_id->valuestring, &tpl) == ESP_OK) {
+                            // 复制动作配置
+                            memcpy(a, &tpl.action, sizeof(ts_auto_action_t));
+                            
+                            // 如果提供了覆盖的 delay_ms，使用它
+                            cJSON *delay = cJSON_GetObjectItem(act, "delay_ms");
+                            if (delay && cJSON_IsNumber(delay)) {
+                                a->delay_ms = (uint16_t)delay->valueint;
+                            }
+                            
+                            TS_LOGI(TAG, "Rule action from template: %s (type=%d)", 
+                                     template_id->valuestring, a->type);
+                        } else {
+                            TS_LOGW(TAG, "Action template not found: %s, using LOG action as placeholder", 
+                                    template_id->valuestring);
+                            // 设置为 LOG 类型，记录错误信息
+                            a->type = TS_AUTO_ACT_LOG;
+                            a->log.level = 2; // ESP_LOG_WARN
+                            snprintf(a->log.message, sizeof(a->log.message), 
+                                    "Missing action template: %s", template_id->valuestring);
+                        }
+                        idx++;
+                        continue;
+                    }
+                    
+                    // 向后兼容：内联动作定义
                     cJSON *type = cJSON_GetObjectItem(act, "type");
                     if (type && cJSON_IsString(type)) {
                         a->type = parse_action_type(type->valuestring);
@@ -3527,6 +3704,15 @@ esp_err_t ts_api_automation_register(void)
         .requires_auth = true,
     };
     ts_api_register(&ep_rules_disable);
+
+    ts_api_endpoint_t ep_rules_get = {
+        .name = "automation.rules.get",
+        .description = "Get rule details by ID",
+        .category = TS_API_CAT_SYSTEM,
+        .handler = api_automation_rules_get,
+        .requires_auth = false,
+    };
+    ts_api_register(&ep_rules_get);
 
     ts_api_endpoint_t ep_rules_trigger = {
         .name = "automation.rules.trigger",

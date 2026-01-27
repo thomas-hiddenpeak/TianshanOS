@@ -10049,6 +10049,7 @@ async function refreshRules() {
                                 <td style="white-space:nowrap">
                                     <button class="btn btn-sm" onclick="toggleRule('${r.id}', ${!r.enabled})" title="${r.enabled ? '禁用' : '启用'}">${r.enabled ? '🔴' : '🟢'}</button>
                                     <button class="btn btn-sm" onclick="triggerRule('${r.id}')" title="手动触发">▶️</button>
+                                    <button class="btn btn-sm" onclick="editRule('${r.id}')" title="编辑">✏️</button>
                                     <button class="btn btn-sm btn-danger" onclick="deleteRule('${r.id}')" title="删除">🗑️</button>
                                 </td>
                             </tr>
@@ -11722,6 +11723,25 @@ async function deleteRule(id) {
 }
 
 /**
+ * 编辑规则
+ */
+async function editRule(id) {
+    try {
+        // 获取规则详情
+        const result = await api.call('automation.rules.get', { id });
+        if (result.code !== 0 || !result.data) {
+            showToast(`获取规则详情失败: ${result.message || '未知错误'}`, 'error');
+            return;
+        }
+        
+        // 打开编辑模态框
+        showAddRuleModal(result.data);
+    } catch (error) {
+        showToast(`获取规则详情失败: ${error.message}`, 'error');
+    }
+}
+
+/**
  * 显示添加数据源模态框
  */
 function showAddSourceModal() {
@@ -12608,12 +12628,19 @@ async function submitAddSource() {
 }
 
 /**
- * 显示添加规则模态框
+ * 显示添加/编辑规则模态框
+ * @param {object} ruleData - 编辑时传入现有规则数据，添加时为 null
  */
-function showAddRuleModal() {
+function showAddRuleModal(ruleData = null) {
+    const isEdit = !!ruleData;
+    
     // 移除可能存在的旧模态框
     const oldModal = document.getElementById('add-rule-modal');
     if (oldModal) oldModal.remove();
+    
+    // 重置计数器
+    conditionRowCount = 0;
+    actionRowCount = 0;
     
     const modal = document.createElement('div');
     modal.id = 'add-rule-modal';
@@ -12621,7 +12648,7 @@ function showAddRuleModal() {
     modal.innerHTML = `
         <div class="modal-content automation-modal wide">
             <div class="modal-header">
-                <h3>➕ 添加规则</h3>
+                <h3>${isEdit ? '✏️ 编辑规则' : '➕ 添加规则'}</h3>
                 <button class="modal-close" onclick="closeModal('add-rule-modal')">&times;</button>
             </div>
             <div class="modal-body">
@@ -12629,7 +12656,7 @@ function showAddRuleModal() {
                 <div class="form-row three-col">
                     <div class="form-group">
                         <label>规则 ID <span class="required">*</span></label>
-                        <input type="text" id="rule-id" class="input" placeholder="唯一标识符">
+                        <input type="text" id="rule-id" class="input" placeholder="唯一标识符" ${isEdit ? 'readonly style="background:var(--bg-color)"' : ''}>
                     </div>
                     <div class="form-group" style="flex:2">
                         <label>规则名称 <span class="required">*</span></label>
@@ -12659,10 +12686,16 @@ function showAddRuleModal() {
                 <div class="config-section">
                     <div class="config-header">
                         <span class="config-title">📋 触发条件</span>
-                        <button class="btn btn-sm btn-primary" onclick="addConditionRow()">➕ 添加</button>
+                        <div style="display:flex;gap:8px;align-items:center">
+                            <label class="checkbox-label" style="margin:0;padding:0">
+                                <input type="checkbox" id="rule-manual-only" onchange="toggleManualOnly()">
+                                <span>仅手动触发</span>
+                            </label>
+                            <button class="btn btn-sm btn-primary" id="add-condition-btn" onclick="addConditionRow()">➕ 添加</button>
+                        </div>
                     </div>
                     <div id="conditions-container">
-                        <p class="empty-hint">点击"添加"创建触发条件</p>
+                        <p class="empty-hint">点击"添加"创建触发条件，或勾选"仅手动触发"作为快捷动作</p>
                     </div>
                 </div>
                 
@@ -12670,22 +12703,76 @@ function showAddRuleModal() {
                 <div class="config-section">
                     <div class="config-header">
                         <span class="config-title">⚡ 执行动作</span>
-                        <button class="btn btn-sm btn-primary" onclick="addActionRow()">➕ 添加</button>
+                        <button class="btn btn-sm btn-primary" onclick="addActionTemplateRow()">➕ 添加</button>
                     </div>
                     <div id="actions-container">
-                        <p class="empty-hint">点击"添加"创建执行动作</p>
+                        <p class="empty-hint">从已创建的动作模板中选择要执行的动作</p>
                     </div>
+                    <small class="form-hint" style="display:block;margin-top:8px;">
+                        💡 请先在"动作模板"区域创建动作，然后在这里选择使用
+                    </small>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn" onclick="closeModal('add-rule-modal')">取消</button>
-                <button class="btn btn-primary" onclick="submitAddRule()">添加规则</button>
+                <button class="btn btn-primary" onclick="submitAddRule(${isEdit ? "'" + ruleData.id + "'" : ''})">${isEdit ? '保存修改' : '添加规则'}</button>
             </div>
         </div>
     `;
     
     document.body.appendChild(modal);
     setTimeout(() => modal.classList.add('show'), 10);
+    
+    // 如果是编辑模式，填充现有数据
+    if (isEdit && ruleData) {
+        document.getElementById('rule-id').value = ruleData.id;
+        document.getElementById('rule-name').value = ruleData.name || '';
+        document.getElementById('rule-logic').value = ruleData.logic || 'and';
+        document.getElementById('rule-cooldown').value = ruleData.cooldown_ms || 0;
+        document.getElementById('rule-enabled').checked = ruleData.enabled !== false;
+        
+        // 填充条件
+        if (ruleData.conditions && ruleData.conditions.length > 0) {
+            ruleData.conditions.forEach(cond => {
+                addConditionRow(cond.variable, cond.operator, cond.value);
+            });
+        } else {
+            // 没有条件，勾选仅手动触发
+            document.getElementById('rule-manual-only').checked = true;
+            toggleManualOnly();
+        }
+        
+        // 填充动作
+        if (ruleData.actions && ruleData.actions.length > 0) {
+            // 异步加载动作模板行
+            (async () => {
+                for (const act of ruleData.actions) {
+                    await addActionTemplateRow(act.template_id, act.delay_ms);
+                }
+            })();
+        }
+    }
+}
+
+/**
+ * 切换仅手动触发模式
+ */
+function toggleManualOnly() {
+    const checked = document.getElementById('rule-manual-only').checked;
+    const addBtn = document.getElementById('add-condition-btn');
+    const container = document.getElementById('conditions-container');
+    
+    if (checked) {
+        // 禁用添加条件按钮，清空现有条件
+        addBtn.disabled = true;
+        addBtn.style.opacity = '0.5';
+        container.innerHTML = '<p class="empty-hint" style="color:var(--secondary-color)">👆 此规则仅可通过手动触发按钮执行</p>';
+    } else {
+        // 启用添加条件按钮
+        addBtn.disabled = false;
+        addBtn.style.opacity = '1';
+        container.innerHTML = '<p class="empty-hint">点击"添加"创建触发条件</p>';
+    }
 }
 
 // 条件行计数器
@@ -12693,30 +12780,48 @@ let conditionRowCount = 0;
 
 /**
  * 添加条件行
+ * @param {string} variable - 预填充变量名
+ * @param {string} operator - 预填充操作符
+ * @param {any} value - 预填充比较值
  */
-function addConditionRow() {
+function addConditionRow(variable = '', operator = 'eq', value = '') {
     const container = document.getElementById('conditions-container');
     
     // 移除空提示
     const emptyP = container.querySelector('.empty-hint');
     if (emptyP) emptyP.remove();
     
+    // 取消仅手动触发勾选
+    const manualOnly = document.getElementById('rule-manual-only');
+    if (manualOnly && manualOnly.checked) {
+        manualOnly.checked = false;
+        toggleManualOnly();
+    }
+    
+    // 处理值显示
+    let displayValue = value;
+    if (typeof value === 'object') {
+        displayValue = JSON.stringify(value);
+    } else if (typeof value === 'boolean') {
+        displayValue = value ? 'true' : 'false';
+    }
+    
     const row = document.createElement('div');
     row.className = 'condition-row';
     row.id = `condition-row-${conditionRowCount}`;
     row.innerHTML = `
-        <input type="text" class="input cond-variable" placeholder="变量名 (如 gpio.btn1)">
+        <input type="text" class="input cond-variable" placeholder="变量名 (如 gpio.btn1)" value="${variable}">
         <select class="input cond-operator">
-            <option value="eq">== 等于</option>
-            <option value="ne">!= 不等于</option>
-            <option value="gt">> 大于</option>
-            <option value="ge">>= 大于等于</option>
-            <option value="lt">< 小于</option>
-            <option value="le"><= 小于等于</option>
-            <option value="changed">值变化</option>
-            <option value="contains">包含</option>
+            <option value="eq" ${operator === 'eq' ? 'selected' : ''}>== 等于</option>
+            <option value="ne" ${operator === 'ne' ? 'selected' : ''}>!= 不等于</option>
+            <option value="gt" ${operator === 'gt' ? 'selected' : ''}>> 大于</option>
+            <option value="ge" ${operator === 'ge' ? 'selected' : ''}>>=  大于等于</option>
+            <option value="lt" ${operator === 'lt' ? 'selected' : ''}>< 小于</option>
+            <option value="le" ${operator === 'le' ? 'selected' : ''}><=  小于等于</option>
+            <option value="changed" ${operator === 'changed' ? 'selected' : ''}>值变化</option>
+            <option value="contains" ${operator === 'contains' ? 'selected' : ''}>包含</option>
         </select>
-        <input type="text" class="input cond-value" placeholder="比较值">
+        <input type="text" class="input cond-value" placeholder="比较值" value="${displayValue}">
         <button class="btn btn-sm btn-danger" onclick="this.parentElement.remove()">✕</button>
     `;
     
@@ -12727,45 +12832,105 @@ function addConditionRow() {
 // 动作行计数器
 let actionRowCount = 0;
 
+// 缓存的动作模板列表
+let cachedActionTemplates = [];
+
 /**
- * 添加动作行
+ * 加载动作模板列表
  */
-function addActionRow() {
+async function loadActionTemplatesForRule() {
+    try {
+        const result = await api.call('automation.actions.list', {});
+        if (result.code === 0 && result.data?.templates) {
+            cachedActionTemplates = result.data.templates;
+        }
+    } catch (e) {
+        console.error('加载动作模板失败:', e);
+        cachedActionTemplates = [];
+    }
+}
+
+/**
+ * 添加动作模板选择行
+ * @param {string} templateId - 预选中的模板 ID
+ * @param {number} delayMs - 预填充的延迟时间
+ */
+async function addActionTemplateRow(templateId = '', delayMs = 0) {
     const container = document.getElementById('actions-container');
+    
+    // 先加载模板列表
+    await loadActionTemplatesForRule();
+    
+    if (cachedActionTemplates.length === 0) {
+        showToast('请先创建动作模板', 'warning');
+        return;
+    }
     
     // 移除空提示
     const emptyP = container.querySelector('.empty-hint');
     if (emptyP) emptyP.remove();
     
     const row = document.createElement('div');
-    row.className = 'action-row';
+    row.className = 'action-row template-select-row';
     row.id = `action-row-${actionRowCount}`;
+    
+    // 构建模板选项
+    let optionsHtml = '<option value="">-- 选择动作模板 --</option>';
+    cachedActionTemplates.forEach(tpl => {
+        const typeLabel = getActionTypeLabel(tpl.type);
+        const selected = tpl.id === templateId ? 'selected' : '';
+        optionsHtml += `<option value="${tpl.id}" ${selected}>${tpl.name || tpl.id} (${typeLabel})</option>`;
+    });
+    
     row.innerHTML = `
-        <div class="action-row-header">
-            <select class="input action-type" onchange="updateActionFields(this)">
-                <option value="led">💡 LED 控制</option>
-                <option value="gpio">🔌 GPIO 输出</option>
-                <option value="device">🖥️ 设备控制</option>
-                <option value="set_var">📝 设置变量</option>
-                <option value="log">📋 日志输出</option>
-                <option value="webhook">🌐 Webhook</option>
-            </select>
-            <input type="number" class="input action-delay" placeholder="延迟ms" value="0" min="0" style="width:80px">
-            <button class="btn btn-sm btn-danger" onclick="this.parentElement.parentElement.remove()">✕</button>
-        </div>
-        <div class="action-params">
-            <select class="input action-led-device">
-                <option value="board">Board</option>
-                <option value="matrix">Matrix</option>
-                <option value="touch">Touch</option>
-            </select>
-            <input type="number" class="input action-led-index" placeholder="索引" value="255" min="0" max="255" style="width:70px">
-            <input type="text" class="input action-led-color" placeholder="#RRGGBB" value="#FF0000" style="width:90px">
-        </div>
+        <select class="input action-template-id" onchange="updateActionTemplatePreview(this)" style="flex:2">
+            ${optionsHtml}
+        </select>
+        <input type="number" class="input action-delay" placeholder="延迟ms" value="${delayMs}" min="0" style="width:100px">
+        <button class="btn btn-sm btn-danger" onclick="this.parentElement.remove()">✕</button>
     `;
     
     container.appendChild(row);
     actionRowCount++;
+}
+
+/**
+ * 获取动作类型标签
+ */
+function getActionTypeLabel(type) {
+    const labels = {
+        'cli': 'CLI',
+        'ssh_cmd_ref': 'SSH',
+        'led': 'LED',
+        'log': '日志',
+        'set_var': '变量',
+        'webhook': 'Webhook',
+        'gpio': 'GPIO',
+        'device_ctrl': '设备'
+    };
+    return labels[type] || type;
+}
+
+/**
+ * 更新动作模板预览（可选）
+ */
+function updateActionTemplatePreview(selectElement) {
+    const templateId = selectElement.value;
+    if (!templateId) return;
+    
+    const tpl = cachedActionTemplates.find(t => t.id === templateId);
+    if (tpl) {
+        console.log('选择动作模板:', tpl);
+    }
+}
+
+// 保留旧的 addActionRow 和 updateActionFields 用于兼容，但标记为废弃
+/**
+ * @deprecated 使用 addActionTemplateRow 代替
+ */
+function addActionRow() {
+    console.warn('addActionRow 已废弃，请使用 addActionTemplateRow');
+    addActionTemplateRow();
 }
 
 /**
@@ -12843,9 +13008,12 @@ function updateActionFields(selectElement) {
 }
 
 /**
- * 提交添加规则
+ * 提交添加/更新规则
+ * 规则只引用动作模板 ID，不再内联定义动作
+ * @param {string} originalId - 编辑模式时传入原规则 ID
  */
-async function submitAddRule() {
+async function submitAddRule(originalId = null) {
+    const isEdit = !!originalId;
     const id = document.getElementById('rule-id').value.trim();
     const name = document.getElementById('rule-name').value.trim();
     const logic = document.getElementById('rule-logic').value;
@@ -12861,89 +13029,44 @@ async function submitAddRule() {
         return;
     }
     
-    // 收集条件
+    // 收集条件（仅手动触发时为空数组）
     const conditions = [];
-    document.querySelectorAll('.condition-row').forEach(row => {
-        const variable = row.querySelector('.cond-variable').value.trim();
-        const operator = row.querySelector('.cond-operator').value;
-        let value = row.querySelector('.cond-value').value.trim();
-        
-        if (variable) {
-            // 尝试解析值为 JSON
-            try {
-                value = JSON.parse(value);
-            } catch (e) {
-                // 保持字符串
-            }
+    const manualOnly = document.getElementById('rule-manual-only')?.checked;
+    if (!manualOnly) {
+        document.querySelectorAll('.condition-row').forEach(row => {
+            const variable = row.querySelector('.cond-variable').value.trim();
+            const operator = row.querySelector('.cond-operator').value;
+            let value = row.querySelector('.cond-value').value.trim();
             
-            conditions.push({ variable, operator, value });
-        }
-    });
+            if (variable) {
+                // 尝试解析值为 JSON
+                try {
+                    value = JSON.parse(value);
+                } catch (e) {
+                    // 保持字符串
+                }
+                
+                conditions.push({ variable, operator, value });
+            }
+        });
+    }
     
-    // 收集动作
+    // 收集动作模板引用（只保存 template_id 和 delay_ms）
     const actions = [];
     document.querySelectorAll('.action-row').forEach(row => {
-        const type = row.querySelector('.action-type').value;
-        const delay_ms = parseInt(row.querySelector('.action-delay').value) || 0;
+        const templateId = row.querySelector('.action-template-id')?.value;
+        const delay_ms = parseInt(row.querySelector('.action-delay')?.value) || 0;
         
-        const action = { type, delay_ms };
-        
-        switch (type) {
-            case 'led': {
-                const device = row.querySelector('.action-led-device')?.value || 'board';
-                const index = parseInt(row.querySelector('.action-led-index')?.value) || 255;
-                const color = row.querySelector('.action-led-color')?.value || '#FF0000';
-                
-                // 解析颜色
-                const colorMatch = color.match(/^#?([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/);
-                if (colorMatch) {
-                    action.device = device;
-                    action.index = index;
-                    action.r = parseInt(colorMatch[1], 16);
-                    action.g = parseInt(colorMatch[2], 16);
-                    action.b = parseInt(colorMatch[3], 16);
-                }
-                break;
-            }
-            case 'gpio': {
-                action.pin = parseInt(row.querySelector('.action-gpio-pin')?.value) || 0;
-                action.level = row.querySelector('.action-gpio-level')?.value === 'true';
-                action.pulse_ms = parseInt(row.querySelector('.action-gpio-pulse')?.value) || 0;
-                break;
-            }
-            case 'device': {
-                action.device = row.querySelector('.action-device-name')?.value || 'agx0';
-                action.action = row.querySelector('.action-device-action')?.value || 'power_on';
-                break;
-            }
-            case 'set_var': {
-                action.variable = row.querySelector('.action-setvar-name')?.value || '';
-                let val = row.querySelector('.action-setvar-value')?.value || '';
-                try {
-                    action.value = JSON.parse(val);
-                } catch (e) {
-                    action.value = val;
-                }
-                break;
-            }
-            case 'log': {
-                action.level = parseInt(row.querySelector('.action-log-level')?.value) || 3;
-                action.message = row.querySelector('.action-log-message')?.value || '';
-                break;
-            }
-            case 'webhook': {
-                action.method = row.querySelector('.action-webhook-method')?.value || 'POST';
-                action.url = row.querySelector('.action-webhook-url')?.value || '';
-                action.body = row.querySelector('.action-webhook-body')?.value || '';
-                break;
-            }
+        if (templateId) {
+            actions.push({
+                template_id: templateId,
+                delay_ms: delay_ms
+            });
         }
-        
-        actions.push(action);
     });
     
     if (actions.length === 0) {
-        alert('请至少添加一个动作');
+        alert('请至少选择一个动作模板');
         return;
     }
     
@@ -12958,16 +13081,21 @@ async function submitAddRule() {
     };
     
     try {
+        // 编辑模式：先删除旧规则，再创建新规则
+        if (isEdit) {
+            await api.call('automation.rules.delete', { id: originalId });
+        }
+        
         const result = await api.call('automation.rules.add', params);
         if (result.code === 0) {
-            showToast(`规则 ${id} 创建成功`, 'success');
+            showToast(`规则 ${id} ${isEdit ? '更新' : '创建'}成功`, 'success');
             closeModal('add-rule-modal');
             await Promise.all([refreshRules(), refreshAutomationStatus()]);
         } else {
-            showToast(`创建规则失败: ${result.message}`, 'error');
+            showToast(`${isEdit ? '更新' : '创建'}规则失败: ${result.message}`, 'error');
         }
     } catch (error) {
-        showToast(`创建规则失败: ${error.message}`, 'error');
+        showToast(`${isEdit ? '更新' : '创建'}规则失败: ${error.message}`, 'error');
     }
 }
 
@@ -12989,6 +13117,7 @@ window.refreshRules = refreshRules;
 window.toggleRule = toggleRule;
 window.triggerRule = triggerRule;
 window.deleteRule = deleteRule;
+window.editRule = editRule;
 window.refreshSources = refreshSources;
 window.toggleSource = toggleSource;
 window.deleteSource = deleteSource;
@@ -13005,6 +13134,7 @@ window.addActionRow = addActionRow;
 window.updateActionFields = updateActionFields;
 window.submitAddRule = submitAddRule;
 window.closeModal = closeModal;
+window.toggleManualOnly = toggleManualOnly;
 // 动作模板管理
 window.refreshActions = refreshActions;
 window.showAddActionModal = showAddActionModal;
