@@ -1,9 +1,9 @@
 # TianShanOS 开发进度跟踪
 
 > **项目**：TianShanOS（天山操作系统）  
-> **版本**：0.3.4  
+> **版本**：0.3.5  
 > **最后更新**：2026年1月30日  
-> **代码统计**：110+ 个 C 源文件，80+ 个头文件
+> **代码统计**：115+ 个 C 源文件，85+ 个头文件
 
 ---
 
@@ -37,6 +37,167 @@
 | Phase 23: 自动化 UI 增强 & 代码清理 | ✅ 完成 | 100% | 2026-01-29 |
 | Phase 24: 风扇曲线控制增强 | ✅ 完成 | 100% | 2026-01-30 |
 | Phase 25: 配置系统修复 & 内存优化 | ✅ 完成 | 100% | 2026-01-30 |
+| Phase 26: WebUI 认证系统 | ✅ 完成 | 100% | 2026-01-30 |
+
+---
+
+## 📋 Phase 26: WebUI 认证系统 ✅
+
+**时间**：2026年1月30日  
+**目标**：实现 WebUI 用户认证、会话管理和权限控制
+
+### 功能概述
+
+本阶段实现了完整的 WebUI 认证系统：
+- **双用户体系**：`admin`（管理员）和 `root`（超级用户）
+- **密码安全**：SHA256 + 随机 Salt 哈希存储
+- **会话管理**：24 小时 Token 有效期，最多 8 个并发会话
+- **权限控制**：root 专属页面（终端、自动化、指令）
+- **登录保护**：5 次失败锁定 5 分钟
+
+### 用户权限
+
+| 用户 | 权限级别 | 可访问页面 | 默认密码 |
+|------|---------|-----------|---------|
+| admin | TS_PERM_ADMIN (3) | 系统、网络、文件、安全 | rm01 |
+| root | TS_PERM_ROOT (4) | 所有页面（含终端、自动化、指令）| rm01 |
+
+### 新增 API
+
+#### 1. auth.login - 用户登录
+
+```json
+POST /api/v1/auth/login
+{
+    "username": "admin",
+    "password": "rm01"
+}
+
+Response:
+{
+    "code": 0,
+    "data": {
+        "token": "abc123...",
+        "username": "admin",
+        "level": "admin",
+        "expires_in": 86400,
+        "password_changed": false
+    }
+}
+```
+
+#### 2. auth.logout - 用户登出
+
+```json
+POST /api/v1/auth/logout
+{
+    "token": "abc123..."
+}
+```
+
+#### 3. auth.status - 检查认证状态
+
+```json
+POST /api/v1/auth/status
+{
+    "token": "abc123..."
+}
+
+Response:
+{
+    "code": 0,
+    "data": {
+        "valid": true,
+        "username": "admin",
+        "level": "admin",
+        "expires_in": 3600,
+        "password_changed": false
+    }
+}
+```
+
+#### 4. auth.change_password - 修改密码
+
+```json
+POST /api/v1/auth/change_password
+{
+    "token": "abc123...",
+    "old_password": "rm01",
+    "new_password": "newpassword"
+}
+```
+
+### 技术实现
+
+#### 密码存储（ts_auth.c）
+
+```c
+typedef struct {
+    uint8_t salt[16];           // 随机 Salt
+    uint8_t hash[32];           // SHA256(salt + password)
+    bool password_changed;       // 是否已修改默认密码
+    uint32_t failed_attempts;    // 失败尝试次数
+    uint32_t lockout_until;      // 锁定截止时间
+} user_credential_t;
+```
+
+#### 版本控制强制重置
+
+```c
+#define AUTH_CONFIG_VERSION 3
+
+// 版本变化时强制重置所有用户密码
+if (stored_version != AUTH_CONFIG_VERSION) {
+    force_create_user("admin", TS_PERM_ADMIN);
+    force_create_user("root", TS_PERM_ROOT);
+}
+```
+
+#### 前端权限控制（router.js）
+
+```javascript
+// 需要 root 权限的页面
+this.rootOnlyPages = ['/terminal', '/automation', '/commands'];
+
+// 导航菜单可见性
+updateNavVisibility() {
+    document.querySelectorAll('.nav-link').forEach(link => {
+        if (link.hasAttribute('data-requires-root')) {
+            link.style.display = api.isRoot() ? '' : 'none';
+        }
+    });
+}
+```
+
+### 代码变更
+
+| 文件 | 变更内容 |
+|------|---------|
+| `ts_auth.c` | 完全重写：SHA256+Salt 哈希、NVS 存储、登录锁定 |
+| `ts_api_auth.c` | 新增：auth.* API 处理器 |
+| `ts_webui_api.c` | 修改：登录响应格式、权限级别字符串化 |
+| `ts_security.h` | 新增：ts_auth_* 函数声明 |
+| `api.js` | 重写：登录/登出、Token 管理、权限检查 |
+| `router.js` | 新增：页面访问权限检查、导航可见性控制 |
+| `app.js` | 新增：认证 UI 更新、密码修改提醒 |
+| `index.html` | 优化：登录表单、data-requires-root 属性 |
+| `style.css` | 新增：.form-error 样式 |
+
+### 安全特性
+
+1. **密码哈希**：SHA256 + 16字节随机 Salt，防止彩虹表攻击
+2. **恒定时间比较**：防止时序攻击
+3. **登录锁定**：5 次失败后锁定 5 分钟
+4. **Token 有效期**：24 小时自动过期
+5. **会话限制**：最多 8 个并发会话
+6. **敏感数据清除**：密码验证后立即清除内存中的明文
+
+### 配置选项
+
+```kconfig
+# sdkconfig.defaults
+CONFIG_TS_SECURITY_TOKEN_EXPIRE_SEC=86400  # Token 有效期 24 小时
+```
 
 ---
 

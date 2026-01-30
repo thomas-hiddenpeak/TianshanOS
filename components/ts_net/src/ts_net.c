@@ -46,10 +46,16 @@ esp_err_t ts_net_mdns_start(void)
         TS_LOGW(TAG, "mDNS instance name set failed: %s", esp_err_to_name(ret));
     }
     
-    // 注册 HTTPS 服务
-    ret = mdns_service_add(NULL, "_https", "_tcp", 443, NULL, 0);
+    // 注册 HTTP 服务 (WebUI)
+    ret = mdns_service_add("TianShanOS WebUI", "_http", "_tcp", 80, NULL, 0);
     if (ret != ESP_OK) {
-        TS_LOGW(TAG, "mDNS service add failed: %s", esp_err_to_name(ret));
+        TS_LOGW(TAG, "mDNS HTTP service add failed: %s", esp_err_to_name(ret));
+    }
+    
+    // 注册 HTTPS 服务 (API)
+    ret = mdns_service_add("TianShanOS API", "_https", "_tcp", 443, NULL, 0);
+    if (ret != ESP_OK) {
+        TS_LOGW(TAG, "mDNS HTTPS service add failed: %s", esp_err_to_name(ret));
     }
     
     s_mdns_initialized = true;

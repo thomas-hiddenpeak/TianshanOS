@@ -261,22 +261,44 @@ static esp_err_t login_handler(ts_http_request_t *req, void *user_data)
         return ts_http_send_error(req, 400, "Missing username or password");
     }
     
+    /* 保存用户名副本，因为后续要删除 body */
+    char username_copy[32];
+    strncpy(username_copy, username->valuestring, sizeof(username_copy) - 1);
+    username_copy[sizeof(username_copy) - 1] = '\0';
+    
     uint32_t session_id;
-    extern esp_err_t ts_auth_login(const char *, const char *, uint32_t *);
-    esp_err_t ret = ts_auth_login(username->valuestring, password->valuestring, &session_id);
+    char token[128];
+    esp_err_t ret = ts_auth_login(username->valuestring, password->valuestring, &session_id, token, sizeof(token));
     cJSON_Delete(body);
     
     if (ret != ESP_OK) {
         return ts_http_send_error(req, 401, "Invalid credentials");
     }
     
-    // Generate token
-    char token[128];
-    ts_security_generate_token(session_id, token, sizeof(token));
+    /* 获取用户权限等级 */
+    ts_perm_level_t level = TS_PERM_ADMIN;  /* 默认 */
+    ts_session_t session;
+    if (ts_security_validate_session(session_id, &session) == ESP_OK) {
+        level = session.level;
+    }
     
+    /* 将权限级别转换为字符串 */
+    const char *level_str = (level == TS_PERM_ROOT) ? "root" : "admin";
+    
+    /* 检查是否需要修改密码 */
+    bool password_changed = ts_auth_password_changed(username_copy);
+    
+    /* 构建符合前端期望的响应格式: {code: 0, data: {...}} */
     cJSON *response = cJSON_CreateObject();
-    cJSON_AddStringToObject(response, "token", token);
-    cJSON_AddNumberToObject(response, "session_id", session_id);
+    cJSON_AddNumberToObject(response, "code", 0);
+    
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "token", token);
+    cJSON_AddNumberToObject(data, "session_id", session_id);
+    cJSON_AddStringToObject(data, "username", username_copy);
+    cJSON_AddStringToObject(data, "level", level_str);
+    cJSON_AddBoolToObject(data, "password_changed", password_changed);
+    cJSON_AddItemToObject(response, "data", data);
     
     char *json = cJSON_PrintUnformatted(response);
     cJSON_Delete(response);

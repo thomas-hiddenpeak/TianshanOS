@@ -26,6 +26,7 @@ set(TS_API_SRCS
     "src/ts_api_log.c"
     "src/ts_api_automation.c"
     "src/ts_api_cert.c"
+    "src/ts_api_auth.c"
 )
 
 idf_component_register(

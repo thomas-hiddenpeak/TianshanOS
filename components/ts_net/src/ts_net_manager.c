@@ -13,6 +13,7 @@
  */
 
 #include "ts_net_manager.h"
+#include "ts_net.h"
 #include "ts_eth.h"
 #include "ts_wifi.h"
 #include "ts_log.h"
@@ -287,6 +288,9 @@ static void update_eth_ip_from_netif(void)
         }
         
         TS_LOGI(TAG, "Ethernet IP (static/DHCPS): %s", s_state.eth_status.ip_info.ip);
+        
+        /* 静态 IP 模式下，link up 后启动 mDNS（DHCP 模式由 IP_EVENT 触发） */
+        ts_net_mdns_start();
     }
 }
 
@@ -353,6 +357,9 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         s_state.eth_status.has_ip = true;
         s_state.eth_status.state = TS_NET_STATE_GOT_IP;
         
+        /* 启动 mDNS 服务（获取 IP 后） */
+        ts_net_mdns_start();
+        
         /* 更新 IP 信息 */
         ts_net_ip_u32_to_str(event->ip_info.ip.addr, 
                              s_state.eth_status.ip_info.ip, 
@@ -388,6 +395,9 @@ static void ip_event_handler(void *arg, esp_event_base_t event_base,
         
         s_state.wifi_sta_status.has_ip = true;
         s_state.wifi_sta_status.state = TS_NET_STATE_GOT_IP;
+        
+        /* 启动 mDNS 服务（获取 IP 后） */
+        ts_net_mdns_start();
         
         ts_net_ip_u32_to_str(event->ip_info.ip.addr, 
                              s_state.wifi_sta_status.ip_info.ip, 

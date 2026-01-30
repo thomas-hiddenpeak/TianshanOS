@@ -127,6 +127,71 @@ esp_err_t ts_security_generate_token(uint32_t session_id, char *token, size_t ma
  */
 esp_err_t ts_security_validate_token(const char *token, uint32_t *session_id);
 
+/*===========================================================================*/
+/*                          Auth Module API                                   */
+/*===========================================================================*/
+
+/**
+ * @brief Initialize authentication module
+ */
+esp_err_t ts_auth_init(void);
+
+/**
+ * @brief Verify user password
+ * @param username User name (admin or root)
+ * @param password Password to verify
+ * @param level Output permission level
+ * @return ESP_OK on success
+ */
+esp_err_t ts_auth_verify_password(const char *username, const char *password,
+                                   ts_perm_level_t *level);
+
+/**
+ * @brief Change user password
+ * @param username User name
+ * @param old_password Current password
+ * @param new_password New password (4-64 chars)
+ * @return ESP_OK on success
+ */
+esp_err_t ts_auth_change_password(const char *username, const char *old_password,
+                                   const char *new_password);
+
+/**
+ * @brief Check if user has changed the default password
+ */
+bool ts_auth_password_changed(const char *username);
+
+/**
+ * @brief Login and create session with token
+ * @param username User name
+ * @param password Password
+ * @param session_id Output session ID
+ * @param token Output token buffer (can be NULL)
+ * @param token_len Token buffer length
+ * @return ESP_OK on success
+ */
+esp_err_t ts_auth_login(const char *username, const char *password,
+                         uint32_t *session_id, char *token, size_t token_len);
+
+/**
+ * @brief Logout and destroy session
+ */
+esp_err_t ts_auth_logout(uint32_t session_id);
+
+/**
+ * @brief Validate request authentication from header
+ * @param auth_header Authorization header value (Bearer token)
+ * @param session_id Output session ID
+ * @param level Output permission level
+ */
+esp_err_t ts_auth_validate_request(const char *auth_header, uint32_t *session_id,
+                                    ts_perm_level_t *level);
+
+/**
+ * @brief Reset user password to default
+ */
+esp_err_t ts_auth_reset_password(const char *username);
+
 #ifdef __cplusplus
 }
 #endif

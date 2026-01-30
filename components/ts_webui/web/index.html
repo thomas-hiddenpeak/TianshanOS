@@ -22,9 +22,9 @@
                 <a href="#/" class="nav-link active">系统</a>
                 <a href="#/network" class="nav-link">网络</a>
                 <a href="#/files" class="nav-link">文件</a>
-                <a href="#/terminal" class="nav-link">终端</a>
-                <a href="#/automation" class="nav-link">自动化</a>
-                <a href="#/commands" class="nav-link">指令</a>
+                <a href="#/terminal" class="nav-link" data-requires-root>终端</a>
+                <a href="#/automation" class="nav-link" data-requires-root>自动化</a>
+                <a href="#/commands" class="nav-link" data-requires-root>指令</a>
                 <a href="#/security" class="nav-link">安全</a>
             </nav>
             <div class="ws-status" id="ws-status" title="WebSocket 连接状态"></div>
@@ -51,18 +51,25 @@
     
     <!-- Login Modal -->
     <div id="login-modal" class="modal hidden">
-        <div class="modal-content">
-            <h2>登录</h2>
+        <div class="modal-content" style="max-width:350px;">
+            <div class="modal-header">
+                <h2>🔐 登录 TianShanOS</h2>
+            </div>
             <form id="login-form">
-                <div class="form-group">
-                    <label for="username">用户名</label>
-                    <input type="text" id="username" name="username" required>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="username">用户名</label>
+                        <input type="text" id="username" name="username" class="input" required 
+                               value="admin" autocomplete="username">
+                    </div>
+                    <div class="form-group">
+                        <label for="password">密码</label>
+                        <input type="password" id="password" name="password" class="input" required 
+                               placeholder="请输入密码" autocomplete="current-password">
+                    </div>
+                    <div id="login-error" class="form-error hidden"></div>
                 </div>
-                <div class="form-group">
-                    <label for="password">密码</label>
-                    <input type="password" id="password" name="password" required>
-                </div>
-                <div class="form-actions">
+                <div class="modal-footer">
                     <button type="button" class="btn" onclick="closeLoginModal()">取消</button>
                     <button type="submit" class="btn btn-primary">登录</button>
                 </div>

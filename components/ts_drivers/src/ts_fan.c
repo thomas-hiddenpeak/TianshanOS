@@ -233,11 +233,21 @@ static esp_err_t update_pwm(fan_instance_t *fan, uint8_t duty)
 static void fan_update_callback(void *arg)
 {
     int64_t now = esp_timer_get_time();
+    static uint32_t s_log_counter = 0;
     
     /* 主动获取最新温度（确保曲线模式能及时响应温度变化） */
     if (s_auto_temp_enabled) {
         ts_temp_data_t temp_data;
         int16_t current_temp = ts_temp_get_effective(&temp_data);
+        
+        /* 每 10 秒输出一次调试日志 */
+        if (++s_log_counter >= 10) {
+            s_log_counter = 0;
+            TS_LOGD(TAG, "[FAN-CB] temp=%d.%d°C, source=%d, valid=%d",
+                    current_temp / 10, current_temp % 10,
+                    temp_data.source, temp_data.valid);
+        }
+        
         if (current_temp > TS_TEMP_MIN_VALID) {
             for (int i = 0; i < TS_FAN_MAX; i++) {
                 if (s_fans[i].initialized && 
@@ -652,17 +662,23 @@ esp_err_t ts_fan_get_status(ts_fan_id_t fan, ts_fan_status_t *status)
         int16_t temp = ts_temp_get_effective(&temp_data);
         if (temp > TS_TEMP_MIN_VALID) {
             f->temperature = temp;
+            
+            /* 计算基于当前温度的目标转速（用于显示） */
+            uint8_t computed_target = calc_duty_from_curve(f, f->temperature);
+            if (computed_target < f->config.min_duty && computed_target > 0) {
+                computed_target = f->config.min_duty;
+            }
+            if (computed_target > f->config.max_duty) {
+                computed_target = f->config.max_duty;
+            }
+            f->target_duty = computed_target;
+        } else {
+            /* 温度无效时，目标转速等于当前转速 */
+            f->target_duty = f->current_duty;
         }
-        
-        /* 计算基于当前温度的目标转速（用于显示） */
-        uint8_t computed_target = calc_duty_from_curve(f, f->temperature);
-        if (computed_target < f->config.min_duty && computed_target > 0) {
-            computed_target = f->config.min_duty;
-        }
-        if (computed_target > f->config.max_duty) {
-            computed_target = f->config.max_duty;
-        }
-        f->target_duty = computed_target;
+    } else {
+        /* MANUAL/OFF 模式：目标转速等于当前转速 */
+        f->target_duty = f->current_duty;
     }
     
     status->mode = f->mode;

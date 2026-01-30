@@ -5226,6 +5226,22 @@ body {
     margin-top: 4px;
 }
 
+/* 表单错误信息 */
+.form-error {
+    display: block;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid #ef4444;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-top: 12px;
+    font-size: 0.85rem;
+    color: #ef4444;
+}
+
+.form-error.hidden {
+    display: none;
+}
+
 /* 必填标记 */
 .required {
     color: #ef4444;

@@ -173,45 +173,172 @@ function updateAuthUI() {
     const userName = document.getElementById('user-name');
     
     if (api.isLoggedIn()) {
+        const username = api.getUsername();
+        const level = api.getLevel();
+        const levelBadge = level === 'root' ? '🔑' : '👤';
+        
         loginBtn.textContent = '登出';
-        userName.textContent = '已登录';
+        userName.textContent = `${levelBadge} ${username}`;
+        userName.title = `权限级别: ${level}`;
         loginBtn.onclick = logout;
+        
+        // 更新导航菜单可见性
+        router.updateNavVisibility();
     } else {
         loginBtn.textContent = '登录';
         userName.textContent = '未登录';
+        userName.title = '';
         loginBtn.onclick = showLoginModal;
+        
+        // 隐藏需要权限的导航项
+        router.updateNavVisibility();
     }
 }
 
 function showLoginModal() {
     document.getElementById('login-modal').classList.remove('hidden');
+    // 聚焦用户名输入框
+    setTimeout(() => document.getElementById('username')?.focus(), 100);
 }
 
 function closeLoginModal() {
     document.getElementById('login-modal').classList.add('hidden');
     document.getElementById('login-form').reset();
+    document.getElementById('login-error')?.classList.add('hidden');
 }
 
 document.getElementById('login-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
+    const errorEl = document.getElementById('login-error');
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    
+    // 显示加载状态
+    submitBtn.disabled = true;
+    submitBtn.textContent = '登录中...';
+    errorEl?.classList.add('hidden');
     
     try {
-        await api.login(username, password);
-        closeLoginModal();
-        updateAuthUI();
-        router.navigate();
+        const result = await api.login(username, password);
+        
+        if (result.code === 0) {
+            closeLoginModal();
+            updateAuthUI();
+            
+            // 检查是否需要修改密码
+            if (!result.data.password_changed) {
+                showPasswordChangeReminder();
+            }
+            
+            router.navigate();
+            showToast(`欢迎, ${username}!`, 'success');
+        } else {
+            // 显示错误信息
+            if (errorEl) {
+                errorEl.textContent = result.message || '登录失败';
+                errorEl.classList.remove('hidden');
+            }
+            showToast(result.message || '登录失败', 'error');
+        }
     } catch (error) {
+        if (errorEl) {
+            errorEl.textContent = error.message || '网络错误';
+            errorEl.classList.remove('hidden');
+        }
         showToast('登录失败: ' + error.message, 'error');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '登录';
     }
 });
 
 async function logout() {
     try {
         await api.logout();
+        showToast('已登出', 'info');
     } finally {
         updateAuthUI();
+        window.location.hash = '/';  // 重定向到首页
+        router.navigate();
+    }
+}
+
+/**
+ * 显示修改密码提醒
+ */
+function showPasswordChangeReminder() {
+    const modal = document.createElement('div');
+    modal.id = 'password-change-modal';
+    modal.className = 'modal show';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:400px;">
+            <div class="modal-header">
+                <h3>⚠️ 安全提醒</h3>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom:16px;">您正在使用默认密码，建议立即修改以确保系统安全。</p>
+                <form id="change-password-form">
+                    <div class="form-group">
+                        <label>当前密码</label>
+                        <input type="password" id="change-old-pwd" class="input" required>
+                    </div>
+                    <div class="form-group">
+                        <label>新密码 (4-64字符)</label>
+                        <input type="password" id="change-new-pwd" class="input" minlength="4" maxlength="64" required>
+                    </div>
+                    <div class="form-group">
+                        <label>确认新密码</label>
+                        <input type="password" id="change-confirm-pwd" class="input" minlength="4" maxlength="64" required>
+                    </div>
+                    <div id="change-pwd-error" class="form-error hidden"></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closePasswordChangeModal()">稍后修改</button>
+                <button class="btn btn-primary" onclick="submitPasswordChange()">立即修改</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function closePasswordChangeModal() {
+    const modal = document.getElementById('password-change-modal');
+    if (modal) modal.remove();
+}
+
+async function submitPasswordChange() {
+    const oldPwd = document.getElementById('change-old-pwd').value;
+    const newPwd = document.getElementById('change-new-pwd').value;
+    const confirmPwd = document.getElementById('change-confirm-pwd').value;
+    const errorEl = document.getElementById('change-pwd-error');
+    
+    // 验证
+    if (newPwd !== confirmPwd) {
+        errorEl.textContent = '两次输入的新密码不一致';
+        errorEl.classList.remove('hidden');
+        return;
+    }
+    
+    if (newPwd.length < 4) {
+        errorEl.textContent = '新密码至少4个字符';
+        errorEl.classList.remove('hidden');
+        return;
+    }
+    
+    try {
+        const result = await api.changePassword(oldPwd, newPwd);
+        if (result.code === 0) {
+            closePasswordChangeModal();
+            showToast('密码修改成功！', 'success');
+        } else {
+            errorEl.textContent = result.message || '修改失败';
+            errorEl.classList.remove('hidden');
+        }
+    } catch (error) {
+        errorEl.textContent = error.message || '网络错误';
+        errorEl.classList.remove('hidden');
     }
 }
 
@@ -880,11 +1007,13 @@ function updateFanInfo(data) {
     }
     if (globalDutyEl && data?.fans?.length > 0) {
         // 显示第一个曲线模式风扇的目标转速，或平均值
-        const curveFan = data.fans.find(f => f.mode === 'curve');
+        const curveFan = data.fans.find(f => f.mode === 'curve' || f.mode === 'auto');
         if (curveFan) {
-            globalDutyEl.textContent = `${curveFan.speed || curveFan.duty || 0}%`;
+            // 曲线/自动模式：显示 target_duty（目标转速）
+            globalDutyEl.textContent = `${curveFan.target_duty ?? curveFan.duty ?? 0}%`;
         } else {
-            const avgDuty = Math.round(data.fans.reduce((s, f) => s + (f.speed || f.duty || 0), 0) / data.fans.length);
+            // 手动/关闭模式：显示当前转速
+            const avgDuty = Math.round(data.fans.reduce((s, f) => s + (f.duty ?? 0), 0) / data.fans.length);
             globalDutyEl.textContent = `${avgDuty}%`;
         }
     }
@@ -892,7 +1021,10 @@ function updateFanInfo(data) {
     if (data?.fans && data.fans.length > 0) {
         container.innerHTML = data.fans.map(fan => {
             const mode = fan.mode || 'auto';
-            const duty = fan.speed || fan.duty || 0;
+            // 曲线/自动模式显示目标转速 (target_duty)，手动模式显示当前转速 (duty)
+            const isCurveOrAuto = (mode === 'curve' || mode === 'auto');
+            const displayDuty = isCurveOrAuto ? (fan.target_duty ?? fan.duty ?? 0) : (fan.duty ?? 0);
+            const duty = fan.duty ?? 0;  // 当前实际转速（用于滑块）
             const rpm = fan.rpm || 0;
             const isManual = mode === 'manual';
             const isOff = mode === 'off';
@@ -915,10 +1047,11 @@ function updateFanInfo(data) {
                     </span>
                 </div>
                 
-                <!-- 中间：大转速数字 -->
+                <!-- 中间：大转速数字（曲线/自动模式显示目标，手动模式显示当前） -->
                 <div class="fan-speed-display">
-                    <span class="fan-speed-num">${duty}</span>
+                    <span class="fan-speed-num">${displayDuty}</span>
                     <span class="fan-speed-percent">%</span>
+                    ${isCurveOrAuto && duty !== displayDuty ? `<div class="fan-rpm-small">当前: ${duty}%</div>` : ''}
                     ${rpm > 0 ? `<div class="fan-rpm-small">${rpm} RPM</div>` : ''}
                 </div>
                 

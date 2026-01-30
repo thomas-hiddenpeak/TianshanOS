@@ -10,17 +10,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+// Include ts_net_manager.h for ts_net_if_t definition to avoid duplication
+#include "ts_net_manager.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/** Network interface types */
-typedef enum {
-    TS_NET_IF_ETH = 0,
-    TS_NET_IF_WIFI_STA,
-    TS_NET_IF_WIFI_AP,
-    TS_NET_IF_MAX
-} ts_net_if_t;
 
 /** Network status */
 typedef enum {

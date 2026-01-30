@@ -133,25 +133,96 @@ class TianShanAPI {
     // =====================================================================
     
     async login(username, password) {
-        const result = await this.request('/auth/login', 'POST', { username, password });
-        if (result.token) {
-            this.token = result.token;
-            localStorage.setItem('token', result.token);
+        const result = await this.call('auth.login', { username, password }, 'POST');
+        if (result.code === 0 && result.data?.token) {
+            this.token = result.data.token;
+            this.username = result.data.username;
+            this.level = result.data.level;
+            this.passwordChanged = result.data.password_changed;
+            localStorage.setItem('ts_token', result.data.token);
+            localStorage.setItem('ts_username', result.data.username);
+            localStorage.setItem('ts_level', result.data.level);
+            localStorage.setItem('ts_expires', Date.now() + (result.data.expires_in * 1000));
         }
         return result;
     }
     
     async logout() {
         try {
-            await this.request('/auth/logout', 'POST');
+            if (this.token) {
+                await this.call('auth.logout', { token: this.token }, 'POST');
+            }
         } finally {
             this.token = null;
-            localStorage.removeItem('token');
+            this.username = null;
+            this.level = null;
+            localStorage.removeItem('ts_token');
+            localStorage.removeItem('ts_username');
+            localStorage.removeItem('ts_level');
+            localStorage.removeItem('ts_expires');
         }
     }
     
+    async checkAuthStatus() {
+        if (!this.token) return { valid: false };
+        const result = await this.call('auth.status', { token: this.token }, 'POST');
+        if (result.code === 0 && result.data) {
+            return result.data;
+        }
+        return { valid: false };
+    }
+    
+    async changePassword(oldPassword, newPassword) {
+        return this.call('auth.change_password', {
+            token: this.token,
+            old_password: oldPassword,
+            new_password: newPassword
+        }, 'POST');
+    }
+    
     isLoggedIn() {
-        return !!this.token;
+        if (!this.token) {
+            // 尝试从 localStorage 恢复
+            const savedToken = localStorage.getItem('ts_token');
+            const expires = localStorage.getItem('ts_expires');
+            if (savedToken && expires && Date.now() < parseInt(expires)) {
+                this.token = savedToken;
+                this.username = localStorage.getItem('ts_username');
+                this.level = localStorage.getItem('ts_level');
+                return true;
+            }
+            return false;
+        }
+        // 检查是否过期
+        const expires = localStorage.getItem('ts_expires');
+        if (expires && Date.now() >= parseInt(expires)) {
+            this.logout();  // 清理过期的 token
+            return false;
+        }
+        return true;
+    }
+    
+    getUsername() {
+        return this.username || localStorage.getItem('ts_username');
+    }
+    
+    getLevel() {
+        return this.level || localStorage.getItem('ts_level');
+    }
+    
+    /**
+     * 检查是否有 root 权限（可访问终端、自动化、指令）
+     */
+    isRoot() {
+        return this.getLevel() === 'root';
+    }
+    
+    /**
+     * 检查是否是 admin 用户
+     */
+    isAdmin() {
+        const level = this.getLevel();
+        return level === 'admin' || level === 'root';
     }
     
     // =====================================================================

@@ -15,6 +15,65 @@
 
 ---
 
+## 〇、WebUI 认证系统 ✅ 新增
+
+### 0.1 用户体系
+
+| 特性 | 状态 | 等级 | 说明 |
+|------|------|------|------|
+| 双用户（admin/root） | ✅ 已实现 | L1 | 不同权限级别 |
+| SHA256+Salt 密码哈希 | ✅ 已实现 | L1 | 16 字节随机 Salt |
+| 登录失败锁定 | ✅ 已实现 | L1 | 5 次失败锁定 5 分钟 |
+| 恒定时间哈希比较 | ✅ 已实现 | L1 | 防止时序攻击 |
+| 密码内存清零 | ✅ 已实现 | L1 | 验证后立即清除 |
+
+### 0.2 权限级别
+
+| 用户 | 级别 | 权限范围 | 默认密码 |
+|------|------|---------|---------|
+| admin | TS_PERM_ADMIN (3) | 系统、网络、文件、安全页面 | rm01 |
+| root | TS_PERM_ROOT (4) | 所有页面（含终端、自动化、指令）| rm01 |
+
+### 0.3 会话管理
+
+| 特性 | 状态 | 说明 |
+|------|------|------|
+| Token 有效期 | ✅ 24 小时 | `CONFIG_TS_SECURITY_TOKEN_EXPIRE_SEC=86400` |
+| 最大并发会话 | ✅ 8 个 | 防止资源耗尽 |
+| 版本控制重置 | ✅ 已实现 | `AUTH_CONFIG_VERSION` 变化时强制重置密码 |
+| 首次登录提醒 | ✅ 已实现 | 提示用户修改默认密码 |
+
+### 0.4 API 端点
+
+| API | 方法 | 认证 | 说明 |
+|-----|------|------|------|
+| auth.login | POST | 否 | 用户登录 |
+| auth.logout | POST | Token | 用户登出 |
+| auth.status | POST | Token | 检查认证状态 |
+| auth.change_password | POST | Token | 修改密码 |
+
+### 0.5 前端权限控制
+
+```html
+<!-- 导航栏权限标记 -->
+<a href="#/terminal" class="nav-link" data-requires-root>终端</a>
+<a href="#/automation" class="nav-link" data-requires-root>自动化</a>
+<a href="#/commands" class="nav-link" data-requires-root>指令</a>
+```
+
+```javascript
+// router.js - 权限检查
+checkAccess(path) {
+    if (!api.isLoggedIn()) return { allowed: false, reason: 'not_logged_in' };
+    if (this.rootOnlyPages.includes(path) && !api.isRoot()) {
+        return { allowed: false, reason: 'root_required' };
+    }
+    return { allowed: true };
+}
+```
+
+---
+
 ## 一、密钥存储安全
 
 ### 1.1 私钥保护
