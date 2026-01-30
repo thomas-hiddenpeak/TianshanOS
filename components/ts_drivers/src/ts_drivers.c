@@ -111,6 +111,9 @@ esp_err_t ts_drivers_init(void)
         } else {
             TS_LOGI(TAG, "LPMU configured (pwr=%d, rst=%d)", 
                     GPIO_LPMU_POWER, GPIO_LPMU_RESET);
+            
+            // 启动 LPMU 自动检测任务（检测是否在线，不在线则自动开机）
+            ts_device_lpmu_start_detection();
         }
     }
 #endif

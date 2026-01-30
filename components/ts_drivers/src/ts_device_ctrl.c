@@ -784,9 +784,28 @@ const char *ts_device_state_to_str(ts_device_state_t state)
     }
 }
 
+esp_err_t ts_device_power_toggle(ts_device_id_t device)
+{
+    switch (device) {
+        case TS_DEVICE_AGX:
+            // AGX 没有 toggle，返回不支持
+            TS_LOGW(TAG, "AGX does not support power toggle");
+            return ESP_ERR_NOT_SUPPORTED;
+        case TS_DEVICE_LPMU:
+            if (!s_lpmu.configured) return ESP_ERR_INVALID_STATE;
+            TS_LOGI(TAG, "LPMU power toggle (direct pulse)");
+            return lpmu_power_toggle();
+        default:
+            return ESP_ERR_INVALID_ARG;
+    }
+}
+
 /*===========================================================================*/
 /*                          LPMU Network Detection                            */
 /*===========================================================================*/
+
+// LPMU 默认 IP 地址
+#define LPMU_DEFAULT_IP "10.10.99.99"
 
 /**
  * @brief Ping an IP address using ICMP

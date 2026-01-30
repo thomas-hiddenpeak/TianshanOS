@@ -56,7 +56,10 @@ body {
 }
 
 .logo-icon {
-    font-size: 1.8rem;
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+    display: block;
 }
 
 .nav {
@@ -89,24 +92,19 @@ body {
 .main {
     flex: 1;
     margin-top: var(--header-height);
-    margin-bottom: var(--footer-height);
     padding: 20px;
 }
 
 /* Footer */
 .footer {
     height: var(--footer-height);
-    background: var(--card-bg);
-    border-top: 1px solid var(--border-color);
+    background: transparent;
+    border-top: none;
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--text-light);
     font-size: 0.9rem;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
 }
 
 /* Cards */
@@ -172,8 +170,9 @@ body {
 }
 
 .btn-danger {
-    background: var(--danger-color);
-    color: white;
+    background: #ffebee;
+    border-color: #ef9a9a;
+    color: #c62828;
 }
 
 /* Modal */
@@ -2649,25 +2648,25 @@ body {
 }
 
 .btn-success {
-    background-color: #22c55e;
-    border-color: #22c55e;
-    color: white;
+    background-color: #e8f5e9;
+    border-color: #a5d6a7;
+    color: #2e7d32;
 }
 
 .btn-success:hover {
-    background-color: #16a34a;
-    border-color: #16a34a;
+    background-color: #c8e6c9;
+    border-color: #81c784;
 }
 
 .btn-warning {
-    background-color: #f59e0b;
-    border-color: #f59e0b;
-    color: white;
+    background-color: #fff8e1;
+    border-color: #ffd54f;
+    color: #f57c00;
 }
 
 .btn-warning:hover {
-    background-color: #d97706;
-    border-color: #d97706;
+    background-color: #ffecb3;
+    border-color: #ffb74d;
 }
 
 .tab-btn {
@@ -7058,4 +7057,46 @@ body {
     display: block;
     width: 100%;
 }
+
+/* =========================================================================
+   TianshanOS UI/UX Updates - RemixIcon & Unified Styles
+   ========================================================================= */
+
+/* RemixIcon 图标样式 */
+.ri-question-line,
+.ri-service-line,
+.ri-restart-line,
+.ri-download-cloud-line,
+.ri-refresh-line,
+.ri-time-line,
+.ri-usb-line {
+  font-style: normal;
+  line-height: 1;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* 服务徽章统一样式 */
+.service-badge,
+.btn-service-style {
+  background: #f0f8ff !important;
+  color: #007bff !important;
+  border-radius: 4px;
+  padding: 4px 12px;
+  border: 1px solid #d0e8ff;
+}
+
+.btn-service-style:hover {
+  background: #e0f0ff !important;
+  border-color: #b0d8ff;
+}
+
+/* 深灰色文本（用于服务状态） */
+.text-gray {
+  color: #666 !important;
+}
+
+/* 健康状态图标颜色 */
+.health-ok { color: #27ae60; }
+.health-fail { color: #e74c3c; }
 

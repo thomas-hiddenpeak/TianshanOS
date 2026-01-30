@@ -1,5 +1,7 @@
 # TianShanOS
 
+[English](README_EN.md) | [中文](README.md)
+
 > 天山操作系统 - ESP32 机架管理操作系统
 > 
 > 天山控制南北两大盆地——北向 AGX 提供 AI 算力，南向 LPMU 提供通用计算和存储服务
