@@ -5,19 +5,20 @@
  * 监测 nohup SSH 命令的日志文件，检测服务就绪状态。
  * 
  * 工作原理：
- * 1. nohup 命令执行后，启动后台定时任务
- * 2. 定期通过 SSH 读取日志文件（tail -n 50 /tmp/xxx.log）
+ * 1. nohup 命令执行后，启动后台 FreeRTOS 任务
+ * 2. 定期通过 SSH 使用 grep 搜索日志文件中的模式
  * 3. 匹配 ready_pattern → 设置 ${var_name}.status = "ready"
- * 4. 超时未匹配 → 设置 ${var_name}.status = "timeout"
- * 5. 任务自动停止，避免资源浪费
+ * 4. 匹配 fail_pattern → 设置 ${var_name}.status = "failed"
+ * 5. 超时未匹配 → 设置 ${var_name}.status = "timeout"
+ * 6. 任务自动停止，避免资源浪费
  * 
  * 使用场景：
- * - 启动远程服务后等待服务就绪（如 "Server started on port 8080"）
+ * - 启动远程服务后等待服务就绪（如 "Application startup complete."）
  * - WebUI 规则引擎根据 status 变量判断下一步动作
- * - 快捷按钮显示服务状态（启动中/就绪/超时）
+ * - 快捷按钮显示服务状态（启动中/就绪/超时/失败）
  *
  * @author TianShanOS Team
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 #ifndef TS_SSH_LOG_WATCH_H
@@ -95,6 +96,18 @@ bool ts_ssh_log_watch_is_running(const char *var_name);
  * @brief 停止所有监测任务（清理）
  */
 void ts_ssh_log_watch_stop_all(void);
+
+/**
+ * @brief 获取当前活跃的监测任务数量
+ * 
+ * @return 活跃任务数量
+ */
+int ts_ssh_log_watch_get_active_count(void);
+
+/**
+ * @brief 打印所有活跃监测任务的状态（调试用）
+ */
+void ts_ssh_log_watch_list(void);
 
 #ifdef __cplusplus
 }

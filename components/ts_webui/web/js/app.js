@@ -8445,7 +8445,8 @@ function refreshCommandsList() {
         if (cmd.nohup) {
             if (cmd.serviceMode) {
                 // 服务模式：显示服务状态标签（无色块背景）
-                const statusId = `service-status-${idx}`;
+                // 使用 cmd.id 作为唯一标识，避免多个服务时 ID 冲突
+                const statusId = `service-status-${cmd.id || idx}`;
                 nohupHtml = `<span class="service-mode-status" title="服务模式: ${escapeHtml(cmd.readyPattern)}" data-var="${escapeHtml(cmd.varName)}" data-status-id="${statusId}"><span id="${statusId}" class="service-status">...</span></span>`;
             } else {
                 nohupHtml = '<span class="pattern-tag nohup" title="后台执行（nohup）">🚀</span>';
@@ -8454,6 +8455,13 @@ function refreshCommandsList() {
         
         // 变量按钮（仅当设置了 varName 时显示）
         const varBtnHtml = cmd.varName ? `<button class="btn btn-sm" onclick="showCommandVariables('${escapeHtml(cmd.varName)}')" title="查看变量: ${escapeHtml(cmd.varName)}.*">📊</button>` : '';
+        
+        // 服务模式按钮（日志、停止）
+        const safeName = cmd.name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20) || 'cmd';
+        const serviceActionsHtml = (cmd.nohup && cmd.serviceMode) ? `
+            <button class="btn btn-sm" onclick="viewServiceLog(${idx}, '${escapeHtml(safeName)}')" title="查看日志">📄</button>
+            <button class="btn btn-sm" onclick="stopServiceProcess(${idx}, '${escapeHtml(safeName)}')" title="停止服务" style="background:#dc3545;color:white">⏹️</button>
+        ` : '';
         
         // 图标显示：支持 Emoji 或图片路径
         const iconValue = cmd.icon || '🚀';
@@ -8473,6 +8481,7 @@ function refreshCommandsList() {
             <div class="cmd-code" title="${escapeHtml(cmd.command)}">${escapeHtml(cmd.command.split('\n')[0])}${cmd.command.includes('\n') ? ' ...' : ''}</div>
             <div class="cmd-actions">
                 <button class="btn btn-sm btn-exec" onclick="executeCommand(${idx})" title="执行">▶️</button>
+                ${serviceActionsHtml}
                 ${varBtnHtml}
                 <button class="btn btn-sm" onclick="editCommand(${idx})" title="编辑">✏️</button>
                 <button class="btn btn-sm" onclick="deleteCommand(${idx})" title="删除" style="background:#dc3545;color:white">🗑️</button>
@@ -8492,14 +8501,24 @@ async function updateServiceStatusInList() {
     const serviceModeTags = document.querySelectorAll('.service-mode-status');
     if (serviceModeTags.length === 0) return;
     
+    console.log(`[ServiceStatus] Updating ${serviceModeTags.length} service status tags`);
+    
     for (const tag of serviceModeTags) {
         const varName = tag.dataset.var;
         const statusId = tag.dataset.statusId;
         const statusEl = document.getElementById(statusId);
-        if (!varName || !statusEl) continue;
+        
+        console.log(`[ServiceStatus] Processing: varName=${varName}, statusId=${statusId}, statusEl=${statusEl ? 'found' : 'NOT FOUND'}`);
+        
+        if (!varName || !statusEl) {
+            console.warn(`[ServiceStatus] Skipping: varName=${varName}, statusEl=${!!statusEl}`);
+            continue;
+        }
         
         try {
             const result = await api.call('automation.variables.get', { name: `${varName}.status` });
+            console.log(`[ServiceStatus] ${varName}.status =`, result?.data?.value);
+            
             if (result && result.data && result.data.value !== undefined) {
                 const status = result.data.value;
                 statusEl.textContent = getServiceStatusLabel(status);
@@ -8509,6 +8528,7 @@ async function updateServiceStatusInList() {
                 statusEl.className = 'service-status status-idle';
             }
         } catch (e) {
+            console.error(`[ServiceStatus] Error getting ${varName}.status:`, e);
             statusEl.textContent = '❓ 未知';
             statusEl.className = 'service-status status-unknown';
         }
@@ -9172,6 +9192,169 @@ async function executeNohupHelperCommand(command) {
     }
     
     // 滚动到底部
+    resultPre.scrollTop = resultPre.scrollHeight;
+}
+
+/**
+ * 服务模式：查看日志（从命令列表卡片调用）
+ * @param {number} idx - 命令索引
+ * @param {string} safeName - 安全名称（用于日志文件）
+ */
+async function viewServiceLog(idx, safeName) {
+    const cmd = sshCommands[selectedHostId]?.[idx];
+    if (!cmd) {
+        showToast('命令不存在', 'error');
+        return;
+    }
+    
+    const host = window._cmdHostsList?.find(h => h.id === selectedHostId);
+    if (!host) {
+        showToast('主机信息不存在', 'error');
+        return;
+    }
+    
+    const logFile = `/tmp/ts_nohup_${safeName}.log`;
+    
+    // 显示结果区域
+    const resultSection = document.getElementById('exec-result-section');
+    const resultPre = document.getElementById('exec-result');
+    resultSection.style.display = 'block';
+    document.getElementById('cancel-exec-btn').style.display = 'none';
+    document.getElementById('nohup-actions').style.display = 'none';
+    
+    resultPre.textContent = `📄 查看服务日志: ${cmd.name}\n文件: ${logFile}\n\n`;
+    resultSection.scrollIntoView({ behavior: 'smooth' });
+    
+    try {
+        const result = await api.call('ssh.exec', {
+            host: host.host,
+            port: host.port,
+            user: host.username,
+            keyid: host.keyid,
+            command: `tail -200 "${logFile}" 2>/dev/null || echo "日志文件不存在或为空"`,
+            timeout_ms: 10000
+        });
+        
+        const stdout = result.data?.stdout || '';
+        const stderr = result.data?.stderr || '';
+        
+        if (stdout) {
+            resultPre.textContent += stdout;
+        } else if (stderr) {
+            resultPre.textContent += `[错误] ${stderr}`;
+        } else {
+            resultPre.textContent += '（日志为空）';
+        }
+    } catch (e) {
+        resultPre.textContent += `获取日志失败: ${e.message}`;
+    }
+    
+    resultPre.scrollTop = resultPre.scrollHeight;
+}
+
+/**
+ * 服务模式：停止进程（从命令列表卡片调用）
+ * @param {number} idx - 命令索引
+ * @param {string} safeName - 安全名称（用于 PID 文件）
+ */
+async function stopServiceProcess(idx, safeName) {
+    const cmd = sshCommands[selectedHostId]?.[idx];
+    if (!cmd) {
+        showToast('命令不存在', 'error');
+        return;
+    }
+    
+    const host = window._cmdHostsList?.find(h => h.id === selectedHostId);
+    if (!host) {
+        showToast('主机信息不存在', 'error');
+        return;
+    }
+    
+    // 确认对话框
+    if (!confirm(`确定要停止服务 "${cmd.name}" 吗？`)) {
+        return;
+    }
+    
+    const pidFile = `/tmp/ts_nohup_${safeName}.pid`;
+    
+    // 显示结果区域
+    const resultSection = document.getElementById('exec-result-section');
+    const resultPre = document.getElementById('exec-result');
+    resultSection.style.display = 'block';
+    document.getElementById('cancel-exec-btn').style.display = 'none';
+    document.getElementById('nohup-actions').style.display = 'none';
+    
+    resultPre.textContent = `🛑 停止服务: ${cmd.name}\n\n`;
+    resultSection.scrollIntoView({ behavior: 'smooth' });
+    
+    try {
+        // 先检查进程状态
+        const checkResult = await api.call('ssh.exec', {
+            host: host.host,
+            port: host.port,
+            user: host.username,
+            keyid: host.keyid,
+            command: `if [ -f ${pidFile} ]; then PID=$(cat ${pidFile}); if kill -0 $PID 2>/dev/null; then echo "RUNNING:$PID"; else echo "STOPPED"; fi; else echo "NO_PID"; fi`,
+            timeout_ms: 5000
+        });
+        
+        const status = (checkResult.data?.stdout || '').trim();
+        
+        if (status.startsWith('RUNNING:')) {
+            const pid = status.split(':')[1];
+            resultPre.textContent += `进程运行中 (PID: ${pid})，正在停止...\n`;
+            
+            // 发送 SIGTERM
+            const killResult = await api.call('ssh.exec', {
+                host: host.host,
+                port: host.port,
+                user: host.username,
+                keyid: host.keyid,
+                command: `kill ${pid} 2>/dev/null && sleep 0.5 && (kill -0 ${pid} 2>/dev/null && echo "STILL_RUNNING" || echo "STOPPED")`,
+                timeout_ms: 10000
+            });
+            
+            const killStatus = (killResult.data?.stdout || '').trim();
+            if (killStatus === 'STOPPED') {
+                resultPre.textContent += `✅ 服务已停止\n`;
+                showToast('服务已停止', 'success');
+                
+                // 更新状态变量
+                if (cmd.varName) {
+                    try {
+                        await api.call('automation.variables.set', { name: `${cmd.varName}.status`, value: 'stopped' });
+                    } catch (e) {}
+                }
+                
+                // 刷新命令列表状态
+                updateServiceStatusInList();
+            } else {
+                resultPre.textContent += `⚠️ 进程可能仍在运行，尝试强制终止...\n`;
+                // 发送 SIGKILL
+                await api.call('ssh.exec', {
+                    host: host.host,
+                    port: host.port,
+                    user: host.username,
+                    keyid: host.keyid,
+                    command: `kill -9 ${pid} 2>/dev/null; rm -f ${pidFile}`,
+                    timeout_ms: 5000
+                });
+                resultPre.textContent += `✅ 已强制终止\n`;
+                showToast('服务已强制停止', 'warning');
+                updateServiceStatusInList();
+            }
+        } else if (status === 'STOPPED') {
+            resultPre.textContent += `⚠️ 进程已经停止\n`;
+            showToast('进程已经停止', 'info');
+        } else {
+            resultPre.textContent += `⚠️ PID 文件不存在，服务可能未启动\n`;
+            showToast('服务未运行', 'info');
+        }
+    } catch (e) {
+        resultPre.textContent += `停止服务失败: ${e.message}`;
+        showToast('停止服务失败: ' + e.message, 'error');
+    }
+    
     resultPre.scrollTop = resultPre.scrollHeight;
 }
 

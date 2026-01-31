@@ -32,7 +32,7 @@ static const char *TAG = "ts_ssh_cmd_cfg";
 /*                              Internal State                                */
 /*===========================================================================*/
 
-/** NVS 存储格式 - Version 2 (添加服务模式字段) */
+/** NVS 存储格式 - Version 3 (添加 service_fail_pattern 字段) */
 typedef struct __attribute__((packed)) {
     char id[TS_SSH_CMD_ID_MAX];
     char host_id[TS_SSH_CMD_HOST_ID_MAX];
@@ -55,6 +55,8 @@ typedef struct __attribute__((packed)) {
     char ready_pattern[TS_SSH_CMD_PATTERN_MAX];
     uint16_t ready_timeout_sec;
     uint16_t ready_check_interval_ms;
+    /* 服务失败模式 (Version 3) */
+    char service_fail_pattern[TS_SSH_CMD_PATTERN_MAX];
 } nvs_cmd_entry_t;
 
 static struct {
@@ -293,6 +295,7 @@ esp_err_t ts_ssh_commands_config_add(const ts_ssh_command_config_t *config,
     /* 服务模式字段 */
     entry.service_mode = config->service_mode ? 1 : 0;
     strncpy(entry.ready_pattern, config->ready_pattern, sizeof(entry.ready_pattern) - 1);
+    strncpy(entry.service_fail_pattern, config->service_fail_pattern, sizeof(entry.service_fail_pattern) - 1);
     entry.ready_timeout_sec = config->ready_timeout_sec > 0 ? config->ready_timeout_sec : 60;
     entry.ready_check_interval_ms = config->ready_check_interval_ms > 0 ? config->ready_check_interval_ms : 3000;
     
@@ -395,6 +398,7 @@ esp_err_t ts_ssh_commands_config_get(const char *id, ts_ssh_command_config_t *co
                 /* 服务模式字段 */
                 config->service_mode = entry.service_mode != 0;
                 strncpy(config->ready_pattern, entry.ready_pattern, sizeof(config->ready_pattern) - 1);
+                strncpy(config->service_fail_pattern, entry.service_fail_pattern, sizeof(config->service_fail_pattern) - 1);
                 config->ready_timeout_sec = entry.ready_timeout_sec;
                 config->ready_check_interval_ms = entry.ready_check_interval_ms;
                 ret = ESP_OK;
@@ -446,6 +450,7 @@ esp_err_t ts_ssh_commands_config_list(ts_ssh_command_config_t *configs,
             /* 服务模式字段 */
             cfg->service_mode = entry.service_mode != 0;
             strncpy(cfg->ready_pattern, entry.ready_pattern, sizeof(cfg->ready_pattern) - 1);
+            strncpy(cfg->service_fail_pattern, entry.service_fail_pattern, sizeof(cfg->service_fail_pattern) - 1);
             cfg->ready_timeout_sec = entry.ready_timeout_sec;
             cfg->ready_check_interval_ms = entry.ready_check_interval_ms;
             n++;
@@ -498,6 +503,7 @@ esp_err_t ts_ssh_commands_config_list_by_host(const char *host_id,
                 /* 服务模式字段 */
                 cfg->service_mode = entry.service_mode != 0;
                 strncpy(cfg->ready_pattern, entry.ready_pattern, sizeof(cfg->ready_pattern) - 1);
+                strncpy(cfg->service_fail_pattern, entry.service_fail_pattern, sizeof(cfg->service_fail_pattern) - 1);
                 cfg->ready_timeout_sec = entry.ready_timeout_sec;
                 cfg->ready_check_interval_ms = entry.ready_check_interval_ms;
                 n++;

@@ -65,12 +65,25 @@
 typedef struct {
     char log_file[128];      // 日志文件路径
     char ready_pattern[128]; // 就绪匹配模式
-    char fail_pattern[128];  // 失败匹配模式（新增）
+    char fail_pattern[128];  // 失败匹配模式
     char var_name[32];       // 状态变量名
     uint16_t timeout_sec;    // 超时时间
     uint16_t interval_ms;    // 检测间隔
     // SSH 连接信息...
 } ts_ssh_log_watch_config_t;
+```
+
+**检测机制**：
+- 使用 `grep -qF` 在远程主机直接搜索模式（不传输日志内容）
+- 高效：仅传输状态结果（READY/FAIL/WAITING/NOTFOUND）
+- 可靠：搜索整个日志文件，不受日志大小限制
+
+```bash
+# 实际执行的远程命令
+if [ ! -f '/tmp/ts_nohup_xxx.log' ]; then echo 'NOTFOUND';
+elif grep -qF 'error pattern' '/tmp/ts_nohup_xxx.log' 2>/dev/null; then echo 'FAIL';
+elif grep -qF 'ready pattern' '/tmp/ts_nohup_xxx.log' 2>/dev/null; then echo 'READY';
+else echo 'WAITING'; fi
 ```
 
 **状态转换**：
