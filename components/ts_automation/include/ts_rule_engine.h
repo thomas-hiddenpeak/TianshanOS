@@ -228,6 +228,95 @@ esp_err_t ts_rule_engine_get_stats(ts_rule_engine_stats_t *stats);
 esp_err_t ts_rule_engine_reset_stats(void);
 
 /*===========================================================================*/
+/*                        Execution History (Lightweight)                     */
+/*===========================================================================*/
+
+/** Maximum execution history records (ring buffer size) */
+#define TS_RULE_EXEC_HISTORY_SIZE  16
+
+/** Maximum message length in execution record */
+#define TS_RULE_EXEC_MSG_LEN       48
+
+/**
+ * @brief Trigger source for rule execution
+ */
+typedef enum {
+    TS_RULE_TRIGGER_CONDITION = 0,   /**< Triggered by condition evaluation */
+    TS_RULE_TRIGGER_MANUAL,          /**< Manually triggered via API */
+    TS_RULE_TRIGGER_TIMER,           /**< Triggered by timer */
+    TS_RULE_TRIGGER_STARTUP,         /**< Triggered on startup */
+} ts_rule_trigger_source_t;
+
+/**
+ * @brief Execution result status
+ */
+typedef enum {
+    TS_RULE_EXEC_SUCCESS = 0,        /**< All actions succeeded */
+    TS_RULE_EXEC_PARTIAL,            /**< Some actions failed */
+    TS_RULE_EXEC_FAILED,             /**< All actions failed */
+    TS_RULE_EXEC_SKIPPED,            /**< Rule skipped (cooldown/disabled) */
+} ts_rule_exec_status_t;
+
+/**
+ * @brief Single rule execution record (~96 bytes)
+ * 
+ * Lightweight structure for tracking recent rule executions.
+ * Uses fixed-size fields to minimize memory fragmentation.
+ */
+typedef struct {
+    char rule_id[32];                /**< Rule ID */
+    int64_t timestamp_ms;            /**< Execution timestamp (milliseconds since boot) */
+    ts_rule_exec_status_t status;    /**< Execution result status */
+    ts_rule_trigger_source_t source; /**< Trigger source */
+    char message[TS_RULE_EXEC_MSG_LEN]; /**< Brief result message */
+    uint8_t action_count;            /**< Total actions attempted */
+    uint8_t failed_count;            /**< Failed action count */
+    uint8_t _reserved[2];            /**< Alignment padding */
+} ts_rule_exec_record_t;
+
+/**
+ * @brief Get recent execution history
+ * 
+ * Returns up to `max_count` most recent execution records.
+ * Records are returned in reverse chronological order (newest first).
+ *
+ * @param records Output array for records
+ * @param max_count Maximum records to retrieve
+ * @param actual_count Output: actual number of records returned
+ * @return ESP_OK on success
+ */
+esp_err_t ts_rule_get_exec_history(ts_rule_exec_record_t *records, 
+                                    int max_count, int *actual_count);
+
+/**
+ * @brief Get execution history for a specific rule
+ *
+ * @param rule_id Rule ID to filter by
+ * @param records Output array for records
+ * @param max_count Maximum records to retrieve
+ * @param actual_count Output: actual number of records returned
+ * @return ESP_OK on success
+ */
+esp_err_t ts_rule_get_exec_history_by_id(const char *rule_id,
+                                          ts_rule_exec_record_t *records,
+                                          int max_count, int *actual_count);
+
+/**
+ * @brief Clear execution history
+ *
+ * @return ESP_OK on success
+ */
+esp_err_t ts_rule_clear_exec_history(void);
+
+/**
+ * @brief Get execution status as human-readable string
+ *
+ * @param status Execution status
+ * @return Static string description
+ */
+const char *ts_rule_exec_status_str(ts_rule_exec_status_t status);
+
+/*===========================================================================*/
 /*                           Persistence                                      */
 /*===========================================================================*/
 

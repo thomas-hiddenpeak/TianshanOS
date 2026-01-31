@@ -114,6 +114,10 @@ esp_err_t ts_cmd_register_all(void)
     ret = ts_cmd_pki_register();
     if (ret == ESP_OK) success_count++; else fail_count++;
 
+    // 自动化规则管理命令
+    ts_cmd_auto_register();
+    success_count++;
+
     TS_LOGI(TAG, "Command registration complete: %d succeeded, %d failed",
         success_count, fail_count);
     

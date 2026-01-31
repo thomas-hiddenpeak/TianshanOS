@@ -519,6 +519,9 @@ async function loadSystemPage() {
         window.systemUptimeInterval = null;
     }
     
+    // 停止服务状态刷新（切换页面时会重新启动）
+    stopServiceStatusRefresh();
+    
     const content = document.getElementById('page-content');
     content.innerHTML = `
         <div class="page-system">
@@ -3833,14 +3836,32 @@ async function refreshQuickActions() {
                         
                         const statusIcon = isRunning ? '🟢' : '⚫';
                         const statusTitle = isRunning ? '进程运行中' : '进程未运行';
+                        
+                        // 服务模式状态显示（只有进程运行时才显示服务状态栏）
+                        let serviceStatusHtml = '';
+                        if (nohupInfo.serviceMode && nohupInfo.varName && isRunning) {
+                            const serviceStatusId = `service-status-${escapeHtml(rule.id)}`;
+                            serviceStatusHtml = `
+                                <div class="quick-action-service-status" id="${serviceStatusId}" data-var="${escapeHtml(nohupInfo.varName)}" data-running="true">
+                                    <span class="service-value">...</span>
+                                </div>
+                            `;
+                        }
+                        
+                        // 停止按钮：进程未运行时禁用
+                        const stopBtnDisabled = isRunning ? '' : 'disabled';
+                        const stopBtnClass = isRunning ? 'btn-stop' : 'btn-stop btn-disabled';
+                        
                         // 状态徽章 + 底部操作栏（传递 pidFile 用于精确停止）
+                        // 日志文件路径统一使用 nohupInfo.logFile（基于 cmd.name）
                         nohupBtns = `
                             <span class="nohup-status-badge" title="${statusTitle}">${statusIcon}</span>
+                            ${serviceStatusHtml}
                             <div class="quick-action-nohup-bar" onclick="event.stopPropagation()">
                                 <button onclick="quickActionViewLog('${escapeHtml(nohupInfo.logFile)}', '${escapeHtml(nohupInfo.hostId)}')" title="查看日志">
                                     📄 日志
                                 </button>
-                                <button class="btn-stop" onclick="quickActionStopProcess('${escapeHtml(nohupInfo.pidFile)}', '${escapeHtml(nohupInfo.hostId)}', '${escapeHtml(nohupInfo.cmdName)}')" title="终止进程" ${!isRunning ? 'disabled' : ''}>
+                                <button class="${stopBtnClass}" onclick="quickActionStopProcess('${escapeHtml(nohupInfo.pidFile)}', '${escapeHtml(nohupInfo.hostId)}', '${escapeHtml(nohupInfo.cmdName)}')" title="终止进程" ${stopBtnDisabled}>
                                     ⏹ 停止
                                 </button>
                             </div>
@@ -3853,7 +3874,7 @@ async function refreshQuickActions() {
                         : `triggerQuickAction('${escapeHtml(rule.id)}')`;
                     
                     return `
-                        <div class="quick-action-card${nohupInfo ? ' has-nohup' : ''}${isRunning ? ' is-running' : ''}" 
+                        <div class="quick-action-card${nohupInfo ? ' has-nohup' : ''}${nohupInfo?.serviceMode ? ' has-service' : ''}${isRunning ? ' is-running' : ''}" 
                              id="quick-action-${escapeHtml(rule.id)}"
                              data-rule-id="${escapeHtml(rule.id)}"
                              onclick="${cardOnClick}" 
@@ -3865,6 +3886,12 @@ async function refreshQuickActions() {
                     `;
                 }));
                 container.innerHTML = cardsHtml.join('');
+                
+                // 更新服务状态
+                updateQuickActionServiceStatus();
+                
+                // 启动定时刷新服务状态（每 3 秒）
+                startServiceStatusRefresh();
             } else {
                 container.innerHTML = `
                     <div class="quick-actions-empty">
@@ -3880,6 +3907,71 @@ async function refreshQuickActions() {
     } catch (e) {
         console.error('Quick actions error:', e);
         container.innerHTML = `<p class="text-muted">加载失败</p>`;
+    }
+}
+
+/**
+ * 更新快捷操作卡片中的服务状态
+ */
+let serviceStatusRefreshInterval = null;
+
+function startServiceStatusRefresh() {
+    // 清除之前的定时器
+    stopServiceStatusRefresh();
+    
+    // 每 3 秒刷新一次服务状态
+    serviceStatusRefreshInterval = setInterval(() => {
+        const statusContainers = document.querySelectorAll('.quick-action-service-status');
+        if (statusContainers.length === 0) {
+            stopServiceStatusRefresh();
+            return;
+        }
+        updateQuickActionServiceStatus();
+    }, 3000);
+}
+
+function stopServiceStatusRefresh() {
+    if (serviceStatusRefreshInterval) {
+        clearInterval(serviceStatusRefreshInterval);
+        serviceStatusRefreshInterval = null;
+    }
+}
+
+async function updateQuickActionServiceStatus() {
+    const statusContainers = document.querySelectorAll('.quick-action-service-status');
+    if (statusContainers.length === 0) return;
+    
+    for (const container of statusContainers) {
+        const varName = container.dataset.var;
+        if (!varName) continue;
+        
+        const valueEl = container.querySelector('.service-value');
+        if (!valueEl) continue;
+        
+        // 检查进程是否运行（通过 data-running 属性）
+        const isRunning = container.dataset.running === 'true';
+        
+        // 如果进程未运行，始终显示"未启动"
+        if (!isRunning) {
+            valueEl.textContent = '未启动';
+            container.className = 'quick-action-service-status status-idle';
+            continue;
+        }
+        
+        try {
+            const result = await api.call('automation.variables.get', { name: `${varName}.status` });
+            if (result && result.data && result.data.value !== undefined) {
+                const status = result.data.value;
+                valueEl.textContent = getServiceStatusLabel(status);
+                container.className = `quick-action-service-status status-${status}`;
+            } else {
+                valueEl.textContent = '检测中';
+                container.className = 'quick-action-service-status status-checking';
+            }
+        } catch (e) {
+            valueEl.textContent = '未知';
+            container.className = 'quick-action-service-status status-unknown';
+        }
     }
 }
 
@@ -4002,12 +4094,15 @@ async function checkRuleHasNohupSsh(rule) {
                 for (const [hostId, cmds] of Object.entries(sshCommands)) {
                     const cmd = cmds.find(c => String(c.id) === cmdId);
                     if (cmd) {
-                        console.log('checkRuleHasNohupSsh: found cmd=', cmd.name, 'nohup=', cmd.nohup);
+                        console.log('checkRuleHasNohupSsh: found cmd=', cmd.name, 'nohup=', cmd.nohup, 'serviceMode=', cmd.serviceMode);
                         if (cmd.nohup) {
                             // 找到了 nohup 命令
+                            // 文件名统一使用 cmd.name（用户可读的命令名称）
+                            // varName 只用于服务模式的状态变量
                             const safeName = cmd.name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20) || 'cmd';
                             const logFile = `/tmp/ts_nohup_${safeName}.log`;
                             const pidFile = `/tmp/ts_nohup_${safeName}.pid`;
+                            const varName = cmd.varName || '';  // 服务模式变量名
                             
                             // 使用 PID 文件检测进程状态（最可靠）
                             // 检查 PID 文件存在且进程仍在运行
@@ -4020,7 +4115,12 @@ async function checkRuleHasNohupSsh(rule) {
                                 progName: safeName,
                                 hostId: hostId,
                                 cmdName: cmd.name,
-                                checkCmd: checkCmd
+                                checkCmd: checkCmd,
+                                // 服务模式信息
+                                serviceMode: cmd.serviceMode || false,
+                                varName: varName,
+                                readyPattern: cmd.readyPattern || '',
+                                serviceFailPattern: cmd.serviceFailPattern || ''
                             };
                         }
                     }
@@ -6067,6 +6167,7 @@ async function stopFilter() {
 
 async function loadNetworkPage() {
     clearInterval(refreshInterval);
+    stopServiceStatusRefresh();
     
     // 取消系统页面的订阅
     if (subscriptionManager) {
@@ -7598,7 +7699,13 @@ async function loadSshCommands() {
                     extractPattern: cmd.extractPattern || '',
                     varName: cmd.varName || '',
                     timeout: cmd.timeout || 30,
-                    stopOnMatch: cmd.stopOnMatch || false
+                    stopOnMatch: cmd.stopOnMatch || false,
+                    // 服务模式字段
+                    serviceMode: cmd.serviceMode || false,
+                    readyPattern: cmd.readyPattern || '',
+                    serviceFailPattern: cmd.serviceFailPattern || '',
+                    readyTimeout: cmd.readyTimeout || 120,
+                    readyInterval: cmd.readyInterval || 5000
                 });
             }
         }
@@ -7628,7 +7735,13 @@ async function saveSshCommandToBackend(hostId, cmdData, existingId = null) {
         ...(cmdData.extractPattern && { extractPattern: cmdData.extractPattern }),
         ...(cmdData.varName && { varName: cmdData.varName }),
         ...(cmdData.timeout && { timeout: cmdData.timeout }),
-        ...(cmdData.stopOnMatch !== undefined && { stopOnMatch: cmdData.stopOnMatch })
+        ...(cmdData.stopOnMatch !== undefined && { stopOnMatch: cmdData.stopOnMatch }),
+        // 服务模式字段（仅在 nohup 时有效）
+        serviceMode: !!cmdData.serviceMode,
+        ...(cmdData.readyPattern && { readyPattern: cmdData.readyPattern }),
+        ...(cmdData.serviceFailPattern && { serviceFailPattern: cmdData.serviceFailPattern }),
+        ...(cmdData.readyTimeout && { readyTimeout: cmdData.readyTimeout }),
+        ...(cmdData.readyInterval && { readyInterval: cmdData.readyInterval })
     };
     
     // 编辑模式：传入 ID
@@ -7674,6 +7787,7 @@ async function ensureAllCommandVariables() {
 
 async function loadCommandsPage() {
     clearInterval(refreshInterval);
+    stopServiceStatusRefresh();
     
     if (subscriptionManager) {
         subscriptionManager.unsubscribe('system.dashboard');
@@ -7827,6 +7941,51 @@ async function loadCommandsPage() {
                                     </label>
                                     <small>命令将在服务器后台运行，SSH 断开后不受影响。适合重启、长时间任务等场景</small>
                                 </div>
+                                
+                                <!-- 服务模式配置（nohup 启用时显示） -->
+                                <div id="cmd-service-mode-options" class="service-mode-options hidden">
+                                    <div class="service-mode-header">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="cmd-service-mode" onchange="updateServiceModeState()">
+                                            <span>服务模式（监测就绪状态）</span>
+                                        </label>
+                                        <small>启动后持续监测日志，检测到就绪字符串后更新变量状态</small>
+                                    </div>
+                                    <div id="cmd-service-mode-fields" class="service-mode-fields hidden">
+                                        <div class="form-group">
+                                            <label>✅ 就绪匹配模式 *</label>
+                                            <input type="text" id="cmd-ready-pattern" placeholder="例如：Running on|Server started">
+                                            <small>日志中出现此字符串时标记为就绪（支持 | 分隔多个模式）</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>❌ 失败匹配模式</label>
+                                            <input type="text" id="cmd-service-fail-pattern" placeholder="例如：error|failed|Exception">
+                                            <small>日志中出现此字符串时标记为失败（可选，支持 | 分隔多个模式）</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>⏱️ 超时（秒）</label>
+                                            <input type="number" id="cmd-ready-timeout" value="120" min="10" max="600" step="10">
+                                            <small>超过此时间未匹配到就绪模式则标记为 timeout</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>🔄 检测间隔（毫秒）</label>
+                                            <input type="number" id="cmd-ready-interval" value="5000" min="1000" max="30000" step="1000">
+                                            <small>每隔多久检测一次日志文件</small>
+                                        </div>
+                                        <div class="service-mode-hint">
+                                            <small>💡 服务启动后，系统将监测日志文件：<code>/tmp/ts_nohup_[命令名].log</code></small><br>
+                                            <small>变量 <code>[变量名].status</code> 会根据日志匹配自动更新状态</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 存储变量名（独立字段，nohup 模式下也可用） -->
+                                <div class="form-group" id="cmd-var-name-group">
+                                    <label>📝 存储变量名</label>
+                                    <input type="text" id="cmd-var-name" placeholder="例如：ping_test">
+                                    <small id="cmd-var-name-hint">执行结果将存储为 \${变量名.status}、\${变量名.extracted} 等，可在后续命令中引用</small>
+                                </div>
+                                
                                 <div id="cmd-pattern-options">
                                     <div class="form-group">
                                         <label>✅ 成功匹配模式</label>
@@ -7842,11 +8001,6 @@ async function loadCommandsPage() {
                                         <label>📋 提取模式</label>
                                         <input type="text" id="cmd-extract-pattern" placeholder="例如：version: (.*)">
                                         <small>从输出中提取匹配内容，使用 (.*) 捕获组</small>
-                                    </div>
-                                    <div class="form-group">
-                                        <label>📝 存储变量名</label>
-                                        <input type="text" id="cmd-var-name" placeholder="例如：ping_test">
-                                        <small>执行结果将存储为 \${变量名.status}、\${变量名.extracted} 等，可在后续命令中引用</small>
                                     </div>
                                     <div class="form-group">
                                         <label class="checkbox-label">
@@ -8286,8 +8440,17 @@ function refreshCommandsList() {
             </div>
         ` : '';
         
-        // nohup 标签
-        const nohupHtml = cmd.nohup ? '<span class="pattern-tag nohup" title="后台执行（nohup）">🚀</span>' : '';
+        // nohup 标签（显示服务模式或普通后台执行）
+        let nohupHtml = '';
+        if (cmd.nohup) {
+            if (cmd.serviceMode) {
+                // 服务模式：显示服务状态标签（无色块背景）
+                const statusId = `service-status-${idx}`;
+                nohupHtml = `<span class="service-mode-status" title="服务模式: ${escapeHtml(cmd.readyPattern)}" data-var="${escapeHtml(cmd.varName)}" data-status-id="${statusId}"><span id="${statusId}" class="service-status">...</span></span>`;
+            } else {
+                nohupHtml = '<span class="pattern-tag nohup" title="后台执行（nohup）">🚀</span>';
+            }
+        }
         
         // 变量按钮（仅当设置了 varName 时显示）
         const varBtnHtml = cmd.varName ? `<button class="btn btn-sm" onclick="showCommandVariables('${escapeHtml(cmd.varName)}')" title="查看变量: ${escapeHtml(cmd.varName)}.*">📊</button>` : '';
@@ -8299,7 +8462,7 @@ function refreshCommandsList() {
             : `<span class="cmd-icon">${iconValue}</span>`;
         
         return `
-        <div class="command-card">
+        <div class="command-card" data-cmd-idx="${idx}" data-has-service="${cmd.serviceMode || false}">
             <div class="cmd-header">
                 ${iconHtml}
                 <span class="cmd-name" title="${escapeHtml(cmd.name)}">${escapeHtml(cmd.name)}</span>
@@ -8316,6 +8479,55 @@ function refreshCommandsList() {
             </div>
         </div>
     `}).join('');
+    
+    // 更新服务模式状态
+    updateServiceStatusInList();
+}
+
+/**
+ * 更新指令列表中的服务状态
+ * 查询每个服务模式指令的变量状态并更新显示
+ */
+async function updateServiceStatusInList() {
+    const serviceModeTags = document.querySelectorAll('.service-mode-status');
+    if (serviceModeTags.length === 0) return;
+    
+    for (const tag of serviceModeTags) {
+        const varName = tag.dataset.var;
+        const statusId = tag.dataset.statusId;
+        const statusEl = document.getElementById(statusId);
+        if (!varName || !statusEl) continue;
+        
+        try {
+            const result = await api.call('automation.variables.get', { name: `${varName}.status` });
+            if (result && result.data && result.data.value !== undefined) {
+                const status = result.data.value;
+                statusEl.textContent = getServiceStatusLabel(status);
+                statusEl.className = `service-status status-${status}`;
+            } else {
+                statusEl.textContent = '⏸️ 未启动';
+                statusEl.className = 'service-status status-idle';
+            }
+        } catch (e) {
+            statusEl.textContent = '❓ 未知';
+            statusEl.className = 'service-status status-unknown';
+        }
+    }
+}
+
+/**
+ * 获取服务状态显示文本
+ */
+function getServiceStatusLabel(status) {
+    const labels = {
+        'ready': '✅ 就绪',
+        'checking': '🔄 检测中',
+        'timeout': '⚠️ 超时',
+        'failed': '❌ 失败',
+        'idle': '⏸️ 未启动',
+        'stopped': '⏹️ 已停止'
+    };
+    return labels[status] || status;
 }
 
 function showAddCommandModal() {
@@ -8349,6 +8561,13 @@ function showAddCommandModal() {
     document.getElementById('cmd-timeout').value = 30;
     document.getElementById('cmd-stop-on-match').checked = false;
     
+    // 重置服务模式选项
+    const serviceModeCheckbox = document.getElementById('cmd-service-mode');
+    if (serviceModeCheckbox) serviceModeCheckbox.checked = false;
+    document.getElementById('cmd-ready-pattern').value = '';
+    document.getElementById('cmd-ready-timeout').value = 120;
+    document.getElementById('cmd-ready-interval').value = 5000;
+    
     // 折叠高级选项面板
     const advDetails = document.querySelector('.advanced-options');
     if (advDetails) advDetails.open = false;
@@ -8363,6 +8582,8 @@ function showAddCommandModal() {
     updateTimeoutState();
     // 更新 nohup 状态
     updateNohupState();
+    // 更新服务模式状态
+    updateServiceModeState();
 }
 
 function closeCommandModal() {
@@ -8456,25 +8677,69 @@ function updateTimeoutState() {
     }
 }
 
-/* 更新 nohup 选项的状态（禁用模式匹配选项） */
+/* 更新 nohup 选项的状态（显示/隐藏服务模式选项，禁用模式匹配选项） */
 function updateNohupState() {
     const nohup = document.getElementById('cmd-nohup')?.checked;
     const patternOptions = document.getElementById('cmd-pattern-options');
+    const serviceModeOptions = document.getElementById('cmd-service-mode-options');
+    const varNameGroup = document.getElementById('cmd-var-name-group');
+    const varNameHint = document.getElementById('cmd-var-name-hint');
     
-    if (patternOptions) {
-        patternOptions.style.opacity = nohup ? '0.4' : '1';
-        patternOptions.style.pointerEvents = nohup ? 'none' : '';
+    // 显示/隐藏服务模式选项（仅 nohup 启用时显示）
+    if (serviceModeOptions) {
+        serviceModeOptions.classList.toggle('hidden', !nohup);
     }
     
-    // 如果启用 nohup，清空模式匹配选项并禁用
+    // nohup 模式下隐藏模式匹配选项
+    if (patternOptions) {
+        patternOptions.classList.toggle('hidden', nohup);
+    }
+    
+    // 更新变量名提示
+    if (varNameGroup && varNameHint) {
+        if (nohup) {
+            varNameHint.innerHTML = '服务模式下，状态变量为 <code>${变量名}.status</code>（ready/checking/timeout）';
+        } else {
+            varNameHint.innerHTML = '执行结果将存储为 <code>${变量名}.status</code>、<code>${变量名}.extracted</code> 等，可在后续命令中引用';
+        }
+    }
+    
+    // 如果启用 nohup，清空模式匹配选项
     if (nohup) {
-        const fields = ['cmd-expect-pattern', 'cmd-fail-pattern', 'cmd-extract-pattern', 'cmd-var-name'];
+        const fields = ['cmd-expect-pattern', 'cmd-fail-pattern', 'cmd-extract-pattern'];
         fields.forEach(id => {
             const el = document.getElementById(id);
             if (el) el.value = '';
         });
         const stopMatch = document.getElementById('cmd-stop-on-match');
         if (stopMatch) stopMatch.checked = false;
+    } else {
+        // 禁用 nohup 时，重置服务模式
+        const serviceMode = document.getElementById('cmd-service-mode');
+        if (serviceMode) serviceMode.checked = false;
+        updateServiceModeState();
+    }
+}
+
+/* 更新服务模式选项的状态（显示/隐藏配置字段） */
+function updateServiceModeState() {
+    const serviceMode = document.getElementById('cmd-service-mode')?.checked;
+    const serviceModeFields = document.getElementById('cmd-service-mode-fields');
+    const varNameInput = document.getElementById('cmd-var-name');
+    
+    if (serviceModeFields) {
+        serviceModeFields.classList.toggle('hidden', !serviceMode);
+    }
+    
+    // 如果启用服务模式，变量名字段变为必填并提示
+    if (varNameInput) {
+        if (serviceMode) {
+            varNameInput.placeholder = '必填，例如：vllm（用于状态变量）';
+            varNameInput.style.borderColor = varNameInput.value ? '' : 'var(--warning-color)';
+        } else {
+            varNameInput.placeholder = '例如：ping_test';
+            varNameInput.style.borderColor = '';
+        }
     }
 }
 
@@ -8564,8 +8829,25 @@ async function saveCommand() {
     const stopOnMatch = document.getElementById('cmd-stop-on-match').checked;
     const editId = document.getElementById('cmd-edit-id').value;
     
+    // 服务模式字段
+    const serviceMode = document.getElementById('cmd-service-mode')?.checked || false;
+    const readyPattern = document.getElementById('cmd-ready-pattern')?.value?.trim() || '';
+    const serviceFailPattern = document.getElementById('cmd-service-fail-pattern')?.value?.trim() || '';
+    const readyTimeout = parseInt(document.getElementById('cmd-ready-timeout')?.value) || 120;
+    const readyInterval = parseInt(document.getElementById('cmd-ready-interval')?.value) || 5000;
+    
     if (!name || !command) {
         showToast('请填写指令名称和命令', 'warning');
+        return;
+    }
+    
+    // 服务模式验证
+    if (nohup && serviceMode && !readyPattern) {
+        showToast('启用服务模式时必须设置就绪匹配模式', 'warning');
+        return;
+    }
+    if (nohup && serviceMode && !varName) {
+        showToast('启用服务模式时必须设置变量名', 'warning');
         return;
     }
     
@@ -8581,9 +8863,15 @@ async function saveCommand() {
         ...(!nohup && expectPattern && { expectPattern }),
         ...(!nohup && failPattern && { failPattern }),
         ...(!nohup && extractPattern && { extractPattern }),
-        ...(!nohup && varName && { varName }),
+        ...(varName && { varName }),  // varName 现在在 nohup 模式下也保留（用于服务模式）
         ...(!nohup && timeout !== 30 && { timeout }),
-        ...(!nohup && stopOnMatch && { stopOnMatch })
+        ...(!nohup && stopOnMatch && { stopOnMatch }),
+        // 服务模式字段（仅 nohup 时有效）
+        ...(nohup && serviceMode && { serviceMode: true }),
+        ...(nohup && serviceMode && readyPattern && { readyPattern }),
+        ...(nohup && serviceMode && serviceFailPattern && { serviceFailPattern }),
+        ...(nohup && serviceMode && readyTimeout !== 120 && { readyTimeout }),
+        ...(nohup && serviceMode && readyInterval !== 5000 && { readyInterval })
     };
     
     try {
@@ -8659,9 +8947,19 @@ function editCommand(idx) {
     document.getElementById('cmd-timeout').value = cmd.timeout || 30;
     document.getElementById('cmd-stop-on-match').checked = cmd.stopOnMatch || false;
     
+    // 服务模式选项
+    const serviceModeCheckbox = document.getElementById('cmd-service-mode');
+    if (serviceModeCheckbox) {
+        serviceModeCheckbox.checked = cmd.serviceMode || false;
+    }
+    document.getElementById('cmd-ready-pattern').value = cmd.readyPattern || '';
+    document.getElementById('cmd-service-fail-pattern').value = cmd.serviceFailPattern || '';
+    document.getElementById('cmd-ready-timeout').value = cmd.readyTimeout || 120;
+    document.getElementById('cmd-ready-interval').value = cmd.readyInterval || 5000;
+    
     // 如果有高级选项，展开面板
     const advDetails = document.querySelector('.advanced-options');
-    if (advDetails && (cmd.nohup || cmd.expectPattern || cmd.failPattern || cmd.extractPattern || cmd.varName || cmd.timeout !== 30 || cmd.stopOnMatch)) {
+    if (advDetails && (cmd.nohup || cmd.expectPattern || cmd.failPattern || cmd.extractPattern || cmd.varName || cmd.timeout !== 30 || cmd.stopOnMatch || cmd.serviceMode)) {
         advDetails.open = true;
     }
     
@@ -8674,8 +8972,10 @@ function editCommand(idx) {
     
     // 更新超时输入框状态
     updateTimeoutState();
-    // 更新 nohup 状态（禁用模式匹配选项）
+    // 更新 nohup 状态（显示/隐藏服务模式选项）
     updateNohupState();
+    // 更新服务模式状态
+    updateServiceModeState();
 }
 
 async function deleteCommand(idx) {
@@ -13749,6 +14049,7 @@ async function loadAutomationPage() {
     if (subscriptionManager) {
         subscriptionManager.unsubscribe('system.dashboard');
     }
+    stopServiceStatusRefresh();
     
     const content = document.getElementById('page-content');
     content.innerHTML = `
