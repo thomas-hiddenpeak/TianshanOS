@@ -735,6 +735,9 @@ static void power_policy_task(void *pvParameters)
         /* 更新 LED 状态 */
         update_led_status();
         
+        /* 更新自动化系统变量（供 WebUI 数据监控使用） */
+        ts_power_policy_update_variables();
+        
         /* 等待下一个周期 */
         vTaskDelayUntil(&last_wake_time, check_period);
     }
