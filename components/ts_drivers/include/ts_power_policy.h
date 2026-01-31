@@ -283,6 +283,26 @@ esp_err_t ts_power_policy_set_recovery_hold(uint32_t hold_sec);
 esp_err_t ts_power_policy_set_fan_stop_delay(uint32_t delay_sec);
 
 /**
+ * @brief 保存当前配置到 SD 卡
+ * 
+ * 将当前配置导出为 JSON 文件保存到 /sdcard/config/power_policy.json
+ * 如果 SD 卡未挂载则返回错误
+ * 
+ * @return ESP_OK 成功，ESP_ERR_NOT_FOUND SD卡未挂载
+ */
+esp_err_t ts_power_policy_save_config(void);
+
+/**
+ * @brief 注册 automation 变量
+ * 
+ * 在 ts_variable 系统初始化后调用此函数注册 power policy 的监控变量
+ * 通常由 automation 服务在初始化完成后调用
+ * 
+ * @return ESP_OK 成功
+ */
+esp_err_t ts_power_policy_register_variables(void);
+
+/**
  * @brief 更新自动化变量（供数据源使用）
  * 自动更新以下变量：
  *   - power_policy.state (string)

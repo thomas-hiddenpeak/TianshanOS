@@ -55,6 +55,13 @@ esp_err_t ts_variable_init(void);
  */
 esp_err_t ts_variable_deinit(void);
 
+/**
+ * @brief Check if variable storage is initialized
+ *
+ * @return true if initialized, false otherwise
+ */
+bool ts_variable_is_initialized(void);
+
 /*===========================================================================*/
 /*                           Variable Registration                            */
 /*===========================================================================*/
@@ -153,6 +160,17 @@ esp_err_t ts_variable_get_string(const char *name, char *buffer, size_t buffer_s
  * @return ESP_OK on success
  */
 esp_err_t ts_variable_set(const char *name, const ts_auto_value_t *value);
+
+/**
+ * @brief Set variable value (internal use, bypasses readonly check)
+ *
+ * Used by system components to update readonly variables they own.
+ *
+ * @param name Variable name
+ * @param value New value
+ * @return ESP_OK on success
+ */
+esp_err_t ts_variable_set_internal(const char *name, const ts_auto_value_t *value);
 
 /**
  * @brief Set variable to boolean

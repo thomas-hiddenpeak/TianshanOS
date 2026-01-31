@@ -191,14 +191,10 @@ static esp_err_t api_power_protection_set(const cJSON *params, ts_api_result_t *
         }
     }
     
-    /* Persist to NVS/SD card if requested */
+    /* Persist to SD card and NVS if requested */
     if (cJSON_IsTrue(persist)) {
-        TS_LOGI(TAG, "Persisting power protection config to storage");
-        ts_config_set_float(CONFIG_KEY_LOW_VOLTAGE, new_low);
-        ts_config_set_float(CONFIG_KEY_RECOVERY_VOLTAGE, new_recovery);
-        ts_config_set_uint32(CONFIG_KEY_SHUTDOWN_DELAY, new_shutdown_delay);
-        ts_config_set_uint32(CONFIG_KEY_RECOVERY_HOLD, new_recovery_hold);
-        ts_config_set_uint32(CONFIG_KEY_FAN_STOP_DELAY, new_fan_delay);
+        TS_LOGI(TAG, "Persisting power protection config to SD card and NVS");
+        ts_power_policy_save_config();
     }
     
     /* Enable/disable if specified */

@@ -1369,11 +1369,17 @@ components/ts_automation/
 // 初始化（ts_automation 服务启动时自动调用）
 esp_err_t ts_variable_init(void);
 
-// 类型安全的设置 API
+// 检查初始化状态（用于跨阶段调用）
+bool ts_variable_is_initialized(void);
+
+// 类型安全的设置 API（受 READONLY 标志保护）
 esp_err_t ts_variable_set_string(const char *name, const char *value, const char *source_id);
 esp_err_t ts_variable_set_int(const char *name, int value, const char *source_id);
 esp_err_t ts_variable_set_float(const char *name, float value, const char *source_id);
 esp_err_t ts_variable_set_bool(const char *name, bool value, const char *source_id);
+
+// 内部 API（绕过 READONLY 检查，仅限系统组件使用）
+esp_err_t ts_variable_set_internal(const char *name, const ts_auto_value_t *value);
 
 // 类型安全的获取 API
 esp_err_t ts_variable_get(const char *name, ts_auto_value_t *value);
@@ -1390,6 +1396,21 @@ esp_err_t ts_variable_iterate(ts_variable_iterate_fn callback, void *user_data);
 
 // 按源删除变量
 esp_err_t ts_variable_delete_by_source(const char *source_id);
+```
+
+#### 只读变量与内部更新
+
+某些系统变量（如 `power_policy.*`）被标记为 `TS_AUTO_VAR_READONLY`，用户无法通过 API 修改。
+系统组件需要更新这些变量时，使用 `ts_variable_set_internal()` 绕过只读检查：
+
+```c
+// 电压保护模块更新只读变量
+void ts_power_policy_update_variables(void) {
+    ts_auto_value_t val;
+    val.type = TS_AUTO_VAL_FLOAT;
+    val.value.f = current_voltage;
+    ts_variable_set_internal("power_policy.voltage", &val);  // 绕过只读检查
+}
 ```
 
 #### SSH 命令结果变量

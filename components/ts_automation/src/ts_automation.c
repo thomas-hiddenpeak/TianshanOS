@@ -165,6 +165,13 @@ esp_err_t ts_automation_init(const ts_automation_config_t *config)
         // 不影响启动
     }
 
+    // 注册 power policy 变量（如果 power policy 已初始化）
+    extern esp_err_t ts_power_policy_register_variables(void);
+    esp_err_t pp_ret = ts_power_policy_register_variables();
+    if (pp_ret != ESP_OK && pp_ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "Failed to register power policy variables: %s", esp_err_to_name(pp_ret));
+    }
+
     ESP_LOGI(TAG, "Automation engine initialized");
 
     // 自动启动

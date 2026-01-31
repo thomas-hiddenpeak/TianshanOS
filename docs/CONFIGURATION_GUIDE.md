@@ -25,11 +25,12 @@ SD 卡文件 > NVS 持久化 > 代码默认值
 - `led.json`, `fan.json`, `device.json`, `system.json`
 - 使用 `ts_config_module_persist()` 统一管理
 
-**Schema-less 模块**（4个）：
+**Schema-less 模块**（5个）：
 - `sources.json` - 数据源配置
 - `rules.json` - 自动化规则
 - `actions.json` - 动作模板
 - `temp.json` - 温度源配置（含变量绑定）
+- `power_policy.json` - 电压保护策略配置（新增）
 - 使用自定义 NVS 格式，独立管理
 
 ### 同步行为
@@ -37,6 +38,21 @@ SD 卡文件 > NVS 持久化 > 代码默认值
 - SD 卡文件修改后，自动同步到 NVS
 - NVS 更新后，自动导出到 SD 卡
 - 启动时优先加载 SD 卡文件
+- **SD 卡热插拔**：插入 SD 卡后，如配置文件不存在，自动从 NVS 同步
+
+### 电压保护配置示例
+
+`/sdcard/config/power_policy.json`:
+
+```json
+{
+  "low_voltage_threshold": 12.6,
+  "recovery_voltage_threshold": 18.0,
+  "shutdown_delay_sec": 60,
+  "recovery_hold_sec": 5,
+  "protection_enabled": true
+}
+```
 
 ## 配置文件结构
 
