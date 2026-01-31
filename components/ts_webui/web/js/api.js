@@ -375,6 +375,8 @@ class TianShanAPI {
     async powerVoltage(channel = null) { return this.call('power.voltage', channel !== null ? { channel } : null); }
     async powerStats() { return this.call('power.stats'); }
     async powerProtectionStatus() { return this.call('power.protection.status'); }
+    async powerProtectionSet(config) { return this.call('power.protection.set', config, 'POST'); }
+    async powerProtectionConfig() { return this.call('power.protection.config'); }
     
     // =====================================================================
     //                         存储/GPIO/温度 API

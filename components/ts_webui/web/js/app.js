@@ -566,6 +566,7 @@ async function loadSystemPage() {
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
                         <h3 style="margin:0">📟 系统总览</h3>
                         <div style="display:flex;gap:8px">
+                            <button class="btn btn-small" onclick="showShutdownSettingsModal()" style="font-size:0.85em" title="电压保护设置">⚡ 关机设置</button>
                             <button class="btn btn-small" onclick="toggleUsbMux()" style="font-size:0.85em" id="usb-mux-btn" title="切换 USB 连接目标">🔌 USB: <span id="usb-mux-target">-</span></button>
                             <button class="btn btn-warning btn-small" onclick="confirmReboot()" style="font-size:0.85em">🔄 重启</button>
                         </div>
@@ -16590,6 +16591,130 @@ async function showSourceVariables(sourceId) {
 function closeSourceVariablesModal() {
     const modal = document.getElementById('source-variables-modal');
     if (modal) modal.classList.add('hidden');
+}
+
+// =========================================================================
+//                         关机设置模态框
+// =========================================================================
+
+/**
+ * 显示关机设置模态框
+ */
+async function showShutdownSettingsModal() {
+    const modal = document.getElementById('shutdown-settings-modal');
+    if (!modal) return;
+    
+    // 隐藏错误信息
+    const errorDiv = document.getElementById('shutdown-settings-error');
+    if (errorDiv) errorDiv.classList.add('hidden');
+    
+    // 显示模态框
+    modal.classList.remove('hidden');
+    
+    // 加载当前配置
+    try {
+        const result = await api.powerProtectionConfig();
+        if (result.code === 0 && result.data) {
+            const config = result.data;
+            document.getElementById('ss-low-voltage').value = config.low_voltage_threshold || 12.6;
+            document.getElementById('ss-recovery-voltage').value = config.recovery_voltage_threshold || 18.0;
+            document.getElementById('ss-shutdown-delay').value = config.shutdown_delay_sec || 60;
+            document.getElementById('ss-recovery-hold').value = config.recovery_hold_sec || 5;
+            document.getElementById('ss-fan-stop-delay').value = config.fan_stop_delay_sec || 60;
+        }
+    } catch (e) {
+        console.error('Failed to load shutdown settings:', e);
+        // 使用默认值
+        document.getElementById('ss-low-voltage').value = 12.6;
+        document.getElementById('ss-recovery-voltage').value = 18.0;
+        document.getElementById('ss-shutdown-delay').value = 60;
+        document.getElementById('ss-recovery-hold').value = 5;
+        document.getElementById('ss-fan-stop-delay').value = 60;
+    }
+}
+
+/**
+ * 关闭关机设置模态框
+ */
+function closeShutdownSettingsModal() {
+    const modal = document.getElementById('shutdown-settings-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+/**
+ * 保存关机设置
+ */
+async function saveShutdownSettings() {
+    const errorDiv = document.getElementById('shutdown-settings-error');
+    
+    const config = {
+        low_threshold: parseFloat(document.getElementById('ss-low-voltage').value),
+        recovery_threshold: parseFloat(document.getElementById('ss-recovery-voltage').value),
+        shutdown_delay: parseInt(document.getElementById('ss-shutdown-delay').value),
+        recovery_hold: parseInt(document.getElementById('ss-recovery-hold').value),
+        fan_stop_delay: parseInt(document.getElementById('ss-fan-stop-delay').value),
+        persist: true  // 标记需要持久化
+    };
+    
+    // 验证
+    if (config.low_threshold >= config.recovery_threshold) {
+        errorDiv.textContent = '低电压阈值必须小于恢复电压阈值';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+    
+    if (config.shutdown_delay < 10 || config.shutdown_delay > 600) {
+        errorDiv.textContent = '关机倒计时必须在 10-600 秒之间';
+        errorDiv.classList.remove('hidden');
+        return;
+    }
+    
+    try {
+        const result = await api.powerProtectionSet(config);
+        if (result.code === 0) {
+            showToast('✅ 关机设置已保存', 'success');
+            closeShutdownSettingsModal();
+        } else {
+            errorDiv.textContent = result.message || '保存失败';
+            errorDiv.classList.remove('hidden');
+        }
+    } catch (e) {
+        errorDiv.textContent = '保存失败: ' + e.message;
+        errorDiv.classList.remove('hidden');
+    }
+}
+
+/**
+ * 恢复默认关机设置
+ */
+async function resetShutdownSettings() {
+    if (!confirm('确认恢复默认设置？')) return;
+    
+    const config = {
+        low_threshold: 12.6,
+        recovery_threshold: 18.0,
+        shutdown_delay: 60,
+        recovery_hold: 5,
+        fan_stop_delay: 60,
+        persist: true
+    };
+    
+    try {
+        const result = await api.powerProtectionSet(config);
+        if (result.code === 0) {
+            // 更新界面
+            document.getElementById('ss-low-voltage').value = 12.6;
+            document.getElementById('ss-recovery-voltage').value = 18.0;
+            document.getElementById('ss-shutdown-delay').value = 60;
+            document.getElementById('ss-recovery-hold').value = 5;
+            document.getElementById('ss-fan-stop-delay').value = 60;
+            showToast('✅ 已恢复默认设置', 'success');
+        } else {
+            showToast('恢复失败: ' + (result.message || 'Unknown error'), 'error');
+        }
+    } catch (e) {
+        showToast('恢复失败: ' + e.message, 'error');
+    }
 }
 
 /**

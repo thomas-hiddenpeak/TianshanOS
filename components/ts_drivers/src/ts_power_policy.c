@@ -19,7 +19,10 @@
 #include "ts_power_policy.h"
 #include "ts_power_monitor.h"
 #include "ts_device_ctrl.h"
+#include "ts_fan.h"
+#include "ts_variable.h"
 #include "ts_event.h"
+#include "ts_config.h"
 #include "ts_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -28,8 +31,22 @@
 #include "freertos/semphr.h"
 #include "driver/gpio.h"
 #include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 
 #define TAG "ts_power_policy"
+
+/* 配置键定义 */
+#define CONFIG_KEY_LOW_VOLTAGE      "power.prot.low_v"
+#define CONFIG_KEY_RECOVERY_VOLTAGE "power.prot.recov_v"
+#define CONFIG_KEY_SHUTDOWN_DELAY   "power.prot.shutdown_delay"
+#define CONFIG_KEY_RECOVERY_HOLD    "power.prot.recovery_hold"
+#define CONFIG_KEY_FAN_STOP_DELAY   "power.prot.fan_delay"
+
+/* LPMU IP for ping check */
+#define LPMU_IP "10.10.99.99"
 
 /*===========================================================================*/
 /*                          Internal State                                    */
@@ -81,6 +98,85 @@ typedef struct {
 static power_policy_state_t s_pp = {0};
 
 /*===========================================================================*/
+/*                          Helper Functions                                  */
+/*===========================================================================*/
+
+/**
+ * @brief Ping 检测主机是否在线
+ */
+static bool ping_host(const char *ip, int timeout_ms)
+{
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(7);  // Echo port
+    
+    if (inet_pton(AF_INET, ip, &addr.sin_addr) != 1) {
+        return false;
+    }
+    
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        return false;
+    }
+    
+    // 设置超时
+    struct timeval tv;
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    
+    // 非阻塞连接检测
+    int flags = fcntl(sock, F_GETFL, 0);
+    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+    
+    int ret = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
+    bool reachable = false;
+    
+    if (ret == 0) {
+        reachable = true;
+    } else if (errno == EINPROGRESS) {
+        fd_set wfds;
+        FD_ZERO(&wfds);
+        FD_SET(sock, &wfds);
+        
+        tv.tv_sec = timeout_ms / 1000;
+        tv.tv_usec = (timeout_ms % 1000) * 1000;
+        
+        if (select(sock + 1, NULL, &wfds, NULL, &tv) > 0) {
+            int so_error;
+            socklen_t len = sizeof(so_error);
+            getsockopt(sock, SOL_SOCKET, SO_ERROR, &so_error, &len);
+            reachable = (so_error == 0);
+        }
+    }
+    
+    close(sock);
+    return reachable;
+}
+
+/**
+ * @brief 停止所有风扇
+ */
+static void stop_all_fans(void)
+{
+    TS_LOGI(TAG, "Stopping all fans...");
+    
+    if (!ts_fan_is_initialized()) {
+        TS_LOGW(TAG, "Fan subsystem not initialized, skip fan stop");
+        return;
+    }
+    
+    for (int i = 0; i < TS_FAN_MAX; i++) {
+        esp_err_t ret = ts_fan_set_mode(i, TS_FAN_MODE_OFF);
+        if (ret == ESP_OK) {
+            TS_LOGI(TAG, "Fan %d stopped", i);
+        }
+    }
+}
+
+/*===========================================================================*/
 /*                          Forward Declarations                              */
 /*===========================================================================*/
 
@@ -107,9 +203,12 @@ esp_err_t ts_power_policy_get_default_config(ts_power_policy_config_t *config)
     config->recovery_voltage_threshold = TS_POWER_POLICY_RECOVERY_VOLTAGE_DEFAULT;
     config->shutdown_delay_sec = TS_POWER_POLICY_SHUTDOWN_DELAY_DEFAULT;
     config->recovery_hold_sec = TS_POWER_POLICY_RECOVERY_HOLD_DEFAULT;
+    config->fan_stop_delay_sec = TS_POWER_POLICY_FAN_STOP_DELAY_DEFAULT;
     config->auto_recovery_enabled = true;
     config->enable_led_feedback = true;
     config->enable_device_shutdown = true;
+    config->enable_fan_control = true;
+    config->lpmu_ping_before_shutdown = true;
     
     return ESP_OK;
 }
@@ -128,6 +227,31 @@ esp_err_t ts_power_policy_init(const ts_power_policy_config_t *config)
         memcpy(&s_pp.config, config, sizeof(ts_power_policy_config_t));
     } else {
         ts_power_policy_get_default_config(&s_pp.config);
+    }
+    
+    /* 从存储加载持久化配置（优先级：SD卡 > NVS > 默认值） */
+    float stored_low = 0, stored_recovery = 0;
+    uint32_t stored_shutdown = 0, stored_recovery_hold = 0, stored_fan_delay = 0;
+    
+    if (ts_config_get_float(CONFIG_KEY_LOW_VOLTAGE, &stored_low, 0) == ESP_OK && stored_low > 0) {
+        s_pp.config.low_voltage_threshold = stored_low;
+        TS_LOGI(TAG, "Loaded low_voltage_threshold from storage: %.2fV", stored_low);
+    }
+    if (ts_config_get_float(CONFIG_KEY_RECOVERY_VOLTAGE, &stored_recovery, 0) == ESP_OK && stored_recovery > 0) {
+        s_pp.config.recovery_voltage_threshold = stored_recovery;
+        TS_LOGI(TAG, "Loaded recovery_voltage_threshold from storage: %.2fV", stored_recovery);
+    }
+    if (ts_config_get_uint32(CONFIG_KEY_SHUTDOWN_DELAY, &stored_shutdown, 0) == ESP_OK && stored_shutdown > 0) {
+        s_pp.config.shutdown_delay_sec = stored_shutdown;
+        TS_LOGI(TAG, "Loaded shutdown_delay_sec from storage: %lu", (unsigned long)stored_shutdown);
+    }
+    if (ts_config_get_uint32(CONFIG_KEY_RECOVERY_HOLD, &stored_recovery_hold, 0) == ESP_OK && stored_recovery_hold > 0) {
+        s_pp.config.recovery_hold_sec = stored_recovery_hold;
+        TS_LOGI(TAG, "Loaded recovery_hold_sec from storage: %lu", (unsigned long)stored_recovery_hold);
+    }
+    if (ts_config_get_uint32(CONFIG_KEY_FAN_STOP_DELAY, &stored_fan_delay, 0) == ESP_OK && stored_fan_delay > 0) {
+        s_pp.config.fan_stop_delay_sec = stored_fan_delay;
+        TS_LOGI(TAG, "Loaded fan_stop_delay_sec from storage: %lu", (unsigned long)stored_fan_delay);
     }
     
     /* 创建互斥锁 */
@@ -375,23 +499,6 @@ esp_err_t ts_power_policy_get_thresholds(float *low_threshold, float *recovery_t
     return ESP_OK;
 }
 
-esp_err_t ts_power_policy_set_shutdown_delay(uint32_t delay_sec)
-{
-    if (!s_pp.initialized) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    
-    if (delay_sec < 5 || delay_sec > 300) {
-        TS_LOGE(TAG, "Shutdown delay must be 5-300 seconds");
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    s_pp.config.shutdown_delay_sec = delay_sec;
-    TS_LOGI(TAG, "Shutdown delay set to %lu seconds", (unsigned long)delay_sec);
-    
-    return ESP_OK;
-}
-
 esp_err_t ts_power_policy_register_callback(ts_power_policy_callback_t callback, void *user_data)
 {
     s_pp.callback = callback;
@@ -578,7 +685,7 @@ static void power_policy_task(void *pvParameters)
                     
                 case TS_POWER_POLICY_STATE_PROTECTED:
                     /* 在保护状态下处理风扇关闭定时器 */
-                    if (!s_pp.fans_stopped && s_pp.shutdown_timer_sec > 0) {
+                    if (s_pp.config.enable_fan_control && !s_pp.fans_stopped && s_pp.shutdown_timer_sec > 0) {
                         s_pp.shutdown_timer_sec--;
                         
                         if (s_pp.shutdown_timer_sec % 10 == 0 ||
@@ -588,8 +695,8 @@ static void power_policy_task(void *pvParameters)
                         }
                         
                         if (s_pp.shutdown_timer_sec == 0) {
-                            TS_LOGW(TAG, "Stopping all fans");
-                            /* TODO: 调用风扇控制器停止所有风扇 */
+                            TS_LOGW(TAG, "Fan timer expired, stopping all fans now");
+                            stop_all_fans();
                             s_pp.fans_stopped = true;
                         }
                     }
@@ -748,17 +855,31 @@ static void execute_shutdown(void)
         }
     }
     
-    /* LPMU: 发送电源切换信号（脉冲触发）*/
+    /* LPMU: 先检查是否在线（ping），如果在线才执行关机 */
     if (s_pp.lpmu_powered) {
-        TS_LOGI(TAG, "Sending LPMU power toggle");
-        /* TODO: 检查 LPMU 是否在线（ping），如果在线才执行关机 */
-        ts_device_power_off(TS_DEVICE_LPMU);
+        if (s_pp.config.lpmu_ping_before_shutdown) {
+            TS_LOGI(TAG, "Pinging LPMU at %s before shutdown...", LPMU_IP);
+            bool lpmu_reachable = ping_host(LPMU_IP, 2000);
+            
+            if (lpmu_reachable) {
+                TS_LOGI(TAG, "LPMU is reachable, sending power toggle");
+                ts_device_power_off(TS_DEVICE_LPMU);
+            } else {
+                TS_LOGW(TAG, "LPMU unreachable, may already be off, skipping toggle");
+            }
+        } else {
+            TS_LOGI(TAG, "Sending LPMU power toggle (ping check disabled)");
+            ts_device_power_off(TS_DEVICE_LPMU);
+        }
     }
     
-    /* 启动风扇关闭定时器（60 秒后关闭风扇）*/
-    s_pp.shutdown_timer_sec = 60;
-    s_pp.fans_stopped = false;
-    TS_LOGI(TAG, "Shutdown timer started: will stop fans in 60s");
+    /* 启动风扇关闭定时器 */
+    if (s_pp.config.enable_fan_control) {
+        s_pp.shutdown_timer_sec = s_pp.config.fan_stop_delay_sec;
+        s_pp.fans_stopped = false;
+        TS_LOGI(TAG, "Fan stop timer started: will stop fans in %lu seconds", 
+                (unsigned long)s_pp.config.fan_stop_delay_sec);
+    }
 }
 
 static void execute_recovery(void)
@@ -813,4 +934,115 @@ static void update_led_status(void)
         
         last_state = current_state;
     }
+}
+
+/*===========================================================================*/
+/*                       Additional API Functions                             */
+/*===========================================================================*/
+
+esp_err_t ts_power_policy_set_shutdown_delay(uint32_t seconds)
+{
+    if (!s_pp.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (seconds < 10 || seconds > 600) {
+        TS_LOGE(TAG, "Invalid shutdown delay: %lu (must be 10-600 seconds)",
+                (unsigned long)seconds);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (xSemaphoreTake(s_pp.state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_pp.config.shutdown_delay_sec = seconds;
+        TS_LOGI(TAG, "Shutdown delay set to %lu seconds", (unsigned long)seconds);
+        xSemaphoreGive(s_pp.state_mutex);
+        return ESP_OK;
+    }
+    
+    return ESP_ERR_TIMEOUT;
+}
+
+esp_err_t ts_power_policy_set_recovery_hold(uint32_t seconds)
+{
+    if (!s_pp.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (seconds < 1 || seconds > 300) {
+        TS_LOGE(TAG, "Invalid recovery hold time: %lu (must be 1-300 seconds)",
+                (unsigned long)seconds);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (xSemaphoreTake(s_pp.state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_pp.config.recovery_hold_sec = seconds;
+        TS_LOGI(TAG, "Recovery hold time set to %lu seconds", (unsigned long)seconds);
+        xSemaphoreGive(s_pp.state_mutex);
+        return ESP_OK;
+    }
+    
+    return ESP_ERR_TIMEOUT;
+}
+
+esp_err_t ts_power_policy_set_fan_stop_delay(uint32_t seconds)
+{
+    if (!s_pp.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (seconds < 10 || seconds > 600) {
+        TS_LOGE(TAG, "Invalid fan stop delay: %lu (must be 10-600 seconds)",
+                (unsigned long)seconds);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (xSemaphoreTake(s_pp.state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_pp.config.fan_stop_delay_sec = seconds;
+        TS_LOGI(TAG, "Fan stop delay set to %lu seconds", (unsigned long)seconds);
+        xSemaphoreGive(s_pp.state_mutex);
+        return ESP_OK;
+    }
+    
+    return ESP_ERR_TIMEOUT;
+}
+
+esp_err_t ts_power_policy_update_variables(void)
+{
+    if (!s_pp.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    ts_power_policy_state_t state;
+    float voltage;
+    uint32_t countdown, recovery_timer;
+    uint32_t protection_count;
+    
+    /* 获取当前状态 */
+    if (xSemaphoreTake(s_pp.state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        state = s_pp.state;
+        voltage = s_pp.current_voltage;
+        countdown = s_pp.countdown_remaining_sec;
+        recovery_timer = s_pp.recovery_timer_sec;
+        protection_count = s_pp.protection_count;
+        xSemaphoreGive(s_pp.state_mutex);
+    } else {
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    /* 更新自动化变量 */
+    ts_variable_set_string("power_policy.state", ts_power_policy_get_state_name(state));
+    ts_variable_set_float("power_policy.voltage", voltage);
+    ts_variable_set_int("power_policy.countdown", (int)countdown);
+    ts_variable_set_int("power_policy.recovery_timer", (int)recovery_timer);
+    ts_variable_set_int("power_policy.protection_count", (int)protection_count);
+    
+    /* 根据状态设置 bool 变量 */
+    ts_variable_set_int("power_policy.is_normal", state == TS_POWER_POLICY_STATE_NORMAL ? 1 : 0);
+    ts_variable_set_int("power_policy.is_protected", 
+                        (state == TS_POWER_POLICY_STATE_PROTECTED || 
+                         state == TS_POWER_POLICY_STATE_SHUTDOWN) ? 1 : 0);
+    ts_variable_set_int("power_policy.is_low_voltage", 
+                        state == TS_POWER_POLICY_STATE_LOW_VOLTAGE ? 1 : 0);
+    
+    return ESP_OK;
 }
