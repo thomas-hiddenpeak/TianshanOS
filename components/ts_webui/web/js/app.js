@@ -1,5 +1,5 @@
 /**
- * TianShanOS Web App - Main Application
+ * TianshanOS Web App - Main Application
  */
 
 // =========================================================================
@@ -175,10 +175,11 @@ function updateAuthUI() {
     if (api.isLoggedIn()) {
         const username = api.getUsername();
         const level = api.getLevel();
-        const levelBadge = level === 'root' ? '🔑' : '👤';
+        const levelIcon = 'ri-user-line'; // 统一使用人形图标
         
         loginBtn.textContent = '登出';
-        userName.textContent = `${levelBadge} ${username}`;
+        loginBtn.classList.add('btn-service-style');
+        userName.innerHTML = `<i class="${levelIcon}"></i> ${username}`;
         userName.title = `权限级别: ${level}`;
         loginBtn.onclick = logout;
         
@@ -186,6 +187,7 @@ function updateAuthUI() {
         router.updateNavVisibility();
     } else {
         loginBtn.textContent = '登录';
+        loginBtn.classList.remove('btn-service-style');
         userName.textContent = '未登录';
         userName.title = '';
         loginBtn.onclick = showLoginModal;
@@ -274,7 +276,7 @@ function showPasswordChangeReminder() {
     modal.innerHTML = `
         <div class="modal-content" style="max-width:400px;">
             <div class="modal-header">
-                <h3>⚠️ 安全提醒</h3>
+                <h3>安全提醒</h3>
             </div>
             <div class="modal-body">
                 <p style="margin-bottom:16px;">您正在使用默认密码，建议立即修改以确保系统安全。</p>
@@ -522,16 +524,14 @@ async function loadSystemPage() {
     const content = document.getElementById('page-content');
     content.innerHTML = `
         <div class="page-system">
-            <h1>🖥️ 系统</h1>
-            
             <!-- 紧凑式系统概览 -->
             <div class="cards">
                 <!-- 资源监控 (标题栏含服务状态) - 放首位，高频被动观察 -->
                 <div class="card">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-                        <h3 style="margin:0">📊 资源监控</h3>
-                        <div onclick="showServicesModal()" style="cursor:pointer;font-size:0.9em;color:#007bff;padding:4px 12px;border-radius:4px;background:#f0f8ff">
-                            📋 服务 <span id="services-running" style="color:#2ecc71;font-weight:bold">-</span>/<span id="services-total">-</span>
+                        <h3 style="margin:0">资源监控</h3>
+                        <div onclick="showServicesModal()" style="cursor:pointer;font-size:0.9em;color:#666;padding:4px 12px;border-radius:4px;background:#f0f8ff">
+                            <i class="ri-service-line"></i> 服务 <span id="services-running" style="color:#666;font-weight:bold">-</span>/<span id="services-total" style="color:#666">-</span>
                         </div>
                     </div>
                     <div class="card-content" style="display:flex;gap:20px">
@@ -544,7 +544,7 @@ async function loadSystemPage() {
                         <div style="flex:1;border-left:1px solid #e0e0e0;padding-left:20px">
                             <div style="display:flex;justify-content:space-between;align-items:center">
                                 <p><strong>内存</strong></p>
-                                <button class="btn btn-sm" onclick="showMemoryDetailModal()" style="font-size:0.75em;padding:2px 8px" title="查看详细内存分析">📊 详情</button>
+                                <button class="btn btn-sm" onclick="showMemoryDetailModal()" style="font-size:0.75em;padding:2px 8px" title="查看详细内存分析">详情</button>
                             </div>
                             <div style="margin-top:5px">
                                 <p style="font-size:0.85em;margin:3px 0">DRAM:</p>
@@ -561,10 +561,10 @@ async function loadSystemPage() {
                 <!-- 系统总览 (包含电源) - 第二位，操作按钮在右手热区 -->
                 <div class="card">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-                        <h3 style="margin:0">📟 系统总览</h3>
+                        <h3 style="margin:0">系统总览</h3>
                         <div style="display:flex;gap:8px">
-                            <button class="btn btn-small" onclick="toggleUsbMux()" style="font-size:0.85em" id="usb-mux-btn" title="切换 USB 连接目标">🔌 USB: <span id="usb-mux-target">-</span></button>
-                            <button class="btn btn-warning btn-small" onclick="confirmReboot()" style="font-size:0.85em">🔄 重启</button>
+                            <button id="usb-mux-btn" class="btn btn-small" onclick="toggleUsbMux()" style="font-size:0.85em"><i class="ri-usb-line"></i> USB: <span id="usb-mux-target">-</span></button>
+                            <button class="btn btn-small btn-service-style" onclick="confirmReboot()" style="font-size:0.85em"><i class="ri-restart-line"></i> 重启</button>
                         </div>
                     </div>
                     <div class="card-content" style="display:flex;gap:20px">
@@ -587,8 +587,8 @@ async function loadSystemPage() {
                 <!-- 网络 & 时间 -->
                 <div class="card">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-                        <h3 style="margin:0">🌐 网络 & 时间</h3>
-                        <button class="btn btn-primary btn-small" onclick="router.navigate('/ota')" style="font-size:0.85em">📦 OTA</button>
+                        <h3 style="margin:0">网络 & 时间</h3>
+                        <button class="btn btn-small btn-service-style" onclick="router.navigate('/ota')" style="font-size:0.85em"><i class="ri-download-cloud-line"></i> OTA</button>
                     </div>
                     <div class="card-content" style="display:flex;gap:20px">
                         <div style="flex:1">
@@ -603,8 +603,8 @@ async function loadSystemPage() {
                             <p><strong>状态:</strong> <span id="sys-time-status">-</span> <span style="font-size:0.85em;color:#888">(<span id="sys-time-source">-</span>)</span></p>
                             <p><strong>时区:</strong> <span id="sys-timezone">-</span></p>
                             <div style="margin-top:8px;display:flex;gap:5px">
-                                <button class="btn btn-small" onclick="syncTimeFromBrowser()" style="font-size:0.85em;padding:4px 8px">🔄 同步</button>
-                                <button class="btn btn-small" onclick="showTimezoneModal()" style="font-size:0.85em;padding:4px 8px">⚙️ 时区</button>
+                                <button class="btn btn-small" onclick="syncTimeFromBrowser()" style="font-size:0.85em;padding:4px 8px"><i class="ri-refresh-line"></i> 同步</button>
+                                <button class="btn btn-small" onclick="showTimezoneModal()" style="font-size:0.85em;padding:4px 8px"><i class="ri-time-line"></i> 时区</button>
                             </div>
                         </div>
                     </div>
@@ -618,9 +618,9 @@ async function loadSystemPage() {
                     <div class="section-header">
                         <h2>🖥️ 设备面板</h2>
                         <div class="section-actions">
-                            <button class="btn btn-sm" id="agx-power-btn" onclick="toggleAgxPower()" title="AGX 电源控制">🔴 AGX 已关闭</button>
-                            <button class="btn btn-sm" id="lpmu-power-btn" onclick="toggleLpmuPower()" title="LPMU 电源按钮（脉冲触发）">⚠️ LPMU 检测中</button>
-                            <button class="btn btn-sm btn-primary" onclick="showWidgetManager()">📊 组件管理</button>
+                            <button id="agx-power-btn" class="btn btn-sm btn-danger" onclick="toggleAgxPower()">🔴 AGX 已关闭</button>
+                            <button id="lpmu-power-btn" class="btn btn-sm btn-warning" onclick="toggleLpmuPower()">⚠️ LPMU 检测中</button>
+                            <button class="btn btn-sm" onclick="showWidgetManager()" style="background:#f0f8ff;color:#666;border-color:#d0e8ff">📊 组件管理</button>
                         </div>
                     </div>
                     <!-- 快捷操作区域 -->
@@ -694,7 +694,7 @@ async function loadSystemPage() {
         <div id="services-modal" class="modal hidden">
             <div class="modal-content" style="max-width:900px">
                 <div class="modal-header">
-                    <h2>📋 服务状态</h2>
+                    <h2>服务状态</h2>
                     <button class="modal-close" onclick="hideServicesModal()">&times;</button>
                 </div>
                 <div class="modal-body">
@@ -794,7 +794,7 @@ async function refreshSystemPageOnce() {
         if (protStatus.data) {
             const running = protStatus.data.running || protStatus.data.initialized;
             document.getElementById('protection-status').textContent = 
-                running ? '✅ 已启用' : '⚠️ 已禁用';
+                running ? '已启用' : '已禁用';
         }
     } catch (e) { 
         document.getElementById('voltage').textContent = '-'; 
@@ -832,6 +832,302 @@ async function refreshSystemPageOnce() {
     
     // LPMU 状态检测
     await refreshLpmuState();
+}
+
+// =========================================================================
+// USB Mux 状态和切换 (支持 ESP32 / AGX / LPMU 三设备循环)
+// =========================================================================
+let usbMuxTarget = 'esp32';
+let usbMuxConfigured = false;
+
+const USB_MUX_TARGETS = ['esp32', 'agx', 'lpmu'];
+const USB_MUX_DISPLAY = { 'esp32': 'ESP', 'agx': 'AGX', 'lpmu': 'LPMU' };
+const USB_MUX_COLORS = { 'esp32': '', 'agx': 'btn-primary', 'lpmu': 'btn-success' };
+
+async function refreshUsbMuxStatus() {
+    try {
+        const result = await api.call('device.usb.status');
+        if (result.code === 0 && result.data) {
+            usbMuxConfigured = result.data.configured !== false;
+            usbMuxTarget = result.data.target || 'esp32';
+            updateUsbMuxButton();
+        }
+    } catch (e) {
+        console.warn('USB Mux status unavailable:', e.message);
+        usbMuxConfigured = false;
+        updateUsbMuxButton();
+    }
+}
+
+function updateUsbMuxButton() {
+    const targetEl = document.getElementById('usb-mux-target');
+    const btn = document.getElementById('usb-mux-btn');
+
+    if (!usbMuxConfigured) {
+        if (targetEl) targetEl.textContent = '未配置';
+        if (btn) {
+            btn.className = 'btn btn-small';
+            btn.disabled = true;
+        }
+        return;
+    }
+
+    const displayName = USB_MUX_DISPLAY[usbMuxTarget] || usbMuxTarget.toUpperCase();
+    if (targetEl) {
+        targetEl.textContent = displayName;
+    }
+    if (btn) {
+        btn.disabled = false;
+        const colorClass = USB_MUX_COLORS[usbMuxTarget] || '';
+        btn.className = 'btn btn-small ' + colorClass;
+    }
+}
+
+async function toggleUsbMux() {
+    if (!usbMuxConfigured) {
+        showToast('USB MUX 未配置', 'warning');
+        return;
+    }
+
+    // 循环切换: esp32 → agx → lpmu → esp32
+    const currentIdx = USB_MUX_TARGETS.indexOf(usbMuxTarget);
+    const nextIdx = (currentIdx + 1) % USB_MUX_TARGETS.length;
+    const newTarget = USB_MUX_TARGETS[nextIdx];
+    const displayName = USB_MUX_DISPLAY[newTarget];
+
+    try {
+        showToast(`切换 USB 到 ${displayName}...`, 'info');
+        const result = await api.call('device.usb.set', { target: newTarget }, 'POST');
+
+        if (result.code === 0) {
+            usbMuxTarget = newTarget;
+            updateUsbMuxButton();
+            showToast(`USB 已切换到 ${displayName}`, 'success');
+        } else {
+            showToast(`切换失败: ${result.message || '未知错误'}`, 'error');
+        }
+    } catch (e) {
+        showToast(`切换失败: ${e.message}`, 'error');
+    }
+}
+
+// AGX 电源控制（持续电平：LOW=上电，HIGH=断电）
+let agxPowerState = false; // false=断电(HIGH), true=上电(LOW)
+
+async function refreshAgxPowerState() {
+    try {
+        const result = await api.call('device.status', { device: 'agx' });
+        if (result.code === 0 && result.data) {
+            agxPowerState = result.data.state === 'on' || result.data.state === 'booting';
+            updateAgxPowerButton();
+        }
+    } catch (e) {
+        console.warn('AGX status unavailable:', e.message);
+    }
+}
+
+function updateAgxPowerButton() {
+    const btn = document.getElementById('agx-power-btn');
+    if (!btn) return;
+
+    if (agxPowerState) {
+        btn.innerHTML = '🟢 AGX 运行中';
+        btn.className = 'btn btn-sm btn-success';
+        btn.title = '点击关闭 AGX 电源';
+    } else {
+        btn.innerHTML = '🔴 AGX 已关闭';
+        btn.className = 'btn btn-sm btn-danger';
+        btn.title = '点击开启 AGX 电源';
+    }
+}
+
+async function toggleAgxPower() {
+    const action = agxPowerState ? 'off' : 'on';
+    const actionText = agxPowerState ? '断电' : '上电';
+
+    try {
+        showToast(`AGX ${actionText}中...`, 'info');
+        const result = await api.call('device.power', { device: 'agx', action: action }, 'POST');
+
+        if (result.code === 0) {
+            agxPowerState = !agxPowerState;
+            updateAgxPowerButton();
+            showToast(`AGX 已${actionText}`, 'success');
+        } else {
+            showToast(`AGX ${actionText}失败: ${result.message || '未知错误'}`, 'error');
+        }
+    } catch (e) {
+        showToast(`AGX ${actionText}失败: ${e.message}`, 'error');
+    }
+}
+
+// LPMU 电源控制（脉冲触发，像按物理按钮）
+// LPMU 状态: 'unknown' | 'online' | 'offline' | 'detecting'
+let lpmuState = 'unknown';
+let deviceStateInterval = null;
+let lpmuPollingInterval = null;
+let lpmuPollingStartTime = 0;
+let lpmuPollingMode = 'startup'; // 'startup' | 'shutdown'
+
+async function toggleLpmuPower() {
+    if (!confirm('确定要触发 LPMU 电源按钮吗？\n\n这将发送一个脉冲信号，效果类似按物理电源按钮。')) {
+        return;
+    }
+
+    try {
+        showToast('LPMU 电源触发中...', 'info');
+        // 记录触发前的状态（用于决定检测逻辑）
+        const wasOnline = (lpmuState === 'online');
+
+        // 使用 toggle 动作直接发送脉冲，不检查当前状态
+        const result = await api.call('device.power', { device: 'lpmu', action: 'toggle' }, 'POST');
+
+        if (result.code === 0) {
+            showToast('LPMU 电源已触发，开始检测状态...', 'success');
+            // 启动状态检测（传入之前的状态）
+            startLpmuStatePolling(wasOnline);
+        } else {
+            showToast(`LPMU 触发失败: ${result.message || '未知错误'}`, 'error');
+        }
+    } catch (e) {
+        showToast(`LPMU 触发失败: ${e.message}`, 'error');
+    }
+}
+
+// 启动 LPMU 状态轮询（触发电源后调用）
+function startLpmuStatePolling(wasOnline = false) {
+    stopLpmuStatePolling();
+
+    lpmuState = 'detecting';
+    lpmuPollingMode = wasOnline ? 'shutdown' : 'startup';
+    updateLpmuPowerButton();
+
+    lpmuPollingStartTime = Date.now();
+
+    const minWaitSec = wasOnline ? 40 : 0;
+    const maxWaitSec = wasOnline ? 60 : 80;
+
+    lpmuPollingInterval = setInterval(async () => {
+        const elapsed = (Date.now() - lpmuPollingStartTime) / 1000;
+        const remaining = Math.round(maxWaitSec - elapsed);
+
+        let isReachable = false;
+        try {
+            const result = await api.call('device.ping', { host: '10.10.99.99', timeout: 1000 });
+            isReachable = result.code === 0 && result.data && result.data.reachable;
+        } catch (e) {}
+
+        if (lpmuPollingMode === 'startup') {
+            if (isReachable) {
+                lpmuState = 'online';
+                updateLpmuPowerButton();
+                stopLpmuStatePolling();
+                showToast(`LPMU 已上线 (${Math.round(elapsed)}秒)`, 'success');
+                return;
+            }
+            updateLpmuPowerButton(remaining);
+            if (elapsed >= maxWaitSec) {
+                lpmuState = 'offline';
+                updateLpmuPowerButton();
+                stopLpmuStatePolling();
+                showToast('LPMU 开机检测超时，认定为已关闭', 'warning');
+            }
+        } else {
+            if (elapsed < minWaitSec) {
+                updateLpmuPowerButton(remaining);
+                return;
+            }
+            if (!isReachable) {
+                lpmuState = 'offline';
+                updateLpmuPowerButton();
+                stopLpmuStatePolling();
+                showToast(`LPMU 已关闭 (${Math.round(elapsed)}秒)`, 'success');
+                return;
+            }
+            updateLpmuPowerButton(remaining);
+            if (elapsed >= maxWaitSec) {
+                lpmuState = 'online';
+                updateLpmuPowerButton();
+                stopLpmuStatePolling();
+                showToast('LPMU 关机检测超时，设备可能仍在运行', 'warning');
+            }
+        }
+    }, 5000);
+}
+
+function stopLpmuStatePolling() {
+    if (lpmuPollingInterval) {
+        clearInterval(lpmuPollingInterval);
+        lpmuPollingInterval = null;
+    }
+}
+
+function startDeviceStateMonitor() {
+    if (deviceStateInterval) {
+        clearInterval(deviceStateInterval);
+    }
+
+    if (!lpmuPollingInterval) {
+        refreshLpmuState();
+    }
+    refreshAgxPowerState();
+
+    deviceStateInterval = setInterval(() => {
+        if (!lpmuPollingInterval) {
+            refreshLpmuState();
+        }
+    }, 10000);
+}
+
+function stopDeviceStateMonitor() {
+    if (deviceStateInterval) {
+        clearInterval(deviceStateInterval);
+        deviceStateInterval = null;
+    }
+}
+
+async function refreshLpmuState() {
+    if (lpmuPollingInterval) return;
+
+    try {
+        const result = await api.call('device.ping', { host: '10.10.99.99', timeout: 1000 });
+        if (result.code === 0 && result.data) {
+            lpmuState = result.data.reachable ? 'online' : 'offline';
+        } else {
+            lpmuState = 'unknown';
+        }
+    } catch (e) {
+        lpmuState = 'unknown';
+    }
+    updateLpmuPowerButton();
+}
+
+function updateLpmuPowerButton(remainingSec = 0) {
+    const btn = document.getElementById('lpmu-power-btn');
+    if (!btn) return;
+
+    switch (lpmuState) {
+        case 'online':
+            btn.innerHTML = '🟢 LPMU 运行中';
+            btn.className = 'btn btn-sm btn-success';
+            btn.title = 'LPMU 在线 (ping 10.10.99.99 可达)\n点击触发电源按钮';
+            break;
+        case 'offline':
+            btn.innerHTML = '🔴 LPMU 已关闭';
+            btn.className = 'btn btn-sm btn-danger';
+            btn.title = 'LPMU 离线 (ping 10.10.99.99 不可达)\n点击触发电源按钮';
+            break;
+        case 'detecting':
+            const timeText = remainingSec > 0 ? ` (${remainingSec}s)` : '';
+            btn.innerHTML = `⏳ 状态获取中${timeText}`;
+            btn.className = 'btn btn-sm btn-warning';
+            btn.title = '正在检测 LPMU 状态...\n最多等待 80 秒';
+            break;
+        default:
+            btn.innerHTML = '⚠️ LPMU 检测中';
+            btn.className = 'btn btn-sm btn-warning';
+            btn.title = 'LPMU 状态未知\n点击触发电源按钮';
+    }
 }
 
 // 更新系统信息
@@ -895,7 +1191,7 @@ function updateTimeInfo(data) {
         setTimeout(() => syncTimeFromBrowser(true), 500);  // 延迟执行避免阻塞页面加载
     }
     
-    const statusText = data.synced ? '✅ 已同步' : '⏳ 未同步';
+    const statusText = data.synced ? '已同步' : '未同步';
     const statusElem = document.getElementById('sys-time-status');
     if (statusElem) {
         statusElem.textContent = statusText;
@@ -1151,7 +1447,7 @@ function updateServiceList(data) {
             <td>${svc.name}</td>
             <td><span class="status-badge ${stateClass}">${svc.state}</span></td>
             <td>${svc.phase}</td>
-            <td>${svc.healthy ? '✅' : '❌'}</td>
+            <td>${svc.healthy ? '<i class="ri-check-line health-ok"></i>' : '<i class="ri-close-line health-fail"></i>'}</td>
             <td>
                 <button class="btn btn-small" onclick="serviceAction('${svc.name}', 'restart')">重启</button>
             </td>
@@ -2733,7 +3029,7 @@ function renderWidgetHtml(widget) {
         case 'number':
             contentHtml = `
                 <div class="dw-number-container">
-                    <div class="dw-number-icon" style="color: ${color};">${icon || '📊'}</div>
+                    <div class="dw-number-icon" style="color: ${color};">${icon || '<i class="ri-dashboard-line"></i>'}</div>
                     <div class="dw-number-value">
                         <span class="dw-number-num" id="dw-${id}-value" style="color: ${color};">-</span>
                         <span class="dw-number-unit">${unit || ''}</span>
@@ -2795,17 +3091,17 @@ function renderWidgetHtml(widget) {
                     <button class="btn btn-sm dw-log-collapse-btn" 
                             id="dw-${id}-collapse" onclick="event.stopPropagation();toggleLogCollapse('${id}')"
                             title="${isCollapsed ? '展开日志' : '折叠日志'}">
-                        ${isCollapsed ? '▼' : '▲'}
+                        <i class="ri-arrow-${isCollapsed ? 'down' : 'up'}-s-line"></i>
                     </button>
                     <button class="btn btn-sm ${isReading ? 'btn-danger' : 'btn-primary'}" 
                             id="dw-${id}-toggle" onclick="event.stopPropagation();toggleLogReading('${id}')">
-                        ${isReading ? '⏹️ 停止' : '▶️ 读取'}
+                        <i class="ri-${isReading ? 'stop' : 'play'}-line"></i> ${isReading ? '停止' : '读取'}
                     </button>
                     <button class="btn btn-sm" onclick="event.stopPropagation();refreshLogOnce('${id}')" title="刷新一次">
-                        🔄
+                        <i class="ri-refresh-line"></i>
                     </button>
                     <button class="btn btn-sm" onclick="event.stopPropagation();clearLogWidget('${id}')" title="清空">
-                        🗑️
+                        <i class="ri-delete-bin-line"></i>
                     </button>
                     <span class="dw-log-status" id="dw-${id}-status">${isReading ? '读取中...' : '已停止'}</span>
                 </div>
@@ -2818,7 +3114,7 @@ function renderWidgetHtml(widget) {
         default:
             contentHtml = `
                 <div class="dw-text-container">
-                    <div class="dw-text-icon">${icon || '📝'}</div>
+                    <div class="dw-text-icon">${icon || '<i class="ri-file-text-line"></i>'}</div>
                     <div class="dw-text-value" id="dw-${id}-value" style="color: ${color};">-</div>
                 </div>`;
             break;
@@ -3088,7 +3384,7 @@ function toggleLogCollapse(widgetId) {
     }
     
     if (btn) {
-        btn.textContent = widget._isCollapsed ? '▼' : '▲';
+        btn.innerHTML = `<i class="ri-arrow-${widget._isCollapsed ? 'down' : 'up'}-s-line"></i>`;
         btn.title = widget._isCollapsed ? '展开日志' : '折叠日志';
     }
     
@@ -3133,7 +3429,7 @@ function startLogReading(widgetId) {
         if (container) container.classList.remove('dw-log-collapsed');
         if (toolbar) toolbar.classList.remove('dw-log-toolbar-collapsed');
         if (btn) {
-            btn.textContent = '▲';
+            btn.innerHTML = '<i class="ri-arrow-up-s-line"></i>';
             btn.title = '折叠日志';
         }
     }
@@ -3176,7 +3472,7 @@ function updateLogToggleButton(widgetId, isReading) {
     
     if (btn) {
         btn.className = `btn btn-sm ${isReading ? 'btn-danger' : 'btn-primary'}`;
-        btn.innerHTML = isReading ? '⏹️ 停止' : '▶️ 读取';
+        btn.innerHTML = `<i class="ri-${isReading ? 'stop' : 'play'}-line"></i> ${isReading ? '停止' : '读取'}`;
     }
     if (status) {
         status.textContent = isReading ? '读取中...' : '已停止';
@@ -3322,13 +3618,13 @@ function showWidgetManager(editWidgetId = null) {
                         <h4>📦 已添加组件</h4>
                         <div id="dw-manager-list" class="dw-manager-list"></div>
                         <button class="btn btn-primary btn-block" onclick="showAddWidgetPanel()" style="margin-top:12px;">
-                            ➕ 添加新组件
+                            <i class="ri-add-line"></i> 添加新组件
                         </button>
                     </div>
                 </div>
                 <div class="dw-manager-main" id="dw-manager-main">
                     <div class="dw-manager-empty">
-                        <div style="font-size:48px;opacity:0.3;">📊</div>
+                        <i class="ri-dashboard-line" style="font-size:48px;opacity:0.3;"></i>
                         <p>选择左侧组件进行编辑<br>或添加新组件</p>
                     </div>
                 </div>
@@ -3373,13 +3669,13 @@ function renderWidgetManagerList() {
     
     list.innerHTML = dataWidgets.map((w, idx) => `
         <div class="dw-manager-item" data-id="${w.id}" onclick="showWidgetEditPanel('${w.id}')">
-            <span class="dw-manager-item-icon">${w.icon || WIDGET_TYPES[w.type]?.icon || '📊'}</span>
+            <span class="dw-manager-item-icon">${w.icon || WIDGET_TYPES[w.type]?.icon || '<i class="ri-dashboard-line"></i>'}</span>
             <span class="dw-manager-item-label">${w.label}</span>
             <span class="dw-manager-item-type">${WIDGET_TYPES[w.type]?.name || w.type}</span>
             <div class="dw-manager-item-actions">
-                <button class="dw-btn-icon" onclick="event.stopPropagation();moveWidget('${w.id}',-1)" title="上移" ${idx === 0 ? 'disabled' : ''}>⬆️</button>
-                <button class="dw-btn-icon" onclick="event.stopPropagation();moveWidget('${w.id}',1)" title="下移" ${idx === dataWidgets.length - 1 ? 'disabled' : ''}>⬇️</button>
-                <button class="dw-btn-icon" onclick="event.stopPropagation();deleteDataWidget('${w.id}')" title="删除">🗑️</button>
+                <button class="dw-btn-icon" onclick="event.stopPropagation();moveWidget('${w.id}',-1)" title="上移" ${idx === 0 ? 'disabled' : ''}><i class="ri-arrow-up-line"></i></button>
+                <button class="dw-btn-icon" onclick="event.stopPropagation();moveWidget('${w.id}',1)" title="下移" ${idx === dataWidgets.length - 1 ? 'disabled' : ''}><i class="ri-arrow-down-line"></i></button>
+                <button class="dw-btn-icon" onclick="event.stopPropagation();deleteDataWidget('${w.id}')" title="删除"><i class="ri-delete-bin-line"></i></button>
             </div>
         </div>
     `).join('');
@@ -3658,8 +3954,8 @@ function showWidgetEditPanel(widgetId) {
             </div>
             
             <div class="dw-edit-actions">
-                <button class="btn btn-danger" onclick="deleteDataWidget('${widget.id}')">🗑️ 删除</button>
-                <button class="btn btn-primary" onclick="saveWidgetEdit('${widget.id}')">💾 保存</button>
+                <button class="btn btn-danger" onclick="deleteDataWidget('${widget.id}')"><i class="ri-delete-bin-line"></i> 删除</button>
+                <button class="btn btn-primary" onclick="saveWidgetEdit('${widget.id}')"><i class="ri-save-line"></i> 保存</button>
             </div>
         </div>
     `;
@@ -3831,17 +4127,17 @@ async function refreshQuickActions() {
                             isRunning = false;
                         }
                         
-                        const statusIcon = isRunning ? '🟢' : '⚫';
+                        const statusIcon = isRunning ? '<i class="ri-record-circle-fill" style="color:#2e7d32"></i>' : '<i class="ri-record-circle-line" style="color:#999"></i>';
                         const statusTitle = isRunning ? '进程运行中' : '进程未运行';
                         // 状态徽章 + 底部操作栏（传递 pidFile 用于精确停止）
                         nohupBtns = `
                             <span class="nohup-status-badge" title="${statusTitle}">${statusIcon}</span>
                             <div class="quick-action-nohup-bar" onclick="event.stopPropagation()">
                                 <button onclick="quickActionViewLog('${escapeHtml(nohupInfo.logFile)}', '${escapeHtml(nohupInfo.hostId)}')" title="查看日志">
-                                    📄 日志
+                                    <i class="ri-file-text-line"></i> 日志
                                 </button>
                                 <button class="btn-stop" onclick="quickActionStopProcess('${escapeHtml(nohupInfo.pidFile)}', '${escapeHtml(nohupInfo.hostId)}', '${escapeHtml(nohupInfo.cmdName)}')" title="终止进程" ${!isRunning ? 'disabled' : ''}>
-                                    ⏹ 停止
+                                    <i class="ri-stop-line"></i> 停止
                                 </button>
                             </div>
                         `;
@@ -3852,14 +4148,17 @@ async function refreshQuickActions() {
                         ? `showToast('进程正在运行中，请先停止', 'warning')`
                         : `triggerQuickAction('${escapeHtml(rule.id)}')`;
                     
+                    // 移除名称开头的emoji (包括常见emoji和零宽字符)
+                    const cleanName = rule.name.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F1E0}-\u{1F1FF}\u200D]+\s*/gu, '').trim();
+                    
                     return `
                         <div class="quick-action-card${nohupInfo ? ' has-nohup' : ''}${isRunning ? ' is-running' : ''}" 
                              id="quick-action-${escapeHtml(rule.id)}"
                              data-rule-id="${escapeHtml(rule.id)}"
                              onclick="${cardOnClick}" 
-                             title="${escapeHtml(rule.name)}">
+                             title="${escapeHtml(cleanName)}">
                             <div class="quick-action-icon">${iconHtml}</div>
-                            <div class="quick-action-name">${escapeHtml(rule.name)}</div>
+                            <div class="quick-action-name">${escapeHtml(cleanName)}</div>
                             ${nohupBtns}
                         </div>
                     `;
@@ -3868,7 +4167,7 @@ async function refreshQuickActions() {
             } else {
                 container.innerHTML = `
                     <div class="quick-actions-empty">
-                        <span>🎯</span>
+                        <i class="ri-dashboard-line" style="font-size:2.5em;opacity:0.3"></i>
                         <p>暂无快捷操作</p>
                         <small>在自动化规则中启用"手动触发"选项</small>
                     </div>
@@ -3919,13 +4218,13 @@ async function triggerQuickAction(ruleId) {
         console.log('triggerQuickAction: result=', result);
         
         if (result.code === 0) {
-            showToast('✅ 操作已执行', 'success');
+            showToast('操作已执行', 'success');
             // 对于 nohup 命令，需要等待更长时间让进程启动并创建 PID 文件
             // 先显示执行中状态，然后延迟刷新获取实际状态
             card.classList.add('is-running');
             setTimeout(() => refreshQuickActions(), 2500);  // 等待 2.5 秒让进程启动
         } else {
-            showToast('❌ ' + (result.message || '执行失败'), 'error');
+            showToast((result.message || '执行失败'), 'error');
             card.style.pointerEvents = '';  // 失败时恢复点击
             // 恢复原始图标
             if (iconEl && originalIcon) {
@@ -3936,7 +4235,7 @@ async function triggerQuickAction(ruleId) {
         card.classList.remove('triggering');
     } catch (e) {
         console.error('triggerQuickAction error:', e);
-        showToast('❌ 执行失败: ' + e.message, 'error');
+        showToast('执行失败: ' + e.message, 'error');
         if (card) {
             card.classList.remove('triggering');
             card.style.pointerEvents = '';
@@ -4046,7 +4345,7 @@ async function quickActionViewLog(logFile, hostId) {
     // 获取主机信息
     const host = window._sshHostsData?.[hostId];
     if (!host) {
-        showToast('❌ 主机不存在', 'error');
+        showToast('主机不存在', 'error');
         return;
     }
     
@@ -4055,7 +4354,7 @@ async function quickActionViewLog(logFile, hostId) {
         <div id="quick-log-modal" class="modal">
             <div class="modal-content" style="max-width:1400px;width:90%">
                 <div class="modal-header">
-                    <h2>📄 日志 - <small style="font-weight:normal;font-size:0.7em;color:#888">${escapeHtml(logFile)}</small></h2>
+                    <h2><i class="ri-file-text-line"></i> 日志 - <small style="font-weight:normal;font-size:0.7em;color:#888">${escapeHtml(logFile)}</small></h2>
                     <button class="modal-close" onclick="closeQuickLogModal()">&times;</button>
                 </div>
                 <div class="modal-body" style="padding:0">
@@ -4063,7 +4362,7 @@ async function quickActionViewLog(logFile, hostId) {
                 </div>
                 <div class="modal-footer" style="display:flex;gap:10px;padding:10px 15px;justify-content:space-between;align-items:center">
                     <div style="display:flex;gap:8px;align-items:center">
-                        <button class="btn btn-danger" id="quick-log-tail-btn" onclick="toggleQuickLogTail('${escapeHtml(logFile)}', '${escapeHtml(hostId)}')">⏹️ 停止跟踪</button>
+                        <button class="btn btn-danger" id="quick-log-tail-btn" onclick="toggleQuickLogTail('${escapeHtml(logFile)}', '${escapeHtml(hostId)}')"><i class="ri-stop-line"></i> 停止跟踪</button>
                         <label style="display:flex;align-items:center;gap:4px;font-size:0.85em;color:#888">
                             间隔
                             <select id="quick-log-interval" onchange="updateQuickLogInterval('${escapeHtml(logFile)}', '${escapeHtml(hostId)}')" style="padding:2px 6px;border-radius:4px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-color);font-size:0.9em">
@@ -4243,7 +4542,7 @@ function closeQuickLogModal() {
 async function quickActionStopProcess(pidFile, hostId, cmdName) {
     const host = window._sshHostsData?.[hostId];
     if (!host) {
-        showToast('❌ 主机不存在', 'error');
+        showToast('主机不存在', 'error');
         return;
     }
     
@@ -4269,10 +4568,10 @@ async function quickActionStopProcess(pidFile, hostId, cmdName) {
             // 刷新状态
             setTimeout(() => refreshQuickActions(), 1000);
         } else {
-            showToast('❌ ' + (result.message || '操作失败'), 'error');
+            showToast((result.message || '操作失败'), 'error');
         }
     } catch (e) {
-        showToast('❌ 错误: ' + e.message, 'error');
+        showToast('错误: ' + e.message, 'error');
     }
 }
 
@@ -6076,8 +6375,6 @@ async function loadNetworkPage() {
     const content = document.getElementById('page-content');
     content.innerHTML = `
         <div class="page-network">
-            <h1>🌐 网络配置</h1>
-            
             <!-- 网络状态概览 -->
             <div class="net-overview">
                 <div class="net-status-row">
@@ -6316,7 +6613,7 @@ async function loadNetworkPage() {
                     </div>
                     <div class="form-group">
                         <label>SSID</label>
-                        <input type="text" id="ap-ssid-input" placeholder="TianShanOS">
+                        <input type="text" id="ap-ssid-input" placeholder="TianshanOS">
                     </div>
                     <div class="form-group">
                         <label>密码 (留空=开放)</label>
@@ -6801,8 +7098,6 @@ async function loadFilesPage() {
     const content = document.getElementById('page-content');
     content.innerHTML = `
         <div class="page-files">
-            <h1>📂 文件管理</h1>
-            
             <div class="file-toolbar">
                 <div class="breadcrumb" id="breadcrumb"></div>
                 <div class="file-actions">
@@ -7688,9 +7983,6 @@ async function loadCommandsPage() {
     const content = document.getElementById('page-content');
     content.innerHTML = `
         <div class="page-commands">
-            <h1>📜 SSH 指令管理</h1>
-            <p style="color:#666;margin-bottom:20px">为已部署的 SSH 主机创建和管理快捷指令，一键执行远程命令</p>
-            
             <!-- 主机选择和指令列表 -->
             <div class="section">
                 <div class="section-header">
@@ -9297,8 +9589,6 @@ async function loadSecurityPage() {
     const content = document.getElementById('page-content');
     content.innerHTML = `
         <div class="page-security">
-            <h1>安全与连接</h1>
-            
             <div class="section">
                 <h2>� 密钥管理</h2>
                 <div class="button-group" style="margin-bottom:15px">
@@ -9388,7 +9678,7 @@ async function loadSecurityPage() {
                     </div>
                     <div class="form-group">
                         <label>备注 (可选)</label>
-                        <input type="text" id="keygen-comment" placeholder="如: TianShanOS@device">
+                        <input type="text" id="keygen-comment" placeholder="如: TianshanOS@device">
                     </div>
                     <div class="form-group">
                         <label>别名 (可选)</label>
@@ -9897,7 +10187,7 @@ async function testSshConnection(hostId) {
             port: host.port,
             username: host.username,
             keyid: host.keyid || 'default',
-            command: 'echo "TianShanOS SSH Test OK"'
+            command: 'echo "TianshanOS SSH Test OK"'
         });
         
         if (execResult.code === 0) {
@@ -9929,7 +10219,7 @@ async function testSshHostByIndex(index) {
             port: host.port,
             user: host.username,  // API 需要 'user' 而不是 'username'
             keyid: host.keyid || 'default',
-            command: 'echo "TianShanOS SSH Test OK"',
+            command: 'echo "TianshanOS SSH Test OK"',
             trust_new: true
         });
         
@@ -10941,7 +11231,6 @@ async function loadTerminalPage() {
     content.innerHTML = `
         <div class="terminal-page">
             <div class="terminal-header">
-                <h1>🖥️ Web 终端</h1>
                 <div class="terminal-actions">
                     <button class="btn btn-sm" onclick="console.log('Button clicked!'); window.showTerminalLogsModal();">📋 日志</button>
                     <button class="btn btn-sm" onclick="terminalClear()">清屏</button>
@@ -11646,7 +11935,7 @@ async function loadOtaPage() {
     const content = document.getElementById('page-content');
     content.innerHTML = `
         <div class="page-ota">
-            <h1>📦 固件升级</h1>
+            <h1>固件升级</h1>
             
             <!-- 核心信息区：版本 + OTA服务器 -->
             <div class="ota-main-card">
@@ -11663,8 +11952,8 @@ async function loadOtaPage() {
                     <div class="server-input-group">
                         <input type="text" id="ota-server-input" class="form-input" 
                                placeholder="http://192.168.1.100:57807">
-                        <button class="btn btn-icon" onclick="saveOtaServer()" title="保存到设备">💾</button>
-                        <button class="btn btn-primary" onclick="checkForUpdates()">🔍 检查更新</button>
+                        <button class="btn btn-icon" onclick="saveOtaServer()" title="保存到设备">保存</button>
+                        <button class="btn btn-primary" onclick="checkForUpdates()" style="background-color: #f0f8ff; color: #333;">检查更新</button>
                     </div>
                 </div>
                 
@@ -11685,14 +11974,14 @@ async function loadOtaPage() {
                         <span id="ota-message"></span>
                     </div>
                     <div class="progress-actions">
-                        <button class="btn btn-danger btn-small" id="ota-abort-btn" onclick="abortOta()">❌ 中止</button>
+                        <button class="btn btn-danger btn-small" id="ota-abort-btn" onclick="abortOta()">中止</button>
                     </div>
                 </div>
             </div>
             
             <!-- 分区管理（放在升级方式之前，让用户先了解当前状态） -->
             <details class="ota-section" open>
-                <summary>💾 分区管理</summary>
+                <summary>分区管理</summary>
                 <div class="ota-partitions" id="ota-partitions">
                     <div class="loading">加载中...</div>
                 </div>
@@ -11700,10 +11989,10 @@ async function loadOtaPage() {
             
             <!-- 手动升级（可折叠） -->
             <details class="ota-section">
-                <summary>🔧 手动升级</summary>
+                <summary>手动升级</summary>
                 <div class="ota-methods">
                     <div class="ota-method">
-                        <h4>🌐 从 URL 升级</h4>
+                        <h4>从 URL 升级</h4>
                         <div class="method-content">
                             <input type="text" id="ota-url-input" class="form-input" 
                                    placeholder="http://example.com/firmware.bin">
@@ -11711,18 +12000,18 @@ async function loadOtaPage() {
                                 <label><input type="checkbox" id="ota-url-include-www" checked> 包含 WebUI</label>
                                 <label><input type="checkbox" id="ota-url-skip-verify"> 跳过验证</label>
                             </div>
-                            <button class="btn btn-primary btn-small" onclick="otaFromUrl()">🚀 升级</button>
+                            <button class="btn btn-primary btn-small" onclick="otaFromUrl()" style="background-color: #f0f8ff; color: #333;">升级</button>
                         </div>
                     </div>
                     <div class="ota-method">
-                        <h4>📂 从 SD 卡升级</h4>
+                        <h4>从 SD 卡升级</h4>
                         <div class="method-content">
                             <input type="text" id="ota-file-input" class="form-input" 
                                    placeholder="/sdcard/firmware.bin">
                             <div class="method-options">
                                 <label><input type="checkbox" id="ota-file-include-www" checked> 包含 WebUI</label>
                             </div>
-                            <button class="btn btn-primary btn-small" onclick="otaFromFile()">🚀 升级</button>
+                            <button class="btn btn-primary btn-small" onclick="otaFromFile()" style="background-color: #f0f8ff; color: #333;">升级</button>
                         </div>
                     </div>
                 </div>
@@ -12113,7 +12402,7 @@ async function loadOtaData() {
             const v = versionResult.data;
             document.getElementById('ota-current-version').textContent = v.version || '未知';
             document.getElementById('ota-version-meta').textContent = 
-                `${v.project || 'TianShanOS'} · ${v.compile_date || ''} ${v.compile_time || ''} · IDF ${v.idf_version || ''}`;
+                `${v.project || 'TianshanOS'} · ${v.compile_date || ''} ${v.compile_time || ''} · IDF ${v.idf_version || ''}`;
             currentFirmwareVersion = v;
         }
         
@@ -12150,7 +12439,7 @@ function displayPartitionsCompact(data) {
                 </div>
                 <div class="partition-action">
                     <button class="btn btn-success btn-small" onclick="validateOta()">
-                        ✅ 标记有效
+                        标记有效
                     </button>
                     <div class="partition-action-desc">取消自动回滚保护</div>
                 </div>
@@ -12176,7 +12465,7 @@ function displayPartitionsCompact(data) {
                 ${canRollback ? `
                 <div class="partition-action">
                     <button class="btn btn-warning btn-small" onclick="confirmRollback()">
-                        ⏮️ 回滚到此版本
+                        回滚到此版本
                     </button>
                     <div class="partition-action-desc">重启后加载此分区</div>
                 </div>
@@ -12264,7 +12553,7 @@ async function refreshOtaProgress() {
                 
                 // 处理 App OTA 完成 - 开始 WWW OTA
                 if (otaStep === 'app' && (state === 'pending_reboot' || state === 'completed') && wwwOtaEnabled) {
-                    stateEl.textContent = '✅ 固件升级完成，准备升级 WebUI...';
+                    stateEl.textContent = '固件升级完成，准备升级 WebUI...';
                     await startWwwOta();
                     return;
                 }
@@ -12277,7 +12566,7 @@ async function refreshOtaProgress() {
                     otaStep = 'idle';
                     
                     // 显示重启倒计时
-                    stateEl.textContent = '✅ 全部升级完成';
+                    stateEl.textContent = '全部升级完成';
                     document.getElementById('ota-message').innerHTML = `
                         <div style="text-align:center">
                             <p>固件和 WebUI 升级完成，设备正在重启...</p>
@@ -12334,8 +12623,8 @@ async function startWwwOta() {
             
             if (serverUrl) {
                 // 尝试多种方式推导 www.bin URL
-                if (serverUrl.includes('firmware.bin') || serverUrl.includes('TianShanOS.bin')) {
-                    wwwSource = serverUrl.replace(/firmware\.bin|TianShanOS\.bin/gi, 'www.bin');
+                if (serverUrl.includes('firmware.bin') || serverUrl.includes('TianshanOS.bin')) {
+                    wwwSource = serverUrl.replace(/firmware\.bin|TianshanOS\.bin/gi, 'www.bin');
                 } else if (serverUrl.match(/\.bin$/i)) {
                     wwwSource = serverUrl.replace(/[^\/]+\.bin$/i, 'www.bin');
                 } else if (serverUrl.endsWith('/')) {
@@ -12384,7 +12673,7 @@ async function startWwwOta() {
             clearInterval(refreshInterval);
             refreshInterval = null;
             
-            document.getElementById('ota-state-text').textContent = '✅ 固件升级完成（WebUI 跳过）';
+            document.getElementById('ota-state-text').textContent = '固件升级完成（WebUI 跳过）';
             document.getElementById('ota-message').innerHTML = `
                 <div style="text-align:center">
                     <p>固件已更新，WebUI 升级跳过，设备正在重启...</p>
@@ -12522,13 +12811,13 @@ async function otaFromUrl() {
         } else {
             showToast('启动升级失败: ' + result.message, 'error');
             // 显示错误状态
-            document.getElementById('ota-state-text').textContent = '❌ 错误';
+            document.getElementById('ota-state-text').textContent = '错误';
             document.getElementById('ota-message').textContent = result.message || '启动失败';
             document.getElementById('ota-abort-btn').style.display = 'none';
         }
     } catch (error) {
         showToast('启动升级失败: ' + error.message, 'error');
-        document.getElementById('ota-state-text').textContent = '❌ 错误';
+        document.getElementById('ota-state-text').textContent = '错误';
         document.getElementById('ota-message').textContent = error.message || '网络错误';
         document.getElementById('ota-abort-btn').style.display = 'none';
     }
@@ -12578,13 +12867,13 @@ async function otaFromFile() {
             await refreshOtaProgress();
         } else {
             showToast('启动升级失败: ' + result.message, 'error');
-            document.getElementById('ota-state-text').textContent = '❌ 错误';
+            document.getElementById('ota-state-text').textContent = '错误';
             document.getElementById('ota-message').textContent = result.message || '启动失败';
             document.getElementById('ota-abort-btn').style.display = 'none';
         }
     } catch (error) {
         showToast('启动升级失败: ' + error.message, 'error');
-        document.getElementById('ota-state-text').textContent = '❌ 错误';
+        document.getElementById('ota-state-text').textContent = '错误';
         document.getElementById('ota-message').textContent = error.message || '网络错误';
         document.getElementById('ota-abort-btn').style.display = 'none';
     }
@@ -12872,7 +13161,7 @@ async function checkForUpdates() {
             statusDiv.innerHTML = `
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
                     <div>
-                        <span style="font-weight:600">🆕 发现新版本</span>
+                        <span style="font-weight:600">发现新版本</span>
                         ${updateType ? ` · ${updateType}` : ''}
                         <div style="margin-top:5px;font-size:0.9em;color:#666">
                             <code>${localVersion}</code> → <code style="color:#27ae60;font-weight:bold">${serverVersion}</code>
@@ -12880,7 +13169,7 @@ async function checkForUpdates() {
                         </div>
                     </div>
                     <button class="btn btn-success btn-small" onclick="upgradeFromServer()">
-                        🚀 立即升级
+                        立即升级
                     </button>
                 </div>
             `;
@@ -12903,7 +13192,7 @@ async function checkForUpdates() {
             statusDiv.className = 'ota-update-status no-update';
             statusDiv.innerHTML = `
                 <div style="display:flex;align-items:center;gap:10px">
-                    <span style="font-weight:600">✅ 已是最新版本</span>
+                    <span style="font-weight:600">已是最新版本</span>
                     <code style="color:#2196f3">${localVersion}</code>
                 </div>
             `;
@@ -13237,12 +13526,12 @@ function renderTaskRows(tasks, formatBytes) {
         const hwmColor = hwm < 256 ? '#e74c3c' : hwm < 512 ? '#f39c12' : '#2ecc71';
         const usageColor = usagePct >= 90 ? '#e74c3c' : usagePct >= 75 ? '#f39c12' : '#2ecc71';
         const stateIcon = {
-            'Running': '🟢',
-            'Ready': '🔵', 
-            'Blocked': '🟡',
-            'Suspended': '⚪',
-            'Deleted': '🔴'
-        }[task.state] || '⚫';
+            'Running': '<i class="ri-checkbox-blank-circle-fill" style="color:#22c55e"></i>',
+            'Ready': '<i class="ri-checkbox-blank-circle-fill" style="color:#3b82f6"></i>', 
+            'Blocked': '<i class="ri-checkbox-blank-circle-fill" style="color:#eab308"></i>',
+            'Suspended': '<i class="ri-checkbox-blank-circle-fill" style="color:#9ca3af"></i>',
+            'Deleted': '<i class="ri-checkbox-blank-circle-fill" style="color:#ef4444"></i>'
+        }[task.state] || '<i class="ri-checkbox-blank-circle-fill" style="color:#374151"></i>';
         return `
         <tr>
             <td><code>${task.name}</code></td>
@@ -13399,7 +13688,7 @@ async function refreshMemoryDetail() {
         if (tips.length > 0) {
             tipsHtml = `
                 <div class="memory-tips">
-                    <h4>💡 优化建议</h4>
+                    <h4>优化建议</h4>
                     ${tips.map(tip => {
                         const [level, msg] = tip.split(':');
                         const icon = level === 'critical' ? '🔴' : level === 'warning' ? '🟠' : '🔵';
@@ -13476,7 +13765,7 @@ async function refreshMemoryDetail() {
             
             <!-- 静态内存段 (关键优化信息) -->
             <div class="memory-static-sections">
-                <h4>📦 静态内存占用 (编译时固定)</h4>
+                <h4>静态内存占用 (编译时固定)</h4>
                 <div class="static-grid">
                     <div class="static-item">
                         <span class="static-label">.data</span>
@@ -13503,7 +13792,7 @@ async function refreshMemoryDetail() {
             
             <!-- IRAM 信息 -->
             <div class="memory-iram">
-                <h4>⚡ IRAM (指令内存)</h4>
+                <h4>IRAM (指令内存)</h4>
                 <div class="iram-grid">
                     <div class="iram-item">
                         <span class="iram-label">代码段</span>
@@ -13523,7 +13812,7 @@ async function refreshMemoryDetail() {
             <!-- RTC 内存 -->
             ${rtc.total_available ? `
             <div class="memory-rtc">
-                <h4>🔋 RTC 内存 (深度睡眠保持)</h4>
+                <h4>RTC 内存 (深度睡眠保持)</h4>
                 <div class="rtc-bar">
                     <div class="progress-bar" style="height:12px;background:#f0f0f0">
                         <div class="progress" style="width:${(rtc.total_used / rtc.total_available * 100) || 0}%;background:#9b59b6"></div>
@@ -13538,7 +13827,7 @@ async function refreshMemoryDetail() {
             
             <!-- 详细数据表格 -->
             <div class="memory-details">
-                <h4>📊 堆内存详细统计</h4>
+                <h4>堆内存详细统计</h4>
                 <table class="memory-table">
                     <thead>
                         <tr>
@@ -13585,7 +13874,7 @@ async function refreshMemoryDetail() {
             
             <!-- 内存能力汇总 -->
             <div class="memory-caps">
-                <h4>🎯 内存能力分布</h4>
+                <h4>内存能力分布</h4>
                 <table class="memory-table">
                     <thead>
                         <tr>
@@ -13629,7 +13918,7 @@ async function refreshMemoryDetail() {
             <!-- NVS 使用统计 -->
             ${nvs.total_entries ? `
             <div class="memory-nvs">
-                <h4>💾 NVS 存储使用</h4>
+                <h4>NVS 存储使用</h4>
                 <div class="nvs-bar">
                     <div class="progress-bar" style="height:16px;background:#f0f0f0">
                         <div class="progress" style="width:${nvs.used_percent || 0}%;background:${getProgressColor(nvs.used_percent || 0)}"></div>
@@ -13650,7 +13939,7 @@ async function refreshMemoryDetail() {
             <!-- 任务内存占用 -->
             ${data.tasks && data.tasks.length > 0 ? `
             <div class="memory-tasks">
-                <h4>🔧 任务栈使用 (共 ${data.tasks.length} 个任务) <span style="font-size:0.8em;color:#888;font-weight:normal">点击表头排序</span></h4>
+                <h4>任务栈使用 (共 ${data.tasks.length} 个任务) <span style="font-size:0.8em;color:#888;font-weight:normal">点击表头排序</span></h4>
                 <table class="memory-table task-table sortable-table" id="task-memory-table">
                     <thead>
                         <tr>
@@ -13670,19 +13959,19 @@ async function refreshMemoryDetail() {
                 </table>
                 ${data.total_stack_allocated ? `
                 <p style="font-size:0.85em;color:#666;margin-top:8px">
-                    📊 任务栈总分配: <strong>${formatBytes(data.total_stack_allocated)}</strong> | 
+                    任务栈总分配: <strong>${formatBytes(data.total_stack_allocated)}</strong> | 
                     任务总数: <strong>${data.task_count}</strong>
                 </p>
                 ` : ''}
                 <p style="font-size:0.85em;color:#888;margin-top:4px">
-                    💡 剩余栈 &lt;256B 为危险区域，&lt;512B 为警告区域
+                    剩余栈 &lt;256B 为危险区域，&lt;512B 为警告区域
                 </p>
             </div>
             ` : ''}
             
             <!-- 历史记录 -->
             <div class="memory-history">
-                <h4>📈 运行时统计</h4>
+                <h4>运行时统计</h4>
                 <div class="history-stats">
                     <div class="history-item">
                         <span class="history-label">历史最低空闲堆</span>
@@ -13754,7 +14043,6 @@ async function loadAutomationPage() {
     content.innerHTML = `
         <div class="page-automation">
             <div class="page-header-row">
-                <h1>⚙️ 自动化引擎</h1>
                 <div class="header-actions">
                     <button class="btn btn-primary" onclick="automationControl('start')">▶️ 启动</button>
                     <button class="btn btn-danger" onclick="automationControl('stop')">⏹️ 停止</button>

@@ -27,3 +27,4 @@ venv/
 # ESP-IDF temporary files
 *.pyc
 sdkconfig.old
+UI修改.md
