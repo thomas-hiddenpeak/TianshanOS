@@ -12,6 +12,7 @@
 #include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/idf_additions.h"
 #include "cJSON.h"
 #include <string.h>
 #include <time.h>
@@ -157,7 +158,8 @@ esp_err_t ts_ssh_hosts_config_init(void)
     size_t nvs_count = ts_ssh_hosts_config_count();
     ESP_LOGI(TAG, "NVS has %d hosts, will load from SD card in background", (int)nvs_count);
     
-    /* 创建延迟加载任务 */
+    /* 创建延迟加载任务
+     * 必须使用 DRAM 栈，因为内部会访问 NVS */
     s_hosts_pending_export = true;
     xTaskCreate(hosts_deferred_export_task, "ssh_host_load", 8192, NULL, 2, NULL);
     
@@ -852,6 +854,7 @@ static void hosts_async_sync_task(void *arg)
 
 void ts_ssh_hosts_config_sync_to_sdcard(void)
 {
-    /* 异步执行 SD 卡同步（避免在 API 处理任务中执行导致栈溢出/超时） */
+    /* 异步执行 SD 卡同步（避免在 API 处理任务中执行导致栈溢出/超时）
+     * 必须使用 DRAM 栈，因为内部会访问 NVS */
     xTaskCreate(hosts_async_sync_task, "ssh_host_sync", 8192, NULL, 2, NULL);
 }

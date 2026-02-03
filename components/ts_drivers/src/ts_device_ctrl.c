@@ -11,9 +11,11 @@
 #include "ts_log.h"
 #include "ts_event.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/idf_additions.h"
 #include "cJSON.h"
 #include <string.h>
 #include <sys/socket.h>
@@ -958,7 +960,9 @@ esp_err_t ts_device_lpmu_start_detection(void)
         return ESP_ERR_INVALID_STATE;
     }
     
-    BaseType_t ret = xTaskCreate(lpmu_startup_detect_task, "lpmu_detect", 4096, NULL, 5, &s_lpmu_detect_task);
+    /* 使用 PSRAM 栈以减少 DRAM 压力（纯网络 ping 操作，不涉及 NVS/Flash）*/
+    BaseType_t ret = xTaskCreateWithCaps(lpmu_startup_detect_task, "lpmu_detect", 4096, NULL, 5, &s_lpmu_detect_task,
+                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (ret != pdPASS) {
         TS_LOGE(TAG, "Failed to create LPMU detection task");
         return ESP_FAIL;

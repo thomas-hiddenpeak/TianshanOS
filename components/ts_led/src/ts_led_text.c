@@ -11,6 +11,8 @@
 #include "ts_led_font.h"
 #include "ts_led_private.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
+#include "freertos/idf_additions.h"
 #include <string.h>
 
 static const char *TAG = "ts_text";
@@ -795,7 +797,9 @@ static void overlay_render_task(void *arg)
 static void ensure_overlay_task(void)
 {
     if (s_overlay_task == NULL) {
-        xTaskCreate(overlay_render_task, "text_overlay", 4096, NULL, 5, &s_overlay_task);
+        /* 使用 PSRAM 栈以减少 DRAM 压力（纯 LED 渲染，不涉及 NVS/Flash） */
+        xTaskCreateWithCaps(overlay_render_task, "text_overlay", 4096, NULL, 5, &s_overlay_task,
+                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     }
 }
 

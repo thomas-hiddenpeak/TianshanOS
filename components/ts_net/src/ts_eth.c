@@ -27,6 +27,8 @@
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_log.h"  /* for esp_log_level_set */
+#include "esp_heap_caps.h"
+#include "freertos/idf_additions.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "lwip/ip4_addr.h"
@@ -110,9 +112,11 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
             /* 
              * 在独立任务中启动 DHCP 服务器
              * 避免在事件处理器上下文中操作导致崩溃
+             * 使用 PSRAM 栈以减少 DRAM 压力（纯网络操作）
              */
             if (netif && s_dhcp_task == NULL) {
-                xTaskCreate(dhcp_start_task, "dhcp_start", 4096, netif, 5, &s_dhcp_task);
+                xTaskCreateWithCaps(dhcp_start_task, "dhcp_start", 4096, netif, 5, &s_dhcp_task,
+                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
             }
             
             esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, mac_addr);

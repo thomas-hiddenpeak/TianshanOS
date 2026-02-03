@@ -14,6 +14,7 @@
 #include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/idf_additions.h"
 #include "esp_random.h"
 #include "esp_heap_caps.h"
 #include "cJSON.h"
@@ -267,7 +268,8 @@ esp_err_t ts_ssh_commands_config_init(void)
     size_t nvs_count = ts_ssh_commands_config_count();
     ESP_LOGI(TAG, "NVS has %d commands, will load from SD card in background", (int)nvs_count);
     
-    /* 创建延迟加载任务（在独立任务中处理 SD 卡操作，避免 main 任务栈溢出） */
+    /* 创建延迟加载任务（在独立任务中处理 SD 卡操作，避免 main 任务栈溢出）
+     * 必须使用 DRAM 栈，因为内部会调用 ts_ssh_commands_config_count() 访问 NVS */
     s_pending_export = true;  /* 标记需要处理 SD 卡 */
     xTaskCreate(deferred_export_task, "ssh_cmd_load", 8192, NULL, 2, NULL);
     
@@ -1246,6 +1248,7 @@ static void async_sync_task(void *arg)
 
 void ts_ssh_commands_config_sync_to_sdcard(void)
 {
-    /* 异步执行 SD 卡同步（避免在 API 处理任务中执行导致栈溢出/超时） */
+    /* 异步执行 SD 卡同步（避免在 API 处理任务中执行导致栈溢出/超时）
+     * 必须使用 DRAM 栈，因为内部会访问 NVS */
     xTaskCreate(async_sync_task, "ssh_cmd_sync", 8192, NULL, 2, NULL);
 }
