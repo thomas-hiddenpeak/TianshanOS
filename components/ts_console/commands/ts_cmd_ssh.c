@@ -119,6 +119,11 @@ typedef struct {
     bool verbose;
 } stream_context_t;
 
+/**
+ * @brief Stream output callback for SSH
+ * @note Reserved for real-time streaming output feature
+ */
+__attribute__((unused))
 static void stream_output_callback(const char *data, size_t len, bool is_stderr, void *user_data)
 {
     stream_context_t *ctx = (stream_context_t *)user_data;
@@ -257,6 +262,11 @@ typedef struct {
     volatile bool running;
 } interrupt_monitor_t;
 
+/**
+ * @brief Task to monitor Ctrl+C interrupts during SSH sessions
+ * @note Reserved for async interrupt handling feature
+ */
+__attribute__((unused))
 static void interrupt_monitor_task(void *arg)
 {
     interrupt_monitor_t *mon = (interrupt_monitor_t *)arg;

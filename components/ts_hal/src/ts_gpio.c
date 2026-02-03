@@ -106,6 +106,11 @@ static gpio_int_type_t convert_intr(ts_gpio_intr_t intr)
     }
 }
 
+/**
+ * @brief Find a free GPIO handle slot
+ * @note Reserved for dynamic GPIO handle allocation
+ */
+__attribute__((unused))
 static ts_gpio_handle_t find_free_handle(void)
 {
     for (int i = 0; i < CONFIG_TS_HAL_MAX_GPIO_HANDLES; i++) {

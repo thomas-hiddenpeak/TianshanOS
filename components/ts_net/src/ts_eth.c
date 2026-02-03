@@ -141,7 +141,9 @@ static void eth_event_handler(void *arg, esp_event_base_t event_base,
  * @brief IP 事件处理器 - 处理 DHCP 服务器分配 IP 事件
  * 
  * 注意：只做简单日志，客户端追踪由 ts_dhcp_server 模块处理
+ * @note Reserved for DHCP event handling feature
  */
+__attribute__((unused))
 static void ip_event_handler(void *arg, esp_event_base_t event_base,
                               int32_t event_id, void *event_data)
 {

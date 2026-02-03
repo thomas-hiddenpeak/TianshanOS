@@ -676,7 +676,6 @@ static esp_err_t api_led_filter_start(const cJSON *params, ts_api_result_t *resu
     cJSON *saturation_param = cJSON_GetObjectItem(params, "saturation");
     cJSON *angle_param = cJSON_GetObjectItem(params, "angle");
     cJSON *width_param = cJSON_GetObjectItem(params, "width");
-    cJSON *direction_param = cJSON_GetObjectItem(params, "direction");
     cJSON *wavelength_param = cJSON_GetObjectItem(params, "wavelength");
     cJSON *amplitude_param = cJSON_GetObjectItem(params, "amplitude");
     

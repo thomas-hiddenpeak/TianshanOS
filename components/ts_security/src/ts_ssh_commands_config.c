@@ -2,7 +2,7 @@
  * @file ts_ssh_commands_config.c
  * @brief SSH Command Configuration Storage Implementation
  *
- * 实现 SSH 快捷指令配置的持久化存储（NVS）。
+ * 实现 SSH 快捷指令配置的持久化存储（NVS + SD卡双写）。
  * 启动时自动为有 var_name 的指令预创建变量。
  */
 
@@ -15,9 +15,14 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "esp_random.h"
+#include "esp_heap_caps.h"
+#include "cJSON.h"
+#include "esp_vfs.h"
 #include <string.h>
 #include <time.h>
 #include <stdio.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static const char *TAG = "ts_ssh_cmd_cfg";
 
@@ -175,6 +180,56 @@ static void precreate_all_variables(void)
 /*                          Initialization                                    */
 /*===========================================================================*/
 
+/** 延迟导出标志 */
+static bool s_pending_export = false;
+
+/**
+ * @brief 延迟加载/导出任务 - 在独立任务中处理 SD 卡操作（避免 main 任务栈溢出）
+ * 
+ * 配置加载优先级：SD 卡 > NVS > 硬编码默认值
+ */
+static void deferred_export_task(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(2000));  /* 等待系统稳定、SD 卡挂载完成 */
+    
+    if (!s_state.initialized) {
+        vTaskDelete(NULL);
+        return;
+    }
+    
+    size_t nvs_count = ts_ssh_commands_config_count();
+    
+    /* 尝试从 SD 卡加载（优先级最高） */
+    ESP_LOGI(TAG, "Deferred: trying to load from SD card...");
+    esp_err_t import_ret = ts_ssh_commands_config_import_from_sdcard(true);  /* merge=true 保留 NVS */
+    
+    size_t count = ts_ssh_commands_config_count();
+    
+    if (import_ret == ESP_OK && count > nvs_count) {
+        /* SD 卡有新数据，清空 NVS 后重新导入（确保 SD 卡为权威来源） */
+        ESP_LOGI(TAG, "SD card has new data (%d > %d), reimporting...", (int)count, (int)nvs_count);
+        ts_ssh_commands_config_clear();
+        ts_ssh_commands_config_import_from_sdcard(false);
+        count = ts_ssh_commands_config_count();
+        ESP_LOGI(TAG, "Loaded %d commands from SD card", (int)count);
+    } else if (import_ret == ESP_ERR_NOT_FOUND) {
+        /* SD 卡文件不存在/无效，导出 NVS 数据到 SD 卡 */
+        if (nvs_count > 0) {
+            ESP_LOGI(TAG, "SD card file not found, exporting %d commands from NVS", (int)nvs_count);
+            ts_ssh_commands_config_export_to_sdcard();
+        } else {
+            ESP_LOGI(TAG, "No commands in SD card or NVS");
+        }
+    } else {
+        /* 其他错误（如 SD 卡未挂载） */
+        ESP_LOGW(TAG, "SD card import failed: %s", esp_err_to_name(import_ret));
+    }
+    
+    s_pending_export = false;
+    vTaskDelete(NULL);
+}
+
 esp_err_t ts_ssh_commands_config_init(void)
 {
     if (s_state.initialized) {
@@ -198,9 +253,22 @@ esp_err_t ts_ssh_commands_config_init(void)
     
     s_state.initialized = true;
     
-    /* 统计已有指令数量 */
-    size_t count = ts_ssh_commands_config_count();
-    ESP_LOGI(TAG, "SSH commands config initialized, %d commands loaded", (int)count);
+    /*
+     * 配置加载策略（避免在 main 任务中执行 SD 卡 I/O）：
+     * 
+     * 1. init 时只初始化 NVS，统计现有数据
+     * 2. 创建延迟任务处理 SD 卡加载/导出
+     * 3. 延迟任务中：SD 卡优先，不存在则导出 NVS 数据
+     */
+    
+    size_t nvs_count = ts_ssh_commands_config_count();
+    ESP_LOGI(TAG, "NVS has %d commands, will load from SD card in background", (int)nvs_count);
+    
+    /* 创建延迟加载任务（在独立任务中处理 SD 卡操作，避免 main 任务栈溢出） */
+    s_pending_export = true;  /* 标记需要处理 SD 卡 */
+    xTaskCreate(deferred_export_task, "ssh_cmd_load", 8192, NULL, 2, NULL);
+    
+    ESP_LOGI(TAG, "SSH commands config initialized (SD card loading deferred)");
     
     /* 预创建所有变量（延迟到变量系统初始化后） */
     /* 这里不调用，由服务启动时调用 ts_ssh_commands_precreate_variables() */
@@ -323,6 +391,9 @@ esp_err_t ts_ssh_commands_config_add(const ts_ssh_command_config_t *config,
         if (entry.var_name[0]) {
             precreate_command_variables(entry.var_name);
         }
+        
+        /* 同步到 SD 卡 */
+        ts_ssh_commands_config_sync_to_sdcard();
     }
     
     return ret;
@@ -357,6 +428,12 @@ esp_err_t ts_ssh_commands_config_remove(const char *id)
     }
     
     xSemaphoreGive(s_state.mutex);
+    
+    /* 同步到 SD 卡 */
+    if (ret == ESP_OK) {
+        ts_ssh_commands_config_sync_to_sdcard();
+    }
+    
     return ret;
 }
 
@@ -559,6 +636,10 @@ esp_err_t ts_ssh_commands_config_clear(void)
     
     xSemaphoreGive(s_state.mutex);
     ESP_LOGI(TAG, "Cleared all SSH commands");
+    
+    /* 同步到 SD 卡（清空后的空数组） */
+    ts_ssh_commands_config_sync_to_sdcard();
+    
     return ESP_OK;
 }
 
@@ -607,4 +688,561 @@ esp_err_t ts_ssh_commands_precreate_variables(void)
     ESP_LOGI(TAG, "Pre-creating variables for all SSH commands");
     precreate_all_variables();
     return ESP_OK;
+}
+
+/*===========================================================================*/
+/*                    Iterator/Pagination API (内存优化)                       */
+/*===========================================================================*/
+
+/**
+ * @brief 内部辅助：从 NVS entry 填充 config 结构体
+ */
+static void entry_to_config(const nvs_cmd_entry_t *entry, ts_ssh_command_config_t *cfg)
+{
+    memset(cfg, 0, sizeof(*cfg));
+    strncpy(cfg->id, entry->id, sizeof(cfg->id) - 1);
+    strncpy(cfg->host_id, entry->host_id, sizeof(cfg->host_id) - 1);
+    strncpy(cfg->name, entry->name, sizeof(cfg->name) - 1);
+    strncpy(cfg->command, entry->command, sizeof(cfg->command) - 1);
+    strncpy(cfg->desc, entry->desc, sizeof(cfg->desc) - 1);
+    strncpy(cfg->icon, entry->icon, sizeof(cfg->icon) - 1);
+    strncpy(cfg->expect_pattern, entry->expect_pattern, sizeof(cfg->expect_pattern) - 1);
+    strncpy(cfg->fail_pattern, entry->fail_pattern, sizeof(cfg->fail_pattern) - 1);
+    strncpy(cfg->extract_pattern, entry->extract_pattern, sizeof(cfg->extract_pattern) - 1);
+    strncpy(cfg->var_name, entry->var_name, sizeof(cfg->var_name) - 1);
+    cfg->timeout_sec = entry->timeout_sec;
+    cfg->stop_on_match = entry->stop_on_match != 0;
+    cfg->nohup = entry->nohup != 0;
+    cfg->enabled = entry->enabled != 0;
+    cfg->created_time = entry->created_time;
+    cfg->last_exec_time = entry->last_exec_time;
+    /* 服务模式字段 */
+    cfg->service_mode = entry->service_mode != 0;
+    strncpy(cfg->ready_pattern, entry->ready_pattern, sizeof(cfg->ready_pattern) - 1);
+    strncpy(cfg->service_fail_pattern, entry->service_fail_pattern, sizeof(cfg->service_fail_pattern) - 1);
+    cfg->ready_timeout_sec = entry->ready_timeout_sec;
+    cfg->ready_check_interval_ms = entry->ready_check_interval_ms;
+}
+
+esp_err_t ts_ssh_commands_config_iterate(ts_ssh_cmd_iterator_cb_t callback,
+                                          void *user_data,
+                                          size_t offset,
+                                          size_t limit,
+                                          size_t *total_count)
+{
+    if (!s_state.initialized || !callback) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    xSemaphoreTake(s_state.mutex, portMAX_DELAY);
+    
+    char key[16];
+    nvs_cmd_entry_t entry;
+    ts_ssh_command_config_t cfg;
+    size_t len;
+    size_t total = 0;       /* 总有效条目数 */
+    size_t returned = 0;    /* 实际返回给回调的数量 */
+    size_t skipped = 0;     /* 跳过的条目数（offset） */
+    
+    for (int i = 0; i < TS_SSH_COMMANDS_MAX; i++) {
+        make_nvs_key(i, key, sizeof(key));
+        len = sizeof(entry);
+        if (nvs_get_blob(s_state.nvs, key, &entry, &len) == ESP_OK && len == sizeof(entry)) {
+            total++;
+            
+            /* 处理分页偏移 */
+            if (skipped < offset) {
+                skipped++;
+                continue;
+            }
+            
+            /* 处理分页限制 */
+            if (limit > 0 && returned >= limit) {
+                continue;  /* 继续计数但不回调 */
+            }
+            
+            /* 转换并回调 */
+            entry_to_config(&entry, &cfg);
+            bool cont = callback(&cfg, returned, user_data);
+            returned++;
+            
+            if (!cont) {
+                break;  /* 回调请求停止 */
+            }
+        }
+    }
+    
+    xSemaphoreGive(s_state.mutex);
+    
+    if (total_count) {
+        *total_count = total;
+    }
+    
+    return ESP_OK;
+}
+
+esp_err_t ts_ssh_commands_config_iterate_by_host(const char *host_id,
+                                                   ts_ssh_cmd_iterator_cb_t callback,
+                                                   void *user_data,
+                                                   size_t offset,
+                                                   size_t limit,
+                                                   size_t *total_count)
+{
+    if (!s_state.initialized || !host_id || !callback) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    xSemaphoreTake(s_state.mutex, portMAX_DELAY);
+    
+    char key[16];
+    nvs_cmd_entry_t entry;
+    ts_ssh_command_config_t cfg;
+    size_t len;
+    size_t total = 0;       /* 该主机的总条目数 */
+    size_t returned = 0;    /* 实际返回给回调的数量 */
+    size_t skipped = 0;     /* 跳过的条目数（offset） */
+    
+    for (int i = 0; i < TS_SSH_COMMANDS_MAX; i++) {
+        make_nvs_key(i, key, sizeof(key));
+        len = sizeof(entry);
+        if (nvs_get_blob(s_state.nvs, key, &entry, &len) == ESP_OK && len == sizeof(entry)) {
+            /* 检查 host_id 匹配 */
+            if (strcmp(entry.host_id, host_id) != 0) {
+                continue;
+            }
+            
+            total++;
+            
+            /* 处理分页偏移 */
+            if (skipped < offset) {
+                skipped++;
+                continue;
+            }
+            
+            /* 处理分页限制 */
+            if (limit > 0 && returned >= limit) {
+                continue;  /* 继续计数但不回调 */
+            }
+            
+            /* 转换并回调 */
+            entry_to_config(&entry, &cfg);
+            bool cont = callback(&cfg, returned, user_data);
+            returned++;
+            
+            if (!cont) {
+                break;
+            }
+        }
+    }
+    
+    xSemaphoreGive(s_state.mutex);
+    
+    if (total_count) {
+        *total_count = total;
+    }
+    
+    return ESP_OK;
+}
+
+/*===========================================================================*/
+/*                    SD Card Export/Import (持久化备份)                       */
+/*===========================================================================*/
+
+/** SD 卡配置目录 */
+#define SDCARD_CONFIG_DIR  "/sdcard/config"
+
+/**
+ * @brief 检查 SD 卡是否已挂载
+ */
+static bool is_sdcard_mounted(void)
+{
+    struct stat st;
+    return (stat("/sdcard", &st) == 0 && S_ISDIR(st.st_mode));
+}
+
+/* 前向声明 */
+static cJSON *cmd_to_json(const ts_ssh_command_config_t *cfg);
+
+/**
+ * @brief 确保配置目录存在
+ */
+static esp_err_t ensure_config_dir(void)
+{
+    struct stat st;
+    if (stat(SDCARD_CONFIG_DIR, &st) != 0) {
+        if (mkdir(SDCARD_CONFIG_DIR, 0755) != 0) {
+            ESP_LOGE(TAG, "Failed to create config dir: %s", SDCARD_CONFIG_DIR);
+            return ESP_FAIL;
+        }
+    }
+    return ESP_OK;
+}
+
+/**
+ * @brief 确保指令文件夹存在
+ */
+static esp_err_t ensure_commands_dir(void)
+{
+    esp_err_t ret = ensure_config_dir();
+    if (ret != ESP_OK) return ret;
+    
+    struct stat st;
+    if (stat(TS_SSH_COMMANDS_SDCARD_DIR, &st) != 0) {
+        if (mkdir(TS_SSH_COMMANDS_SDCARD_DIR, 0755) != 0) {
+            ESP_LOGE(TAG, "Failed to create commands dir: %s", TS_SSH_COMMANDS_SDCARD_DIR);
+            return ESP_FAIL;
+        }
+    }
+    return ESP_OK;
+}
+
+/**
+ * @brief 导出单条指令到独立文件
+ */
+static esp_err_t export_command_to_file(const ts_ssh_command_config_t *cfg)
+{
+    if (!cfg || !cfg->id[0]) return ESP_ERR_INVALID_ARG;
+    
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "%s/%s.json", TS_SSH_COMMANDS_SDCARD_DIR, cfg->id);
+    
+    cJSON *obj = cmd_to_json(cfg);
+    if (!obj) return ESP_ERR_NO_MEM;
+    
+    char *str = cJSON_Print(obj);  /* 格式化输出，便于阅读 */
+    cJSON_Delete(obj);
+    
+    if (!str) return ESP_ERR_NO_MEM;
+    
+    FILE *fp = fopen(filepath, "w");
+    if (!fp) {
+        cJSON_free(str);
+        ESP_LOGE(TAG, "Failed to open file: %s", filepath);
+        return ESP_FAIL;
+    }
+    
+    fprintf(fp, "%s\n", str);
+    fclose(fp);
+    cJSON_free(str);
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief 将单条命令转换为 JSON 对象
+ */
+static cJSON *cmd_to_json(const ts_ssh_command_config_t *cfg)
+{
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj) return NULL;
+    
+    cJSON_AddStringToObject(obj, "id", cfg->id);
+    cJSON_AddStringToObject(obj, "host_id", cfg->host_id);
+    cJSON_AddStringToObject(obj, "name", cfg->name);
+    cJSON_AddStringToObject(obj, "command", cfg->command);
+    if (cfg->desc[0]) cJSON_AddStringToObject(obj, "desc", cfg->desc);
+    if (cfg->icon[0]) cJSON_AddStringToObject(obj, "icon", cfg->icon);
+    if (cfg->expect_pattern[0]) cJSON_AddStringToObject(obj, "expect_pattern", cfg->expect_pattern);
+    if (cfg->fail_pattern[0]) cJSON_AddStringToObject(obj, "fail_pattern", cfg->fail_pattern);
+    if (cfg->extract_pattern[0]) cJSON_AddStringToObject(obj, "extract_pattern", cfg->extract_pattern);
+    if (cfg->var_name[0]) cJSON_AddStringToObject(obj, "var_name", cfg->var_name);
+    cJSON_AddNumberToObject(obj, "timeout_sec", cfg->timeout_sec);
+    cJSON_AddBoolToObject(obj, "stop_on_match", cfg->stop_on_match);
+    cJSON_AddBoolToObject(obj, "nohup", cfg->nohup);
+    cJSON_AddBoolToObject(obj, "enabled", cfg->enabled);
+    /* 服务模式字段 */
+    cJSON_AddBoolToObject(obj, "service_mode", cfg->service_mode);
+    if (cfg->ready_pattern[0]) cJSON_AddStringToObject(obj, "ready_pattern", cfg->ready_pattern);
+    if (cfg->service_fail_pattern[0]) cJSON_AddStringToObject(obj, "service_fail_pattern", cfg->service_fail_pattern);
+    if (cfg->ready_timeout_sec > 0) cJSON_AddNumberToObject(obj, "ready_timeout_sec", cfg->ready_timeout_sec);
+    if (cfg->ready_check_interval_ms > 0) cJSON_AddNumberToObject(obj, "ready_check_interval_ms", cfg->ready_check_interval_ms);
+    cJSON_AddNumberToObject(obj, "created_time", cfg->created_time);
+    cJSON_AddNumberToObject(obj, "last_exec_time", cfg->last_exec_time);
+    
+    return obj;
+}
+
+/**
+ * @brief 从 JSON 对象解析命令配置
+ */
+static esp_err_t json_to_cmd(const cJSON *obj, ts_ssh_command_config_t *cfg)
+{
+    memset(cfg, 0, sizeof(*cfg));
+    
+    cJSON *item;
+    
+    item = cJSON_GetObjectItem(obj, "id");
+    if (item && cJSON_IsString(item)) strncpy(cfg->id, item->valuestring, sizeof(cfg->id) - 1);
+    
+    item = cJSON_GetObjectItem(obj, "host_id");
+    if (item && cJSON_IsString(item)) strncpy(cfg->host_id, item->valuestring, sizeof(cfg->host_id) - 1);
+    
+    item = cJSON_GetObjectItem(obj, "name");
+    if (item && cJSON_IsString(item)) strncpy(cfg->name, item->valuestring, sizeof(cfg->name) - 1);
+    
+    item = cJSON_GetObjectItem(obj, "command");
+    if (item && cJSON_IsString(item)) strncpy(cfg->command, item->valuestring, sizeof(cfg->command) - 1);
+    
+    item = cJSON_GetObjectItem(obj, "desc");
+    if (item && cJSON_IsString(item)) strncpy(cfg->desc, item->valuestring, sizeof(cfg->desc) - 1);
+    
+    item = cJSON_GetObjectItem(obj, "icon");
+    if (item && cJSON_IsString(item)) strncpy(cfg->icon, item->valuestring, sizeof(cfg->icon) - 1);
+    
+    item = cJSON_GetObjectItem(obj, "expect_pattern");
+    if (item && cJSON_IsString(item)) strncpy(cfg->expect_pattern, item->valuestring, sizeof(cfg->expect_pattern) - 1);
+    
+    item = cJSON_GetObjectItem(obj, "fail_pattern");
+    if (item && cJSON_IsString(item)) strncpy(cfg->fail_pattern, item->valuestring, sizeof(cfg->fail_pattern) - 1);
+    
+    item = cJSON_GetObjectItem(obj, "extract_pattern");
+    if (item && cJSON_IsString(item)) strncpy(cfg->extract_pattern, item->valuestring, sizeof(cfg->extract_pattern) - 1);
+    
+    item = cJSON_GetObjectItem(obj, "var_name");
+    if (item && cJSON_IsString(item)) strncpy(cfg->var_name, item->valuestring, sizeof(cfg->var_name) - 1);
+    
+    item = cJSON_GetObjectItem(obj, "timeout_sec");
+    if (item && cJSON_IsNumber(item)) cfg->timeout_sec = (uint16_t)item->valueint;
+    else cfg->timeout_sec = 30;
+    
+    item = cJSON_GetObjectItem(obj, "stop_on_match");
+    if (item && cJSON_IsBool(item)) cfg->stop_on_match = cJSON_IsTrue(item);
+    
+    item = cJSON_GetObjectItem(obj, "nohup");
+    if (item && cJSON_IsBool(item)) cfg->nohup = cJSON_IsTrue(item);
+    
+    item = cJSON_GetObjectItem(obj, "enabled");
+    if (item && cJSON_IsBool(item)) cfg->enabled = cJSON_IsTrue(item);
+    else cfg->enabled = true;  /* 默认启用 */
+    
+    /* 服务模式字段 */
+    item = cJSON_GetObjectItem(obj, "service_mode");
+    if (item && cJSON_IsBool(item)) cfg->service_mode = cJSON_IsTrue(item);
+    
+    item = cJSON_GetObjectItem(obj, "ready_pattern");
+    if (item && cJSON_IsString(item)) strncpy(cfg->ready_pattern, item->valuestring, sizeof(cfg->ready_pattern) - 1);
+    
+    item = cJSON_GetObjectItem(obj, "service_fail_pattern");
+    if (item && cJSON_IsString(item)) strncpy(cfg->service_fail_pattern, item->valuestring, sizeof(cfg->service_fail_pattern) - 1);
+    
+    item = cJSON_GetObjectItem(obj, "ready_timeout_sec");
+    if (item && cJSON_IsNumber(item)) cfg->ready_timeout_sec = (uint16_t)item->valueint;
+    
+    item = cJSON_GetObjectItem(obj, "ready_check_interval_ms");
+    if (item && cJSON_IsNumber(item)) cfg->ready_check_interval_ms = (uint16_t)item->valueint;
+    
+    item = cJSON_GetObjectItem(obj, "created_time");
+    if (item && cJSON_IsNumber(item)) cfg->created_time = (uint32_t)item->valueint;
+    
+    item = cJSON_GetObjectItem(obj, "last_exec_time");
+    if (item && cJSON_IsNumber(item)) cfg->last_exec_time = (uint32_t)item->valueint;
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief 导出迭代器回调上下文
+ */
+typedef struct {
+    FILE *fp;           /* 单文件输出 */
+    int count;          /* 计数 */
+    bool first;         /* 首条标记 */
+    bool export_dir;    /* 是否同时导出到独立文件 */
+} export_ctx_t;
+
+/**
+ * @brief 导出迭代器回调 - 将单条命令写入文件（同时导出到独立文件）
+ */
+static bool export_iterator_cb(const ts_ssh_command_config_t *config, size_t index, void *user_data)
+{
+    (void)index;
+    export_ctx_t *ctx = (export_ctx_t *)user_data;
+    
+    /* 导出到独立文件 */
+    if (ctx->export_dir) {
+        export_command_to_file(config);
+    }
+    
+    /* 导出到单文件（JSON 数组） */
+    if (ctx->fp) {
+        cJSON *obj = cmd_to_json(config);
+        if (!obj) return true;
+        
+        char *str = cJSON_PrintUnformatted(obj);
+        cJSON_Delete(obj);
+        
+        if (str) {
+            if (!ctx->first) {
+                fprintf(ctx->fp, ",\n");
+            }
+            fprintf(ctx->fp, "  %s", str);
+            cJSON_free(str);
+            ctx->first = false;
+        }
+    }
+    
+    ctx->count++;
+    return true;
+}
+
+esp_err_t ts_ssh_commands_config_export_to_sdcard(void)
+{
+    if (!s_state.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (!is_sdcard_mounted()) {
+        ESP_LOGD(TAG, "SD card not mounted, skip export");
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    /* 确保目录存在 */
+    esp_err_t ret = ensure_commands_dir();
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    
+    /* 打开单文件写入 */
+    FILE *fp = fopen(TS_SSH_COMMANDS_SDCARD_PATH, "w");
+    if (!fp) {
+        ESP_LOGE(TAG, "Failed to open file for writing: %s", TS_SSH_COMMANDS_SDCARD_PATH);
+        return ESP_FAIL;
+    }
+    
+    /* 写入 JSON 数组开头 */
+    fprintf(fp, "[\n");
+    
+    export_ctx_t ctx = {
+        .fp = fp,
+        .count = 0,
+        .first = true,
+        .export_dir = true,  /* 同时导出到独立文件 */
+    };
+    
+    /* 使用迭代器逐条导出 */
+    ret = ts_ssh_commands_config_iterate(export_iterator_cb, &ctx, 0, 0, NULL);
+    
+    /* 写入 JSON 数组结尾 */
+    fprintf(fp, "\n]\n");
+    fclose(fp);
+    
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Exported %d SSH commands to %s", ctx.count, TS_SSH_COMMANDS_SDCARD_PATH);
+    }
+    
+    return ret;
+}
+
+esp_err_t ts_ssh_commands_config_import_from_sdcard(bool merge)
+{
+    if (!s_state.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (!is_sdcard_mounted()) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    /* 检查文件是否存在 */
+    struct stat st;
+    if (stat(TS_SSH_COMMANDS_SDCARD_PATH, &st) != 0) {
+        ESP_LOGD(TAG, "Config file not found: %s", TS_SSH_COMMANDS_SDCARD_PATH);
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    /* 检查文件是否为空或太小（至少需要 "[]" = 2 字节） */
+    if (st.st_size < 2) {
+        ESP_LOGW(TAG, "Config file empty or too small (%ld bytes), treating as not found", (long)st.st_size);
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    /* 读取文件 */
+    FILE *fp = fopen(TS_SSH_COMMANDS_SDCARD_PATH, "r");
+    if (!fp) {
+        ESP_LOGE(TAG, "Failed to open file: %s", TS_SSH_COMMANDS_SDCARD_PATH);
+        return ESP_FAIL;
+    }
+    
+    /* 分配缓冲区读取文件（优先使用 PSRAM） */
+    char *buffer = heap_caps_malloc(st.st_size + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buffer) {
+        /* PSRAM 不可用，fallback 到 DRAM */
+        buffer = malloc(st.st_size + 1);
+    }
+    if (!buffer) {
+        fclose(fp);
+        ESP_LOGE(TAG, "Failed to allocate %ld bytes for config file", (long)st.st_size);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    size_t read_size = fread(buffer, 1, st.st_size, fp);
+    fclose(fp);
+    buffer[read_size] = '\0';
+    
+    /* 解析 JSON */
+    cJSON *root = cJSON_Parse(buffer);
+    free(buffer);
+    
+    if (!root) {
+        ESP_LOGW(TAG, "Failed to parse JSON from %s, treating as not found", TS_SSH_COMMANDS_SDCARD_PATH);
+        return ESP_ERR_NOT_FOUND;  /* 无效 JSON 视为文件不存在，触发重新导出 */
+    }
+    
+    if (!cJSON_IsArray(root)) {
+        ESP_LOGE(TAG, "Root element is not an array");
+        cJSON_Delete(root);
+        return ESP_FAIL;
+    }
+    
+    /* 如果不是合并模式，先清空现有配置 */
+    if (!merge) {
+        ts_ssh_commands_config_clear();
+    }
+    
+    /* 逐条导入 */
+    int imported = 0;
+    int skipped = 0;
+    cJSON *item;
+    cJSON_ArrayForEach(item, root) {
+        ts_ssh_command_config_t cfg;
+        if (json_to_cmd(item, &cfg) == ESP_OK && cfg.host_id[0] && cfg.name[0]) {
+            esp_err_t add_ret = ts_ssh_commands_config_add(&cfg, NULL, 0);
+            if (add_ret == ESP_OK) {
+                imported++;
+            } else {
+                skipped++;
+            }
+        } else {
+            skipped++;
+        }
+    }
+    
+    cJSON_Delete(root);
+    
+    ESP_LOGI(TAG, "Imported %d SSH commands from %s (skipped %d)", 
+             imported, TS_SSH_COMMANDS_SDCARD_PATH, skipped);
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief 异步同步任务 - 延迟执行 SD 卡导出
+ */
+static void async_sync_task(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(500));  /* 短延迟，等待当前操作完成 */
+    
+    if (s_state.initialized) {
+        ESP_LOGI(TAG, "Async sync to SD card...");
+        ts_ssh_commands_config_export_to_sdcard();
+    }
+    
+    vTaskDelete(NULL);
+}
+
+void ts_ssh_commands_config_sync_to_sdcard(void)
+{
+    /* 异步执行 SD 卡同步（避免在 API 处理任务中执行导致栈溢出/超时） */
+    xTaskCreate(async_sync_task, "ssh_cmd_sync", 8192, NULL, 2, NULL);
 }

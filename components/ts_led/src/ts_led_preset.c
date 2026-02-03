@@ -367,6 +367,11 @@ static int get_device_index(const char *name)
     return -1;
 }
 
+/**
+ * @brief Get short name for LED device by index
+ * @note Reserved for NVS preset keys
+ */
+__attribute__((unused))
 static const char *get_device_short_name(int idx)
 {
     static const char *names[] = {"touch", "board", "matrix"};

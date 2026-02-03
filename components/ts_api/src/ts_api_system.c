@@ -390,7 +390,9 @@ static esp_err_t api_system_log_level(const cJSON *params, ts_api_result_t *resu
 
 /**
  * @brief Helper to add heap region info to JSON
+ * @note Reserved for detailed memory analysis feature
  */
+__attribute__((unused))
 static void add_heap_regions(cJSON *regions_array, uint32_t caps)
 {
     /* Use heap_caps_walk to get detailed region info */

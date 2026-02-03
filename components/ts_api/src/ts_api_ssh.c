@@ -1174,49 +1174,78 @@ static esp_err_t api_ssh_keygen(const cJSON *params, ts_api_result_t *result)
 /*===========================================================================*/
 
 /**
- * @brief ssh.hosts.list - 列出所有 SSH 主机配置
+ * @brief 迭代器回调用户数据结构（hosts）
+ */
+typedef struct {
+    cJSON *hosts_arr;
+} host_list_ctx_t;
+
+/**
+ * @brief 迭代器回调函数 - 将主机添加到 JSON 数组
+ */
+static bool host_list_iterator_cb(const ts_ssh_host_config_t *config,
+                                   size_t index, void *user_data)
+{
+    (void)index;
+    host_list_ctx_t *ctx = (host_list_ctx_t *)user_data;
+    
+    cJSON *item = cJSON_CreateObject();
+    if (!item) return true;
+    
+    cJSON_AddStringToObject(item, "id", config->id);
+    cJSON_AddStringToObject(item, "host", config->host);
+    cJSON_AddNumberToObject(item, "port", config->port);
+    cJSON_AddStringToObject(item, "username", config->username);
+    cJSON_AddStringToObject(item, "auth_type", 
+        config->auth_type == TS_SSH_HOST_AUTH_KEY ? "key" : "password");
+    if (config->keyid[0]) {
+        cJSON_AddStringToObject(item, "keyid", config->keyid);
+    }
+    cJSON_AddBoolToObject(item, "enabled", config->enabled);
+    cJSON_AddNumberToObject(item, "created", config->created_time);
+    cJSON_AddNumberToObject(item, "last_used", config->last_used_time);
+    
+    cJSON_AddItemToArray(ctx->hosts_arr, item);
+    return true;  /* 继续遍历 */
+}
+
+/**
+ * @brief ssh.hosts.list - 列出所有 SSH 主机配置（支持分页）
+ * 
+ * 使用流式迭代器，每次只加载一条配置。
+ * 
+ * Params: {
+ *   "offset": 0   (可选，分页起始位置，默认 0)
+ *   "limit": 0    (可选，每页数量，0 表示不限制，默认不限制)
+ * }
  */
 static esp_err_t api_ssh_hosts_list(const cJSON *params, ts_api_result_t *result)
 {
-    (void)params;
+    const cJSON *offset_j = params ? cJSON_GetObjectItem(params, "offset") : NULL;
+    const cJSON *limit_j = params ? cJSON_GetObjectItem(params, "limit") : NULL;
+    
+    size_t offset = (offset_j && cJSON_IsNumber(offset_j)) ? (size_t)offset_j->valueint : 0;
+    size_t limit = (limit_j && cJSON_IsNumber(limit_j)) ? (size_t)limit_j->valueint : 0;
     
     cJSON *data = cJSON_CreateObject();
     cJSON *hosts_arr = cJSON_AddArrayToObject(data, "hosts");
     
-    /* 使用动态分配避免栈溢出 */
-    ts_ssh_host_config_t *configs = heap_caps_malloc(
-        sizeof(ts_ssh_host_config_t) * TS_SSH_HOSTS_MAX, 
-        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!configs) {
-        configs = malloc(sizeof(ts_ssh_host_config_t) * TS_SSH_HOSTS_MAX);
+    host_list_ctx_t ctx = { .hosts_arr = hosts_arr };
+    size_t total_count = 0;
+    
+    esp_err_t ret = ts_ssh_hosts_config_iterate(
+        host_list_iterator_cb, &ctx,
+        offset, limit, &total_count);
+    
+    if (ret != ESP_OK) {
+        cJSON_Delete(data);
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to list hosts");
+        return ESP_OK;
     }
     
-    size_t count = 0;
+    cJSON_AddNumberToObject(data, "count", cJSON_GetArraySize(hosts_arr));
+    cJSON_AddNumberToObject(data, "total", (int)total_count);
     
-    if (configs && ts_ssh_hosts_config_list(configs, TS_SSH_HOSTS_MAX, &count) == ESP_OK) {
-        for (size_t i = 0; i < count; i++) {
-            cJSON *item = cJSON_CreateObject();
-            cJSON_AddStringToObject(item, "id", configs[i].id);
-            cJSON_AddStringToObject(item, "host", configs[i].host);
-            cJSON_AddNumberToObject(item, "port", configs[i].port);
-            cJSON_AddStringToObject(item, "username", configs[i].username);
-            cJSON_AddStringToObject(item, "auth_type", 
-                configs[i].auth_type == TS_SSH_HOST_AUTH_KEY ? "key" : "password");
-            if (configs[i].keyid[0]) {
-                cJSON_AddStringToObject(item, "keyid", configs[i].keyid);
-            }
-            cJSON_AddBoolToObject(item, "enabled", configs[i].enabled);
-            cJSON_AddNumberToObject(item, "created", configs[i].created_time);
-            cJSON_AddNumberToObject(item, "last_used", configs[i].last_used_time);
-            cJSON_AddItemToArray(hosts_arr, item);
-        }
-    }
-    
-    if (configs) {
-        free(configs);
-    }
-    
-    cJSON_AddNumberToObject(data, "count", (int)count);
     ts_api_result_ok(result, data);
     return ESP_OK;
 }
@@ -1376,87 +1405,139 @@ static esp_err_t api_ssh_hosts_get(const cJSON *params, ts_api_result_t *result)
 /*===========================================================================*/
 
 /**
- * @brief ssh.commands.list - 列出所有 SSH 指令配置
+ * @brief 迭代器回调用户数据结构
+ */
+typedef struct {
+    cJSON *commands_arr;
+} cmd_list_ctx_t;
+
+/**
+ * @brief 将单个命令配置转换为 JSON 对象
+ */
+static cJSON *cmd_config_to_json(const ts_ssh_command_config_t *cfg)
+{
+    cJSON *item = cJSON_CreateObject();
+    if (!item) return NULL;
+    
+    cJSON_AddStringToObject(item, "id", cfg->id);
+    cJSON_AddStringToObject(item, "host_id", cfg->host_id);
+    cJSON_AddStringToObject(item, "name", cfg->name);
+    cJSON_AddStringToObject(item, "command", cfg->command);
+    cJSON_AddStringToObject(item, "desc", cfg->desc);
+    cJSON_AddStringToObject(item, "icon", cfg->icon);
+    if (cfg->expect_pattern[0]) {
+        cJSON_AddStringToObject(item, "expectPattern", cfg->expect_pattern);
+    }
+    if (cfg->fail_pattern[0]) {
+        cJSON_AddStringToObject(item, "failPattern", cfg->fail_pattern);
+    }
+    if (cfg->extract_pattern[0]) {
+        cJSON_AddStringToObject(item, "extractPattern", cfg->extract_pattern);
+    }
+    if (cfg->var_name[0]) {
+        cJSON_AddStringToObject(item, "varName", cfg->var_name);
+    }
+    cJSON_AddNumberToObject(item, "timeout", cfg->timeout_sec);
+    cJSON_AddBoolToObject(item, "stopOnMatch", cfg->stop_on_match);
+    cJSON_AddBoolToObject(item, "nohup", cfg->nohup);
+    cJSON_AddBoolToObject(item, "enabled", cfg->enabled);
+    /* 服务模式字段 */
+    cJSON_AddBoolToObject(item, "serviceMode", cfg->service_mode);
+    if (cfg->ready_pattern[0]) {
+        cJSON_AddStringToObject(item, "readyPattern", cfg->ready_pattern);
+    }
+    if (cfg->service_fail_pattern[0]) {
+        cJSON_AddStringToObject(item, "serviceFailPattern", cfg->service_fail_pattern);
+    }
+    if (cfg->ready_timeout_sec > 0) {
+        cJSON_AddNumberToObject(item, "readyTimeout", cfg->ready_timeout_sec);
+    }
+    if (cfg->ready_check_interval_ms > 0) {
+        cJSON_AddNumberToObject(item, "readyInterval", cfg->ready_check_interval_ms);
+    }
+    cJSON_AddNumberToObject(item, "created", cfg->created_time);
+    cJSON_AddNumberToObject(item, "lastExec", cfg->last_exec_time);
+    
+    return item;
+}
+
+/**
+ * @brief 迭代器回调函数 - 将命令添加到 JSON 数组
+ */
+static bool cmd_list_iterator_cb(const ts_ssh_command_config_t *config,
+                                  size_t index, void *user_data)
+{
+    (void)index;
+    cmd_list_ctx_t *ctx = (cmd_list_ctx_t *)user_data;
+    
+    cJSON *item = cmd_config_to_json(config);
+    if (item) {
+        cJSON_AddItemToArray(ctx->commands_arr, item);
+    }
+    
+    return true;  /* 继续遍历 */
+}
+
+/**
+ * @brief ssh.commands.list - 列出所有 SSH 指令配置（支持分页）
+ * 
+ * 使用流式迭代器，每次只加载一条命令，避免大块内存分配。
  * 
  * Params: {
  *   "host_id": "agx0" (可选，按主机过滤)
+ *   "offset": 0       (可选，分页起始位置，默认 0)
+ *   "limit": 20       (可选，每页数量，默认 20，0 表示不限制)
+ * }
+ * 
+ * Response: {
+ *   "commands": [...],
+ *   "count": 5,         // 本次返回的数量
+ *   "total": 64,        // 总数量
+ *   "offset": 0,        // 当前偏移
+ *   "limit": 20         // 当前限制
  * }
  */
 static esp_err_t api_ssh_commands_list(const cJSON *params, ts_api_result_t *result)
 {
     const cJSON *host_id = params ? cJSON_GetObjectItem(params, "host_id") : NULL;
+    const cJSON *offset_j = params ? cJSON_GetObjectItem(params, "offset") : NULL;
+    const cJSON *limit_j = params ? cJSON_GetObjectItem(params, "limit") : NULL;
+    
+    /* 分页参数 */
+    size_t offset = (offset_j && cJSON_IsNumber(offset_j)) ? (size_t)offset_j->valueint : 0;
+    size_t limit = (limit_j && cJSON_IsNumber(limit_j)) ? (size_t)limit_j->valueint : 20;
     
     cJSON *data = cJSON_CreateObject();
     cJSON *commands_arr = cJSON_AddArrayToObject(data, "commands");
     
-    /* 使用 PSRAM 分配 */
-    ts_ssh_command_config_t *configs = heap_caps_malloc(
-        sizeof(ts_ssh_command_config_t) * TS_SSH_COMMANDS_MAX,
-        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!configs) {
-        configs = malloc(sizeof(ts_ssh_command_config_t) * TS_SSH_COMMANDS_MAX);
-    }
-    
-    size_t count = 0;
+    cmd_list_ctx_t ctx = { .commands_arr = commands_arr };
+    size_t total_count = 0;
     esp_err_t ret;
     
+    /* 使用流式迭代器，只分配单条命令的临时内存 */
     if (host_id && cJSON_IsString(host_id) && host_id->valuestring[0]) {
-        ret = ts_ssh_commands_config_list_by_host(host_id->valuestring, 
-                                                   configs, TS_SSH_COMMANDS_MAX, &count);
+        ret = ts_ssh_commands_config_iterate_by_host(
+            host_id->valuestring,
+            cmd_list_iterator_cb, &ctx,
+            offset, limit, &total_count);
     } else {
-        ret = ts_ssh_commands_config_list(configs, TS_SSH_COMMANDS_MAX, &count);
+        ret = ts_ssh_commands_config_iterate(
+            cmd_list_iterator_cb, &ctx,
+            offset, limit, &total_count);
     }
     
-    if (configs && ret == ESP_OK) {
-        for (size_t i = 0; i < count; i++) {
-            cJSON *item = cJSON_CreateObject();
-            cJSON_AddStringToObject(item, "id", configs[i].id);
-            cJSON_AddStringToObject(item, "host_id", configs[i].host_id);
-            cJSON_AddStringToObject(item, "name", configs[i].name);
-            cJSON_AddStringToObject(item, "command", configs[i].command);
-            cJSON_AddStringToObject(item, "desc", configs[i].desc);
-            cJSON_AddStringToObject(item, "icon", configs[i].icon);
-            if (configs[i].expect_pattern[0]) {
-                cJSON_AddStringToObject(item, "expectPattern", configs[i].expect_pattern);
-            }
-            if (configs[i].fail_pattern[0]) {
-                cJSON_AddStringToObject(item, "failPattern", configs[i].fail_pattern);
-            }
-            if (configs[i].extract_pattern[0]) {
-                cJSON_AddStringToObject(item, "extractPattern", configs[i].extract_pattern);
-            }
-            if (configs[i].var_name[0]) {
-                cJSON_AddStringToObject(item, "varName", configs[i].var_name);
-            }
-            cJSON_AddNumberToObject(item, "timeout", configs[i].timeout_sec);
-            cJSON_AddBoolToObject(item, "stopOnMatch", configs[i].stop_on_match);
-            cJSON_AddBoolToObject(item, "nohup", configs[i].nohup);
-            cJSON_AddBoolToObject(item, "enabled", configs[i].enabled);
-            /* 服务模式字段 */
-            cJSON_AddBoolToObject(item, "serviceMode", configs[i].service_mode);
-            if (configs[i].ready_pattern[0]) {
-                cJSON_AddStringToObject(item, "readyPattern", configs[i].ready_pattern);
-            }
-            if (configs[i].service_fail_pattern[0]) {
-                cJSON_AddStringToObject(item, "serviceFailPattern", configs[i].service_fail_pattern);
-            }
-            if (configs[i].ready_timeout_sec > 0) {
-                cJSON_AddNumberToObject(item, "readyTimeout", configs[i].ready_timeout_sec);
-            }
-            if (configs[i].ready_check_interval_ms > 0) {
-                cJSON_AddNumberToObject(item, "readyInterval", configs[i].ready_check_interval_ms);
-            }
-            cJSON_AddNumberToObject(item, "created", configs[i].created_time);
-            cJSON_AddNumberToObject(item, "lastExec", configs[i].last_exec_time);
-            cJSON_AddItemToArray(commands_arr, item);
-        }
+    if (ret != ESP_OK) {
+        cJSON_Delete(data);
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to list commands");
+        return ESP_OK;
     }
     
-    if (configs) {
-        free(configs);
-    }
+    /* 返回分页信息 */
+    cJSON_AddNumberToObject(data, "count", cJSON_GetArraySize(commands_arr));
+    cJSON_AddNumberToObject(data, "total", (int)total_count);
+    cJSON_AddNumberToObject(data, "offset", (int)offset);
+    cJSON_AddNumberToObject(data, "limit", (int)limit);
     
-    cJSON_AddNumberToObject(data, "count", (int)count);
     ts_api_result_ok(result, data);
     return ESP_OK;
 }

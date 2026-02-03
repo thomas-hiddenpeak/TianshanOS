@@ -28,6 +28,11 @@
 #define API_PREFIX "/api/v1"
 #endif
 
+/**
+ * @brief Check authentication for API requests
+ * @note Reserved for WebUI authentication feature
+ */
+__attribute__((unused))
 static esp_err_t check_auth(ts_http_request_t *req, uint32_t *session_id, ts_perm_level_t required)
 {
 #ifdef CONFIG_TS_WEBUI_AUTH_REQUIRED
@@ -89,8 +94,7 @@ static esp_err_t api_handler(ts_http_request_t *req, void *user_data)
     // 功能测试完成后需要恢复以下代码：
     // Check authentication for write operations only
     // GET requests (read-only) are allowed without authentication
-    uint32_t session_id = 0;
-    
+    // uint32_t session_id = 0;
     // if (req->method == TS_HTTP_POST || req->method == TS_HTTP_PUT || 
     //     req->method == TS_HTTP_DELETE) {
     //     if (check_auth(req, &session_id, TS_PERM_WRITE) != ESP_OK) {

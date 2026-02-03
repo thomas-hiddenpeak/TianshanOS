@@ -104,13 +104,15 @@ static void notify_change(const char *name,
                           const ts_auto_value_t *old_val,
                           const ts_auto_value_t *new_val)
 {
-    ts_variable_change_event_t event = {
-        .name = name,
-        .old_value = *old_val,
-        .new_value = *new_val,
-    };
+    (void)old_val;  // 暂未使用，预留接口
+    (void)new_val;  // 暂未使用，预留接口
 
-    // 通过事件总线通知（如果事件系统可用）
+    // TODO: 通过事件总线通知（事件系统扩展后启用）
+    // ts_variable_change_event_t event = {
+    //     .name = name,
+    //     .old_value = *old_val,
+    //     .new_value = *new_val,
+    // };
     // ts_event_post(TS_EVENT_BASE_AUTOMATION, TS_EVENT_VAR_CHANGED, 
     //               &event, sizeof(event), 0);
 

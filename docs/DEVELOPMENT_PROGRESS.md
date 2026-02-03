@@ -2,7 +2,7 @@
 
 > **项目**：TianShanOS（天山操作系统）  
 > **版本**：0.3.1  
-> **最后更新**：2026年2月1日  
+> **最后更新**：2026年2月3日  
 > **代码统计**：116+ 个 C 源文件，86+ 个头文件
 
 ---
@@ -44,6 +44,123 @@
 | Phase 30: 规则引擎模板执行修复 & 电压保护代码审查 | ✅ 完成 | 100% | 2026-01-31 |
 | Phase 31: SSH 服务模式 & 日志监控 | ✅ 完成 | 100% | 2026-02-01 |
 | Phase 32: 电压保护自动化变量 & SD 卡配置优先级 | ✅ 完成 | 100% | 2026-02-01 |
+| Phase 33: 自动化配置独立文件 & PSRAM 优化 | ✅ 完成 | 100% | 2026-02-03 |
+
+---
+
+## 📋 Phase 33: 自动化配置独立文件 & PSRAM 优化 ✅
+
+**时间**：2026年2月3日  
+**目标**：自动化模块配置改为独立文件存储，优化 PSRAM 使用
+
+### 功能概述
+
+1. **独立文件存储**：每个数据源、规则、动作模板存储为独立 JSON 文件
+2. **SD 卡 ↔ NVS 双向同步**：配置更改同时写入 SD 卡和 NVS
+3. **PSRAM 优先分配**：所有 ≥128 字节的动态分配优先使用 PSRAM
+
+### 目录结构
+
+```
+/sdcard/config/
+├── sources/           # 数据源配置
+│   ├── agx_monitor.json
+│   ├── power_voltage.json
+│   └── ...
+├── rules/             # 规则配置
+│   ├── low_voltage_alert.json
+│   ├── fan_auto_control.json
+│   └── ...
+└── actions/           # 动作模板配置
+    ├── shutdown_agx.json
+    ├── warning_led.json
+    └── ...
+```
+
+### 配置加载优先级
+
+| 优先级 | 来源 | 说明 |
+|--------|------|------|
+| **1** | SD 卡独立文件目录 | `/sdcard/config/{sources,rules,actions}/<id>.json` |
+| **2** | SD 卡单一文件（兼容旧格式） | `/sdcard/config/{sources,rules,actions}.json` |
+| **3** | NVS | 从 NVS 加载后自动导出到 SD 卡目录 |
+
+### 核心实现
+
+#### 1. 独立文件操作函数
+
+每个模块新增以下函数：
+
+```c
+// ts_source_manager.c
+static esp_err_t ensure_sources_dir(void);           // 创建目录
+static esp_err_t export_source_to_file(const ts_auto_source_t *src);  // 导出单个
+static esp_err_t delete_source_file(const char *id);  // 删除单个
+static esp_err_t load_sources_from_dir(void);         // 从目录加载
+static esp_err_t export_all_sources_to_dir(void);     // 导出全部
+
+// ts_rule_engine.c 和 ts_action_manager.c 同理
+```
+
+#### 2. 配置加载流程
+
+```c
+esp_err_t load_sources_from_nvs(void) {
+    /* 1. 优先从 SD 卡独立文件目录加载 */
+    if (ts_storage_sd_mounted()) {
+        ret = load_sources_from_dir();
+        if (ret == ESP_OK && s_src_ctx.count > 0) {
+            ESP_LOGI(TAG, "Loaded %d sources from SD card directory", s_src_ctx.count);
+            return ESP_OK;
+        }
+        
+        /* 2. 尝试从单一文件加载（兼容旧格式） */
+        ret = load_sources_from_file("/sdcard/config/sources.json");
+        if (ret == ESP_OK && s_src_ctx.count > 0) {
+            /* 迁移到独立文件格式 */
+            export_all_sources_to_dir();
+            return ESP_OK;
+        }
+    }
+    
+    /* 3. SD 卡无配置，从 NVS 加载 */
+    // ... 从 NVS 加载 ...
+    
+    /* 从 NVS 加载后，导出到 SD 卡 */
+    if (s_src_ctx.count > 0 && ts_storage_sd_mounted()) {
+        export_all_sources_to_dir();
+    }
+}
+```
+
+#### 3. PSRAM 优先分配
+
+所有动态分配使用 PSRAM 优先模式：
+
+```c
+// 优先使用 PSRAM，失败时回退到 DRAM
+char *json = heap_caps_malloc(len, MALLOC_CAP_SPIRAM);
+if (!json) json = malloc(len);  // Fallback to DRAM
+
+ts_auto_source_t *src = heap_caps_malloc(sizeof(ts_auto_source_t), MALLOC_CAP_SPIRAM);
+if (!src) src = malloc(sizeof(ts_auto_source_t));
+```
+
+### 文件变更
+
+| 文件 | 变更 |
+|------|------|
+| `ts_source_manager.c` | 独立文件加载/保存、PSRAM 优先分配 |
+| `ts_rule_engine.c` | 独立文件加载/保存、PSRAM 优先分配 |
+| `ts_action_manager.c` | 独立文件加载/保存、PSRAM 优先分配 |
+
+### 内存优化统计
+
+| 分配位置 | 之前 | 之后 |
+|---------|------|------|
+| JSON 解析缓冲区 | DRAM | PSRAM 优先 |
+| 结构体临时分配 | DRAM | PSRAM 优先 |
+| 配置数组 | PSRAM | PSRAM（保持） |
 
 ---
 

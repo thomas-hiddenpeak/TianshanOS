@@ -28,17 +28,13 @@
 #include "argtable3/argtable3.h"
 #include "ts_console.h"
 #include "freertos/FreeRTOS.h"
-#include "ts_console.h"
 #include "freertos/task.h"
 #include "ts_console.h"
 #include <stdio.h>
-#include "ts_console.h"
 #include <string.h>
-#include "ts_console.h"
 #include <stdlib.h>
-#include "ts_console.h"
 
-static const char *TAG = "cmd_power";
+// static const char *TAG = "cmd_power";  // 暂未使用，调试时可启用
 
 /*===========================================================================*/
 /*                          Helper Functions                                  */
@@ -73,7 +69,9 @@ static bool get_json_bool(const cJSON *obj, const char *key, bool def)
 
 /**
  * @brief 从 cJSON 获取 string 值
+ * @note Reserved for future string parameter extraction
  */
+__attribute__((unused))
 static const char *get_json_string(const cJSON *obj, const char *key, const char *def)
 {
     const cJSON *item = cJSON_GetObjectItem(obj, key);

@@ -35,6 +35,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <unistd.h>
 
 static const char *TAG = "ts_rule_engine";
 
@@ -54,6 +57,9 @@ static const char *TAG = "ts_rule_engine";
 
 /** NVS key prefix for rules */
 #define NVS_KEY_RULE_PREFIX         "rule_"
+
+/** SD 卡独立文件目录 */
+#define RULES_SDCARD_DIR            "/sdcard/config/rules"
 
 /*===========================================================================*/
 /*                              内部状态                                      */
@@ -257,11 +263,47 @@ esp_err_t ts_rule_engine_init(void)
     s_rule_ctx.count = 0;
     s_rule_ctx.initialized = true;
 
-    // 从 NVS 加载已保存的规则
-    ts_rules_load();
+    // 延迟加载规则（等待 SD 卡挂载，避免栈溢出）
+    extern void ts_rule_deferred_load_task(void *arg);
+    BaseType_t task_ret = xTaskCreateWithCaps(
+        ts_rule_deferred_load_task,
+        "rule_load",
+        8192,               // 8KB 栈用于 SD 卡 I/O
+        NULL,
+        tskIDLE_PRIORITY + 1,
+        NULL,
+        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT
+    );
+    if (task_ret != pdPASS) {
+        ESP_LOGW(TAG, "Failed to create deferred load task, loading synchronously");
+        ts_rules_load();
+    }
 
-    ESP_LOGI(TAG, "Rule engine initialized");
+    ESP_LOGI(TAG, "Rule engine initialized (loading deferred)");
     return ESP_OK;
+}
+
+/**
+ * @brief 延迟加载任务 - 等待 SD 卡挂载后加载规则
+ */
+void ts_rule_deferred_load_task(void *arg)
+{
+    (void)arg;
+    
+    // 等待 3 秒，确保 SD 卡和 NVS 都已就绪
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    
+    if (!s_rule_ctx.initialized) {
+        ESP_LOGW(TAG, "Rule engine not initialized, skip deferred load");
+        vTaskDelete(NULL);
+        return;
+    }
+    
+    ESP_LOGI(TAG, "Deferred rule loading started");
+    ts_rules_load();
+    ESP_LOGI(TAG, "Deferred rule loading complete: %d rules", s_rule_ctx.count);
+    
+    vTaskDelete(NULL);
 }
 
 esp_err_t ts_rule_engine_deinit(void)
@@ -853,7 +895,9 @@ static const char *resolve_led_device_name(const char *name)
 
 /**
  * @brief 执行 LED 动作
+ * @note Reserved for automation LED action feature
  */
+__attribute__((unused))
 static esp_err_t execute_led_action(const ts_auto_action_t *action)
 {
     if (!action || action->type != TS_AUTO_ACT_LED) {
@@ -1864,6 +1908,193 @@ static char *rule_to_json(const ts_auto_rule_t *rule)
     return json_str;
 }
 
+/* Forward declarations for SD card loading */
+static esp_err_t json_to_rule(const char *json_str, ts_auto_rule_t *rule);
+
+/*===========================================================================*/
+/*                          SD 卡独立文件操作                                  */
+/*===========================================================================*/
+
+/**
+ * @brief 确保 rules 目录存在
+ */
+static esp_err_t ensure_rules_dir(void)
+{
+    struct stat st;
+    
+    /* 确保 /sdcard/config 存在 */
+    if (stat("/sdcard/config", &st) != 0) {
+        if (mkdir("/sdcard/config", 0755) != 0) {
+            ESP_LOGE(TAG, "Failed to create /sdcard/config");
+            return ESP_FAIL;
+        }
+    }
+    
+    /* 确保 /sdcard/config/rules 存在 */
+    if (stat(RULES_SDCARD_DIR, &st) != 0) {
+        if (mkdir(RULES_SDCARD_DIR, 0755) != 0) {
+            ESP_LOGE(TAG, "Failed to create %s", RULES_SDCARD_DIR);
+            return ESP_FAIL;
+        }
+    }
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief 导出单条规则到独立文件
+ */
+static esp_err_t export_rule_to_file(const ts_auto_rule_t *rule)
+{
+    if (!rule || !rule->id[0]) return ESP_ERR_INVALID_ARG;
+    
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "%s/%s.json", RULES_SDCARD_DIR, rule->id);
+    
+    char *json = rule_to_json(rule);
+    if (!json) return ESP_ERR_NO_MEM;
+    
+    FILE *fp = fopen(filepath, "w");
+    if (!fp) {
+        free(json);
+        ESP_LOGE(TAG, "Failed to open file: %s", filepath);
+        return ESP_FAIL;
+    }
+    
+    fprintf(fp, "%s\n", json);
+    fclose(fp);
+    free(json);
+    
+    ESP_LOGD(TAG, "Exported rule to %s", filepath);
+    return ESP_OK;
+}
+
+/**
+ * @brief 删除单条规则的独立文件
+ */
+static esp_err_t delete_rule_file(const char *id)
+{
+    if (!id || !id[0]) return ESP_ERR_INVALID_ARG;
+    
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "%s/%s.json", RULES_SDCARD_DIR, id);
+    
+    if (unlink(filepath) == 0) {
+        ESP_LOGD(TAG, "Deleted rule file: %s", filepath);
+    }
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief 从独立文件目录加载所有规则
+ */
+static esp_err_t load_rules_from_dir(void)
+{
+    DIR *dir = opendir(RULES_SDCARD_DIR);
+    if (!dir) {
+        ESP_LOGD(TAG, "Rules directory not found: %s", RULES_SDCARD_DIR);
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    int loaded = 0;
+    struct dirent *entry;
+    
+    /* 使用堆分配避免栈溢出 */
+    ts_auto_rule_t *rule = heap_caps_malloc(sizeof(ts_auto_rule_t), MALLOC_CAP_SPIRAM);
+    if (!rule) rule = malloc(sizeof(ts_auto_rule_t));
+    if (!rule) {
+        closedir(dir);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    while ((entry = readdir(dir)) != NULL) {
+        /* 跳过非 .json 文件 */
+        size_t len = strlen(entry->d_name);
+        if (len < 6 || strcmp(entry->d_name + len - 5, ".json") != 0) {
+            continue;
+        }
+        
+        /* 限制文件名长度避免缓冲区溢出 */
+        if (len > 60) {
+            continue;
+        }
+        
+        char filepath[128];
+        snprintf(filepath, sizeof(filepath), "%s/%.60s", RULES_SDCARD_DIR, entry->d_name);
+        
+        /* 读取文件内容 */
+        FILE *fp = fopen(filepath, "r");
+        if (!fp) continue;
+        
+        fseek(fp, 0, SEEK_END);
+        long size = ftell(fp);
+        fseek(fp, 0, SEEK_SET);
+        
+        if (size <= 0 || size > 16384) {
+            fclose(fp);
+            continue;
+        }
+        
+        char *content = heap_caps_malloc(size + 1, MALLOC_CAP_SPIRAM);
+        if (!content) content = malloc(size + 1);
+        if (!content) {
+            fclose(fp);
+            continue;
+        }
+        
+        size_t read_size = fread(content, 1, size, fp);
+        fclose(fp);
+        content[read_size] = '\0';
+        
+        /* 解析并添加 */
+        memset(rule, 0, sizeof(ts_auto_rule_t));
+        if (json_to_rule(content, rule) == ESP_OK && rule->id[0]) {
+            if (s_rule_ctx.count < s_rule_ctx.capacity) {
+                memcpy(&s_rule_ctx.rules[s_rule_ctx.count], rule, sizeof(ts_auto_rule_t));
+                s_rule_ctx.count++;
+                loaded++;
+                ESP_LOGD(TAG, "Loaded rule from file: %s", rule->id);
+            }
+        }
+        free(content);
+    }
+    
+    free(rule);
+    closedir(dir);
+    
+    if (loaded > 0) {
+        ESP_LOGI(TAG, "Loaded %d rules from directory: %s", loaded, RULES_SDCARD_DIR);
+        return ESP_OK;
+    }
+    
+    return ESP_ERR_NOT_FOUND;
+}
+
+/**
+ * @brief 导出所有规则到独立文件目录
+ */
+static esp_err_t export_all_rules_to_dir(void)
+{
+    if (!ts_storage_sd_mounted()) {
+        ESP_LOGD(TAG, "SD card not mounted, skip export");
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    esp_err_t ret = ensure_rules_dir();
+    if (ret != ESP_OK) return ret;
+    
+    int exported = 0;
+    for (int i = 0; i < s_rule_ctx.count; i++) {
+        if (export_rule_to_file(&s_rule_ctx.rules[i]) == ESP_OK) {
+            exported++;
+        }
+    }
+    
+    ESP_LOGI(TAG, "Exported %d rules to directory: %s", exported, RULES_SDCARD_DIR);
+    return ESP_OK;
+}
+
 /**
  * @brief 从 JSON 字符串反序列化规则
  */
@@ -2072,7 +2303,7 @@ static esp_err_t json_to_rule(const char *json_str, ts_auto_rule_t *rule)
 }
 
 /**
- * @brief 保存所有规则到 NVS
+ * @brief 保存所有规则到 NVS 和 SD 卡
  */
 esp_err_t ts_rules_save(void)
 {
@@ -2101,11 +2332,7 @@ esp_err_t ts_rules_save(void)
         return ret;
     }
     
-    // 为 SD 卡导出准备 JSON 数组
-    cJSON *rules_json = cJSON_CreateObject();
-    cJSON *rules_array = cJSON_CreateArray();
-    
-    // 保存每条规则
+    // 保存每条规则到 NVS
     for (int i = 0; i < s_rule_ctx.count; i++) {
         char key[16];
         snprintf(key, sizeof(key), "%s%d", NVS_KEY_RULE_PREFIX, i);
@@ -2118,13 +2345,6 @@ esp_err_t ts_rules_save(void)
         
         // 保存到 NVS
         ret = nvs_set_str(handle, key, json);
-        
-        // 同时添加到 SD 卡 JSON 数组
-        cJSON *rule_obj = cJSON_Parse(json);
-        if (rule_obj) {
-            cJSON_AddItemToArray(rules_array, rule_obj);
-        }
-        
         free(json);
         
         if (ret != ESP_OK) {
@@ -2137,26 +2357,20 @@ esp_err_t ts_rules_save(void)
     ret = nvs_commit(handle);
     nvs_close(handle);
     
-    // 构建完整 JSON 并导出到 SD 卡
-    cJSON_AddItemToObject(rules_json, "rules", rules_array);
-    cJSON_AddNumberToObject(rules_json, "count", s_rule_ctx.count);
-    
-    // 使用新的 API 导出到 SD 卡
-    esp_err_t sd_ret = ts_config_module_export_custom_json(TS_CONFIG_MODULE_RULES, rules_json);
-    cJSON_Delete(rules_json);
-    
-    if (sd_ret != ESP_OK && sd_ret != TS_CONFIG_ERR_SD_NOT_MOUNTED) {
-        ESP_LOGW(TAG, "Failed to export rules to SD card: %s", esp_err_to_name(sd_ret));
+    // 同时导出到 SD 卡独立文件目录
+    if (ts_storage_sd_mounted()) {
+        export_all_rules_to_dir();
     }
     
-    ESP_LOGI(TAG, "Saved %d rules to NVS", s_rule_ctx.count);
+    ESP_LOGI(TAG, "Saved %d rules to NVS and SD card", s_rule_ctx.count);
     return ret;
 }
 
 /**
  * @brief 从存储加载所有规则
  * 
- * Priority: SD card file > NVS > empty (遵循系统配置优先级原则)
+ * Priority: SD card directory > SD card single file > NVS > empty
+ * 当从 NVS 加载后，自动导出到 SD 卡（如果 SD 卡已挂载）
  */
 esp_err_t ts_rules_load(void)
 {
@@ -2165,17 +2379,29 @@ esp_err_t ts_rules_load(void)
     }
     
     esp_err_t ret;
+    bool loaded_from_sdcard = false;
     
-    /* 1. 优先从 SD 卡加载 */
+    /* 1. 优先从 SD 卡独立文件目录加载 */
     if (ts_storage_sd_mounted()) {
+        ret = load_rules_from_dir();
+        if (ret == ESP_OK && s_rule_ctx.count > 0) {
+            ESP_LOGI(TAG, "Loaded %d rules from SD card directory", s_rule_ctx.count);
+            loaded_from_sdcard = true;
+            goto save_to_nvs;
+        }
+        
+        /* 2. 尝试从单一文件加载（兼容旧格式） */
         ret = ts_rules_load_from_file("/sdcard/config/rules.json");
         if (ret == ESP_OK && s_rule_ctx.count > 0) {
-            ESP_LOGI(TAG, "Loaded %d rules from SD card", s_rule_ctx.count);
-            return ESP_OK;  /* SD 卡配置已自动保存到 NVS */
+            ESP_LOGI(TAG, "Loaded %d rules from SD card file", s_rule_ctx.count);
+            loaded_from_sdcard = true;
+            /* 迁移到独立文件格式 */
+            export_all_rules_to_dir();
+            goto save_to_nvs;
         }
     }
     
-    /* 2. SD 卡无配置，从 NVS 加载 */
+    /* 3. SD 卡无配置，从 NVS 加载 */
     uint8_t count = 0;
     nvs_handle_t handle;
     ret = nvs_open(NVS_NAMESPACE_RULES, NVS_READONLY, &handle);
@@ -2215,7 +2441,8 @@ esp_err_t ts_rules_load(void)
             continue;
         }
         
-        char *json = malloc(len);
+        char *json = heap_caps_malloc(len, MALLOC_CAP_SPIRAM);
+        if (!json) json = malloc(len);
         if (!json) {
             ESP_LOGW(TAG, "Failed to allocate memory for rule %d", i);
             continue;
@@ -2237,7 +2464,22 @@ esp_err_t ts_rules_load(void)
     }
 
     free(rule);
+    nvs_close(handle);
     ESP_LOGI(TAG, "Loaded %d rules from NVS", s_rule_ctx.count);
+    
+    /* 从 NVS 加载后，导出到 SD 卡（如果 SD 卡已挂载且有数据） */
+    if (s_rule_ctx.count > 0 && ts_storage_sd_mounted()) {
+        ESP_LOGI(TAG, "Exporting NVS rules to SD card...");
+        export_all_rules_to_dir();
+    }
+    
+    return ESP_OK;
+
+save_to_nvs:
+    /* 从 SD 卡加载后，保存到 NVS */
+    if (loaded_from_sdcard && s_rule_ctx.count > 0) {
+        ts_rules_save();
+    }
     return ESP_OK;
 }
 

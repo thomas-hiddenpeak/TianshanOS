@@ -103,7 +103,6 @@ static esp_err_t api_storage_unmount(const cJSON *params, ts_api_result_t *resul
 static esp_err_t api_storage_list(const cJSON *params, ts_api_result_t *result)
 {
     const char *path = "/sdcard";
-    bool recursive = false;
     
     if (params) {
         const cJSON *path_param = cJSON_GetObjectItem(params, "path");
@@ -111,10 +110,11 @@ static esp_err_t api_storage_list(const cJSON *params, ts_api_result_t *result)
             path = path_param->valuestring;
         }
         
-        const cJSON *recursive_param = cJSON_GetObjectItem(params, "recursive");
-        if (recursive_param && cJSON_IsBool(recursive_param)) {
-            recursive = cJSON_IsTrue(recursive_param);
-        }
+        // TODO: 实现递归目录遍历功能
+        // const cJSON *recursive_param = cJSON_GetObjectItem(params, "recursive");
+        // if (recursive_param && cJSON_IsBool(recursive_param)) {
+        //     recursive = cJSON_IsTrue(recursive_param);
+        // }
     }
     
     DIR *dir = opendir(path);
