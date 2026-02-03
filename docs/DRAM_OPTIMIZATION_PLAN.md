@@ -116,17 +116,27 @@ static uint8_t *heat = NULL;
 
 ## 三、实施顺序
 
-### 第一批（立即实施，风险最低）
+### 第一批（已实施）
 
-1. ✅ SSH 配置任务迁移（4 个任务，32 KB）
-2. ✅ PKI/SSH 网络任务迁移（3 个任务，16 KB）
+1. ✅ text_overlay (4 KB) - LED 渲染，纯图形操作
+2. ✅ dhcp_start (4 KB) - DHCP 启动，纯网络操作
+3. ✅ lpmu_detect (4 KB) - LPMU 检测，纯网络 ping
+4. ✅ ssh_forward (4 KB) - SSH 端口转发，纯 libssh2 网络操作
 
-**预期效果**：DRAM 空闲从 33 KB → 80 KB
+**已节省**：16 KB DRAM
+
+### ⚠️ 无法迁移的任务（NVS 访问）
+
+- ssh_cmd_load/sync (8 KB × 2) - 调用 `ts_ssh_commands_config_count()` 访问 NVS
+- ssh_host_load/sync (8 KB × 2) - 调用 `ts_ssh_hosts_config_count()` 访问 NVS
+- pki_enroll (8 KB) - PKI 操作访问 NVS 密钥存储
+- ssh_exec (8 KB × 2) - SSH 执行访问 keystore (NVS)
+- action_exec (16 KB) - 执行动作时访问 NVS
 
 ### 第二批（可选，需测试验证）
 
 3. ⚠️ LED 效果静态数组动态化（9 KB）
-4. ⚠️ 其他短期任务迁移（8-12 KB）
+4. ⚠️ 其他短期任务迁移
 
 ---
 
