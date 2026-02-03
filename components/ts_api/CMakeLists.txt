@@ -4,6 +4,7 @@ set(TS_API_SRCS
     "src/ts_api.c"
     "src/ts_api_system.c"
     "src/ts_api_config.c"
+    "src/ts_api_config_pack.c"
     "src/ts_api_device.c"
     "src/ts_api_led.c"
     "src/ts_api_network.c"
@@ -33,6 +34,6 @@ set(TS_API_SRCS
 idf_component_register(
     SRCS ${TS_API_SRCS}
     INCLUDE_DIRS "include"
-    REQUIRES ts_core ts_drivers ts_led ts_net json ts_storage ts_security ts_ota ts_automation ts_cert ts_webui
+    REQUIRES ts_core ts_drivers ts_led ts_net json ts_storage ts_security ts_ota ts_automation ts_cert ts_webui ts_config_pack
     PRIV_REQUIRES ts_hal esp_timer esp_app_format spi_flash bootloader_support esp_wifi app_update esp_https_ota esp_http_client espressif__esp_websocket_client
 )

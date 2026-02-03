@@ -158,6 +158,94 @@ esp_err_t ts_crypto_ecdsa_verify(ts_keypair_t keypair,
                                   const void *hash, size_t hash_len,
                                   const void *signature, size_t sig_len);
 
+/*===========================================================================*/
+/*                          ECDH Key Exchange                                 */
+/*===========================================================================*/
+
+/**
+ * @brief Compute ECDH shared secret
+ * 
+ * Performs ECDH key agreement using the local private key and
+ * a peer's public key to derive a shared secret.
+ * 
+ * @param local_keypair Local EC key pair (contains private key)
+ * @param peer_pubkey_pem Peer's public key in PEM format
+ * @param shared_secret Output buffer for shared secret (32 bytes for P-256)
+ * @param shared_len Input: buffer size; Output: actual secret length
+ * @return ESP_OK on success
+ */
+esp_err_t ts_crypto_ecdh_compute_shared(ts_keypair_t local_keypair,
+                                         const char *peer_pubkey_pem,
+                                         void *shared_secret,
+                                         size_t *shared_len);
+
+/**
+ * @brief Compute ECDH shared secret from raw public key
+ * 
+ * @param local_keypair Local EC key pair (contains private key)
+ * @param peer_pubkey Raw peer public key (uncompressed point: 0x04 || X || Y)
+ * @param peer_pubkey_len Length of peer public key (65 bytes for P-256)
+ * @param shared_secret Output buffer for shared secret
+ * @param shared_len Input: buffer size; Output: actual secret length
+ * @return ESP_OK on success
+ */
+esp_err_t ts_crypto_ecdh_compute_shared_raw(ts_keypair_t local_keypair,
+                                             const void *peer_pubkey,
+                                             size_t peer_pubkey_len,
+                                             void *shared_secret,
+                                             size_t *shared_len);
+
+/*===========================================================================*/
+/*                          Key Derivation (HKDF)                            */
+/*===========================================================================*/
+
+/**
+ * @brief HKDF key derivation (RFC 5869)
+ * 
+ * Derives key material using HKDF-SHA256.
+ * 
+ * @param salt Salt value (optional, can be NULL)
+ * @param salt_len Salt length
+ * @param ikm Input keying material (e.g., ECDH shared secret)
+ * @param ikm_len IKM length
+ * @param info Application-specific context info
+ * @param info_len Info length
+ * @param okm Output keying material buffer
+ * @param okm_len Desired output length
+ * @return ESP_OK on success
+ */
+esp_err_t ts_crypto_hkdf(const void *salt, size_t salt_len,
+                          const void *ikm, size_t ikm_len,
+                          const void *info, size_t info_len,
+                          void *okm, size_t okm_len);
+
+/*===========================================================================*/
+/*                          Random Number Generation                          */
+/*===========================================================================*/
+
+/**
+ * @brief Generate cryptographically secure random bytes
+ * 
+ * @param buf Output buffer
+ * @param len Number of random bytes to generate
+ * @return ESP_OK on success
+ */
+esp_err_t ts_crypto_random(void *buf, size_t len);
+
+/**
+ * @brief Export public key in raw format
+ * 
+ * For EC keys, exports uncompressed point format (0x04 || X || Y)
+ * 
+ * @param keypair Key pair handle
+ * @param raw Output buffer for raw public key
+ * @param raw_len Input: buffer size; Output: actual length (65 for P-256)
+ * @return ESP_OK on success
+ */
+esp_err_t ts_crypto_keypair_export_public_raw(ts_keypair_t keypair,
+                                               void *raw,
+                                               size_t *raw_len);
+
 #ifdef __cplusplus
 }
 #endif

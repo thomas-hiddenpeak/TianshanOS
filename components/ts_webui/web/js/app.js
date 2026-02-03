@@ -9852,6 +9852,154 @@ async function loadSecurityPage() {
                 </div>
             </div>
             
+            <div class="section">
+                <h2>📦 配置包 (Config Pack)</h2>
+                <div id="config-pack-status-card" class="info-card" style="margin-bottom:15px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                        <span style="font-size:1.1em;font-weight:bold">
+                            <span id="pack-status-icon">🔄</span>
+                            <span id="pack-status-text">加载中...</span>
+                        </span>
+                        <span id="pack-device-type-badge" class="badge" style="display:none"></span>
+                    </div>
+                    <div id="pack-info-details" style="display:none">
+                        <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:8px;font-size:0.9em">
+                            <div><strong>设备类型：</strong><span id="pack-device-type">-</span></div>
+                            <div><strong>证书 CN：</strong><span id="pack-cert-cn">-</span></div>
+                            <div><strong>证书指纹：</strong><span id="pack-cert-fp" style="font-family:monospace;font-size:0.8em">-</span></div>
+                            <div><strong>格式版本：</strong><span id="pack-version">-</span></div>
+                        </div>
+                    </div>
+                    <p style="color:#666;margin-top:10px;font-size:0.9em">
+                        💡 配置包系统允许安全地加密和签名配置文件，用于设备间配置分发
+                    </p>
+                </div>
+                <div class="button-group" style="display:flex;flex-wrap:wrap;gap:8px">
+                    <button class="btn" onclick="showConfigPackExportCertModal()">📤 导出设备证书</button>
+                    <button class="btn" onclick="showConfigPackImportModal()">📥 导入配置包</button>
+                    <button class="btn" id="btn-pack-export" onclick="showConfigPackExportModal()" disabled>📦 导出配置包</button>
+                    <button class="btn" onclick="showConfigPackListModal()">📋 查看配置包列表</button>
+                </div>
+            </div>
+            
+            <!-- 配置包：导出设备证书弹窗 -->
+            <div class="modal hidden" id="pack-export-cert-modal">
+                <div class="modal-content" style="max-width:600px">
+                    <h2>📤 导出设备证书</h2>
+                    <p style="color:#666;margin-bottom:15px">将此证书发送给需要向您发送加密配置的开发者</p>
+                    <div id="pack-export-cert-loading" style="text-align:center;padding:20px">🔄 加载中...</div>
+                    <div id="pack-export-cert-content" class="hidden">
+                        <div class="form-group">
+                            <label>证书指纹 (SHA256)</label>
+                            <input type="text" id="pack-cert-fingerprint" readonly style="font-family:monospace;font-size:0.9em;background:#f5f5f5">
+                        </div>
+                        <div class="form-group">
+                            <label>证书 CN</label>
+                            <input type="text" id="pack-cert-cn-display" readonly style="background:#f5f5f5">
+                        </div>
+                        <div class="form-group">
+                            <label>证书 PEM</label>
+                            <textarea id="pack-cert-pem" readonly style="width:100%;height:200px;font-family:monospace;font-size:11px"></textarea>
+                        </div>
+                        <button class="btn btn-small" onclick="copyPackCertToClipboard()" style="margin-top:8px">📋 复制到剪贴板</button>
+                    </div>
+                    <div class="form-actions" style="margin-top:15px">
+                        <button class="btn" onclick="hideConfigPackExportCertModal()">关闭</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 配置包：导入弹窗 -->
+            <div class="modal hidden" id="pack-import-modal">
+                <div class="modal-content" style="max-width:700px">
+                    <h2>📥 导入配置包</h2>
+                    <p style="color:#666;margin-bottom:15px">上传或粘贴 .tscfg 配置包内容</p>
+                    <div class="form-group">
+                        <label>选择文件</label>
+                        <input type="file" id="pack-import-file" accept=".tscfg,.json" onchange="handlePackFileSelect(event)">
+                    </div>
+                    <div class="form-group">
+                        <label>或粘贴 JSON 内容</label>
+                        <textarea id="pack-import-content" placeholder='{"tscfg_version":"1.0", ...}' style="width:100%;height:150px;font-family:monospace;font-size:11px"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" id="pack-import-apply"> 导入后立即应用配置</label>
+                    </div>
+                    <div id="pack-import-result" class="result-box hidden" style="margin-top:10px"></div>
+                    <div id="pack-import-preview" class="hidden" style="margin-top:15px;padding:10px;background:#f8f9fa;border-radius:4px">
+                        <h4 style="margin:0 0 10px">📋 配置包信息</h4>
+                        <div id="pack-preview-content"></div>
+                    </div>
+                    <div class="form-actions" style="margin-top:15px">
+                        <button class="btn" onclick="hideConfigPackImportModal()">取消</button>
+                        <button class="btn" onclick="verifyConfigPack()">🔍 仅验证</button>
+                        <button class="btn btn-primary" onclick="importConfigPack()">📥 导入</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 配置包：导出弹窗（仅 Developer 可用） -->
+            <div class="modal hidden" id="pack-export-modal">
+                <div class="modal-content" style="max-width:700px">
+                    <h2>📦 导出加密配置包</h2>
+                    <p style="color:#666;margin-bottom:15px">创建加密配置包发送给目标设备</p>
+                    <div class="form-group">
+                        <label>配置名称</label>
+                        <input type="text" id="pack-export-name" placeholder="led_effects" required>
+                    </div>
+                    <div class="form-group">
+                        <label>描述 (可选)</label>
+                        <input type="text" id="pack-export-desc" placeholder="LED 特效配置">
+                    </div>
+                    <div class="form-group">
+                        <label>配置内容 (JSON)</label>
+                        <textarea id="pack-export-content" placeholder='{"brightness": 80, "effects": [...]}' style="width:100%;height:120px;font-family:monospace;font-size:11px" required></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>目标设备证书 (PEM)</label>
+                        <textarea id="pack-export-recipient-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px" required></textarea>
+                        <div style="font-size:0.85em;color:#666;margin-top:4px">💡 粘贴目标设备导出的证书</div>
+                    </div>
+                    <div id="pack-export-result" class="result-box hidden" style="margin-top:10px"></div>
+                    <div id="pack-export-output" class="hidden" style="margin-top:15px">
+                        <label>生成的配置包 (.tscfg)</label>
+                        <textarea id="pack-export-tscfg" readonly style="width:100%;height:150px;font-family:monospace;font-size:10px"></textarea>
+                        <div style="margin-top:8px;display:flex;gap:8px">
+                            <button class="btn btn-small" onclick="copyPackTscfgToClipboard()">📋 复制</button>
+                            <button class="btn btn-small btn-primary" onclick="downloadPackTscfg()">💾 下载</button>
+                        </div>
+                    </div>
+                    <div class="form-actions" style="margin-top:15px">
+                        <button class="btn" onclick="hideConfigPackExportModal()">取消</button>
+                        <button class="btn btn-primary" onclick="exportConfigPack()">📦 生成配置包</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 配置包：列表弹窗 -->
+            <div class="modal hidden" id="pack-list-modal">
+                <div class="modal-content" style="max-width:800px">
+                    <h2>📋 配置包列表</h2>
+                    <div class="form-group">
+                        <label>目录路径</label>
+                        <div style="display:flex;gap:8px">
+                            <input type="text" id="pack-list-path" value="/sdcard/config" style="flex:1">
+                            <button class="btn" onclick="refreshConfigPackList()">🔄 刷新</button>
+                        </div>
+                    </div>
+                    <div id="pack-list-loading" style="text-align:center;padding:20px">🔄 加载中...</div>
+                    <table class="data-table hidden" id="pack-list-table">
+                        <thead>
+                            <tr><th>文件名</th><th>大小</th><th>签名者</th><th>官方</th><th>状态</th><th>操作</th></tr>
+                        </thead>
+                        <tbody id="pack-list-tbody"></tbody>
+                    </table>
+                    <div class="form-actions" style="margin-top:15px">
+                        <button class="btn" onclick="hideConfigPackListModal()">关闭</button>
+                    </div>
+                </div>
+            </div>
+            
             <!-- 生成密钥弹窗 -->
             <div class="modal hidden" id="keygen-modal">
                 <div class="modal-content">
@@ -10223,6 +10371,9 @@ async function refreshSecurityPage() {
     
     // HTTPS 证书状态
     await refreshCertStatus();
+    
+    // Config Pack 状态
+    await refreshConfigPackStatus();
 }
 
 /**
@@ -10937,6 +11088,417 @@ async function clearAllHosts() {
             showToast('清除失败: ' + e.message, 'error');
         }
     }
+}
+
+// =========================================================================
+//                  Config Pack Management
+// =========================================================================
+
+/**
+ * 刷新配置包状态卡片
+ */
+async function refreshConfigPackStatus() {
+    const statusIcon = document.getElementById('pack-status-icon');
+    const statusText = document.getElementById('pack-status-text');
+    const deviceTypeBadge = document.getElementById('pack-device-type-badge');
+    const infoDetails = document.getElementById('pack-info-details');
+    const btnExport = document.getElementById('btn-pack-export');
+    
+    if (!statusIcon) return; // 不在安全页面
+    
+    try {
+        const result = await api.configPackInfo();
+        const data = result.data;
+        
+        if (!data) throw new Error('无响应数据');
+        
+        // 存储状态供弹窗使用
+        window._configPackStatus = data;
+        
+        // 更新状态
+        const canExport = data.can_export;
+        const deviceType = data.device_type;
+        
+        statusIcon.textContent = canExport ? '🛠️' : '📱';
+        statusText.textContent = canExport ? 'Developer 设备' : 'Device 设备';
+        
+        // 设备类型徽章
+        deviceTypeBadge.style.display = 'inline-block';
+        deviceTypeBadge.textContent = deviceType;
+        deviceTypeBadge.className = 'badge ' + (canExport ? 'badge-success' : 'badge-info');
+        
+        // 显示详细信息
+        infoDetails.style.display = 'block';
+        document.getElementById('pack-device-type').textContent = deviceType;
+        document.getElementById('pack-cert-cn').textContent = data.cert_cn || '-';
+        document.getElementById('pack-cert-fp').textContent = data.cert_fingerprint 
+            ? data.cert_fingerprint.substring(0, 32) + '...' 
+            : '-';
+        document.getElementById('pack-version').textContent = data.pack_version || '-';
+        
+        // 导出按钮只对 Developer 设备启用
+        if (btnExport) {
+            btnExport.disabled = !canExport;
+            btnExport.title = canExport ? '' : '仅 Developer 设备可导出配置包';
+        }
+        
+    } catch (e) {
+        console.error('Refresh config pack status error:', e);
+        statusIcon.textContent = '❌';
+        statusText.textContent = '加载失败';
+        if (deviceTypeBadge) deviceTypeBadge.style.display = 'none';
+        if (infoDetails) infoDetails.style.display = 'none';
+    }
+}
+
+// 配置包：导出设备证书弹窗
+function showConfigPackExportCertModal() {
+    document.getElementById('pack-export-cert-modal').classList.remove('hidden');
+    loadConfigPackCert();
+}
+
+function hideConfigPackExportCertModal() {
+    document.getElementById('pack-export-cert-modal').classList.add('hidden');
+}
+
+async function loadConfigPackCert() {
+    const loading = document.getElementById('pack-export-cert-loading');
+    const content = document.getElementById('pack-export-cert-content');
+    
+    loading.style.display = 'block';
+    content.classList.add('hidden');
+    
+    try {
+        const result = await api.configPackExportCert();
+        if (result.code !== 0) throw new Error(result.message || result.error);
+        
+        const data = result.data;
+        document.getElementById('pack-cert-fingerprint').value = data.fingerprint || '';
+        document.getElementById('pack-cert-cn-display').value = data.cn || '';
+        document.getElementById('pack-cert-pem').value = data.certificate || '';
+        
+        loading.style.display = 'none';
+        content.classList.remove('hidden');
+    } catch (e) {
+        loading.textContent = '❌ 加载失败: ' + e.message;
+    }
+}
+
+function copyPackCertToClipboard() {
+    const pem = document.getElementById('pack-cert-pem').value;
+    navigator.clipboard.writeText(pem).then(() => {
+        showToast('证书已复制到剪贴板', 'success');
+    }).catch(e => {
+        showToast('复制失败: ' + e.message, 'error');
+    });
+}
+
+// 配置包：导入弹窗
+function showConfigPackImportModal() {
+    document.getElementById('pack-import-modal').classList.remove('hidden');
+    document.getElementById('pack-import-file').value = '';
+    document.getElementById('pack-import-content').value = '';
+    document.getElementById('pack-import-apply').checked = false;
+    document.getElementById('pack-import-result').classList.add('hidden');
+    document.getElementById('pack-import-preview').classList.add('hidden');
+}
+
+function hideConfigPackImportModal() {
+    document.getElementById('pack-import-modal').classList.add('hidden');
+}
+
+function handlePackFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        document.getElementById('pack-import-content').value = e.target.result;
+    };
+    reader.readAsText(file);
+}
+
+async function verifyConfigPack() {
+    const content = document.getElementById('pack-import-content').value.trim();
+    const resultBox = document.getElementById('pack-import-result');
+    const preview = document.getElementById('pack-import-preview');
+    
+    if (!content) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '请上传文件或粘贴配置包内容';
+        resultBox.classList.remove('hidden');
+        return;
+    }
+    
+    resultBox.className = 'result-box';
+    resultBox.textContent = '🔄 验证中...';
+    resultBox.classList.remove('hidden');
+    preview.classList.add('hidden');
+    
+    try {
+        const result = await api.configPackVerify(content);
+        if (result.code !== 0) throw new Error(result.message || result.error);
+        
+        const data = result.data;
+        if (data.valid) {
+            resultBox.className = 'result-box success';
+            resultBox.innerHTML = '✅ 签名验证通过';
+            
+            // 显示签名信息
+            if (data.signature) {
+                const sig = data.signature;
+                document.getElementById('pack-preview-content').innerHTML = `
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.9em">
+                        <div><strong>签名者：</strong>${sig.signer_cn || '-'}</div>
+                        <div><strong>组织：</strong>${sig.signer_ou || '-'}</div>
+                        <div><strong>官方签名：</strong>${sig.is_official ? '✅ 是' : '❌ 否'}</div>
+                        <div><strong>签名时间：</strong>${sig.signed_at ? formatTimestamp(sig.signed_at) : '-'}</div>
+                    </div>
+                `;
+                preview.classList.remove('hidden');
+            }
+        } else {
+            resultBox.className = 'result-box error';
+            resultBox.textContent = '❌ 验证失败: ' + (data.result_message || '签名无效');
+        }
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ 验证失败: ' + e.message;
+    }
+}
+
+async function importConfigPack() {
+    const content = document.getElementById('pack-import-content').value.trim();
+    const apply = document.getElementById('pack-import-apply').checked;
+    const resultBox = document.getElementById('pack-import-result');
+    const preview = document.getElementById('pack-import-preview');
+    
+    if (!content) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '请上传文件或粘贴配置包内容';
+        resultBox.classList.remove('hidden');
+        return;
+    }
+    
+    resultBox.className = 'result-box';
+    resultBox.textContent = '🔄 导入中...';
+    resultBox.classList.remove('hidden');
+    
+    try {
+        const result = await api.configPackImport(content, null, apply);
+        if (result.code !== 0) throw new Error(result.message || result.error);
+        
+        const data = result.data;
+        resultBox.className = 'result-box success';
+        resultBox.innerHTML = apply 
+            ? '✅ 配置包已导入并应用' 
+            : '✅ 配置包已解密成功';
+        
+        // 显示详细信息
+        const sig = data.signature || {};
+        document.getElementById('pack-preview-content').innerHTML = `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.9em">
+                <div><strong>配置名称：</strong>${data.name || '-'}</div>
+                <div><strong>描述：</strong>${data.description || '-'}</div>
+                <div><strong>目标设备：</strong>${data.target_device || '-'}</div>
+                <div><strong>创建时间：</strong>${data.created_at ? formatTimestamp(data.created_at) : '-'}</div>
+                <div><strong>签名者：</strong>${sig.signer_cn || '-'} (${sig.signer_ou || '-'})</div>
+                <div><strong>官方签名：</strong>${sig.is_official ? '✅ 是' : '❌ 否'}</div>
+            </div>
+            ${data.content ? `<div style="margin-top:10px"><strong>配置内容：</strong><pre style="background:#fff;padding:8px;border-radius:4px;max-height:200px;overflow:auto;font-size:11px">${JSON.stringify(data.content, null, 2)}</pre></div>` : ''}
+        `;
+        preview.classList.remove('hidden');
+        
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ 导入失败: ' + e.message;
+    }
+}
+
+// 配置包：导出弹窗（仅 Developer）
+function showConfigPackExportModal() {
+    if (!window._configPackStatus?.can_export) {
+        showToast('仅 Developer 设备可导出配置包', 'error');
+        return;
+    }
+    document.getElementById('pack-export-modal').classList.remove('hidden');
+    document.getElementById('pack-export-name').value = '';
+    document.getElementById('pack-export-desc').value = '';
+    document.getElementById('pack-export-content').value = '';
+    document.getElementById('pack-export-recipient-cert').value = '';
+    document.getElementById('pack-export-result').classList.add('hidden');
+    document.getElementById('pack-export-output').classList.add('hidden');
+}
+
+function hideConfigPackExportModal() {
+    document.getElementById('pack-export-modal').classList.add('hidden');
+}
+
+async function exportConfigPack() {
+    const name = document.getElementById('pack-export-name').value.trim();
+    const desc = document.getElementById('pack-export-desc').value.trim();
+    const contentStr = document.getElementById('pack-export-content').value.trim();
+    const recipientCert = document.getElementById('pack-export-recipient-cert').value.trim();
+    const resultBox = document.getElementById('pack-export-result');
+    const outputBox = document.getElementById('pack-export-output');
+    
+    // 验证输入
+    if (!name) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '请输入配置名称';
+        resultBox.classList.remove('hidden');
+        return;
+    }
+    if (!contentStr) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '请输入配置内容';
+        resultBox.classList.remove('hidden');
+        return;
+    }
+    if (!recipientCert) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '请粘贴目标设备证书';
+        resultBox.classList.remove('hidden');
+        return;
+    }
+    
+    // 解析 JSON 内容
+    let content;
+    try {
+        content = JSON.parse(contentStr);
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '配置内容不是有效的 JSON: ' + e.message;
+        resultBox.classList.remove('hidden');
+        return;
+    }
+    
+    resultBox.className = 'result-box';
+    resultBox.textContent = '🔄 生成配置包中...';
+    resultBox.classList.remove('hidden');
+    outputBox.classList.add('hidden');
+    
+    try {
+        const result = await api.configPackExport(name, content, recipientCert, desc || null);
+        if (result.code !== 0) throw new Error(result.message || result.error);
+        
+        const data = result.data;
+        resultBox.className = 'result-box success';
+        resultBox.innerHTML = `✅ 配置包已生成 (${data.size || 0} 字节)`;
+        
+        // 显示输出
+        document.getElementById('pack-export-tscfg').value = data.tscfg || '';
+        window._packExportFilename = data.filename || (name + '.tscfg');
+        outputBox.classList.remove('hidden');
+        
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ 生成失败: ' + e.message;
+    }
+}
+
+function copyPackTscfgToClipboard() {
+    const tscfg = document.getElementById('pack-export-tscfg').value;
+    navigator.clipboard.writeText(tscfg).then(() => {
+        showToast('配置包已复制到剪贴板', 'success');
+    }).catch(e => {
+        showToast('复制失败: ' + e.message, 'error');
+    });
+}
+
+function downloadPackTscfg() {
+    const tscfg = document.getElementById('pack-export-tscfg').value;
+    const filename = window._packExportFilename || 'config.tscfg';
+    
+    const blob = new Blob([tscfg], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showToast('配置包已下载: ' + filename, 'success');
+}
+
+// 配置包：列表弹窗
+function showConfigPackListModal() {
+    document.getElementById('pack-list-modal').classList.remove('hidden');
+    refreshConfigPackList();
+}
+
+function hideConfigPackListModal() {
+    document.getElementById('pack-list-modal').classList.add('hidden');
+}
+
+async function refreshConfigPackList() {
+    const path = document.getElementById('pack-list-path').value.trim() || '/sdcard/config';
+    const loading = document.getElementById('pack-list-loading');
+    const table = document.getElementById('pack-list-table');
+    const tbody = document.getElementById('pack-list-tbody');
+    
+    loading.style.display = 'block';
+    table.classList.add('hidden');
+    
+    try {
+        const result = await api.configPackList(path);
+        if (result.code !== 0) throw new Error(result.message || result.error);
+        
+        const data = result.data;
+        const files = data.files || [];
+        
+        tbody.innerHTML = '';
+        
+        if (files.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#666">目录中没有 .tscfg 文件</td></tr>';
+        } else {
+            files.forEach(file => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${escapeHtml(file.name)}</td>
+                    <td>${formatBytes(file.size || 0)}</td>
+                    <td>${escapeHtml(file.signer || '-')}</td>
+                    <td>${file.is_official ? '✅' : '❌'}</td>
+                    <td>${file.valid ? '<span style="color:green">✅ 有效</span>' : '<span style="color:red">❌ 无效</span>'}</td>
+                    <td>
+                        <button class="btn btn-small" onclick="importPackFromList('${escapeHtml(path)}/${escapeHtml(file.name)}')">📥 导入</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+        
+        loading.style.display = 'none';
+        table.classList.remove('hidden');
+        
+    } catch (e) {
+        loading.textContent = '❌ 加载失败: ' + e.message;
+    }
+}
+
+async function importPackFromList(filePath) {
+    if (!confirm(`确定要导入配置包: ${filePath} ?`)) return;
+    
+    try {
+        const result = await api.configPackImport(null, filePath, false);
+        if (result.code !== 0) throw new Error(result.message || result.error);
+        
+        showToast('配置包导入成功', 'success');
+        hideConfigPackListModal();
+    } catch (e) {
+        showToast('导入失败: ' + e.message, 'error');
+    }
+}
+
+// 辅助函数
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
 // =========================================================================

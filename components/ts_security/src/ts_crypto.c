@@ -691,3 +691,270 @@ esp_err_t ts_crypto_ecdsa_verify(ts_keypair_t keypair,
     
     return ESP_OK;
 }
+
+/*===========================================================================*/
+/*                          Random Number Generation                          */
+/*===========================================================================*/
+
+esp_err_t ts_crypto_random(void *buf, size_t len)
+{
+    if (!buf || len == 0) return ESP_ERR_INVALID_ARG;
+    
+    esp_err_t err = init_rng();
+    if (err != ESP_OK) return err;
+    
+    int ret = mbedtls_ctr_drbg_random(&s_ctr_drbg, buf, len);
+    return ret == 0 ? ESP_OK : ESP_FAIL;
+}
+
+/*===========================================================================*/
+/*                          HKDF Key Derivation                               */
+/*===========================================================================*/
+
+#include "mbedtls/hkdf.h"
+
+esp_err_t ts_crypto_hkdf(const void *salt, size_t salt_len,
+                          const void *ikm, size_t ikm_len,
+                          const void *info, size_t info_len,
+                          void *okm, size_t okm_len)
+{
+    if (!ikm || !okm || okm_len == 0) return ESP_ERR_INVALID_ARG;
+    
+    const mbedtls_md_info_t *md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (!md_info) return ESP_FAIL;
+    
+    int ret = mbedtls_hkdf(md_info,
+                           salt, salt_len,
+                           ikm, ikm_len,
+                           info, info_len,
+                           okm, okm_len);
+    
+    if (ret != 0) {
+        ESP_LOGE(TAG, "HKDF failed: -0x%04x", (unsigned int)-ret);
+        return ESP_FAIL;
+    }
+    
+    return ESP_OK;
+}
+
+/*===========================================================================*/
+/*                          ECDH Key Exchange                                 */
+/*===========================================================================*/
+
+#include "mbedtls/ecdh.h"
+
+esp_err_t ts_crypto_ecdh_compute_shared(ts_keypair_t local_keypair,
+                                         const char *peer_pubkey_pem,
+                                         void *shared_secret,
+                                         size_t *shared_len)
+{
+    if (!local_keypair || !peer_pubkey_pem || !shared_secret || !shared_len) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    /* Verify local key is EC type */
+    mbedtls_pk_type_t pk_type = mbedtls_pk_get_type(&local_keypair->pk);
+    if (pk_type != MBEDTLS_PK_ECKEY && pk_type != MBEDTLS_PK_ECDSA) {
+        ESP_LOGE(TAG, "ECDH requires EC key, got type %d", pk_type);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    /* Parse peer public key */
+    mbedtls_pk_context peer_pk;
+    mbedtls_pk_init(&peer_pk);
+    
+    int ret = mbedtls_pk_parse_public_key(&peer_pk,
+                                           (const unsigned char *)peer_pubkey_pem,
+                                           strlen(peer_pubkey_pem) + 1);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Failed to parse peer public key: -0x%04x", (unsigned int)-ret);
+        mbedtls_pk_free(&peer_pk);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    /* Verify peer key is EC type */
+    pk_type = mbedtls_pk_get_type(&peer_pk);
+    if (pk_type != MBEDTLS_PK_ECKEY && pk_type != MBEDTLS_PK_ECDSA) {
+        ESP_LOGE(TAG, "Peer key is not EC type");
+        mbedtls_pk_free(&peer_pk);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    /* Get EC contexts */
+    mbedtls_ecp_keypair *local_ec = mbedtls_pk_ec(local_keypair->pk);
+    mbedtls_ecp_keypair *peer_ec = mbedtls_pk_ec(peer_pk);
+    
+    /* Verify same curve */
+    if (local_ec->private_grp.id != peer_ec->private_grp.id) {
+        ESP_LOGE(TAG, "EC curve mismatch");
+        mbedtls_pk_free(&peer_pk);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    /* Initialize RNG */
+    esp_err_t err = init_rng();
+    if (err != ESP_OK) {
+        mbedtls_pk_free(&peer_pk);
+        return err;
+    }
+    
+    /* Compute shared secret: shared = d * Q (local private * peer public) */
+    mbedtls_mpi shared_mpi;
+    mbedtls_mpi_init(&shared_mpi);
+    
+    ret = mbedtls_ecdh_compute_shared(&local_ec->private_grp,
+                                       &shared_mpi,
+                                       &peer_ec->private_Q,  /* Peer public point */
+                                       &local_ec->private_d, /* Local private key */
+                                       mbedtls_ctr_drbg_random, &s_ctr_drbg);
+    
+    if (ret != 0) {
+        ESP_LOGE(TAG, "ECDH compute shared failed: -0x%04x", (unsigned int)-ret);
+        mbedtls_mpi_free(&shared_mpi);
+        mbedtls_pk_free(&peer_pk);
+        return ESP_FAIL;
+    }
+    
+    /* Export shared secret as big-endian bytes */
+    size_t secret_len = mbedtls_mpi_size(&shared_mpi);
+    if (*shared_len < secret_len) {
+        ESP_LOGE(TAG, "Shared secret buffer too small: need %d, got %d", 
+                 (int)secret_len, (int)*shared_len);
+        mbedtls_mpi_free(&shared_mpi);
+        mbedtls_pk_free(&peer_pk);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    
+    ret = mbedtls_mpi_write_binary(&shared_mpi, shared_secret, secret_len);
+    
+    mbedtls_mpi_free(&shared_mpi);
+    mbedtls_pk_free(&peer_pk);
+    
+    if (ret != 0) {
+        return ESP_FAIL;
+    }
+    
+    *shared_len = secret_len;
+    return ESP_OK;
+}
+
+esp_err_t ts_crypto_ecdh_compute_shared_raw(ts_keypair_t local_keypair,
+                                             const void *peer_pubkey,
+                                             size_t peer_pubkey_len,
+                                             void *shared_secret,
+                                             size_t *shared_len)
+{
+    if (!local_keypair || !peer_pubkey || !shared_secret || !shared_len) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    /* Verify local key is EC type */
+    mbedtls_pk_type_t pk_type = mbedtls_pk_get_type(&local_keypair->pk);
+    if (pk_type != MBEDTLS_PK_ECKEY && pk_type != MBEDTLS_PK_ECDSA) {
+        ESP_LOGE(TAG, "ECDH requires EC key");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    mbedtls_ecp_keypair *local_ec = mbedtls_pk_ec(local_keypair->pk);
+    
+    /* Parse raw public key point */
+    mbedtls_ecp_point peer_Q;
+    mbedtls_ecp_point_init(&peer_Q);
+    
+    int ret = mbedtls_ecp_point_read_binary(&local_ec->private_grp, &peer_Q,
+                                             peer_pubkey, peer_pubkey_len);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Failed to parse raw public key: -0x%04x", (unsigned int)-ret);
+        mbedtls_ecp_point_free(&peer_Q);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    /* Validate peer public key point */
+    ret = mbedtls_ecp_check_pubkey(&local_ec->private_grp, &peer_Q);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Invalid peer public key: -0x%04x", (unsigned int)-ret);
+        mbedtls_ecp_point_free(&peer_Q);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    /* Initialize RNG */
+    esp_err_t err = init_rng();
+    if (err != ESP_OK) {
+        mbedtls_ecp_point_free(&peer_Q);
+        return err;
+    }
+    
+    /* Compute shared secret */
+    mbedtls_mpi shared_mpi;
+    mbedtls_mpi_init(&shared_mpi);
+    
+    ret = mbedtls_ecdh_compute_shared(&local_ec->private_grp,
+                                       &shared_mpi,
+                                       &peer_Q,
+                                       &local_ec->private_d,
+                                       mbedtls_ctr_drbg_random, &s_ctr_drbg);
+    
+    if (ret != 0) {
+        ESP_LOGE(TAG, "ECDH compute shared failed: -0x%04x", (unsigned int)-ret);
+        mbedtls_mpi_free(&shared_mpi);
+        mbedtls_ecp_point_free(&peer_Q);
+        return ESP_FAIL;
+    }
+    
+    /* Export shared secret */
+    size_t secret_len = mbedtls_mpi_size(&shared_mpi);
+    if (*shared_len < secret_len) {
+        mbedtls_mpi_free(&shared_mpi);
+        mbedtls_ecp_point_free(&peer_Q);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    
+    ret = mbedtls_mpi_write_binary(&shared_mpi, shared_secret, secret_len);
+    
+    mbedtls_mpi_free(&shared_mpi);
+    mbedtls_ecp_point_free(&peer_Q);
+    
+    if (ret != 0) {
+        return ESP_FAIL;
+    }
+    
+    *shared_len = secret_len;
+    return ESP_OK;
+}
+
+esp_err_t ts_crypto_keypair_export_public_raw(ts_keypair_t keypair,
+                                               void *raw,
+                                               size_t *raw_len)
+{
+    if (!keypair || !raw || !raw_len) return ESP_ERR_INVALID_ARG;
+    
+    mbedtls_pk_type_t pk_type = mbedtls_pk_get_type(&keypair->pk);
+    if (pk_type != MBEDTLS_PK_ECKEY && pk_type != MBEDTLS_PK_ECDSA) {
+        ESP_LOGE(TAG, "Raw export only supports EC keys");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    
+    mbedtls_ecp_keypair *ec = mbedtls_pk_ec(keypair->pk);
+    
+    /* Calculate required buffer size */
+    /* Uncompressed point format: 0x04 || X || Y */
+    size_t point_len = 1 + 2 * ((ec->private_grp.pbits + 7) / 8);
+    
+    if (*raw_len < point_len) {
+        *raw_len = point_len;
+        return ESP_ERR_INVALID_SIZE;
+    }
+    
+    size_t olen;
+    int ret = mbedtls_ecp_point_write_binary(&ec->private_grp, &ec->private_Q,
+                                              MBEDTLS_ECP_PF_UNCOMPRESSED,
+                                              &olen, raw, *raw_len);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Failed to export public key: -0x%04x", (unsigned int)-ret);
+        return ESP_FAIL;
+    }
+    
+    *raw_len = olen;
+    return ESP_OK;
+}
+

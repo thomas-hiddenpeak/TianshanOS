@@ -27,3 +27,21 @@ venv/
 # ESP-IDF temporary files
 *.pyc
 sdkconfig.old
+
+# ===================
+# PKI Server Sensitive Files
+# ===================
+tools/pki-server/.env
+tools/pki-server/*.db
+tools/pki-server/*.key
+tools/pki-server/*.pem
+tools/pki-server/*.p12
+tools/pki-server/*.crt
+
+# ===================
+# Private Keys & Secrets (全局)
+# ===================
+*.key
+*_key
+secrets/
+password*.txt

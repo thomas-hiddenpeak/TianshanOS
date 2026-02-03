@@ -890,13 +890,19 @@ esp_err_t ts_cert_parse_certificate(const char *cert_pem, size_t cert_len,
     /* Extract subject CN */
     const mbedtls_x509_name *name = &crt.subject;
     info->subject_cn[0] = '\0';
+    info->subject_ou[0] = '\0';
     while (name) {
         if (MBEDTLS_OID_CMP(MBEDTLS_OID_AT_CN, &name->oid) == 0) {
             size_t len = name->val.len;
             if (len >= sizeof(info->subject_cn)) len = sizeof(info->subject_cn) - 1;
             memcpy(info->subject_cn, name->val.p, len);
             info->subject_cn[len] = '\0';
-            break;
+        }
+        if (MBEDTLS_OID_CMP(MBEDTLS_OID_AT_ORG_UNIT, &name->oid) == 0) {
+            size_t len = name->val.len;
+            if (len >= sizeof(info->subject_ou)) len = sizeof(info->subject_ou) - 1;
+            memcpy(info->subject_ou, name->val.p, len);
+            info->subject_ou[len] = '\0';
         }
         name = name->next;
     }

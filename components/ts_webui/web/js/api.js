@@ -549,6 +549,52 @@ class TianShanAPI {
     async certDelete() { 
         return this.call('cert.delete', { confirm: true }, 'POST'); 
     }
+    
+    // =====================================================================
+    //                      Config Pack API
+    // =====================================================================
+    
+    /** 获取配置包系统信息 */
+    async configPackInfo() { 
+        return this.call('config.pack.info'); 
+    }
+    
+    /** 导出设备证书（供他人加密配置给本设备） */
+    async configPackExportCert() { 
+        return this.call('config.pack.export_cert'); 
+    }
+    
+    /** 验证 .tscfg 配置包签名 */
+    async configPackVerify(content = null, path = null) { 
+        const params = {};
+        if (content) params.content = content;
+        if (path) params.path = path;
+        return this.call('config.pack.verify', params, 'POST'); 
+    }
+    
+    /** 导入并解密 .tscfg 配置包 */
+    async configPackImport(content = null, path = null, apply = false) { 
+        const params = { apply };
+        if (content) params.content = content;
+        if (path) params.path = path;
+        return this.call('config.pack.import', params, 'POST'); 
+    }
+    
+    /** 导出配置为加密 .tscfg（仅 Developer 设备可用） */
+    async configPackExport(name, content, recipientCert, description = null) { 
+        const params = { 
+            name, 
+            content,
+            recipient_cert: recipientCert
+        };
+        if (description) params.description = description;
+        return this.call('config.pack.export', params, 'POST'); 
+    }
+    
+    /** 列出目录中的 .tscfg 文件 */
+    async configPackList(path = '/sdcard/config') { 
+        return this.call('config.pack.list', { path }); 
+    }
 }
 
 // =========================================================================

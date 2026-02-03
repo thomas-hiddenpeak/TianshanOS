@@ -1603,7 +1603,7 @@ esp_err_t ts_source_manager_init(void)
 }
 
 /**
- * @brief 延迟加载任务 - 等待 SD 卡挂载后加载数据源
+ * @brief 延迟加载任务 - 等待 SD 卡挂载后加载数据源并启动
  */
 void ts_source_deferred_load_task(void *arg)
 {
@@ -1621,6 +1621,12 @@ void ts_source_deferred_load_task(void *arg)
     ESP_LOGI(TAG, "Deferred source loading started");
     load_sources_from_nvs();
     ESP_LOGI(TAG, "Deferred source loading complete: %d sources", s_src_ctx.count);
+    
+    // 加载完成后，启动所有已启用的数据源连接
+    if (s_src_ctx.count > 0) {
+        ESP_LOGI(TAG, "Starting loaded data sources...");
+        ts_source_start_all();
+    }
     
     vTaskDelete(NULL);
 }

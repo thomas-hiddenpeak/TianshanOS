@@ -18,9 +18,15 @@
  * - config --export --module net  导出模块到SD卡
  * - config --meta                 显示元配置信息
  * 
+ * 配置包操作（加密分发）:
+ * - config --pack-export --file <path> --cert-file <cert>  导出加密配置包
+ * - config --pack-import --file <path>                     导入加密配置包
+ * - config --pack-verify --file <path>                     验证配置包签名
+ * - config --pack-info                                     显示配置包系统信息
+ * 
  * @author TianShanOS Team
- * @version 2.0.0
- * @date 2026-01-19
+ * @version 2.1.0
+ * @date 2026-02-04
  */
 
 #include <stdio.h>
@@ -31,6 +37,8 @@
 #include "ts_api.h"
 #include "ts_config_module.h"
 #include "ts_config_meta.h"
+#include "ts_config_pack.h"
+#include "ts_cert.h"
 #include "ts_log.h"
 #include "argtable3/argtable3.h"
 
@@ -52,6 +60,13 @@ static struct {
     struct arg_lit *sync;
     struct arg_lit *export_sd;
     struct arg_lit *meta;
+    /* 配置包操作 */
+    struct arg_lit *pack_export;
+    struct arg_lit *pack_import;
+    struct arg_lit *pack_verify;
+    struct arg_lit *pack_info;
+    struct arg_str *file;
+    struct arg_str *cert_file;
     /* 参数 */
     struct arg_str *module;
     struct arg_str *key;
@@ -545,6 +560,271 @@ static int do_config_reset(const char *key, ts_config_module_t module)
 }
 
 /*===========================================================================*/
+/*                    Config Pack Commands (Encrypted Distribution)           */
+/*===========================================================================*/
+
+/**
+ * @brief 显示配置包系统信息
+ */
+static int do_pack_info(bool json)
+{
+    char fingerprint[65] = {0};
+    ts_cert_info_t cert_info;
+    bool has_cert = (ts_cert_get_info(&cert_info) == ESP_OK);
+    bool can_export = ts_config_pack_can_export();
+    
+    if (has_cert) {
+        ts_config_pack_get_cert_fingerprint(fingerprint, sizeof(fingerprint));
+    }
+    
+    if (json) {
+        ts_console_printf("{\"has_certificate\":%s,\"can_export\":%s,\"device_cn\":\"%s\","
+                          "\"device_ou\":\"%s\",\"fingerprint\":\"%s\"}\n",
+                          has_cert ? "true" : "false",
+                          can_export ? "true" : "false",
+                          has_cert ? cert_info.subject_cn : "",
+                          has_cert ? cert_info.subject_ou : "",
+                          fingerprint);
+        return 0;
+    }
+    
+    ts_console_printf("\n");
+    ts_console_printf("╔═══════════════════════════════════════════════════════════╗\n");
+    ts_console_printf("║               Config Pack System Status                    ║\n");
+    ts_console_printf("╠═══════════════════════════════════════════════════════════╣\n");
+    
+    if (has_cert) {
+        ts_console_printf("║  Device ID     : %-40s ║\n", cert_info.subject_cn);
+        ts_console_printf("║  Device Type   : %-40s ║\n", cert_info.subject_ou);
+        ts_console_printf("║  Fingerprint   : %.32s...  ║\n", fingerprint);
+        ts_console_printf("╠═══════════════════════════════════════════════════════════╣\n");
+        
+        if (can_export) {
+            ts_console_printf("║  Export Status : \033[32m✓ AUTHORIZED (Developer Device)\033[0m        ║\n");
+        } else {
+            ts_console_printf("║  Export Status : \033[33m✗ Not authorized (User Device)\033[0m          ║\n");
+        }
+        ts_console_printf("║  Import Status : \033[32m✓ Available\033[0m                              ║\n");
+    } else {
+        ts_console_printf("║  Certificate   : \033[31mNot installed\033[0m                           ║\n");
+        ts_console_printf("║  Export/Import : \033[31mUnavailable (PKI not configured)\033[0m        ║\n");
+    }
+    
+    ts_console_printf("╚═══════════════════════════════════════════════════════════╝\n\n");
+    
+    if (has_cert && !can_export) {
+        ts_console_printf("Note: To export config packs, device must have OU=Developer in certificate.\n");
+        ts_console_printf("      Contact PKI administrator to request developer certificate.\n\n");
+    }
+    
+    return 0;
+}
+
+/**
+ * @brief 导出加密配置包
+ */
+static int do_pack_export(const char *source_file, const char *cert_file, const char *output_file)
+{
+    /* 检查导出权限 */
+    if (!ts_config_pack_can_export()) {
+        ts_console_error("This device is not authorized to export config packs\n");
+        ts_console_printf("Only devices with OU=Developer certificate can export.\n");
+        return 1;
+    }
+    
+    /* 读取源配置文件 */
+    FILE *f = fopen(source_file, "r");
+    if (!f) {
+        ts_console_error("Cannot open source file: %s\n", source_file);
+        return 1;
+    }
+    
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    
+    if (file_size <= 0 || file_size > 64 * 1024) {
+        ts_console_error("Invalid file size: %ld bytes\n", file_size);
+        fclose(f);
+        return 1;
+    }
+    
+    char *json_content = malloc(file_size + 1);
+    if (!json_content) {
+        fclose(f);
+        return 1;
+    }
+    
+    fread(json_content, 1, file_size, f);
+    fclose(f);
+    json_content[file_size] = '\0';
+    
+    /* 读取接收方证书 */
+    f = fopen(cert_file, "r");
+    if (!f) {
+        ts_console_error("Cannot open certificate file: %s\n", cert_file);
+        free(json_content);
+        return 1;
+    }
+    
+    fseek(f, 0, SEEK_END);
+    long cert_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    
+    char *cert_pem = malloc(cert_size + 1);
+    if (!cert_pem) {
+        fclose(f);
+        free(json_content);
+        return 1;
+    }
+    
+    fread(cert_pem, 1, cert_size, f);
+    fclose(f);
+    cert_pem[cert_size] = '\0';
+    
+    /* 从源文件名提取配置名 */
+    const char *name = strrchr(source_file, '/');
+    name = name ? name + 1 : source_file;
+    char config_name[64];
+    strncpy(config_name, name, sizeof(config_name) - 1);
+    config_name[sizeof(config_name) - 1] = '\0';
+    /* 去掉 .json 扩展名 */
+    char *ext = strstr(config_name, ".json");
+    if (ext) *ext = '\0';
+    
+    /* 创建配置包 */
+    ts_config_pack_export_opts_t opts = {
+        .recipient_cert_pem = cert_pem,
+        .recipient_cert_len = cert_size + 1,
+        .description = "Exported from TianShanOS CLI"
+    };
+    
+    char *output = NULL;
+    size_t output_len = 0;
+    
+    ts_console_printf("Creating encrypted config pack...\n");
+    ts_console_printf("  Source: %s\n", source_file);
+    ts_console_printf("  Target: %s\n", cert_file);
+    
+    ts_config_pack_result_t result = ts_config_pack_create(
+        config_name, json_content, file_size, &opts, &output, &output_len);
+    
+    free(json_content);
+    free(cert_pem);
+    
+    if (result != TS_CONFIG_PACK_OK) {
+        ts_console_error("Failed to create config pack: %s\n", 
+                          ts_config_pack_strerror(result));
+        return 1;
+    }
+    
+    /* 确定输出文件路径 */
+    char out_path[256];
+    if (output_file) {
+        strncpy(out_path, output_file, sizeof(out_path) - 1);
+    } else {
+        snprintf(out_path, sizeof(out_path), "/sdcard/config/%s.tscfg", config_name);
+    }
+    
+    /* 保存配置包 */
+    esp_err_t ret = ts_config_pack_save(out_path, output, output_len);
+    free(output);
+    
+    if (ret != ESP_OK) {
+        ts_console_error("Failed to save config pack: %s\n", esp_err_to_name(ret));
+        return 1;
+    }
+    
+    ts_console_success("Config pack created: %s (%zu bytes)\n", out_path, output_len);
+    return 0;
+}
+
+/**
+ * @brief 导入加密配置包
+ */
+static int do_pack_import(const char *file_path, bool json_output)
+{
+    ts_console_printf("Loading config pack: %s\n", file_path);
+    
+    ts_config_pack_t *pack = NULL;
+    ts_config_pack_result_t result = ts_config_pack_load(file_path, &pack);
+    
+    if (result != TS_CONFIG_PACK_OK) {
+        ts_console_error("Failed to load config pack: %s\n", 
+                          ts_config_pack_strerror(result));
+        return 1;
+    }
+    
+    if (json_output) {
+        ts_console_printf("{\"name\":\"%s\",\"description\":\"%s\","
+                          "\"signer\":\"%s\",\"official\":%s,\"content\":%s}\n",
+                          pack->name ? pack->name : "",
+                          pack->description ? pack->description : "",
+                          pack->sig_info.signer_cn,
+                          pack->sig_info.is_official ? "true" : "false",
+                          pack->content);
+    } else {
+        ts_console_printf("\n");
+        ts_console_success("Config pack loaded successfully!\n");
+        ts_console_printf("  Name: %s\n", pack->name ? pack->name : "unknown");
+        if (pack->description) {
+            ts_console_printf("  Description: %s\n", pack->description);
+        }
+        ts_console_printf("  Signed by: %s (%s)\n", 
+                          pack->sig_info.signer_cn,
+                          pack->sig_info.is_official ? "\033[32mOfficial\033[0m" : "User");
+        ts_console_printf("  Content size: %zu bytes\n", pack->content_len);
+        ts_console_printf("\n--- Decrypted Content ---\n");
+        ts_console_printf("%s\n", pack->content);
+        ts_console_printf("--- End ---\n\n");
+        
+        ts_console_printf("To apply this config, save to appropriate location.\n");
+    }
+    
+    ts_config_pack_free(pack);
+    return 0;
+}
+
+/**
+ * @brief 验证配置包签名
+ */
+static int do_pack_verify(const char *file_path, bool json_output)
+{
+    ts_console_printf("Verifying config pack: %s\n", file_path);
+    
+    ts_config_pack_sig_info_t sig_info = {0};
+    ts_config_pack_result_t result = ts_config_pack_verify(file_path, &sig_info);
+    
+    if (json_output) {
+        ts_console_printf("{\"valid\":%s,\"official\":%s,\"signer\":\"%s\","
+                          "\"signer_ou\":\"%s\",\"error\":\"%s\"}\n",
+                          result == TS_CONFIG_PACK_OK ? "true" : "false",
+                          sig_info.is_official ? "true" : "false",
+                          sig_info.signer_cn,
+                          sig_info.signer_ou,
+                          result != TS_CONFIG_PACK_OK ? ts_config_pack_strerror(result) : "");
+        return result == TS_CONFIG_PACK_OK ? 0 : 1;
+    }
+    
+    if (result == TS_CONFIG_PACK_OK) {
+        ts_console_printf("\n");
+        ts_console_success("Signature verification: PASSED\n");
+        ts_console_printf("  Signed by: %s\n", sig_info.signer_cn);
+        ts_console_printf("  Signer OU: %s\n", sig_info.signer_ou);
+        ts_console_printf("  Official:  %s\n", 
+                          sig_info.is_official ? "\033[32mYes\033[0m" : "No");
+        ts_console_printf("\n");
+    } else {
+        ts_console_error("Signature verification: FAILED\n");
+        ts_console_printf("  Reason: %s\n", ts_config_pack_strerror(result));
+        ts_console_printf("\n");
+        return 1;
+    }
+    
+    return 0;
+}
+
+/*===========================================================================*/
 /*                          Main Command Handler                              */
 /*===========================================================================*/
 
@@ -563,8 +843,15 @@ static int cmd_config(int argc, char **argv)
         ts_console_printf("      --show          Show module configuration\n");
         ts_console_printf("      --allsave       Save ALL modules to NVS and SD card\n");
         ts_console_printf("      --sync          Sync pending configs to SD card\n");
-        ts_console_printf("      --export        Export module to SD card\n");
+        ts_console_printf("      --export        Export module to SD card (plain)\n");
         ts_console_printf("      --meta          Show meta configuration info\n");
+        ts_console_printf("\nConfig Pack (Encrypted Distribution):\n");
+        ts_console_printf("      --pack-info     Show config pack system status\n");
+        ts_console_printf("      --pack-export   Export encrypted .tscfg package\n");
+        ts_console_printf("      --pack-import   Import and decrypt .tscfg package\n");
+        ts_console_printf("      --pack-verify   Verify .tscfg signature without decrypting\n");
+        ts_console_printf("      --file <path>   Source/target file path\n");
+        ts_console_printf("      --cert-file <f> Recipient certificate file (for export)\n");
         ts_console_printf("\nParameters:\n");
         ts_console_printf("      --module <name> Module: net,dhcp,wifi,led,fan,device,system,all\n");
         ts_console_printf("  -k, --key <key>     Configuration key\n");
@@ -578,7 +865,11 @@ static int cmd_config(int argc, char **argv)
         ts_console_printf("  config --get --module net -k eth.ip     # Get module key\n");
         ts_console_printf("  config --set --module net -k eth.ip -v 192.168.1.100\n");
         ts_console_printf("  config --allsave                        # Save all modules\n");
-        ts_console_printf("  config --sync                           # Sync to SD card\n");
+        ts_console_printf("\nConfig Pack Examples:\n");
+        ts_console_printf("  config --pack-info                      # Show pack status\n");
+        ts_console_printf("  config --pack-export --file /sdcard/led.json --cert-file /sdcard/device.pem\n");
+        ts_console_printf("  config --pack-import --file /sdcard/led.tscfg\n");
+        ts_console_printf("  config --pack-verify --file /sdcard/led.tscfg\n");
         return 0;
     }
     
@@ -592,7 +883,53 @@ static int cmd_config(int argc, char **argv)
     const char *key = s_config_args.key->count > 0 ? s_config_args.key->sval[0] : NULL;
     const char *value = s_config_args.value->count > 0 ? s_config_args.value->sval[0] : NULL;
     const char *mod_str = s_config_args.module->count > 0 ? s_config_args.module->sval[0] : NULL;
+    const char *file_path = s_config_args.file->count > 0 ? s_config_args.file->sval[0] : NULL;
+    const char *cert_file = s_config_args.cert_file->count > 0 ? s_config_args.cert_file->sval[0] : NULL;
     ts_config_module_t module = parse_module_name(mod_str);
+    
+    /*========================================================================*/
+    /*                     Config Pack Commands                                */
+    /*========================================================================*/
+    
+    /* --pack-info: 显示配置包系统信息 */
+    if (s_config_args.pack_info->count > 0) {
+        return do_pack_info(json);
+    }
+    
+    /* --pack-export: 导出加密配置包 */
+    if (s_config_args.pack_export->count > 0) {
+        if (!file_path) {
+            ts_console_error("--file required: source JSON file path\n");
+            return 1;
+        }
+        if (!cert_file) {
+            ts_console_error("--cert-file required: recipient certificate file\n");
+            return 1;
+        }
+        return do_pack_export(file_path, cert_file, NULL);
+    }
+    
+    /* --pack-import: 导入加密配置包 */
+    if (s_config_args.pack_import->count > 0) {
+        if (!file_path) {
+            ts_console_error("--file required: .tscfg file path\n");
+            return 1;
+        }
+        return do_pack_import(file_path, json);
+    }
+    
+    /* --pack-verify: 验证配置包签名 */
+    if (s_config_args.pack_verify->count > 0) {
+        if (!file_path) {
+            ts_console_error("--file required: .tscfg file path\n");
+            return 1;
+        }
+        return do_pack_verify(file_path, json);
+    }
+    
+    /*========================================================================*/
+    /*                     Module Config Commands                              */
+    /*========================================================================*/
     
     /* --allsave: 保存所有模块 */
     if (s_config_args.allsave->count > 0) {
@@ -707,8 +1044,15 @@ esp_err_t ts_cmd_config_register(void)
     s_config_args.show     = arg_lit0(NULL, "show", "Show module config");
     s_config_args.allsave  = arg_lit0(NULL, "allsave", "Save ALL modules");
     s_config_args.sync     = arg_lit0(NULL, "sync", "Sync to SD card");
-    s_config_args.export_sd= arg_lit0(NULL, "export", "Export to SD card");
+    s_config_args.export_sd= arg_lit0(NULL, "export", "Export to SD card (plain)");
     s_config_args.meta     = arg_lit0(NULL, "meta", "Show meta info");
+    /* 配置包操作 */
+    s_config_args.pack_export = arg_lit0(NULL, "pack-export", "Export encrypted .tscfg");
+    s_config_args.pack_import = arg_lit0(NULL, "pack-import", "Import encrypted .tscfg");
+    s_config_args.pack_verify = arg_lit0(NULL, "pack-verify", "Verify .tscfg signature");
+    s_config_args.pack_info   = arg_lit0(NULL, "pack-info", "Show pack system status");
+    s_config_args.file        = arg_str0(NULL, "file", "<path>", "File path");
+    s_config_args.cert_file   = arg_str0(NULL, "cert-file", "<path>", "Certificate file");
     /* 参数 */
     s_config_args.module   = arg_str0(NULL, "module", "<name>", "Module name");
     s_config_args.key      = arg_str0("k", "key", "<key>", "Config key");
@@ -717,11 +1061,11 @@ esp_err_t ts_cmd_config_register(void)
     s_config_args.persist  = arg_lit0("p", "persist", "Persist to NVS");
     s_config_args.json     = arg_lit0("j", "json", "JSON output");
     s_config_args.help     = arg_lit0("h", "help", "Show help");
-    s_config_args.end      = arg_end(15);
+    s_config_args.end      = arg_end(20);
     
     const ts_console_cmd_t cmd = {
         .command = "config",
-        .help = "Configuration management (config --list for modules)",
+        .help = "Configuration management (config --help for details)",
         .hint = NULL,
         .category = TS_CMD_CAT_CONFIG,
         .func = cmd_config,
@@ -730,7 +1074,7 @@ esp_err_t ts_cmd_config_register(void)
     
     esp_err_t ret = ts_console_register_cmd(&cmd);
     if (ret == ESP_OK) {
-        TS_LOGI(TAG, "Config commands registered");
+        TS_LOGI(TAG, "Config commands registered (with pack support)");
     }
     
     return ret;
