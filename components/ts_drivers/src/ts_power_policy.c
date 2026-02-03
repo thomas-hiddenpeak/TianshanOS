@@ -19,17 +19,42 @@
 #include "ts_power_policy.h"
 #include "ts_power_monitor.h"
 #include "ts_device_ctrl.h"
+#include "ts_fan.h"
+#include "ts_variable.h"
 #include "ts_event.h"
+#include "ts_config.h"
 #include "ts_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "driver/gpio.h"
+#include "cJSON.h"
 #include <string.h>
+#include <stdio.h>
+#include <sys/stat.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 
 #define TAG "ts_power_policy"
+
+/* 配置键定义（用于 NVS 存储）*/
+#define CONFIG_KEY_LOW_VOLTAGE      "power.prot.low_v"
+#define CONFIG_KEY_RECOVERY_VOLTAGE "power.prot.recov_v"
+#define CONFIG_KEY_SHUTDOWN_DELAY   "power.prot.shutdown_delay"
+#define CONFIG_KEY_RECOVERY_HOLD    "power.prot.recovery_hold"
+#define CONFIG_KEY_FAN_STOP_DELAY   "power.prot.fan_delay"
+
+/* SD 卡配置文件路径 */
+#define CONFIG_SD_DIR               "/sdcard/config"
+#define CONFIG_SD_FILE              "/sdcard/config/power_policy.json"
+
+/* LPMU IP for ping check */
+#define LPMU_IP "10.10.99.99"
 
 /*===========================================================================*/
 /*                          Internal State                                    */
@@ -80,6 +105,306 @@ typedef struct {
 
 static power_policy_state_t s_pp = {0};
 
+/* SD 卡事件处理句柄 */
+static ts_event_handler_handle_t s_storage_event_handler = NULL;
+
+/*===========================================================================*/
+/*                          SD Card Config Functions                          */
+/*===========================================================================*/
+
+/**
+ * @brief 检查 SD 卡配置目录是否存在
+ */
+static bool sd_config_dir_exists(void)
+{
+    struct stat st;
+    return (stat(CONFIG_SD_DIR, &st) == 0 && S_ISDIR(st.st_mode));
+}
+
+/**
+ * @brief 确保 SD 卡配置目录存在
+ */
+static bool ensure_sd_config_dir(void)
+{
+    struct stat st;
+    if (stat(CONFIG_SD_DIR, &st) == 0) {
+        return S_ISDIR(st.st_mode);
+    }
+    
+    if (mkdir(CONFIG_SD_DIR, 0755) == 0) {
+        TS_LOGI(TAG, "Created config directory: %s", CONFIG_SD_DIR);
+        return true;
+    }
+    
+    TS_LOGE(TAG, "Failed to create config directory: %s", CONFIG_SD_DIR);
+    return false;
+}
+
+/**
+ * @brief 从 SD 卡加载配置
+ * @return ESP_OK 成功加载，ESP_ERR_NOT_FOUND 文件不存在
+ */
+static esp_err_t load_config_from_sdcard(void)
+{
+    if (!sd_config_dir_exists()) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    /* 读取文件内容 */
+    FILE *fp = fopen(CONFIG_SD_FILE, "r");
+    if (fp == NULL) {
+        TS_LOGD(TAG, "SD config file not found: %s", CONFIG_SD_FILE);
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    /* 获取文件大小 */
+    fseek(fp, 0, SEEK_END);
+    long fsize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    
+    if (fsize <= 0 || fsize > 4096) {
+        TS_LOGE(TAG, "Invalid config file size: %ld", fsize);
+        fclose(fp);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    
+    /* 分配内存并读取 */
+    char *buf = heap_caps_malloc(fsize + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (buf == NULL) {
+        buf = malloc(fsize + 1);
+    }
+    if (buf == NULL) {
+        fclose(fp);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    size_t read_size = fread(buf, 1, fsize, fp);
+    fclose(fp);
+    buf[read_size] = '\0';
+    
+    /* 解析 JSON */
+    cJSON *root = cJSON_Parse(buf);
+    free(buf);
+    
+    if (root == NULL) {
+        TS_LOGE(TAG, "Failed to parse SD config JSON");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    /* 提取配置值 */
+    cJSON *item;
+    bool loaded_any = false;
+    
+    item = cJSON_GetObjectItem(root, "low_voltage_threshold");
+    if (cJSON_IsNumber(item) && item->valuedouble > 0) {
+        s_pp.config.low_voltage_threshold = (float)item->valuedouble;
+        TS_LOGI(TAG, "SD: low_voltage_threshold = %.2fV", s_pp.config.low_voltage_threshold);
+        loaded_any = true;
+    }
+    
+    item = cJSON_GetObjectItem(root, "recovery_voltage_threshold");
+    if (cJSON_IsNumber(item) && item->valuedouble > 0) {
+        s_pp.config.recovery_voltage_threshold = (float)item->valuedouble;
+        TS_LOGI(TAG, "SD: recovery_voltage_threshold = %.2fV", s_pp.config.recovery_voltage_threshold);
+        loaded_any = true;
+    }
+    
+    item = cJSON_GetObjectItem(root, "shutdown_delay_sec");
+    if (cJSON_IsNumber(item) && item->valueint > 0) {
+        s_pp.config.shutdown_delay_sec = (uint32_t)item->valueint;
+        TS_LOGI(TAG, "SD: shutdown_delay_sec = %lu", (unsigned long)s_pp.config.shutdown_delay_sec);
+        loaded_any = true;
+    }
+    
+    item = cJSON_GetObjectItem(root, "recovery_hold_sec");
+    if (cJSON_IsNumber(item) && item->valueint > 0) {
+        s_pp.config.recovery_hold_sec = (uint32_t)item->valueint;
+        TS_LOGI(TAG, "SD: recovery_hold_sec = %lu", (unsigned long)s_pp.config.recovery_hold_sec);
+        loaded_any = true;
+    }
+    
+    item = cJSON_GetObjectItem(root, "fan_stop_delay_sec");
+    if (cJSON_IsNumber(item) && item->valueint > 0) {
+        s_pp.config.fan_stop_delay_sec = (uint32_t)item->valueint;
+        TS_LOGI(TAG, "SD: fan_stop_delay_sec = %lu", (unsigned long)s_pp.config.fan_stop_delay_sec);
+        loaded_any = true;
+    }
+    
+    cJSON_Delete(root);
+    
+    if (loaded_any) {
+        TS_LOGI(TAG, "Loaded power policy config from SD card");
+        return ESP_OK;
+    }
+    
+    return ESP_ERR_NOT_FOUND;
+}
+
+/**
+ * @brief 保存配置到 SD 卡
+ * @return ESP_OK 成功保存
+ */
+static esp_err_t save_config_to_sdcard(void)
+{
+    if (!ensure_sd_config_dir()) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    /* 构建 JSON */
+    cJSON *root = cJSON_CreateObject();
+    if (root == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    
+    cJSON_AddNumberToObject(root, "low_voltage_threshold", s_pp.config.low_voltage_threshold);
+    cJSON_AddNumberToObject(root, "recovery_voltage_threshold", s_pp.config.recovery_voltage_threshold);
+    cJSON_AddNumberToObject(root, "shutdown_delay_sec", s_pp.config.shutdown_delay_sec);
+    cJSON_AddNumberToObject(root, "recovery_hold_sec", s_pp.config.recovery_hold_sec);
+    cJSON_AddNumberToObject(root, "fan_stop_delay_sec", s_pp.config.fan_stop_delay_sec);
+    
+    /* 转换为字符串 */
+    char *json_str = cJSON_Print(root);
+    cJSON_Delete(root);
+    
+    if (json_str == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    
+    /* 写入文件 */
+    FILE *fp = fopen(CONFIG_SD_FILE, "w");
+    if (fp == NULL) {
+        TS_LOGE(TAG, "Failed to open SD config file for writing: %s", CONFIG_SD_FILE);
+        cJSON_free(json_str);
+        return ESP_FAIL;
+    }
+    
+    size_t len = strlen(json_str);
+    size_t written = fwrite(json_str, 1, len, fp);
+    fclose(fp);
+    cJSON_free(json_str);
+    
+    if (written != len) {
+        TS_LOGE(TAG, "Failed to write complete config to SD");
+        return ESP_FAIL;
+    }
+    
+    TS_LOGI(TAG, "Saved power policy config to SD card: %s", CONFIG_SD_FILE);
+    return ESP_OK;
+}
+
+/**
+ * @brief SD 卡挂载事件处理
+ */
+static void storage_event_handler(const ts_event_t *event, void *user_data)
+{
+    (void)user_data;
+    
+    if (event == NULL || event->id != TS_EVT_STORAGE_SD_MOUNTED) {
+        return;
+    }
+    
+    TS_LOGI(TAG, "SD card mounted, syncing power policy config...");
+    
+    /* SD 卡挂载后，检查是否有配置文件 */
+    /* 如果有，加载并覆盖当前配置（SD 卡优先）*/
+    /* 如果没有，将当前配置导出到 SD 卡 */
+    
+    esp_err_t ret = load_config_from_sdcard();
+    if (ret == ESP_ERR_NOT_FOUND) {
+        /* SD 卡没有配置文件，从 NVS/当前配置同步到 SD 卡 */
+        TS_LOGI(TAG, "No SD config file found, exporting current config to SD card");
+        save_config_to_sdcard();
+    } else if (ret == ESP_OK) {
+        /* 成功从 SD 卡加载，同时更新 NVS 以保持一致 */
+        TS_LOGI(TAG, "Config loaded from SD card, syncing to NVS");
+        ts_config_set_float(CONFIG_KEY_LOW_VOLTAGE, s_pp.config.low_voltage_threshold);
+        ts_config_set_float(CONFIG_KEY_RECOVERY_VOLTAGE, s_pp.config.recovery_voltage_threshold);
+        ts_config_set_uint32(CONFIG_KEY_SHUTDOWN_DELAY, s_pp.config.shutdown_delay_sec);
+        ts_config_set_uint32(CONFIG_KEY_RECOVERY_HOLD, s_pp.config.recovery_hold_sec);
+        ts_config_set_uint32(CONFIG_KEY_FAN_STOP_DELAY, s_pp.config.fan_stop_delay_sec);
+        ts_config_save();
+    }
+}
+
+/*===========================================================================*/
+/*                          Helper Functions                                  */
+/*===========================================================================*/
+
+/**
+ * @brief Ping 检测主机是否在线
+ */
+static bool ping_host(const char *ip, int timeout_ms)
+{
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(7);  // Echo port
+    
+    if (inet_pton(AF_INET, ip, &addr.sin_addr) != 1) {
+        return false;
+    }
+    
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        return false;
+    }
+    
+    // 设置超时
+    struct timeval tv;
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    
+    // 非阻塞连接检测
+    int flags = fcntl(sock, F_GETFL, 0);
+    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+    
+    int ret = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
+    bool reachable = false;
+    
+    if (ret == 0) {
+        reachable = true;
+    } else if (errno == EINPROGRESS) {
+        fd_set wfds;
+        FD_ZERO(&wfds);
+        FD_SET(sock, &wfds);
+        
+        tv.tv_sec = timeout_ms / 1000;
+        tv.tv_usec = (timeout_ms % 1000) * 1000;
+        
+        if (select(sock + 1, NULL, &wfds, NULL, &tv) > 0) {
+            int so_error;
+            socklen_t len = sizeof(so_error);
+            getsockopt(sock, SOL_SOCKET, SO_ERROR, &so_error, &len);
+            reachable = (so_error == 0);
+        }
+    }
+    
+    close(sock);
+    return reachable;
+}
+
+/**
+ * @brief 停止所有风扇
+ */
+static void stop_all_fans(void)
+{
+    TS_LOGI(TAG, "Stopping all fans...");
+    
+    if (!ts_fan_is_initialized()) {
+        TS_LOGW(TAG, "Fan subsystem not initialized, skip fan stop");
+        return;
+    }
+    
+    for (int i = 0; i < TS_FAN_MAX; i++) {
+        esp_err_t ret = ts_fan_set_mode(i, TS_FAN_MODE_OFF);
+        if (ret == ESP_OK) {
+            TS_LOGI(TAG, "Fan %d stopped", i);
+        }
+    }
+}
+
 /*===========================================================================*/
 /*                          Forward Declarations                              */
 /*===========================================================================*/
@@ -107,9 +432,12 @@ esp_err_t ts_power_policy_get_default_config(ts_power_policy_config_t *config)
     config->recovery_voltage_threshold = TS_POWER_POLICY_RECOVERY_VOLTAGE_DEFAULT;
     config->shutdown_delay_sec = TS_POWER_POLICY_SHUTDOWN_DELAY_DEFAULT;
     config->recovery_hold_sec = TS_POWER_POLICY_RECOVERY_HOLD_DEFAULT;
+    config->fan_stop_delay_sec = TS_POWER_POLICY_FAN_STOP_DELAY_DEFAULT;
     config->auto_recovery_enabled = true;
     config->enable_led_feedback = true;
     config->enable_device_shutdown = true;
+    config->enable_fan_control = true;
+    config->lpmu_ping_before_shutdown = true;
     
     return ESP_OK;
 }
@@ -130,6 +458,87 @@ esp_err_t ts_power_policy_init(const ts_power_policy_config_t *config)
         ts_power_policy_get_default_config(&s_pp.config);
     }
     
+    /* 
+     * 配置加载优先级：SD卡 > NVS > 默认值
+     * 
+     * 1. 尝试从 SD 卡加载（如果 SD 卡已挂载）
+     * 2. 如果 SD 卡没有配置文件，从 NVS 加载
+     * 3. 如果 SD 卡已挂载但没有配置文件，将 NVS 的配置同步到 SD 卡
+     */
+    bool loaded_from_sdcard = false;
+    bool loaded_from_nvs = false;
+    bool sdcard_mounted = sd_config_dir_exists();
+    
+    /* 第一步：尝试从 SD 卡加载 */
+    if (sdcard_mounted) {
+        esp_err_t ret = load_config_from_sdcard();
+        if (ret == ESP_OK) {
+            loaded_from_sdcard = true;
+            TS_LOGI(TAG, "Config loaded from SD card (priority source)");
+        }
+    }
+    
+    /* 第二步：如果 SD 卡没有配置，从 NVS 加载 */
+    if (!loaded_from_sdcard) {
+        float stored_low = 0, stored_recovery = 0;
+        uint32_t stored_shutdown = 0, stored_recovery_hold = 0, stored_fan_delay = 0;
+        
+        if (ts_config_get_float(CONFIG_KEY_LOW_VOLTAGE, &stored_low, 0) == ESP_OK && stored_low > 0) {
+            s_pp.config.low_voltage_threshold = stored_low;
+            TS_LOGI(TAG, "NVS: low_voltage_threshold = %.2fV", stored_low);
+            loaded_from_nvs = true;
+        }
+        if (ts_config_get_float(CONFIG_KEY_RECOVERY_VOLTAGE, &stored_recovery, 0) == ESP_OK && stored_recovery > 0) {
+            s_pp.config.recovery_voltage_threshold = stored_recovery;
+            TS_LOGI(TAG, "NVS: recovery_voltage_threshold = %.2fV", stored_recovery);
+            loaded_from_nvs = true;
+        }
+        if (ts_config_get_uint32(CONFIG_KEY_SHUTDOWN_DELAY, &stored_shutdown, 0) == ESP_OK && stored_shutdown > 0) {
+            s_pp.config.shutdown_delay_sec = stored_shutdown;
+            TS_LOGI(TAG, "NVS: shutdown_delay_sec = %lu", (unsigned long)stored_shutdown);
+            loaded_from_nvs = true;
+        }
+        if (ts_config_get_uint32(CONFIG_KEY_RECOVERY_HOLD, &stored_recovery_hold, 0) == ESP_OK && stored_recovery_hold > 0) {
+            s_pp.config.recovery_hold_sec = stored_recovery_hold;
+            TS_LOGI(TAG, "NVS: recovery_hold_sec = %lu", (unsigned long)stored_recovery_hold);
+            loaded_from_nvs = true;
+        }
+        if (ts_config_get_uint32(CONFIG_KEY_FAN_STOP_DELAY, &stored_fan_delay, 0) == ESP_OK && stored_fan_delay > 0) {
+            s_pp.config.fan_stop_delay_sec = stored_fan_delay;
+            TS_LOGI(TAG, "NVS: fan_stop_delay_sec = %lu", (unsigned long)stored_fan_delay);
+            loaded_from_nvs = true;
+        }
+        
+        /* 第三步：如果 SD 卡已挂载但没有配置文件，从 NVS 同步到 SD 卡 */
+        if (sdcard_mounted) {
+            TS_LOGI(TAG, "Syncing config from NVS to SD card");
+            save_config_to_sdcard();
+        }
+    } else {
+        /* 从 SD 卡加载成功，同步到 NVS 以保持一致性 */
+        TS_LOGI(TAG, "Syncing SD card config to NVS for backup");
+        ts_config_set_float(CONFIG_KEY_LOW_VOLTAGE, s_pp.config.low_voltage_threshold);
+        ts_config_set_float(CONFIG_KEY_RECOVERY_VOLTAGE, s_pp.config.recovery_voltage_threshold);
+        ts_config_set_uint32(CONFIG_KEY_SHUTDOWN_DELAY, s_pp.config.shutdown_delay_sec);
+        ts_config_set_uint32(CONFIG_KEY_RECOVERY_HOLD, s_pp.config.recovery_hold_sec);
+        ts_config_set_uint32(CONFIG_KEY_FAN_STOP_DELAY, s_pp.config.fan_stop_delay_sec);
+        ts_config_save();
+    }
+    
+    /* 注册 SD 卡挂载事件监听（用于后续 SD 卡热插拔）*/
+    if (ts_event_is_initialized() && s_storage_event_handler == NULL) {
+        esp_err_t ret = ts_event_register(
+            TS_EVENT_BASE_STORAGE,
+            TS_EVENT_ANY_ID,
+            storage_event_handler,
+            NULL,
+            &s_storage_event_handler
+        );
+        if (ret == ESP_OK) {
+            TS_LOGI(TAG, "Registered SD card mount event handler");
+        }
+    }
+    
     /* 创建互斥锁 */
     s_pp.state_mutex = xSemaphoreCreateMutex();
     if (s_pp.state_mutex == NULL) {
@@ -145,10 +554,11 @@ esp_err_t ts_power_policy_init(const ts_power_policy_config_t *config)
     
     s_pp.initialized = true;
     
-    TS_LOGI(TAG, "Power policy initialized (Low: %.1fV, Recovery: %.1fV, Delay: %lus)",
+    TS_LOGI(TAG, "Power policy initialized (Low: %.1fV, Recovery: %.1fV, Delay: %lus) [source: %s]",
             s_pp.config.low_voltage_threshold,
             s_pp.config.recovery_voltage_threshold,
-            (unsigned long)s_pp.config.shutdown_delay_sec);
+            (unsigned long)s_pp.config.shutdown_delay_sec,
+            loaded_from_sdcard ? "SD card" : (loaded_from_nvs ? "NVS" : "defaults"));
     
     return ESP_OK;
 }
@@ -163,6 +573,12 @@ esp_err_t ts_power_policy_deinit(void)
     
     /* 停止监控 */
     ts_power_policy_stop();
+    
+    /* 注销 SD 卡事件监听器 */
+    if (s_storage_event_handler != NULL) {
+        ts_event_unregister(s_storage_event_handler);
+        s_storage_event_handler = NULL;
+    }
     
     /* 清理互斥锁 */
     if (s_pp.state_mutex) {
@@ -187,6 +603,11 @@ esp_err_t ts_power_policy_start(void)
     }
     
     TS_LOGI(TAG, "Starting power policy monitoring");
+    
+    /* 尝试注册自动化变量（如果 ts_variable 已初始化）
+     * 通常此时 ts_variable 尚未初始化，变量注册会在 automation 服务启动后
+     * 通过 ts_power_policy_register_variables() 完成 */
+    ts_power_policy_register_variables();
     
     /* 先设置 running 标志，避免竞态条件 */
     s_pp.running = true;
@@ -371,23 +792,6 @@ esp_err_t ts_power_policy_get_thresholds(float *low_threshold, float *recovery_t
     
     *low_threshold = s_pp.config.low_voltage_threshold;
     *recovery_threshold = s_pp.config.recovery_voltage_threshold;
-    
-    return ESP_OK;
-}
-
-esp_err_t ts_power_policy_set_shutdown_delay(uint32_t delay_sec)
-{
-    if (!s_pp.initialized) {
-        return ESP_ERR_INVALID_STATE;
-    }
-    
-    if (delay_sec < 5 || delay_sec > 300) {
-        TS_LOGE(TAG, "Shutdown delay must be 5-300 seconds");
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    s_pp.config.shutdown_delay_sec = delay_sec;
-    TS_LOGI(TAG, "Shutdown delay set to %lu seconds", (unsigned long)delay_sec);
     
     return ESP_OK;
 }
@@ -578,7 +982,7 @@ static void power_policy_task(void *pvParameters)
                     
                 case TS_POWER_POLICY_STATE_PROTECTED:
                     /* 在保护状态下处理风扇关闭定时器 */
-                    if (!s_pp.fans_stopped && s_pp.shutdown_timer_sec > 0) {
+                    if (s_pp.config.enable_fan_control && !s_pp.fans_stopped && s_pp.shutdown_timer_sec > 0) {
                         s_pp.shutdown_timer_sec--;
                         
                         if (s_pp.shutdown_timer_sec % 10 == 0 ||
@@ -588,8 +992,8 @@ static void power_policy_task(void *pvParameters)
                         }
                         
                         if (s_pp.shutdown_timer_sec == 0) {
-                            TS_LOGW(TAG, "Stopping all fans");
-                            /* TODO: 调用风扇控制器停止所有风扇 */
+                            TS_LOGW(TAG, "Fan timer expired, stopping all fans now");
+                            stop_all_fans();
                             s_pp.fans_stopped = true;
                         }
                     }
@@ -627,6 +1031,9 @@ static void power_policy_task(void *pvParameters)
         
         /* 更新 LED 状态 */
         update_led_status();
+        
+        /* 更新自动化系统变量（供 WebUI 数据监控使用） */
+        ts_power_policy_update_variables();
         
         /* 等待下一个周期 */
         vTaskDelayUntil(&last_wake_time, check_period);
@@ -748,17 +1155,31 @@ static void execute_shutdown(void)
         }
     }
     
-    /* LPMU: 发送电源切换信号（脉冲触发）*/
+    /* LPMU: 先检查是否在线（ping），如果在线才执行关机 */
     if (s_pp.lpmu_powered) {
-        TS_LOGI(TAG, "Sending LPMU power toggle");
-        /* TODO: 检查 LPMU 是否在线（ping），如果在线才执行关机 */
-        ts_device_power_off(TS_DEVICE_LPMU);
+        if (s_pp.config.lpmu_ping_before_shutdown) {
+            TS_LOGI(TAG, "Pinging LPMU at %s before shutdown...", LPMU_IP);
+            bool lpmu_reachable = ping_host(LPMU_IP, 2000);
+            
+            if (lpmu_reachable) {
+                TS_LOGI(TAG, "LPMU is reachable, sending power toggle");
+                ts_device_power_off(TS_DEVICE_LPMU);
+            } else {
+                TS_LOGW(TAG, "LPMU unreachable, may already be off, skipping toggle");
+            }
+        } else {
+            TS_LOGI(TAG, "Sending LPMU power toggle (ping check disabled)");
+            ts_device_power_off(TS_DEVICE_LPMU);
+        }
     }
     
-    /* 启动风扇关闭定时器（60 秒后关闭风扇）*/
-    s_pp.shutdown_timer_sec = 60;
-    s_pp.fans_stopped = false;
-    TS_LOGI(TAG, "Shutdown timer started: will stop fans in 60s");
+    /* 启动风扇关闭定时器 */
+    if (s_pp.config.enable_fan_control) {
+        s_pp.shutdown_timer_sec = s_pp.config.fan_stop_delay_sec;
+        s_pp.fans_stopped = false;
+        TS_LOGI(TAG, "Fan stop timer started: will stop fans in %lu seconds", 
+                (unsigned long)s_pp.config.fan_stop_delay_sec);
+    }
 }
 
 static void execute_recovery(void)
@@ -813,4 +1234,224 @@ static void update_led_status(void)
         
         last_state = current_state;
     }
+}
+
+/*===========================================================================*/
+/*                       Additional API Functions                             */
+/*===========================================================================*/
+
+esp_err_t ts_power_policy_set_shutdown_delay(uint32_t seconds)
+{
+    if (!s_pp.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (seconds < 10 || seconds > 600) {
+        TS_LOGE(TAG, "Invalid shutdown delay: %lu (must be 10-600 seconds)",
+                (unsigned long)seconds);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (xSemaphoreTake(s_pp.state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_pp.config.shutdown_delay_sec = seconds;
+        TS_LOGI(TAG, "Shutdown delay set to %lu seconds", (unsigned long)seconds);
+        xSemaphoreGive(s_pp.state_mutex);
+        return ESP_OK;
+    }
+    
+    return ESP_ERR_TIMEOUT;
+}
+
+esp_err_t ts_power_policy_set_recovery_hold(uint32_t seconds)
+{
+    if (!s_pp.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (seconds < 1 || seconds > 300) {
+        TS_LOGE(TAG, "Invalid recovery hold time: %lu (must be 1-300 seconds)",
+                (unsigned long)seconds);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (xSemaphoreTake(s_pp.state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_pp.config.recovery_hold_sec = seconds;
+        TS_LOGI(TAG, "Recovery hold time set to %lu seconds", (unsigned long)seconds);
+        xSemaphoreGive(s_pp.state_mutex);
+        return ESP_OK;
+    }
+    
+    return ESP_ERR_TIMEOUT;
+}
+
+esp_err_t ts_power_policy_set_fan_stop_delay(uint32_t seconds)
+{
+    if (!s_pp.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (seconds < 10 || seconds > 600) {
+        TS_LOGE(TAG, "Invalid fan stop delay: %lu (must be 10-600 seconds)",
+                (unsigned long)seconds);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (xSemaphoreTake(s_pp.state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_pp.config.fan_stop_delay_sec = seconds;
+        TS_LOGI(TAG, "Fan stop delay set to %lu seconds", (unsigned long)seconds);
+        xSemaphoreGive(s_pp.state_mutex);
+        return ESP_OK;
+    }
+    
+    return ESP_ERR_TIMEOUT;
+}
+
+esp_err_t ts_power_policy_save_config(void)
+{
+    if (!s_pp.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    /* 保存到 SD 卡 */
+    esp_err_t ret = save_config_to_sdcard();
+    if (ret != ESP_OK) {
+        TS_LOGW(TAG, "Failed to save config to SD card: %s", esp_err_to_name(ret));
+    }
+    
+    /* 同时保存到 NVS */
+    ts_config_set_float(CONFIG_KEY_LOW_VOLTAGE, s_pp.config.low_voltage_threshold);
+    ts_config_set_float(CONFIG_KEY_RECOVERY_VOLTAGE, s_pp.config.recovery_voltage_threshold);
+    ts_config_set_uint32(CONFIG_KEY_SHUTDOWN_DELAY, s_pp.config.shutdown_delay_sec);
+    ts_config_set_uint32(CONFIG_KEY_RECOVERY_HOLD, s_pp.config.recovery_hold_sec);
+    ts_config_set_uint32(CONFIG_KEY_FAN_STOP_DELAY, s_pp.config.fan_stop_delay_sec);
+    ts_config_save();
+    
+    TS_LOGI(TAG, "Power policy config saved to SD card and NVS");
+    return ESP_OK;
+}
+
+/* 标记变量是否已注册，避免重复注册 */
+static bool s_variables_registered = false;
+
+esp_err_t ts_power_policy_register_variables(void)
+{
+    /* 如果已注册或 ts_variable 未初始化，则跳过 */
+    if (s_variables_registered) {
+        return ESP_OK;
+    }
+    
+    if (!ts_variable_is_initialized()) {
+        TS_LOGD(TAG, "ts_variable not initialized, cannot register variables yet");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    /* 变量定义 */
+    static const struct {
+        const char *name;
+        ts_auto_value_type_t type;
+    } var_defs[] = {
+        {"power_policy.state", TS_AUTO_VAL_STRING},
+        {"power_policy.voltage", TS_AUTO_VAL_FLOAT},
+        {"power_policy.countdown", TS_AUTO_VAL_INT},
+        {"power_policy.recovery_timer", TS_AUTO_VAL_INT},
+        {"power_policy.protection_count", TS_AUTO_VAL_INT},
+        {"power_policy.is_normal", TS_AUTO_VAL_INT},
+        {"power_policy.is_protected", TS_AUTO_VAL_INT},
+        {"power_policy.is_low_voltage", TS_AUTO_VAL_INT},
+    };
+    
+    /* 使用堆分配避免栈溢出（ts_auto_variable_t ~350字节）*/
+    ts_auto_variable_t *var = heap_caps_malloc(sizeof(ts_auto_variable_t), MALLOC_CAP_SPIRAM);
+    if (var == NULL) {
+        var = malloc(sizeof(ts_auto_variable_t));
+    }
+    if (var == NULL) {
+        TS_LOGW(TAG, "Failed to allocate memory for variable registration");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    int registered = 0;
+    for (size_t i = 0; i < sizeof(var_defs) / sizeof(var_defs[0]); i++) {
+        memset(var, 0, sizeof(ts_auto_variable_t));
+        strncpy(var->name, var_defs[i].name, sizeof(var->name) - 1);
+        strncpy(var->source_id, "power_policy", sizeof(var->source_id) - 1);
+        var->value.type = var_defs[i].type;
+        var->flags = TS_AUTO_VAR_READONLY;
+        
+        if (ts_variable_register(var) == ESP_OK) {
+            registered++;
+        }
+    }
+    
+    free(var);
+    s_variables_registered = true;
+    
+    TS_LOGI(TAG, "Registered %d automation variables for power policy", registered);
+    return ESP_OK;
+}
+
+esp_err_t ts_power_policy_update_variables(void)
+{
+    if (!s_pp.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    ts_power_policy_state_t state;
+    float voltage;
+    uint32_t countdown, recovery_timer;
+    uint32_t protection_count;
+    
+    /* 获取当前状态 */
+    if (xSemaphoreTake(s_pp.state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        state = s_pp.state;
+        voltage = s_pp.current_voltage;
+        countdown = s_pp.countdown_remaining_sec;
+        recovery_timer = s_pp.recovery_timer_sec;
+        protection_count = s_pp.protection_count;
+        xSemaphoreGive(s_pp.state_mutex);
+    } else {
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    /* 更新自动化变量（使用 internal 版本绕过 READONLY 检查）*/
+    ts_auto_value_t val;
+    
+    /* state (string) */
+    memset(&val, 0, sizeof(val));
+    val.type = TS_AUTO_VAL_STRING;
+    strncpy(val.str_val, ts_power_policy_get_state_name(state), sizeof(val.str_val) - 1);
+    ts_variable_set_internal("power_policy.state", &val);
+    
+    /* voltage (float) */
+    val.type = TS_AUTO_VAL_FLOAT;
+    val.float_val = voltage;
+    ts_variable_set_internal("power_policy.voltage", &val);
+    
+    /* countdown (int) */
+    val.type = TS_AUTO_VAL_INT;
+    val.int_val = (int)countdown;
+    ts_variable_set_internal("power_policy.countdown", &val);
+    
+    /* recovery_timer (int) */
+    val.int_val = (int)recovery_timer;
+    ts_variable_set_internal("power_policy.recovery_timer", &val);
+    
+    /* protection_count (int) */
+    val.int_val = (int)protection_count;
+    ts_variable_set_internal("power_policy.protection_count", &val);
+    
+    /* is_normal (int as bool) */
+    val.int_val = (state == TS_POWER_POLICY_STATE_NORMAL) ? 1 : 0;
+    ts_variable_set_internal("power_policy.is_normal", &val);
+    
+    /* is_protected (int as bool) */
+    val.int_val = (state == TS_POWER_POLICY_STATE_PROTECTED || 
+                   state == TS_POWER_POLICY_STATE_SHUTDOWN) ? 1 : 0;
+    ts_variable_set_internal("power_policy.is_protected", &val);
+    
+    /* is_low_voltage (int as bool) */
+    val.int_val = (state == TS_POWER_POLICY_STATE_LOW_VOLTAGE) ? 1 : 0;
+    ts_variable_set_internal("power_policy.is_low_voltage", &val);
+    
+    return ESP_OK;
 }

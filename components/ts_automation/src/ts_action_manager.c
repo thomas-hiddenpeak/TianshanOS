@@ -18,6 +18,7 @@
 #include "ts_ssh_client.h"
 #include "ts_ssh_commands_config.h"
 #include "ts_ssh_hosts_config.h"
+#include "ts_ssh_log_watch.h"
 #include "ts_keystore.h"
 #include "ts_led.h"
 #include "ts_led_preset.h"
@@ -1148,6 +1149,8 @@ esp_err_t ts_action_exec_ssh_ref(const ts_auto_action_ssh_ref_t *ssh_ref,
     
     ESP_LOGI(TAG, "SSH ref [%s]: host=%s, cmd=%s", 
              ssh_ref->cmd_id, cmd_config.host_id, cmd_config.command);
+    ESP_LOGI(TAG, "SSH ref config: var_name='%s', nohup=%d, service_mode=%d, ready_pattern='%s'",
+             cmd_config.var_name, cmd_config.nohup, cmd_config.service_mode, cmd_config.ready_pattern);
     
     /* Get SSH host config */
     ts_action_ssh_host_t host;
@@ -1185,7 +1188,10 @@ esp_err_t ts_action_exec_ssh_ref(const ts_auto_action_ssh_ref_t *ssh_ref,
         return ESP_ERR_NO_MEM;
     }
     if (cmd_config.nohup) {
-        /* Generate safe name from command name for log file */
+        /* Generate safe name from command name for log/pid files
+         * Use cmd.name (user-readable identifier) for consistency
+         * varName is only for service mode status variables
+         */
         char safe_name[32] = {0};
         const char *src = cmd_config.name;
         int j = 0;
@@ -1199,6 +1205,7 @@ esp_err_t ts_action_exec_ssh_ref(const ts_auto_action_ssh_ref_t *ssh_ref,
         if (j == 0) {
             strcpy(safe_name, "cmd");
         }
+        ESP_LOGI(TAG, "nohup safe_name='%s' (from name='%s')", safe_name, cmd_config.name);
         
         /* nohup command with PID file for process tracking
          * Format: nohup <cmd> > <log> 2>&1 & echo $! > <pid>
@@ -1317,6 +1324,54 @@ esp_err_t ts_action_exec_ssh_ref(const ts_auto_action_ssh_ref_t *ssh_ref,
             /* Set timestamp variable */
             snprintf(var_full, sizeof(var_full), "%s.timestamp", cmd_config.var_name);
             ts_variable_set_int(var_full, (int32_t)(esp_timer_get_time() / 1000000));
+            
+            /* Debug: set execution info */
+            snprintf(var_full, sizeof(var_full), "%s.exec_info", cmd_config.var_name);
+            char debug_info[256];
+            snprintf(debug_info, sizeof(debug_info), "nohup=%d,svcmode=%d,pattern=%.64s", 
+                     cmd_config.nohup, cmd_config.service_mode, cmd_config.ready_pattern);
+            ts_variable_set_string(var_full, debug_info);
+        }
+        
+        /* Handle service mode: start log watching for nohup commands */
+        if (cmd_config.nohup && cmd_config.service_mode && 
+            cmd_config.ready_pattern[0] && cmd_config.var_name[0]) {
+            
+            /* Generate safe name (same logic as nohup wrapper above)
+             * Use cmd.name for file paths, var_name only for status variables
+             */
+            char safe_name[32] = {0};
+            const char *src = cmd_config.name;
+            int j = 0;
+            for (int i = 0; src[i] && j < 20; i++) {
+                if ((src[i] >= 'a' && src[i] <= 'z') || 
+                    (src[i] >= 'A' && src[i] <= 'Z') || 
+                    (src[i] >= '0' && src[i] <= '9')) {
+                    safe_name[j++] = src[i];
+                }
+            }
+            if (j == 0) {
+                strcpy(safe_name, "cmd");
+            }
+            
+            ts_ssh_log_watch_config_t watch_config = {
+                .timeout_sec = cmd_config.ready_timeout_sec > 0 ? cmd_config.ready_timeout_sec : 60,
+                .check_interval_ms = cmd_config.ready_check_interval_ms > 0 ? cmd_config.ready_check_interval_ms : 3000
+            };
+            strncpy(watch_config.host_id, cmd_config.host_id, sizeof(watch_config.host_id) - 1);
+            snprintf(watch_config.log_file, sizeof(watch_config.log_file), 
+                     "/tmp/ts_nohup_%s.log", safe_name);
+            strncpy(watch_config.ready_pattern, cmd_config.ready_pattern, sizeof(watch_config.ready_pattern) - 1);
+            strncpy(watch_config.fail_pattern, cmd_config.service_fail_pattern, sizeof(watch_config.fail_pattern) - 1);
+            strncpy(watch_config.var_name, cmd_config.var_name, sizeof(watch_config.var_name) - 1);
+            
+            esp_err_t watch_ret = ts_ssh_log_watch_start(&watch_config, NULL);
+            if (watch_ret == ESP_OK) {
+                ESP_LOGI(TAG, "🔍 Service mode: watching log for '%s' (fail='%s', timeout: %us)", 
+                         cmd_config.ready_pattern, cmd_config.service_fail_pattern, watch_config.timeout_sec);
+            } else {
+                ESP_LOGW(TAG, "Failed to start log watch: %s", esp_err_to_name(watch_ret));
+            }
         }
         
         /* Free result strings */

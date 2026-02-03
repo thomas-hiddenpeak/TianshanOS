@@ -23,6 +23,7 @@
 #include "cJSON.h"
 #include "esp_heap_caps.h"
 #include "esp_crt_bundle.h"
+#include "esp_log.h"
 #include <string.h>
 
 static const char *TAG = "api_automation";
@@ -500,7 +501,9 @@ static esp_err_t api_automation_rules_trigger(const cJSON *params, ts_api_result
         return ESP_OK;
     }
 
+    ESP_LOGI("api_auto", "Calling ts_rule_trigger('%s')", id_param->valuestring);
     esp_err_t ret = ts_rule_trigger(id_param->valuestring);
+    ESP_LOGI("api_auto", "ts_rule_trigger returned: %s", esp_err_to_name(ret));
 
     if (ret == ESP_OK) {
         result->code = TS_API_OK;
@@ -629,6 +632,7 @@ static esp_err_t api_automation_rules_get(const cJSON *params, ts_api_result_t *
             case TS_AUTO_ACT_SET_VAR: type_str = "set_var"; break;
             case TS_AUTO_ACT_WEBHOOK: type_str = "webhook"; break;
             case TS_AUTO_ACT_SSH_CMD: type_str = "ssh"; break;
+            case TS_AUTO_ACT_SSH_CMD_REF: type_str = "ssh_cmd_ref"; break;
             default: type_str = "log"; break;
         }
         cJSON_AddStringToObject(act, "type", type_str);
@@ -682,6 +686,9 @@ static esp_err_t api_automation_rules_get(const cJSON *params, ts_api_result_t *
             case TS_AUTO_ACT_LOG:
                 cJSON_AddStringToObject(act, "message", a->log.message);
                 cJSON_AddNumberToObject(act, "level", a->log.level);
+                break;
+            case TS_AUTO_ACT_SSH_CMD_REF:
+                cJSON_AddStringToObject(act, "cmd_id", a->ssh_ref.cmd_id);
                 break;
             default:
                 break;
@@ -781,6 +788,7 @@ static ts_auto_action_type_t parse_action_type(const char *type_str)
     if (strcmp(type_str, "led") == 0) return TS_AUTO_ACT_LED;
     if (strcmp(type_str, "gpio") == 0) return TS_AUTO_ACT_GPIO;
     if (strcmp(type_str, "ssh") == 0) return TS_AUTO_ACT_SSH_CMD;
+    if (strcmp(type_str, "ssh_cmd_ref") == 0) return TS_AUTO_ACT_SSH_CMD_REF;
     if (strcmp(type_str, "webhook") == 0) return TS_AUTO_ACT_WEBHOOK;
     if (strcmp(type_str, "log") == 0) return TS_AUTO_ACT_LOG;
     if (strcmp(type_str, "set_var") == 0) return TS_AUTO_ACT_SET_VAR;
@@ -1091,6 +1099,14 @@ static esp_err_t api_automation_rules_add(const cJSON *params, ts_api_result_t *
                             }
                             if (body && cJSON_IsString(body)) {
                                 strncpy(a->webhook.body_template, body->valuestring, sizeof(a->webhook.body_template) - 1);
+                            }
+                            break;
+                        }
+                        case TS_AUTO_ACT_SSH_CMD_REF: {
+                            cJSON *cmd_id = cJSON_GetObjectItem(act, "cmd_id");
+                            if (cmd_id && cJSON_IsString(cmd_id)) {
+                                strncpy(a->ssh_ref.cmd_id, cmd_id->valuestring, sizeof(a->ssh_ref.cmd_id) - 1);
+                                TS_LOGI(TAG, "Parsed SSH_CMD_REF action: cmd_id=%s", a->ssh_ref.cmd_id);
                             }
                             break;
                         }
@@ -2181,15 +2197,15 @@ static ts_auto_action_type_t action_type_from_string(const char *str)
 {
     if (!str) return TS_AUTO_ACT_LOG;
     
-    if (strcmp(str, "cli") == 0) return TS_AUTO_ACT_CLI;
-    if (strcmp(str, "led") == 0) return TS_AUTO_ACT_LED;
-    if (strcmp(str, "ssh_cmd") == 0) return TS_AUTO_ACT_SSH_CMD;
-    if (strcmp(str, "ssh_cmd_ref") == 0) return TS_AUTO_ACT_SSH_CMD_REF;
-    if (strcmp(str, "gpio") == 0) return TS_AUTO_ACT_GPIO;
-    if (strcmp(str, "webhook") == 0) return TS_AUTO_ACT_WEBHOOK;
-    if (strcmp(str, "log") == 0) return TS_AUTO_ACT_LOG;
-    if (strcmp(str, "set_var") == 0) return TS_AUTO_ACT_SET_VAR;
-    if (strcmp(str, "device_ctrl") == 0) return TS_AUTO_ACT_DEVICE_CTRL;
+    if (strcasecmp(str, "cli") == 0) return TS_AUTO_ACT_CLI;
+    if (strcasecmp(str, "led") == 0) return TS_AUTO_ACT_LED;
+    if (strcasecmp(str, "ssh_cmd") == 0) return TS_AUTO_ACT_SSH_CMD;
+    if (strcasecmp(str, "ssh_cmd_ref") == 0 || strcasecmp(str, "SSH_CMD_REF") == 0) return TS_AUTO_ACT_SSH_CMD_REF;
+    if (strcasecmp(str, "gpio") == 0) return TS_AUTO_ACT_GPIO;
+    if (strcasecmp(str, "webhook") == 0) return TS_AUTO_ACT_WEBHOOK;
+    if (strcasecmp(str, "log") == 0) return TS_AUTO_ACT_LOG;
+    if (strcasecmp(str, "set_var") == 0) return TS_AUTO_ACT_SET_VAR;
+    if (strcasecmp(str, "device_ctrl") == 0 || strcasecmp(str, "DEVICE_CTRL") == 0) return TS_AUTO_ACT_DEVICE_CTRL;
     
     return TS_AUTO_ACT_LOG; /* Default */
 }

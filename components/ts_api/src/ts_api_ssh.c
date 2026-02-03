@@ -1432,6 +1432,20 @@ static esp_err_t api_ssh_commands_list(const cJSON *params, ts_api_result_t *res
             cJSON_AddBoolToObject(item, "stopOnMatch", configs[i].stop_on_match);
             cJSON_AddBoolToObject(item, "nohup", configs[i].nohup);
             cJSON_AddBoolToObject(item, "enabled", configs[i].enabled);
+            /* 服务模式字段 */
+            cJSON_AddBoolToObject(item, "serviceMode", configs[i].service_mode);
+            if (configs[i].ready_pattern[0]) {
+                cJSON_AddStringToObject(item, "readyPattern", configs[i].ready_pattern);
+            }
+            if (configs[i].service_fail_pattern[0]) {
+                cJSON_AddStringToObject(item, "serviceFailPattern", configs[i].service_fail_pattern);
+            }
+            if (configs[i].ready_timeout_sec > 0) {
+                cJSON_AddNumberToObject(item, "readyTimeout", configs[i].ready_timeout_sec);
+            }
+            if (configs[i].ready_check_interval_ms > 0) {
+                cJSON_AddNumberToObject(item, "readyInterval", configs[i].ready_check_interval_ms);
+            }
             cJSON_AddNumberToObject(item, "created", configs[i].created_time);
             cJSON_AddNumberToObject(item, "lastExec", configs[i].last_exec_time);
             cJSON_AddItemToArray(commands_arr, item);
@@ -1531,6 +1545,29 @@ static esp_err_t api_ssh_commands_add(const cJSON *params, ts_api_result_t *resu
         config.nohup = cJSON_IsTrue(nohup);
     }
     
+    /* 服务模式字段 */
+    const cJSON *service_mode = cJSON_GetObjectItem(params, "serviceMode");
+    const cJSON *ready_pattern = cJSON_GetObjectItem(params, "readyPattern");
+    const cJSON *service_fail_pattern = cJSON_GetObjectItem(params, "serviceFailPattern");
+    const cJSON *ready_timeout = cJSON_GetObjectItem(params, "readyTimeout");
+    const cJSON *ready_interval = cJSON_GetObjectItem(params, "readyInterval");
+    
+    if (service_mode && cJSON_IsBool(service_mode)) {
+        config.service_mode = cJSON_IsTrue(service_mode);
+    }
+    if (ready_pattern && cJSON_IsString(ready_pattern)) {
+        strncpy(config.ready_pattern, ready_pattern->valuestring, sizeof(config.ready_pattern) - 1);
+    }
+    if (service_fail_pattern && cJSON_IsString(service_fail_pattern)) {
+        strncpy(config.service_fail_pattern, service_fail_pattern->valuestring, sizeof(config.service_fail_pattern) - 1);
+    }
+    if (ready_timeout && cJSON_IsNumber(ready_timeout)) {
+        config.ready_timeout_sec = (uint16_t)ready_timeout->valueint;
+    }
+    if (ready_interval && cJSON_IsNumber(ready_interval)) {
+        config.ready_check_interval_ms = (uint16_t)ready_interval->valueint;
+    }
+    
     char out_id[TS_SSH_CMD_ID_MAX] = {0};
     esp_err_t ret = ts_ssh_commands_config_add(&config, out_id, sizeof(out_id));
     
@@ -1620,6 +1657,20 @@ static esp_err_t api_ssh_commands_get(const cJSON *params, ts_api_result_t *resu
         cJSON_AddBoolToObject(data, "stopOnMatch", config.stop_on_match);
         cJSON_AddBoolToObject(data, "nohup", config.nohup);
         cJSON_AddBoolToObject(data, "enabled", config.enabled);
+        /* 服务模式字段 */
+        cJSON_AddBoolToObject(data, "serviceMode", config.service_mode);
+        if (config.ready_pattern[0]) {
+            cJSON_AddStringToObject(data, "readyPattern", config.ready_pattern);
+        }
+        if (config.service_fail_pattern[0]) {
+            cJSON_AddStringToObject(data, "serviceFailPattern", config.service_fail_pattern);
+        }
+        if (config.ready_timeout_sec > 0) {
+            cJSON_AddNumberToObject(data, "readyTimeout", config.ready_timeout_sec);
+        }
+        if (config.ready_check_interval_ms > 0) {
+            cJSON_AddNumberToObject(data, "readyInterval", config.ready_check_interval_ms);
+        }
         cJSON_AddNumberToObject(data, "created", config.created_time);
         cJSON_AddNumberToObject(data, "lastExec", config.last_exec_time);
         ts_api_result_ok(result, data);

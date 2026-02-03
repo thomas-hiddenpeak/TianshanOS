@@ -164,6 +164,12 @@ esp_err_t ts_cmd_ota_register(void);
 esp_err_t ts_cmd_pki_register(void);
 
 /**
+ * @brief 注册 auto 命令（自动化规则管理）
+ * auto --history/--stats/--list/--trigger/--clear
+ */
+void ts_cmd_auto_register(void);
+
+/**
  * @brief 注册所有扩展命令
  * 一次性注册所有非内置命令
  */

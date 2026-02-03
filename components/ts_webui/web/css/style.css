@@ -5841,14 +5841,14 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: flex-start;
-    padding: 14px 10px 10px;
+    padding: 14px 10px 38px;  /* 统一底部 padding，为操作栏留出空间 */
     background: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: 12px;
     cursor: pointer;
     transition: all 0.2s ease;
     text-align: center;
-    min-height: 110px;
+    min-height: 130px;  /* 固定最小高度 */
 }
 
 .quick-action-card:hover {
@@ -5997,7 +5997,7 @@ body {
 
 /* nohup 后台任务卡片样式 */
 .quick-action-card.has-nohup {
-    padding-bottom: 36px;
+    /* 统一高度，不再额外增加 padding */
 }
 
 .quick-action-card.has-nohup.is-running {
@@ -7131,3 +7131,179 @@ body {
 .health-ok { color: #27ae60; }
 .health-fail { color: #e74c3c; }
 
+/* =========================================================================
+ *  SSH 指令 - 服务模式样式
+ * ========================================================================= */
+
+/* 服务模式选项区域 */
+.service-mode-options {
+    margin-top: 15px;
+    padding: 12px;
+    background: rgba(52, 152, 219, 0.05);
+    border: 1px dashed var(--primary-color);
+    border-radius: 8px;
+}
+
+.service-mode-header {
+    margin-bottom: 10px;
+}
+
+.service-mode-header .checkbox-label {
+    font-weight: 500;
+}
+
+.service-mode-header small {
+    display: block;
+    margin-top: 4px;
+    color: #666;
+}
+
+.service-mode-fields {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(52, 152, 219, 0.2);
+}
+
+.service-mode-fields .form-row {
+    display: flex;
+    gap: 12px;
+}
+
+.service-mode-hint {
+    margin-top: 12px;
+    padding: 10px;
+    background: rgba(243, 156, 18, 0.1);
+    border-radius: 6px;
+    font-size: 0.85em;
+}
+
+.service-mode-hint code {
+    background: rgba(0, 0, 0, 0.1);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+/* 服务模式标签（指令卡片中） */
+.pattern-tag.service-mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    background: rgba(52, 152, 219, 0.15);
+    color: var(--primary-color);
+}
+
+.pattern-tag.service-mode .service-status {
+    font-weight: 600;
+    font-size: 0.9em;
+}
+
+/* 服务模式状态显示（简洁样式，无色块背景） */
+.service-mode-status {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.85em;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.service-mode-status .service-status {
+    font-weight: 500;
+}
+
+/* 服务状态颜色（仅文字颜色） */
+.service-status.status-ready {
+    color: #27ae60;
+}
+
+.service-status.status-checking {
+    color: #3498db;
+    animation: service-checking-text 1.5s ease-in-out infinite;
+}
+
+.service-status.status-timeout {
+    color: #f39c12;
+}
+
+.service-status.status-failed {
+    color: #e74c3c;
+}
+
+.service-status.status-idle {
+    color: #7f8c8d;
+}
+
+.service-status.status-unknown {
+    color: #95a5a6;
+}
+
+@keyframes service-checking-text {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+@keyframes service-checking {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* =========================================================================
+ *  快捷操作卡片 - 服务状态显示
+ * ========================================================================= */ */
+
+.quick-action-service-status {
+    position: absolute;
+    bottom: 38px;  /* 在操作栏上方 */
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: 0.75em;
+    background: rgba(0, 0, 0, 0.05);
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.quick-action-service-status .service-label {
+    opacity: 0.7;
+}
+
+.quick-action-service-status .service-value {
+    font-weight: 600;
+}
+
+.quick-action-service-status.status-ready {
+    background: rgba(46, 204, 113, 0.15);
+    color: #27ae60;
+}
+
+.quick-action-service-status.status-checking {
+    background: rgba(52, 152, 219, 0.15);
+    color: #3498db;
+    animation: service-checking 1.5s ease-in-out infinite;
+}
+
+.quick-action-service-status.status-timeout {
+    background: rgba(243, 156, 18, 0.15);
+    color: #f39c12;
+}
+
+.quick-action-service-status.status-failed {
+    background: rgba(231, 76, 60, 0.15);
+    color: #e74c3c;
+}
+
+.quick-action-service-status.status-idle {
+    background: rgba(149, 165, 166, 0.15);
+    color: #7f8c8d;
+}
+
+/* 有服务模式的卡片样式 */
+.quick-action-card.has-service.is-running {
+    /* 统一高度，不再额外增加 padding */
+}

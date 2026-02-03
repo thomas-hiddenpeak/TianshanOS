@@ -77,6 +77,60 @@ static ts_rule_engine_ctx_t s_rule_ctx = {
 };
 
 /*===========================================================================*/
+/*                      执行历史环形缓冲区                                    */
+/*===========================================================================*/
+
+/**
+ * @brief 执行历史环形缓冲区上下文
+ * 
+ * 使用固定大小数组避免动态内存分配
+ * 内存占用：16 × 96 = 1536 字节
+ */
+typedef struct {
+    ts_rule_exec_record_t records[TS_RULE_EXEC_HISTORY_SIZE];
+    int head;                            // 下一个写入位置
+    int count;                           // 当前记录数量
+} ts_rule_exec_history_t;
+
+static ts_rule_exec_history_t s_exec_history = {
+    .head = 0,
+    .count = 0,
+};
+
+/**
+ * @brief 记录一条规则执行结果
+ * 
+ * @note 调用者需持有 mutex
+ */
+static void record_execution(const char *rule_id, 
+                             ts_rule_exec_status_t status,
+                             ts_rule_trigger_source_t source,
+                             const char *message,
+                             uint8_t action_count,
+                             uint8_t failed_count)
+{
+    ts_rule_exec_record_t *rec = &s_exec_history.records[s_exec_history.head];
+    
+    // 填充记录
+    memset(rec, 0, sizeof(*rec));
+    strncpy(rec->rule_id, rule_id, sizeof(rec->rule_id) - 1);
+    rec->timestamp_ms = esp_timer_get_time() / 1000;
+    rec->status = status;
+    rec->source = source;
+    if (message) {
+        strncpy(rec->message, message, sizeof(rec->message) - 1);
+    }
+    rec->action_count = action_count;
+    rec->failed_count = failed_count;
+    
+    // 移动 head
+    s_exec_history.head = (s_exec_history.head + 1) % TS_RULE_EXEC_HISTORY_SIZE;
+    if (s_exec_history.count < TS_RULE_EXEC_HISTORY_SIZE) {
+        s_exec_history.count++;
+    }
+}
+
+/*===========================================================================*/
 /*                          静态函数声明                                      */
 /*===========================================================================*/
 
@@ -89,6 +143,8 @@ static esp_err_t execute_ssh_action(const ts_auto_action_t *action);
 static esp_err_t execute_ssh_ref_action(const ts_auto_action_t *action);
 static esp_err_t execute_cli_action(const ts_auto_action_t *action);
 static esp_err_t execute_webhook_action(const ts_auto_action_t *action);
+static esp_err_t execute_actions_with_stats(const ts_auto_action_t *actions, int count,
+                                             int *success_count, int *fail_count);
 
 /*===========================================================================*/
 /*                              辅助函数                                      */
@@ -626,8 +682,10 @@ esp_err_t ts_rule_evaluate(const char *id, bool *triggered)
         // 执行动作
         ESP_LOGI(TAG, "Rule '%s' triggered", rule->id);
 
+        int success_count = 0, fail_count = 0;
         if (rule->actions && rule->action_count > 0) {
-            ts_action_execute_array(rule->actions, rule->action_count, NULL, NULL);
+            execute_actions_with_stats(rule->actions, rule->action_count, 
+                                       &success_count, &fail_count);
         }
 
         // 更新触发时间和计数
@@ -635,6 +693,26 @@ esp_err_t ts_rule_evaluate(const char *id, bool *triggered)
         rule->last_trigger_ms = now_ms;
         rule->trigger_count++;
         s_rule_ctx.stats.total_triggers++;
+        s_rule_ctx.stats.total_actions += rule->action_count;
+        s_rule_ctx.stats.failed_actions += fail_count;
+        
+        // 记录执行历史
+        ts_rule_exec_status_t status;
+        char msg[TS_RULE_EXEC_MSG_LEN];
+        if (fail_count == 0) {
+            status = TS_RULE_EXEC_SUCCESS;
+            snprintf(msg, sizeof(msg), "%d actions OK", success_count);
+        } else if (success_count == 0) {
+            status = TS_RULE_EXEC_FAILED;
+            snprintf(msg, sizeof(msg), "all %d actions failed", fail_count);
+        } else {
+            status = TS_RULE_EXEC_PARTIAL;
+            snprintf(msg, sizeof(msg), "%d/%d actions failed", 
+                     fail_count, success_count + fail_count);
+        }
+        record_execution(rule->id, status, TS_RULE_TRIGGER_CONDITION,
+                         msg, (uint8_t)rule->action_count, (uint8_t)fail_count);
+        
         xSemaphoreGive(s_rule_ctx.mutex);
 
         *triggered = true;
@@ -698,19 +776,56 @@ esp_err_t ts_rule_trigger(const char *id)
     }
 
     ts_auto_rule_t *rule = &s_rule_ctx.rules[idx];
+    int action_count = rule->action_count;
+    char rule_id_copy[TS_AUTO_NAME_MAX_LEN];
+    strncpy(rule_id_copy, rule->id, sizeof(rule_id_copy) - 1);
+    rule_id_copy[sizeof(rule_id_copy) - 1] = '\0';
 
-    ESP_LOGI(TAG, "Manually triggering rule: %s", rule->id);
+    ESP_LOGI(TAG, "Manually triggering rule: %s (actions=%p, count=%d)", 
+             rule->id, (void*)rule->actions, rule->action_count);
 
     // 执行动作
+    int success_count = 0, fail_count = 0;
     if (rule->actions && rule->action_count > 0) {
+        ESP_LOGI(TAG, "Executing %d actions for rule %s", rule->action_count, rule->id);
+        for (int i = 0; i < rule->action_count; i++) {
+            ESP_LOGI(TAG, "  Action[%d]: type=%d, template=%s, delay=%d", 
+                     i, rule->actions[i].type, 
+                     rule->actions[i].template_id[0] ? rule->actions[i].template_id : "(none)",
+                     rule->actions[i].delay_ms);
+        }
         xSemaphoreGive(s_rule_ctx.mutex);
-        ts_action_execute_array(rule->actions, rule->action_count, NULL, NULL);
+        execute_actions_with_stats(rule->actions, rule->action_count, 
+                                   &success_count, &fail_count);
         xSemaphoreTake(s_rule_ctx.mutex, portMAX_DELAY);
+        ESP_LOGI(TAG, "Actions execution complete: success=%d, fail=%d", success_count, fail_count);
+    } else {
+        ESP_LOGW(TAG, "Rule %s has no actions (actions=%p, count=%d)", 
+                 rule->id, (void*)rule->actions, rule->action_count);
     }
 
     rule->last_trigger_ms = esp_timer_get_time() / 1000;
     rule->trigger_count++;
     s_rule_ctx.stats.total_triggers++;
+    s_rule_ctx.stats.total_actions += action_count;
+    s_rule_ctx.stats.failed_actions += fail_count;
+    
+    // 记录执行历史
+    ts_rule_exec_status_t status;
+    char msg[TS_RULE_EXEC_MSG_LEN];
+    if (fail_count == 0) {
+        status = TS_RULE_EXEC_SUCCESS;
+        snprintf(msg, sizeof(msg), "%d actions OK (manual)", success_count);
+    } else if (success_count == 0) {
+        status = TS_RULE_EXEC_FAILED;
+        snprintf(msg, sizeof(msg), "all %d failed (manual)", fail_count);
+    } else {
+        status = TS_RULE_EXEC_PARTIAL;
+        snprintf(msg, sizeof(msg), "%d/%d failed (manual)", 
+                 fail_count, success_count + fail_count);
+    }
+    record_execution(rule_id_copy, status, TS_RULE_TRIGGER_MANUAL,
+                     msg, (uint8_t)action_count, (uint8_t)fail_count);
 
     xSemaphoreGive(s_rule_ctx.mutex);
     return ESP_OK;
@@ -1002,6 +1117,9 @@ static esp_err_t execute_ssh_action(const ts_auto_action_t *action)
         if (result.stdout_data && result.stdout_len > 0) {
             ESP_LOGD(TAG, "SSH stdout: %.*s", (int)result.stdout_len, result.stdout_data);
         }
+        if (result.stderr_data && result.stderr_len > 0) {
+            ESP_LOGW(TAG, "SSH stderr: %.*s", (int)result.stderr_len, result.stderr_data);
+        }
 
         // 存储 exit_code 到变量（使用 host_ref 作为变量前缀）
         char result_var[TS_AUTO_NAME_MAX_LEN + 16];
@@ -1011,6 +1129,12 @@ static esp_err_t execute_ssh_action(const ts_auto_action_t *action)
             .int_val = result.exit_code
         };
         ts_variable_set(result_var, &res_val);
+        
+        // 非零 exit_code 视为执行失败
+        if (result.exit_code != 0) {
+            ESP_LOGW(TAG, "SSH command failed with exit code %d", result.exit_code);
+            ret = ESP_FAIL;
+        }
     } else {
         ESP_LOGE(TAG, "SSH command failed: %s", esp_err_to_name(ret));
     }
@@ -1271,12 +1395,24 @@ static esp_err_t execute_action_with_repeat(const ts_auto_action_t *action,
     return ret;
 }
 
-esp_err_t ts_action_execute_array(const ts_auto_action_t *actions, int count,
-                                   ts_action_result_cb_t callback, void *user_data)
+/**
+ * @brief 执行动作数组并统计成功/失败数量
+ * 
+ * @param actions 动作数组
+ * @param count 动作数量
+ * @param success_count 成功动作计数（输出）
+ * @param fail_count 失败动作计数（输出）
+ * @return 整体执行结果
+ */
+static esp_err_t execute_actions_with_stats(const ts_auto_action_t *actions, int count,
+                                             int *success_count, int *fail_count)
 {
     if (!actions || count <= 0) {
         return ESP_ERR_INVALID_ARG;
     }
+    
+    int success = 0, fail = 0;
+    esp_err_t ret = ESP_OK;
 
     ESP_LOGI(TAG, "Executing %d actions sequentially", count);
 
@@ -1292,7 +1428,13 @@ esp_err_t ts_action_execute_array(const ts_auto_action_t *actions, int count,
             vTaskDelay(pdMS_TO_TICKS(actions[i].delay_ms));
         }
 
-        execute_action_with_repeat(&actions[i], callback, user_data);
+        esp_err_t action_ret = execute_action_with_repeat(&actions[i], NULL, NULL);
+        if (action_ret == ESP_OK) {
+            success++;
+        } else {
+            fail++;
+            ret = action_ret;  // 记录最后一个错误
+        }
         
         // LED Matrix 动作后自动添加延迟，确保渲染完成
         // 这对于连续的 LED 操作（如 image + filter）很重要
@@ -1309,15 +1451,12 @@ esp_err_t ts_action_execute_array(const ts_auto_action_t *actions, int count,
                     case TS_LED_CTRL_TEXT:
                     case TS_LED_CTRL_QRCODE:
                     case TS_LED_CTRL_EFFECT:
-                        // 等待渲染稳定
                         delay_after = 100;
                         break;
                     case TS_LED_CTRL_FILTER:
-                        // 滤镜启动需要一点时间
                         delay_after = 50;
                         break;
                     default:
-                        // 其他 LED 操作添加小延迟
                         delay_after = 20;
                         break;
                 }
@@ -1329,9 +1468,19 @@ esp_err_t ts_action_execute_array(const ts_auto_action_t *actions, int count,
         }
     }
     
-    ESP_LOGI(TAG, "All %d actions executed", count);
+    if (success_count) *success_count = success;
+    if (fail_count) *fail_count = fail;
+    
+    ESP_LOGI(TAG, "All %d actions executed (success=%d, fail=%d)", count, success, fail);
+    
+    return (fail == 0) ? ESP_OK : ret;
+}
 
-    return ESP_OK;
+esp_err_t ts_action_execute_array(const ts_auto_action_t *actions, int count,
+                                   ts_action_result_cb_t callback, void *user_data)
+{
+    // 兼容旧 API，忽略统计
+    return execute_actions_with_stats(actions, count, NULL, NULL);
 }
 
 /*===========================================================================*/
@@ -1388,6 +1537,99 @@ esp_err_t ts_rule_engine_reset_stats(void)
     memset(&s_rule_ctx.stats, 0, sizeof(s_rule_ctx.stats));
     xSemaphoreGive(s_rule_ctx.mutex);
 
+    return ESP_OK;
+}
+
+/*===========================================================================*/
+/*                          执行历史查询                                      */
+/*===========================================================================*/
+
+const char *ts_rule_exec_status_str(ts_rule_exec_status_t status)
+{
+    switch (status) {
+        case TS_RULE_EXEC_SUCCESS: return "SUCCESS";
+        case TS_RULE_EXEC_PARTIAL: return "PARTIAL";
+        case TS_RULE_EXEC_FAILED:  return "FAILED";
+        case TS_RULE_EXEC_SKIPPED: return "SKIPPED";
+        default:                   return "UNKNOWN";
+    }
+}
+
+esp_err_t ts_rule_get_exec_history(ts_rule_exec_record_t *records, 
+                                    int max_count, int *actual_count)
+{
+    if (!records || max_count <= 0 || !actual_count) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (!s_rule_ctx.initialized) {
+        *actual_count = 0;
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    xSemaphoreTake(s_rule_ctx.mutex, portMAX_DELAY);
+    
+    int count = (max_count < s_exec_history.count) ? max_count : s_exec_history.count;
+    *actual_count = count;
+    
+    // 从最新到最旧返回（逆序）
+    for (int i = 0; i < count; i++) {
+        // head 指向下一个写入位置，所以最新的是 head-1
+        int idx = (s_exec_history.head - 1 - i + TS_RULE_EXEC_HISTORY_SIZE) 
+                  % TS_RULE_EXEC_HISTORY_SIZE;
+        records[i] = s_exec_history.records[idx];
+    }
+    
+    xSemaphoreGive(s_rule_ctx.mutex);
+    return ESP_OK;
+}
+
+esp_err_t ts_rule_get_exec_history_by_id(const char *rule_id,
+                                          ts_rule_exec_record_t *records,
+                                          int max_count, int *actual_count)
+{
+    if (!rule_id || !records || max_count <= 0 || !actual_count) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (!s_rule_ctx.initialized) {
+        *actual_count = 0;
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    xSemaphoreTake(s_rule_ctx.mutex, portMAX_DELAY);
+    
+    int out_count = 0;
+    
+    // 从最新到最旧遍历
+    for (int i = 0; i < s_exec_history.count && out_count < max_count; i++) {
+        int idx = (s_exec_history.head - 1 - i + TS_RULE_EXEC_HISTORY_SIZE) 
+                  % TS_RULE_EXEC_HISTORY_SIZE;
+        
+        if (strcmp(s_exec_history.records[idx].rule_id, rule_id) == 0) {
+            records[out_count++] = s_exec_history.records[idx];
+        }
+    }
+    
+    *actual_count = out_count;
+    
+    xSemaphoreGive(s_rule_ctx.mutex);
+    return ESP_OK;
+}
+
+esp_err_t ts_rule_clear_exec_history(void)
+{
+    if (!s_rule_ctx.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    xSemaphoreTake(s_rule_ctx.mutex, portMAX_DELAY);
+    s_exec_history.head = 0;
+    s_exec_history.count = 0;
+    memset(s_exec_history.records, 0, sizeof(s_exec_history.records));
+    xSemaphoreGive(s_rule_ctx.mutex);
+    
+    ESP_LOGI(TAG, "Execution history cleared");
     return ESP_OK;
 }
 

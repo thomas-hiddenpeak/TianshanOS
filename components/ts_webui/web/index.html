@@ -148,6 +148,51 @@
         </div>
     </div>
     
+    <!-- 关机设置模态框 -->
+    <div id="shutdown-settings-modal" class="modal hidden">
+        <div class="modal-content" style="max-width:500px">
+            <div class="modal-header">
+                <h2>⚡ 电压保护设置</h2>
+                <button class="modal-close" onclick="closeShutdownSettingsModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="shutdown-settings-body">
+                <div class="form-group">
+                    <label>低电压阈值 (V)</label>
+                    <input type="number" id="ss-low-voltage" class="input" step="0.1" min="10" max="24" placeholder="12.6">
+                    <small class="form-hint">电压低于此值开始关机倒计时（默认 12.6V）</small>
+                </div>
+                <div class="form-group">
+                    <label>恢复电压阈值 (V)</label>
+                    <input type="number" id="ss-recovery-voltage" class="input" step="0.1" min="10" max="30" placeholder="18.0">
+                    <small class="form-hint">电压高于此值开始恢复流程（默认 18.0V）</small>
+                </div>
+                <div class="form-group">
+                    <label>关机倒计时 (秒)</label>
+                    <input type="number" id="ss-shutdown-delay" class="input" step="1" min="10" max="600" placeholder="60">
+                    <small class="form-hint">低电压后等待多久执行关机（默认 60秒）</small>
+                </div>
+                <div class="form-group">
+                    <label>恢复稳定等待 (秒)</label>
+                    <input type="number" id="ss-recovery-hold" class="input" step="1" min="1" max="300" placeholder="5">
+                    <small class="form-hint">电压恢复后等待确认稳定（默认 5秒）</small>
+                </div>
+                <div class="form-group">
+                    <label>风扇关闭延迟 (秒)</label>
+                    <input type="number" id="ss-fan-stop-delay" class="input" step="1" min="10" max="600" placeholder="60">
+                    <small class="form-hint">关机后多久关闭风扇（默认 60秒）</small>
+                </div>
+                <div id="shutdown-settings-error" class="form-error hidden"></div>
+            </div>
+            <div class="modal-footer" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-color);display:flex;justify-content:space-between">
+                <button class="btn" onclick="resetShutdownSettings()">恢复默认</button>
+                <div style="display:flex;gap:8px">
+                    <button class="btn" onclick="closeShutdownSettingsModal()">取消</button>
+                    <button class="btn btn-primary" onclick="saveShutdownSettings()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <script src="/js/api.js"></script>
     <script src="/js/router.js"></script>
     <script src="/js/terminal.js"></script>

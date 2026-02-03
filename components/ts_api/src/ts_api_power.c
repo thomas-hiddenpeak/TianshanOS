@@ -10,10 +10,18 @@
 #include "ts_api.h"
 #include "ts_power_monitor.h"
 #include "ts_power_policy.h"
+#include "ts_config.h"
 #include "ts_log.h"
 #include <string.h>
 
 #define TAG "api_power"
+
+/* 配置键定义 */
+#define CONFIG_KEY_LOW_VOLTAGE      "power.prot.low_v"
+#define CONFIG_KEY_RECOVERY_VOLTAGE "power.prot.recov_v"
+#define CONFIG_KEY_SHUTDOWN_DELAY   "power.prot.shutdown_delay"
+#define CONFIG_KEY_RECOVERY_HOLD    "power.prot.recovery_hold"
+#define CONFIG_KEY_FAN_STOP_DELAY   "power.prot.fan_delay"
 
 /*===========================================================================*/
 /*                          API Handlers                                      */
@@ -114,7 +122,7 @@ static esp_err_t api_power_voltage(const cJSON *params, ts_api_result_t *result)
 /**
  * @brief power.protection.set - Configure voltage protection
  * 
- * Params: { "enable": true, "low_threshold": 12.6, "recovery_threshold": 18.0, "shutdown_delay": 60 }
+ * Params: { "enable": true, "low_threshold": 12.6, "recovery_threshold": 18.0, "shutdown_delay": 60, "persist": true }
  */
 static esp_err_t api_power_protection_set(const cJSON *params, ts_api_result_t *result)
 {
@@ -126,36 +134,67 @@ static esp_err_t api_power_protection_set(const cJSON *params, ts_api_result_t *
     const cJSON *recovery_thresh = cJSON_GetObjectItem(params, "recovery_threshold");
     const cJSON *shutdown_delay = cJSON_GetObjectItem(params, "shutdown_delay");
     const cJSON *recovery_hold = cJSON_GetObjectItem(params, "recovery_hold");
+    const cJSON *fan_stop_delay = cJSON_GetObjectItem(params, "fan_stop_delay");
     const cJSON *enable = cJSON_GetObjectItem(params, "enable");
+    const cJSON *persist = cJSON_GetObjectItem(params, "persist");
+    
+    float new_low = config.low_voltage_threshold;
+    float new_recovery = config.recovery_voltage_threshold;
+    uint32_t new_shutdown_delay = config.shutdown_delay_sec;
+    uint32_t new_recovery_hold = config.recovery_hold_sec;
+    uint32_t new_fan_delay = config.fan_stop_delay_sec;
     
     if (cJSON_IsNumber(low_thresh)) {
-        config.low_voltage_threshold = (float)low_thresh->valuedouble;
+        new_low = (float)low_thresh->valuedouble;
     }
     if (cJSON_IsNumber(recovery_thresh)) {
-        config.recovery_voltage_threshold = (float)recovery_thresh->valuedouble;
+        new_recovery = (float)recovery_thresh->valuedouble;
     }
     if (cJSON_IsNumber(shutdown_delay)) {
-        config.shutdown_delay_sec = (uint32_t)shutdown_delay->valueint;
+        new_shutdown_delay = (uint32_t)shutdown_delay->valueint;
     }
     if (cJSON_IsNumber(recovery_hold)) {
-        config.recovery_hold_sec = (uint32_t)recovery_hold->valueint;
+        new_recovery_hold = (uint32_t)recovery_hold->valueint;
+    }
+    if (cJSON_IsNumber(fan_stop_delay)) {
+        new_fan_delay = (uint32_t)fan_stop_delay->valueint;
     }
     
     /* Update thresholds */
-    esp_err_t ret = ts_power_policy_set_thresholds(
-        config.low_voltage_threshold, 
-        config.recovery_voltage_threshold);
+    esp_err_t ret = ts_power_policy_set_thresholds(new_low, new_recovery);
     if (ret != ESP_OK) {
         ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to set thresholds");
         return ret;
     }
     
     if (cJSON_IsNumber(shutdown_delay)) {
-        ret = ts_power_policy_set_shutdown_delay(config.shutdown_delay_sec);
+        ret = ts_power_policy_set_shutdown_delay(new_shutdown_delay);
         if (ret != ESP_OK) {
             ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to set shutdown delay");
             return ret;
         }
+    }
+    
+    if (cJSON_IsNumber(recovery_hold)) {
+        ret = ts_power_policy_set_recovery_hold(new_recovery_hold);
+        if (ret != ESP_OK) {
+            ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to set recovery hold time");
+            return ret;
+        }
+    }
+    
+    if (cJSON_IsNumber(fan_stop_delay)) {
+        ret = ts_power_policy_set_fan_stop_delay(new_fan_delay);
+        if (ret != ESP_OK) {
+            ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to set fan stop delay");
+            return ret;
+        }
+    }
+    
+    /* Persist to SD card and NVS if requested */
+    if (cJSON_IsTrue(persist)) {
+        TS_LOGI(TAG, "Persisting power protection config to SD card and NVS");
+        ts_power_policy_save_config();
     }
     
     /* Enable/disable if specified */
@@ -178,6 +217,51 @@ static esp_err_t api_power_protection_set(const cJSON *params, ts_api_result_t *
     cJSON_AddNumberToObject(data, "low_threshold_v", low);
     cJSON_AddNumberToObject(data, "recovery_threshold_v", recovery);
     cJSON_AddBoolToObject(data, "running", ts_power_policy_is_running());
+    cJSON_AddBoolToObject(data, "persisted", cJSON_IsTrue(persist));
+    
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/**
+ * @brief power.protection.config - Get current protection configuration
+ * 
+ * Returns: { low_voltage_threshold, recovery_voltage_threshold, shutdown_delay_sec, recovery_hold_sec, fan_stop_delay_sec }
+ */
+static esp_err_t api_power_protection_config(const cJSON *params, ts_api_result_t *result)
+{
+    (void)params;
+    
+    cJSON *data = cJSON_CreateObject();
+    
+    /* 获取当前运行时配置 */
+    float low_threshold, recovery_threshold;
+    ts_power_policy_get_thresholds(&low_threshold, &recovery_threshold);
+    
+    /* 从存储中读取配置（如果有），否则使用默认值 */
+    float stored_low = 0, stored_recovery = 0;
+    uint32_t stored_shutdown = 0, stored_recovery_hold = 0, stored_fan_delay = 0;
+    
+    ts_config_get_float(CONFIG_KEY_LOW_VOLTAGE, &stored_low, TS_POWER_POLICY_LOW_VOLTAGE_DEFAULT);
+    ts_config_get_float(CONFIG_KEY_RECOVERY_VOLTAGE, &stored_recovery, TS_POWER_POLICY_RECOVERY_VOLTAGE_DEFAULT);
+    ts_config_get_uint32(CONFIG_KEY_SHUTDOWN_DELAY, &stored_shutdown, TS_POWER_POLICY_SHUTDOWN_DELAY_DEFAULT);
+    ts_config_get_uint32(CONFIG_KEY_RECOVERY_HOLD, &stored_recovery_hold, TS_POWER_POLICY_RECOVERY_HOLD_DEFAULT);
+    ts_config_get_uint32(CONFIG_KEY_FAN_STOP_DELAY, &stored_fan_delay, TS_POWER_POLICY_FAN_STOP_DELAY_DEFAULT);
+    
+    /* 返回当前生效的配置（运行时值） */
+    cJSON_AddNumberToObject(data, "low_voltage_threshold", low_threshold);
+    cJSON_AddNumberToObject(data, "recovery_voltage_threshold", recovery_threshold);
+    cJSON_AddNumberToObject(data, "shutdown_delay_sec", stored_shutdown);
+    cJSON_AddNumberToObject(data, "recovery_hold_sec", stored_recovery_hold);
+    cJSON_AddNumberToObject(data, "fan_stop_delay_sec", stored_fan_delay);
+    
+    /* 默认值供参考 */
+    cJSON *defaults = cJSON_AddObjectToObject(data, "defaults");
+    cJSON_AddNumberToObject(defaults, "low_voltage_threshold", TS_POWER_POLICY_LOW_VOLTAGE_DEFAULT);
+    cJSON_AddNumberToObject(defaults, "recovery_voltage_threshold", TS_POWER_POLICY_RECOVERY_VOLTAGE_DEFAULT);
+    cJSON_AddNumberToObject(defaults, "shutdown_delay_sec", TS_POWER_POLICY_SHUTDOWN_DELAY_DEFAULT);
+    cJSON_AddNumberToObject(defaults, "recovery_hold_sec", TS_POWER_POLICY_RECOVERY_HOLD_DEFAULT);
+    cJSON_AddNumberToObject(defaults, "fan_stop_delay_sec", TS_POWER_POLICY_FAN_STOP_DELAY_DEFAULT);
     
     ts_api_result_ok(result, data);
     return ESP_OK;
@@ -515,6 +599,13 @@ static const ts_api_endpoint_t s_power_endpoints[] = {
         .category = TS_API_CAT_POWER,
         .handler = api_power_protection_set,
         .requires_auth = true,
+    },
+    {
+        .name = "power.protection.config",
+        .description = "Get voltage protection configuration",
+        .category = TS_API_CAT_POWER,
+        .handler = api_power_protection_config,
+        .requires_auth = false,
     },
     {
         .name = "power.protection.status",

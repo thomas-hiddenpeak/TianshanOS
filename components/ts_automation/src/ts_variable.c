@@ -170,28 +170,32 @@ esp_err_t ts_variable_deinit(void)
         return ESP_OK;
     }
 
-    ESP_LOGD(TAG, "Deinitializing variable storage");
-
+    /* 清理所有变量和回调 */
     if (s_var_ctx.mutex) {
-        vSemaphoreDelete(s_var_ctx.mutex);
-        s_var_ctx.mutex = NULL;
+        xSemaphoreTake(s_var_ctx.mutex, portMAX_DELAY);
     }
 
     if (s_var_ctx.variables) {
-        // 检查是 PSRAM 还是 DRAM 分配
-        if (heap_caps_get_allocated_size(s_var_ctx.variables) > 0) {
-            heap_caps_free(s_var_ctx.variables);
-        } else {
-            free(s_var_ctx.variables);
-        }
+        free(s_var_ctx.variables);
         s_var_ctx.variables = NULL;
     }
 
     s_var_ctx.count = 0;
-    s_var_ctx.capacity = 0;
     s_var_ctx.initialized = false;
 
+    if (s_var_ctx.mutex) {
+        xSemaphoreGive(s_var_ctx.mutex);
+        vSemaphoreDelete(s_var_ctx.mutex);
+        s_var_ctx.mutex = NULL;
+    }
+
+    ESP_LOGD(TAG, "Variable storage deinitialized");
     return ESP_OK;
+}
+
+bool ts_variable_is_initialized(void)
+{
+    return s_var_ctx.initialized;
 }
 
 /*===========================================================================*/
@@ -458,7 +462,10 @@ esp_err_t ts_variable_get_string(const char *name, char *buffer, size_t buffer_s
 /*                              值修改                                        */
 /*===========================================================================*/
 
-esp_err_t ts_variable_set(const char *name, const ts_auto_value_t *value)
+/**
+ * @brief 内部设置函数，可选择绕过只读检查
+ */
+static esp_err_t variable_set_impl(const char *name, const ts_auto_value_t *value, bool check_readonly)
 {
     if (!name || !value) {
         return ESP_ERR_INVALID_ARG;
@@ -478,8 +485,8 @@ esp_err_t ts_variable_set(const char *name, const ts_auto_value_t *value)
 
     ts_auto_variable_t *var = &s_var_ctx.variables[idx];
 
-    // 检查只读标志
-    if (var->flags & TS_AUTO_VAR_READONLY) {
+    // 检查只读标志（仅当 check_readonly 为 true 时）
+    if (check_readonly && (var->flags & TS_AUTO_VAR_READONLY)) {
         xSemaphoreGive(s_var_ctx.mutex);
         ESP_LOGD(TAG, "Variable '%s' is read-only", name);
         return ESP_ERR_NOT_ALLOWED;
@@ -500,6 +507,16 @@ esp_err_t ts_variable_set(const char *name, const ts_auto_value_t *value)
     }
 
     return ESP_OK;
+}
+
+esp_err_t ts_variable_set(const char *name, const ts_auto_value_t *value)
+{
+    return variable_set_impl(name, value, true);  // 检查只读
+}
+
+esp_err_t ts_variable_set_internal(const char *name, const ts_auto_value_t *value)
+{
+    return variable_set_impl(name, value, false);  // 不检查只读
 }
 
 esp_err_t ts_variable_set_bool(const char *name, bool value)

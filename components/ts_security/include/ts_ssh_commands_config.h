@@ -70,6 +70,13 @@ typedef struct {
     bool nohup;                              /**< 后台执行模式 */
     bool enabled;                            /**< 是否启用 */
     
+    /* 服务模式配置（仅 nohup=true 时有效） */
+    bool service_mode;                       /**< 启用服务模式（日志监测） */
+    char ready_pattern[TS_SSH_CMD_PATTERN_MAX];  /**< 服务就绪匹配模式（如 "Server started"） */
+    char service_fail_pattern[TS_SSH_CMD_PATTERN_MAX]; /**< 服务失败匹配模式（如 "Error|Failed"） */
+    uint16_t ready_timeout_sec;              /**< 就绪检测超时（秒，默认 60） */
+    uint16_t ready_check_interval_ms;        /**< 就绪检测间隔（毫秒，默认 3000） */
+    
     uint32_t created_time;                   /**< 创建时间戳 */
     uint32_t last_exec_time;                 /**< 上次执行时间 */
 } ts_ssh_command_config_t;

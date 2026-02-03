@@ -45,6 +45,8 @@ static struct {
     struct arg_dbl *low_threshold;
     struct arg_dbl *recovery_threshold;
     struct arg_int *delay;
+    struct arg_int *recovery_hold;
+    struct arg_int *fan_delay;
     struct arg_lit *debug;
     struct arg_lit *json;
     struct arg_lit *help;
@@ -168,22 +170,33 @@ static void print_config(void)
     float low_threshold, recovery_threshold;
     ts_power_policy_get_thresholds(&low_threshold, &recovery_threshold);
     
+    /* 获取当前状态以显示实际配置 */
+    ts_power_policy_status_t status;
+    ts_power_policy_get_status(&status);
+    
     ts_console_printf("\n╔══════════════════════════════════════════════════════════════╗\n");
     ts_console_printf("║              ⚙️  电压保护配置                                 ║\n");
     ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
-    ts_console_printf("║ 低电压阈值:       %.2f V  (默认: %.1f V)                    ║\n",
+    ts_console_printf("║ 电压阈值:                                                    ║\n");
+    ts_console_printf("║   低电压阈值:       %.2f V  (默认: %.1f V)                  ║\n",
            low_threshold, TS_POWER_POLICY_LOW_VOLTAGE_DEFAULT);
-    ts_console_printf("║ 恢复电压阈值:     %.2f V  (默认: %.1f V)                    ║\n",
+    ts_console_printf("║   恢复电压阈值:     %.2f V  (默认: %.1f V)                  ║\n",
            recovery_threshold, TS_POWER_POLICY_RECOVERY_VOLTAGE_DEFAULT);
-    ts_console_printf("║ 关机延迟:         %u 秒   (默认: %u 秒)                       ║\n",
+    ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
+    ts_console_printf("║ 时间配置:                                                    ║\n");
+    ts_console_printf("║   关机倒计时:       %u 秒   (默认: %u 秒)                    ║\n",
            TS_POWER_POLICY_SHUTDOWN_DELAY_DEFAULT, TS_POWER_POLICY_SHUTDOWN_DELAY_DEFAULT);
-    ts_console_printf("║ 恢复稳定等待:     %u 秒   (默认: %u 秒)                        ║\n",
+    ts_console_printf("║   恢复稳定等待:     %u 秒   (默认: %u 秒)                     ║\n",
            TS_POWER_POLICY_RECOVERY_HOLD_DEFAULT, TS_POWER_POLICY_RECOVERY_HOLD_DEFAULT);
+    ts_console_printf("║   风扇关闭延迟:     %u 秒   (默认: %u 秒)                    ║\n",
+           TS_POWER_POLICY_FAN_STOP_DELAY_DEFAULT, TS_POWER_POLICY_FAN_STOP_DELAY_DEFAULT);
     ts_console_printf("╠══════════════════════════════════════════════════════════════╣\n");
     ts_console_printf("║ 修改配置:                                                    ║\n");
-    ts_console_printf("║   voltprot --config --low <V>        设置低电压阈值          ║\n");
-    ts_console_printf("║   voltprot --config --recovery <V>   设置恢复电压阈值        ║\n");
-    ts_console_printf("║   voltprot --config --delay <sec>    设置关机延迟            ║\n");
+    ts_console_printf("║   voltprot -c --low <V>        设置低电压阈值                ║\n");
+    ts_console_printf("║   voltprot -c --recovery <V>   设置恢复电压阈值              ║\n");
+    ts_console_printf("║   voltprot -c --delay <sec>    设置关机倒计时                ║\n");
+    ts_console_printf("║   voltprot -c --hold <sec>     设置恢复等待时间              ║\n");
+    ts_console_printf("║   voltprot -c --fan <sec>      设置风扇关闭延迟              ║\n");
     ts_console_printf("╚══════════════════════════════════════════════════════════════╝\n");
 }
 
@@ -314,7 +327,31 @@ static int cmd_voltprot_handler(int argc, char **argv)
             uint32_t delay = (uint32_t)s_voltprot_args.delay->ival[0];
             esp_err_t ret = ts_power_policy_set_shutdown_delay(delay);
             if (ret == ESP_OK) {
-                ts_console_printf("✅ 关机延迟已设置为 %lu 秒\n", (unsigned long)delay);
+                ts_console_printf("✅ 关机倒计时已设置为 %lu 秒\n", (unsigned long)delay);
+                modified = true;
+            } else {
+                ts_console_printf("❌ 设置失败: %s\n", esp_err_to_name(ret));
+            }
+        }
+        
+        /* 修改恢复等待时间 */
+        if (s_voltprot_args.recovery_hold->count > 0) {
+            uint32_t hold = (uint32_t)s_voltprot_args.recovery_hold->ival[0];
+            esp_err_t ret = ts_power_policy_set_recovery_hold(hold);
+            if (ret == ESP_OK) {
+                ts_console_printf("✅ 恢复等待时间已设置为 %lu 秒\n", (unsigned long)hold);
+                modified = true;
+            } else {
+                ts_console_printf("❌ 设置失败: %s\n", esp_err_to_name(ret));
+            }
+        }
+        
+        /* 修改风扇关闭延迟 */
+        if (s_voltprot_args.fan_delay->count > 0) {
+            uint32_t fan = (uint32_t)s_voltprot_args.fan_delay->ival[0];
+            esp_err_t ret = ts_power_policy_set_fan_stop_delay(fan);
+            if (ret == ESP_OK) {
+                ts_console_printf("✅ 风扇关闭延迟已设置为 %lu 秒\n", (unsigned long)fan);
                 modified = true;
             } else {
                 ts_console_printf("❌ 设置失败: %s\n", esp_err_to_name(ret));
@@ -370,11 +407,13 @@ esp_err_t ts_cmd_voltprot_register(void)
     s_voltprot_args.config = arg_litn("c", "config", 0, 1, "显示/修改配置");
     s_voltprot_args.low_threshold = arg_dbln("l", "low", "<V>", 0, 1, "低电压阈值 (V)");
     s_voltprot_args.recovery_threshold = arg_dbln("R", "recovery", "<V>", 0, 1, "恢复电压阈值 (V)");
-    s_voltprot_args.delay = arg_intn("d", "delay", "<sec>", 0, 1, "关机延迟 (秒)");
+    s_voltprot_args.delay = arg_intn("d", "delay", "<sec>", 0, 1, "关机倒计时 (10-600秒)");
+    s_voltprot_args.recovery_hold = arg_intn("H", "hold", "<sec>", 0, 1, "恢复等待时间 (1-300秒)");
+    s_voltprot_args.fan_delay = arg_intn("f", "fan", "<sec>", 0, 1, "风扇关闭延迟 (10-600秒)");
     s_voltprot_args.debug = arg_litn(NULL, "debug", 0, 1, "调试模式（30秒实时监控）");
     s_voltprot_args.json = arg_litn("j", "json", 0, 1, "JSON 格式输出");
     s_voltprot_args.help = arg_litn("h", "help", 0, 1, "显示帮助");
-    s_voltprot_args.end = arg_end(5);
+    s_voltprot_args.end = arg_end(8);
     
     const esp_console_cmd_t cmd = {
         .command = "voltprot",

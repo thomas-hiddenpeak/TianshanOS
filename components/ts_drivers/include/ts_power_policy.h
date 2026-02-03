@@ -47,6 +47,9 @@ extern "C" {
 /** 默认恢复稳定等待时间 (秒) */
 #define TS_POWER_POLICY_RECOVERY_HOLD_DEFAULT   5
 
+/** 默认风扇停止延迟 (秒) */
+#define TS_POWER_POLICY_FAN_STOP_DELAY_DEFAULT  60
+
 /** 最小有效电压读数 (V) - 低于此值视为无效 */
 #define TS_POWER_POLICY_MIN_VALID_VOLTAGE       5.0f
 
@@ -86,9 +89,12 @@ typedef struct {
     float recovery_voltage_threshold;   /**< 恢复电压阈值 (V) */
     uint32_t shutdown_delay_sec;        /**< 关机倒计时 (秒) */
     uint32_t recovery_hold_sec;         /**< 恢复稳定等待 (秒) */
+    uint32_t fan_stop_delay_sec;        /**< 设备关机后风扇停止延迟 (秒) */
     bool auto_recovery_enabled;         /**< 是否启用自动恢复 */
     bool enable_led_feedback;           /**< 是否启用 LED 反馈 */
     bool enable_device_shutdown;        /**< 是否执行设备关机 */
+    bool enable_fan_control;            /**< 是否在保护时控制风扇 */
+    bool lpmu_ping_before_shutdown;     /**< 关机前 ping 检测 LPMU */
 } ts_power_policy_config_t;
 
 /**
@@ -254,6 +260,58 @@ esp_err_t ts_power_policy_set_debug_mode(bool enable, uint32_t duration_sec);
  * @return true 已启用
  */
 bool ts_power_policy_is_debug_mode(void);
+
+/**
+ * @brief 设置关机倒计时时间
+ * @param delay_sec 倒计时秒数（10-600秒）
+ * @return ESP_OK 成功
+ */
+esp_err_t ts_power_policy_set_shutdown_delay(uint32_t delay_sec);
+
+/**
+ * @brief 设置恢复等待时间
+ * @param hold_sec 等待秒数（1-300秒）
+ * @return ESP_OK 成功
+ */
+esp_err_t ts_power_policy_set_recovery_hold(uint32_t hold_sec);
+
+/**
+ * @brief 设置风扇停止延迟
+ * @param delay_sec 延迟秒数（10-600秒）
+ * @return ESP_OK 成功
+ */
+esp_err_t ts_power_policy_set_fan_stop_delay(uint32_t delay_sec);
+
+/**
+ * @brief 保存当前配置到 SD 卡
+ * 
+ * 将当前配置导出为 JSON 文件保存到 /sdcard/config/power_policy.json
+ * 如果 SD 卡未挂载则返回错误
+ * 
+ * @return ESP_OK 成功，ESP_ERR_NOT_FOUND SD卡未挂载
+ */
+esp_err_t ts_power_policy_save_config(void);
+
+/**
+ * @brief 注册 automation 变量
+ * 
+ * 在 ts_variable 系统初始化后调用此函数注册 power policy 的监控变量
+ * 通常由 automation 服务在初始化完成后调用
+ * 
+ * @return ESP_OK 成功
+ */
+esp_err_t ts_power_policy_register_variables(void);
+
+/**
+ * @brief 更新自动化变量（供数据源使用）
+ * 自动更新以下变量：
+ *   - power_policy.state (string)
+ *   - power_policy.voltage (float)
+ *   - power_policy.countdown (int)
+ *   - power_policy.recovery_timer (int)
+ *   - power_policy.protection_count (int)
+ */
+esp_err_t ts_power_policy_update_variables(void);
 
 /**
  * @brief 注册控制台命令

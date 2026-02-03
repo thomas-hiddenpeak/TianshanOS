@@ -2,7 +2,7 @@
 
 > **项目**：TianShanOS（天山操作系统）  
 > **版本**：0.3.1  
-> **最后更新**：2026年1月31日  
+> **最后更新**：2026年2月1日  
 > **代码统计**：116+ 个 C 源文件，86+ 个头文件
 
 ---
@@ -42,6 +42,305 @@
 | Phase 28: OTA 服务器重构 & 版本管理 | ✅ 完成 | 100% | 2026-01-31 |
 | Phase 29: AGX 电源控制 GPIO 修正 | ✅ 完成 | 100% | 2026-01-31 |
 | Phase 30: 规则引擎模板执行修复 & 电压保护代码审查 | ✅ 完成 | 100% | 2026-01-31 |
+| Phase 31: SSH 服务模式 & 日志监控 | ✅ 完成 | 100% | 2026-02-01 |
+| Phase 32: 电压保护自动化变量 & SD 卡配置优先级 | ✅ 完成 | 100% | 2026-02-01 |
+
+---
+
+## 📋 Phase 32: 电压保护自动化变量 & SD 卡配置优先级 ✅
+
+**时间**：2026年2月1日  
+**目标**：将电压保护状态机集成到自动化系统，并实现 SD 卡配置优先级
+
+### 功能概述
+
+1. **电压保护变量注册**：将 Power Policy 状态机的所有状态导出为自动化变量，供 WebUI 显示和规则引擎使用
+2. **SD 卡配置优先级**：配置加载顺序改为 SD 卡 > NVS > 默认值，支持热插拔
+3. **只读变量内部更新**：新增 `ts_variable_set_internal()` API，允许系统组件更新只读变量
+
+### 核心实现
+
+#### 1. 电压保护自动化变量
+
+Power Policy 模块注册 8 个只读变量：
+
+| 变量名 | 类型 | 描述 |
+|--------|------|------|
+| `power_policy.state` | STRING | 当前状态名称（NORMAL/LOW_VOLTAGE/SHUTDOWN等） |
+| `power_policy.voltage` | FLOAT | 实时电压值 |
+| `power_policy.countdown` | INT | 关机倒计时（秒） |
+| `power_policy.recovery_timer` | INT | 恢复计时器（秒） |
+| `power_policy.protection_count` | INT | 保护触发总次数 |
+| `power_policy.is_normal` | INT | 是否正常状态（布尔） |
+| `power_policy.is_protected` | INT | 是否保护状态（布尔） |
+| `power_policy.is_low_voltage` | INT | 是否低电压状态（布尔） |
+
+**变量注册时机**：
+
+```c
+// 问题：Power Policy 在 DRIVER 阶段启动，ts_variable 在 SERVICE 阶段初始化
+// 解决：分离变量注册函数，由 ts_automation_init() 调用
+
+// ts_automation.c
+esp_err_t ts_automation_init(void) {
+    ts_variable_init();
+    // 调用外部模块注册变量
+    extern void ts_power_policy_register_variables(void);
+    ts_power_policy_register_variables();
+}
+```
+
+#### 2. 只读变量内部更新机制
+
+问题：自动化变量标记为 `TS_AUTO_VAR_READONLY` 后，`ts_variable_set_*()` 会拒绝更新。
+
+解决：新增内部 API 绕过只读检查：
+
+```c
+// ts_variable.c
+static esp_err_t variable_set_impl(const char *name, const ts_auto_value_t *value, bool check_readonly) {
+    // ...
+    if (check_readonly && (var->flags & TS_AUTO_VAR_READONLY)) {
+        return ESP_ERR_NOT_ALLOWED;
+    }
+    // 更新值...
+}
+
+// 公开 API（检查只读）
+esp_err_t ts_variable_set(const char *name, const ts_auto_value_t *value) {
+    return variable_set_impl(name, value, true);
+}
+
+// 内部 API（绕过只读，仅限系统组件使用）
+esp_err_t ts_variable_set_internal(const char *name, const ts_auto_value_t *value) {
+    return variable_set_impl(name, value, false);
+}
+```
+
+#### 3. SD 卡配置优先级
+
+配置加载顺序：**SD 卡 > NVS > 默认值**
+
+```c
+// ts_power_policy.c
+esp_err_t ts_power_policy_init(void) {
+    // 1. 先用默认值初始化
+    s_policy.config = default_config;
+    
+    // 2. 尝试从 SD 卡加载
+    if (load_config_from_sdcard() == ESP_OK) {
+        ESP_LOGI(TAG, "Loaded config from SD card");
+        return ESP_OK;  // SD 卡优先级最高
+    }
+    
+    // 3. SD 卡没有配置，从 NVS 加载
+    if (load_config_from_nvs() == ESP_OK) {
+        ESP_LOGI(TAG, "Loaded config from NVS");
+        // 同步到 SD 卡（如果已挂载）
+        if (ts_storage_sdcard_is_mounted()) {
+            save_config_to_sdcard();
+        }
+        return ESP_OK;
+    }
+    
+    // 4. 使用默认值，保存到 NVS 和 SD 卡
+    save_config_to_nvs();
+    save_config_to_sdcard();
+}
+```
+
+SD 卡热插拔支持：
+
+```c
+// 监听 SD 卡挂载事件
+static void sdcard_event_handler(void *arg, esp_event_base_t base, int32_t id, void *data) {
+    if (id == TS_EVENT_SDCARD_MOUNTED) {
+        // SD 卡插入，检查配置文件
+        if (!sdcard_config_exists()) {
+            // 配置文件不存在，从内存同步到 SD 卡
+            save_config_to_sdcard();
+        }
+    }
+}
+```
+
+### 文件变更
+
+| 文件 | 变更 |
+|------|------|
+| `ts_power_policy.c` | SD 卡配置加载/保存、变量注册、内部更新 |
+| `ts_power_policy.h` | 新增 `ts_power_policy_save_config()`、`ts_power_policy_register_variables()` |
+| `ts_variable.c` | 新增 `ts_variable_set_internal()`、`ts_variable_is_initialized()` |
+| `ts_variable.h` | 新增内部 API 声明 |
+| `ts_automation.c` | 调用外部模块变量注册 |
+| `ts_api_power.c` | API 层使用 `ts_power_policy_save_config()` |
+
+### 配置文件格式
+
+SD 卡配置文件：`/sdcard/config/power_policy.json`
+
+```json
+{
+  "low_voltage_threshold": 12.6,
+  "recovery_voltage_threshold": 18.0,
+  "shutdown_delay_sec": 60,
+  "recovery_hold_sec": 5,
+  "protection_enabled": true
+}
+```
+
+### 使用示例
+
+1. **WebUI 显示电压状态**：
+   - 数据源面板自动显示 `power_policy.*` 变量
+   - 实时更新电压值和状态
+
+2. **自动化规则**：
+   ```json
+   {
+     "name": "低电压报警",
+     "trigger": { "type": "condition", "condition": "power_policy.is_low_voltage == 1" },
+     "actions": [{ "type": "led", "template_id": "warning_blink" }]
+   }
+   ```
+
+3. **修改配置**：
+   - 编辑 SD 卡上的 `power_policy.json`
+   - 重启设备后生效
+   - 或通过 API 修改后自动同步
+
+---
+
+## 📋 Phase 31: SSH 服务模式 & 日志监控 ✅
+
+**时间**：2026年2月1日  
+**目标**：为 SSH 命令添加服务模式，支持后台进程日志监控和状态检测
+
+### 功能概述
+
+服务模式允许用户启动远程服务（如 vLLM、Web 服务器等），并自动监控日志文件，检测服务就绪或失败状态。
+
+### 核心实现
+
+#### 1. 日志监控任务 (`ts_ssh_log_watch`)
+
+新增独立的 FreeRTOS 任务，负责监控远程日志文件：
+
+```c
+typedef struct {
+    char log_file[128];      // 日志文件路径
+    char ready_pattern[128]; // 就绪匹配模式
+    char fail_pattern[128];  // 失败匹配模式
+    char var_name[32];       // 状态变量名
+    uint16_t timeout_sec;    // 超时时间
+    uint16_t interval_ms;    // 检测间隔
+    // SSH 连接信息...
+} ts_ssh_log_watch_config_t;
+```
+
+**检测机制**：
+- 使用 `grep -qF` 在远程主机直接搜索模式（不传输日志内容）
+- 高效：仅传输状态结果（READY/FAIL/WAITING/NOTFOUND）
+- 可靠：搜索整个日志文件，不受日志大小限制
+
+```bash
+# 实际执行的远程命令
+if [ ! -f '/tmp/ts_nohup_xxx.log' ]; then echo 'NOTFOUND';
+elif grep -qF 'error pattern' '/tmp/ts_nohup_xxx.log' 2>/dev/null; then echo 'FAIL';
+elif grep -qF 'ready pattern' '/tmp/ts_nohup_xxx.log' 2>/dev/null; then echo 'READY';
+else echo 'WAITING'; fi
+```
+
+**状态转换**：
+```
+启动 → checking → ready     (匹配到就绪模式)
+                → failed    (匹配到失败模式)
+                → timeout   (超时未匹配)
+```
+
+#### 2. 命令配置扩展
+
+`ts_ssh_command_config_t` 新增字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `service_mode` | bool | 是否启用服务模式 |
+| `ready_pattern` | char[64] | 就绪匹配字符串 |
+| `service_fail_pattern` | char[64] | 失败匹配字符串（新增） |
+| `ready_timeout_sec` | uint16_t | 超时时间（秒） |
+| `ready_check_interval_ms` | uint16_t | 检测间隔（毫秒） |
+
+#### 3. API 层支持
+
+`ssh.commands.add/list/get` API 支持新字段：
+
+```json
+{
+    "name": "启动 vLLM",
+    "command": "cd ~/vllm && ./start.sh",
+    "nohup": true,
+    "serviceMode": true,
+    "readyPattern": "Running on http://",
+    "serviceFailPattern": "error|failed|Exception",
+    "readyTimeout": 120,
+    "readyInterval": 5000,
+    "varName": "vllm"
+}
+```
+
+### WebUI 增强
+
+#### 1. 命令编辑模态框
+
+服务模式配置面板：
+- ✅ 就绪匹配模式（必填）
+- ❌ 失败匹配模式（可选）
+- ⏱️ 超时时间
+- 🔄 检测间隔
+
+所有字段单独成行，布局清晰。
+
+#### 2. 状态显示优化
+
+- 移除铃铛图标（🛎️），使用纯文字+emoji 状态
+- 移除状态标签的色块背景，仅保留文字颜色
+- 状态图标：✅ 就绪、🔄 检测中、⚠️ 超时、❌ 失败、⏸️ 未启动
+
+#### 3. 快捷操作卡片
+
+- 统一卡片高度（`min-height: 130px`）
+- 移除根据状态动态调整的 padding
+- 服务状态直接显示在卡片底部状态栏
+
+### 文件变更
+
+| 文件 | 变更 |
+|------|------|
+| `ts_ssh_log_watch.h` | 新增 `fail_pattern` 字段 |
+| `ts_ssh_log_watch.c` | 实现失败模式检测逻辑 |
+| `ts_ssh_commands_config.h` | 新增 `service_fail_pattern` 字段 |
+| `ts_action_manager.c` | 传递失败模式到监控任务 |
+| `ts_api_ssh.c` | API 层支持 `serviceFailPattern` |
+| `app.js` | WebUI 服务模式配置和状态显示 |
+| `style.css` | 简化服务状态样式，统一卡片高度 |
+
+### 使用示例
+
+1. **创建服务命令**：
+   - 指令名：`启动 vLLM`
+   - 命令：`cd ~/vllm && ./start.sh`
+   - 勾选"后台执行(nohup)"
+   - 勾选"服务模式"
+   - 就绪模式：`Running on http://`
+   - 失败模式：`error|failed`
+   - 变量名：`vllm`
+
+2. **状态变量**：
+   - 服务启动后自动创建 `vllm.status` 变量
+   - 值为 `checking` → `ready` / `failed` / `timeout`
+
+3. **自动化规则**：
+   - 可创建规则监听 `vllm.status == "ready"` 触发后续动作
 
 ---
 

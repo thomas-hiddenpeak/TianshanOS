@@ -14,6 +14,7 @@
 #include "ts_led.h"
 #include "ts_led_private.h"
 #include <esp_log.h>
+#include <esp_heap_caps.h>
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -658,17 +659,46 @@ static void process_sparkle(ts_led_rgb_t *buffer, size_t count,
     uint8_t density = config->params.sparkle.density;
     uint8_t decay = config->params.sparkle.decay;
     
-    // Static sparkle state array (max 1024 pixels)
-    static sparkle_state_t sparkle_states[1024] = {0};
+    /* Dynamically allocated sparkle state array in PSRAM to reduce DRAM usage
+     * Each sparkle_state_t is 4 bytes, 1024 pixels = 4KB
+     */
+    static sparkle_state_t *sparkle_states = NULL;
+    static size_t sparkle_states_capacity = 0;
     static bool initialized = false;
     
-    if (!initialized || count > 1024) {
-        memset(sparkle_states, 0, sizeof(sparkle_states));
+    /* Allocate or reallocate if needed */
+    size_t required = count < 1024 ? count : 1024;
+    if (!sparkle_states || sparkle_states_capacity < required) {
+        /* Free old buffer if exists */
+        if (sparkle_states) {
+            free(sparkle_states);
+        }
+        
+        /* Allocate in PSRAM first, fallback to DRAM */
+        size_t alloc_size = 1024 * sizeof(sparkle_state_t);  /* Always allocate max size */
+        sparkle_states = heap_caps_malloc(alloc_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!sparkle_states) {
+            sparkle_states = malloc(alloc_size);
+        }
+        
+        if (sparkle_states) {
+            sparkle_states_capacity = 1024;
+            memset(sparkle_states, 0, alloc_size);
+            initialized = true;
+        } else {
+            ESP_LOGW(TAG, "Failed to allocate sparkle states buffer");
+            sparkle_states_capacity = 0;
+            return;
+        }
+    }
+    
+    if (!initialized || count > sparkle_states_capacity) {
+        memset(sparkle_states, 0, sparkle_states_capacity * sizeof(sparkle_state_t));
         initialized = true;
     }
     
     // Use count as limit
-    size_t max_idx = count < 1024 ? count : 1024;
+    size_t max_idx = count < sparkle_states_capacity ? count : sparkle_states_capacity;
     
     // 简化的概率计算：
     // speed: 0.1-100 直接使用，不再使用平方根
