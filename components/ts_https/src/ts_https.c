@@ -12,6 +12,7 @@
 #include "esp_https_server.h"
 #include "esp_tls.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "mbedtls/ssl.h"
 #include "mbedtls/x509_crt.h"
 #include <string.h>
@@ -224,6 +225,12 @@ esp_err_t ts_https_start(void)
     config.httpd.lru_purge_enable = true;
     config.httpd.recv_wait_timeout = 10;
     config.httpd.send_wait_timeout = 10;
+    
+    /* 使用 PSRAM 分配任务栈，避免 DRAM 紧张时启动失败
+     * 默认 task_caps = MALLOC_CAP_INTERNAL 会导致 ESP_ERR_HTTPD_TASK
+     * 当 DRAM 碎片化或不足时无法分配 10KB 栈 */
+    config.httpd.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+    config.httpd.stack_size = 12288;  // 12KB，TLS 需要较大栈
     
     // Server certificate and key
     config.servercert = (const uint8_t *)s_server_cert;
