@@ -25,4 +25,5 @@ idf_component_register(
         json
     PRIV_REQUIRES
         esp_timer
+        ts_config_pack
 )

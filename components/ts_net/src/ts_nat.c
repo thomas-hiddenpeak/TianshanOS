@@ -46,6 +46,11 @@ static esp_netif_t *get_wifi_sta_netif(void)
     return ts_wifi_get_netif(TS_WIFI_IF_STA);
 }
 
+/**
+ * @brief Get Ethernet netif for NAT
+ * @note Reserved for ETH-to-WiFi NAT feature
+ */
+__attribute__((unused))
 static esp_netif_t *get_eth_netif(void)
 {
     return ts_eth_get_netif();

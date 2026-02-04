@@ -706,6 +706,13 @@ esp_err_t ts_api_register_all(void)
         return ret;
     }
     
+    /* Config Pack APIs */
+    ret = ts_api_config_pack_register();
+    if (ret != ESP_OK) {
+        TS_LOGE(TAG, "Failed to register Config Pack APIs: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
     /* Variable APIs 已废弃，统一使用 automation.variables.* API */
     
     TS_LOGI(TAG, "All API modules registered (%zu endpoints)", s_api.endpoint_count);

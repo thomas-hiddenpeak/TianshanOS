@@ -22,4 +22,5 @@ idf_component_register(
         esp_http_client
         json
         ts_automation
+        ts_config_pack
 )

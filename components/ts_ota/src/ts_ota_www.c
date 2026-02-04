@@ -362,10 +362,6 @@ static void www_ota_task(void *arg)
         write_offset += read_len;
         
         // Update progress
-        int percent = 0;
-        if (content_length > 0) {
-            percent = (received * 100) / content_length;
-        }
         ESP_LOGI(TAG, "Downloaded: %zu bytes%s", received, 
                  content_length > 0 ? "" : " (chunked)");
         www_ota_update_progress(TS_OTA_STATE_DOWNLOADING, received, 

@@ -74,7 +74,8 @@ static bool check_dependencies(ts_service_instance_t *service);
 static void notify_state_change(ts_service_instance_t *service, 
                                  ts_service_state_t old_state,
                                  ts_service_state_t new_state);
-static int compare_services(const void *a, const void *b);
+// TODO: 实现按依赖关系排序服务的功能
+// static int compare_services(const void *a, const void *b);
 
 /* ============================================================================
  * 阶段和状态名称
@@ -575,9 +576,6 @@ esp_err_t ts_service_wait_state(ts_service_handle_t handle,
     }
 
     // 等待状态变化
-    TickType_t ticks = (timeout_ms == portMAX_DELAY) ?
-                        portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
-
     uint32_t start = (uint32_t)(esp_timer_get_time() / 1000);
 
     while (service->state != state) {

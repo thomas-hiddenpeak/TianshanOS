@@ -131,9 +131,8 @@ static void update_status(void)
          * 但如果系统时间未同步，跳过过期检查（使用统一的 ts_time_sync API）
          */
         if (ts_time_sync_needs_sync()) {
-            /* 时间未同步，假设证书有效 */
-            ESP_LOGW(TAG, "System time not synced (year < %d), assuming cert valid", 
-                     TS_TIME_MIN_VALID_YEAR);
+            /* 时间未同步，假设证书有效（这是正常的启动顺序，NTP 同步在网络就绪后完成） */
+            ESP_LOGI(TAG, "Time not synced yet, deferring cert expiry check");
             s_status = TS_CERT_STATUS_ACTIVATED;
         } else {
             ts_cert_info_t info;
@@ -890,13 +889,19 @@ esp_err_t ts_cert_parse_certificate(const char *cert_pem, size_t cert_len,
     /* Extract subject CN */
     const mbedtls_x509_name *name = &crt.subject;
     info->subject_cn[0] = '\0';
+    info->subject_ou[0] = '\0';
     while (name) {
         if (MBEDTLS_OID_CMP(MBEDTLS_OID_AT_CN, &name->oid) == 0) {
             size_t len = name->val.len;
             if (len >= sizeof(info->subject_cn)) len = sizeof(info->subject_cn) - 1;
             memcpy(info->subject_cn, name->val.p, len);
             info->subject_cn[len] = '\0';
-            break;
+        }
+        if (MBEDTLS_OID_CMP(MBEDTLS_OID_AT_ORG_UNIT, &name->oid) == 0) {
+            size_t len = name->val.len;
+            if (len >= sizeof(info->subject_ou)) len = sizeof(info->subject_ou) - 1;
+            memcpy(info->subject_ou, name->val.p, len);
+            info->subject_ou[len] = '\0';
         }
         name = name->next;
     }

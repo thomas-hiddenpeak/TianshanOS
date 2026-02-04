@@ -3,6 +3,10 @@
  * @brief Authentication Helpers - 用户认证与会话管理
  * 
  * 支持 admin 和 root 两个用户，密码使用 SHA256+salt 哈希存储于 NVS
+ * 
+ * 安全设计：
+ * - 密码哈希仅存储在 NVS，不导出到 SD 卡
+ * - 忘记密码只能通过 idf.py erase-flash 恢复出厂
  */
 
 #include "ts_security.h"

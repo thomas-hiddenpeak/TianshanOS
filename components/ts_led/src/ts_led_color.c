@@ -56,14 +56,17 @@ ts_led_hsv_t ts_led_rgb_to_hsv(ts_led_rgb_t rgb)
     hsv.s = (delta * 255) / max;
     
     if (rgb.r == max) {
-        hsv.h = 60 * (((int)rgb.g - rgb.b) / delta);
+        // h 计算结果可能为负，使用有符号计算后转换
+        int h_signed = 60 * (((int)rgb.g - rgb.b) / delta);
+        hsv.h = (h_signed < 0) ? (uint16_t)(h_signed + 360) : (uint16_t)h_signed;
     } else if (rgb.g == max) {
-        hsv.h = 60 * (2 + ((int)rgb.b - rgb.r) / delta);
+        int h_signed = 60 * (2 + ((int)rgb.b - rgb.r) / delta);
+        hsv.h = (h_signed < 0) ? (uint16_t)(h_signed + 360) : (uint16_t)h_signed;
     } else {
-        hsv.h = 60 * (4 + ((int)rgb.r - rgb.g) / delta);
+        int h_signed = 60 * (4 + ((int)rgb.r - rgb.g) / delta);
+        hsv.h = (h_signed < 0) ? (uint16_t)(h_signed + 360) : (uint16_t)h_signed;
     }
     
-    if (hsv.h < 0) hsv.h += 360;
     return hsv;
 }
 

@@ -13,6 +13,7 @@
 #include "ts_log.h"
 #include "ts_variable.h"
 #include "ts_config_module.h"
+#include "ts_config_pack.h"
 #include "ts_storage.h"
 #include "cJSON.h"
 #include "esp_timer.h"
@@ -675,35 +676,29 @@ static esp_err_t load_preferred_source_from_nvs(void)
 
 /**
  * @brief Load temp config from SD card JSON file
+ * 
+ * 支持 .tscfg 加密配置优先加载
  */
 static esp_err_t load_temp_config_from_file(const char *filepath)
 {
     if (!filepath) return ESP_ERR_INVALID_ARG;
     
-    FILE *f = fopen(filepath, "r");
-    if (!f) {
+    /* 使用 .tscfg 优先加载 */
+    char *content = NULL;
+    size_t content_len = 0;
+    bool used_tscfg = false;
+    
+    esp_err_t ret = ts_config_pack_load_with_priority(
+        filepath, &content, &content_len, &used_tscfg);
+    
+    if (ret != ESP_OK) {
         TS_LOGD(TAG, "Cannot open file: %s", filepath);
-        return ESP_ERR_NOT_FOUND;
+        return ret;
     }
     
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    
-    if (size <= 0 || size > 1024) {
-        fclose(f);
-        return ESP_ERR_INVALID_SIZE;
+    if (used_tscfg) {
+        TS_LOGI(TAG, "Loaded encrypted config from .tscfg");
     }
-    
-    char *content = malloc(size + 1);
-    if (!content) {
-        fclose(f);
-        return ESP_ERR_NO_MEM;
-    }
-    
-    size_t read_size = fread(content, 1, size, f);
-    fclose(f);
-    content[read_size] = '\0';
     
     cJSON *root = cJSON_Parse(content);
     free(content);

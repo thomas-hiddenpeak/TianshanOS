@@ -13,7 +13,7 @@
 #include <ctype.h>
 #include "esp_heap_caps.h"
 
-static const char *TAG = "jsonpath";
+// static const char *TAG = "jsonpath";  // 暂未使用，调试时可启用
 
 /*===========================================================================*/
 /*                         Memory Allocation Helpers                          */

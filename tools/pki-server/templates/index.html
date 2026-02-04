@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TianShanOS PKI 管理</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    <style>
+        [v-cloak] { display: none; }
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="app" v-cloak>
+        <!-- 导航栏 -->
+        <nav class="bg-indigo-600 text-white shadow-lg">
+            <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+                <div class="flex items-center space-x-2">
+                    <i class="ri-shield-keyhole-line text-2xl"></i>
+                    <span class="text-xl font-bold">TianShanOS PKI</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-sm opacity-75">管理员</span>
+                    <button @click="logout" class="bg-indigo-700 hover:bg-indigo-800 px-3 py-1 rounded text-sm">
+                        <i class="ri-logout-box-line"></i> 退出
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <div class="max-w-7xl mx-auto px-4 py-6">
+            <!-- 标签页 -->
+            <div class="flex space-x-1 mb-6 bg-white rounded-lg p-1 shadow">
+                <button v-for="tab in tabs" :key="tab.id"
+                    @click="currentTab = tab.id"
+                    :class="[
+                        'flex-1 py-2 px-4 rounded-md text-sm font-medium transition',
+                        currentTab === tab.id 
+                            ? 'bg-indigo-600 text-white' 
+                            : 'text-gray-600 hover:bg-gray-100'
+                    ]">
+                    <i :class="tab.icon"></i> {{ tab.name }}
+                    <span v-if="tab.id === 'requests' && stats.pending_requests > 0" 
+                          class="ml-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                        {{ stats.pending_requests }}
+                    </span>
+                </button>
+            </div>
+
+            <!-- 仪表盘 -->
+            <div v-if="currentTab === 'dashboard'" class="space-y-6">
+                <!-- 统计卡片 -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="bg-white rounded-lg shadow p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm text-gray-500">待审批请求</p>
+                                <p class="text-2xl font-bold text-orange-500">{{ stats.pending_requests }}</p>
+                            </div>
+                            <i class="ri-time-line text-3xl text-orange-200"></i>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm text-gray-500">有效证书</p>
+                                <p class="text-2xl font-bold text-green-500">{{ stats.valid_certificates }}</p>
+                            </div>
+                            <i class="ri-shield-check-line text-3xl text-green-200"></i>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm text-gray-500">即将过期</p>
+                                <p class="text-2xl font-bold text-yellow-500">{{ stats.expiring_soon }}</p>
+                            </div>
+                            <i class="ri-alarm-warning-line text-3xl text-yellow-200"></i>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm text-gray-500">CA 剩余天数</p>
+                                <p class="text-2xl font-bold" :class="stats.ca_days_until_expiry < 90 ? 'text-red-500' : 'text-blue-500'">
+                                    {{ stats.ca_days_until_expiry }}
+                                </p>
+                            </div>
+                            <i class="ri-building-line text-3xl text-blue-200"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CA 信息 -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-lg font-semibold mb-4">
+                        <i class="ri-building-line text-indigo-500"></i> CA 信息
+                    </h3>
+                    <div class="grid md:grid-cols-2 gap-4 text-sm" v-if="caInfo">
+                        <div>
+                            <span class="text-gray-500">Subject:</span>
+                            <span class="ml-2 font-mono text-xs">{{ caInfo.subject }}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Issuer:</span>
+                            <span class="ml-2 font-mono text-xs">{{ caInfo.issuer }}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">有效期至:</span>
+                            <span class="ml-2">{{ formatDate(caInfo.not_after) }}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">序列号:</span>
+                            <span class="ml-2 font-mono text-xs">{{ caInfo.serial_number }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 最近审计日志 -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-lg font-semibold mb-4">
+                        <i class="ri-history-line text-indigo-500"></i> 最近操作
+                    </h3>
+                    <div class="space-y-2 max-h-64 overflow-y-auto">
+                        <div v-for="log in auditLogs.slice(0, 10)" :key="log.id" 
+                             class="flex items-center text-sm py-2 border-b border-gray-100">
+                            <span class="w-36 text-gray-400">{{ formatDate(log.created_at) }}</span>
+                            <span class="px-2 py-0.5 rounded text-xs mr-2"
+                                  :class="{
+                                      'bg-green-100 text-green-700': log.action.includes('ISSUED'),
+                                      'bg-red-100 text-red-700': log.action.includes('REVOKED') || log.action.includes('REJECTED') || log.action.includes('DELETED'),
+                                      'bg-blue-100 text-blue-700': log.action.includes('SUBMIT') || log.action.includes('ADD'),
+                                      'bg-gray-100 text-gray-700': true
+                                  }">
+                                {{ log.action }}
+                            </span>
+                            <span class="text-gray-600 flex-1">{{ log.details }}</span>
+                            <span class="text-gray-400 text-xs">{{ log.operator }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 待审批请求 -->
+            <div v-if="currentTab === 'requests'" class="space-y-4">
+                <div v-if="pendingRequests.length === 0" class="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+                    <i class="ri-inbox-line text-4xl mb-2"></i>
+                    <p>暂无待审批的请求</p>
+                </div>
+                
+                <div v-for="req in pendingRequests" :key="req.id" class="bg-white rounded-lg shadow p-6">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h4 class="text-lg font-semibold">
+                                <i class="ri-device-line text-indigo-500"></i>
+                                {{ req.device_id }}
+                            </h4>
+                            <p class="text-sm text-gray-500 mt-1">
+                                CN: <span class="font-mono">{{ req.common_name }}</span>
+                            </p>
+                        </div>
+                        <span class="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-sm">
+                            待审批
+                        </span>
+                    </div>
+                    
+                    <div class="mt-4 grid md:grid-cols-3 gap-4 text-sm">
+                        <div>
+                            <span class="text-gray-500">设备 IP:</span>
+                            <span class="ml-2 font-mono">{{ req.device_ip || '-' }}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">SAN IPs:</span>
+                            <span class="ml-2 font-mono">{{ req.san_ips || '-' }}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">请求时间:</span>
+                            <span class="ml-2">{{ formatDate(req.created_at) }}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">证书类型:</span>
+                            <span class="ml-2">{{ req.cert_type }}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">请求有效期:</span>
+                            <span class="ml-2">{{ req.validity_days }} 天</span>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 pt-4 border-t flex justify-end space-x-3">
+                        <button @click="rejectRequest(req)" 
+                                class="px-4 py-2 border border-red-300 text-red-600 rounded hover:bg-red-50">
+                            <i class="ri-close-line"></i> 拒绝
+                        </button>
+                        <button @click="showApproveModal(req)" 
+                                class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                            <i class="ri-check-line"></i> 审批通过
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 证书管理（统一） -->
+            <div v-if="currentTab === 'certificates'" class="space-y-4">
+                <!-- 工具栏 -->
+                <div class="bg-white rounded-lg shadow p-4">
+                    <div class="flex flex-wrap items-center gap-4">
+                        <!-- 搜索 -->
+                        <input type="text" v-model="certSearch" placeholder="搜索证书..." 
+                               class="flex-1 min-w-48 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        
+                        <!-- 类型筛选 -->
+                        <select v-model="certTypeFilter" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                            <option value="all">全部类型</option>
+                            <option value="device">设备证书</option>
+                            <option value="client">客户端证书</option>
+                        </select>
+                        
+                        <!-- 状态筛选 -->
+                        <select v-model="certStatusFilter" class="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                            <option value="all">全部状态</option>
+                            <option value="valid">有效</option>
+                            <option value="expiring">即将过期</option>
+                            <option value="expired">已过期</option>
+                            <option value="revoked">已吊销</option>
+                        </select>
+                        
+                        <!-- 签发客户端证书按钮 -->
+                        <button @click="showClientCertForm = true" 
+                                class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 whitespace-nowrap">
+                            <i class="ri-add-line"></i> 签发客户端证书
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 证书列表 -->
+                <div class="bg-white rounded-lg shadow overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">名称/设备</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">类型</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">CN</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">序列号</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">过期时间</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y">
+                                <tr v-if="filteredCerts.length === 0">
+                                    <td colspan="7" class="px-4 py-8 text-center text-gray-500">
+                                        <i class="ri-shield-line text-4xl mb-2"></i>
+                                        <p>暂无证书</p>
+                                    </td>
+                                </tr>
+                                <tr v-for="cert in filteredCerts" :key="cert.id" class="hover:bg-gray-50">
+                                    <td class="px-4 py-3 font-medium">
+                                        <span v-if="cert.isClient">{{ cert.clientName }}</span>
+                                        <span v-else>{{ cert.device_id }}</span>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <span v-if="cert.isClient" class="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">
+                                            <i class="ri-user-line"></i> 客户端
+                                        </span>
+                                        <span v-else class="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs">
+                                            <i class="ri-device-line"></i> 设备
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3 font-mono text-sm text-gray-600">{{ cert.common_name }}</td>
+                                    <td class="px-4 py-3 font-mono text-xs text-gray-500">{{ cert.serial_number.slice(0, 16) }}...</td>
+                                    <td class="px-4 py-3">
+                                        <span v-if="cert.revoked_at" class="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs">
+                                            已吊销
+                                        </span>
+                                        <span v-else-if="cert.days_until_expiry < 0" class="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs">
+                                            已过期
+                                        </span>
+                                        <span v-else-if="cert.days_until_expiry < 30" class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs">
+                                            即将过期
+                                        </span>
+                                        <span v-else class="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
+                                            有效
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3 text-sm">
+                                        {{ formatDate(cert.not_after) }}
+                                        <span class="text-gray-400 text-xs">({{ cert.days_until_expiry }}天)</span>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <div class="flex space-x-2">
+                                            <!-- 下载（支持选择格式） -->
+                                            <button @click="showDownloadModal(cert)" 
+                                                    class="text-indigo-600 hover:text-indigo-800" title="下载">
+                                                <i class="ri-download-line"></i>
+                                            </button>
+                                            <!-- 吊销（仅有效证书） -->
+                                            <button v-if="!cert.revoked_at && cert.days_until_expiry > 0"
+                                                    @click="revokeCert(cert)" 
+                                                    class="text-orange-600 hover:text-orange-800" title="吊销">
+                                                <i class="ri-forbid-line"></i>
+                                            </button>
+                                            <!-- 删除（仅过期或吊销的） -->
+                                            <button v-if="cert.revoked_at || cert.days_until_expiry < 0"
+                                                    @click="deleteCert(cert)" 
+                                                    class="text-red-600 hover:text-red-800" title="删除">
+                                                <i class="ri-delete-bin-line"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 设备白名单 -->
+            <div v-if="currentTab === 'whitelist'" class="space-y-4">
+                <div class="bg-white rounded-lg shadow p-4">
+                    <h3 class="text-lg font-semibold mb-4">添加设备</h3>
+                    <div class="grid md:grid-cols-4 gap-4">
+                        <input v-model="newDevice.token" placeholder="设备 Token" 
+                               class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+                        <input v-model="newDevice.name" placeholder="设备名称（可选）" 
+                               class="px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+                        <div class="flex items-center space-x-4">
+                            <label class="flex items-center">
+                                <input type="checkbox" v-model="newDevice.auto_approve" class="mr-2">
+                                自动审批
+                            </label>
+                            <input v-model.number="newDevice.validity_days" type="number" placeholder="有效期" 
+                                   class="w-20 px-2 py-2 border rounded">
+                        </div>
+                        <button @click="addDevice" 
+                                class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                            <i class="ri-add-line"></i> 添加
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow overflow-hidden">
+                    <table class="w-full">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Token</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">名称</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">自动审批</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">有效期</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">最后使用</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y">
+                            <tr v-for="device in whitelistDevices" :key="device.id" class="hover:bg-gray-50">
+                                <td class="px-4 py-3 font-mono text-sm">{{ device.device_token.slice(0, 20) }}...</td>
+                                <td class="px-4 py-3">{{ device.device_name || '-' }}</td>
+                                <td class="px-4 py-3">
+                                    <span v-if="device.auto_approve" class="text-green-600"><i class="ri-check-line"></i></span>
+                                    <span v-else class="text-gray-400"><i class="ri-close-line"></i></span>
+                                </td>
+                                <td class="px-4 py-3">{{ device.validity_days }} 天</td>
+                                <td class="px-4 py-3 text-sm text-gray-500">{{ device.last_used_at ? formatDate(device.last_used_at) : '-' }}</td>
+                                <td class="px-4 py-3">
+                                    <button @click="removeDevice(device)" class="text-red-600 hover:text-red-800">
+                                        <i class="ri-delete-bin-line"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 审计日志 -->
+            <div v-if="currentTab === 'logs'" class="bg-white rounded-lg shadow">
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">时间</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">目标</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">详情</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作者</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">IP</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y">
+                            <tr v-for="log in auditLogs" :key="log.id" class="hover:bg-gray-50">
+                                <td class="px-4 py-3 text-sm text-gray-500">{{ formatDate(log.created_at) }}</td>
+                                <td class="px-4 py-3">
+                                    <span class="px-2 py-1 rounded text-xs"
+                                          :class="{
+                                              'bg-green-100 text-green-700': log.action.includes('ISSUED'),
+                                              'bg-red-100 text-red-700': log.action.includes('REVOKED') || log.action.includes('REJECTED') || log.action.includes('DELETED'),
+                                              'bg-blue-100 text-blue-700': log.action.includes('SUBMIT'),
+                                              'bg-purple-100 text-purple-700': log.action.includes('LOGIN'),
+                                              'bg-gray-100 text-gray-700': true
+                                          }">
+                                        {{ log.action }}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 font-mono text-xs text-gray-500">{{ log.target_id || '-' }}</td>
+                                <td class="px-4 py-3 text-sm">{{ log.details || '-' }}</td>
+                                <td class="px-4 py-3 text-sm">{{ log.operator || '-' }}</td>
+                                <td class="px-4 py-3 font-mono text-xs text-gray-500">{{ log.ip_address || '-' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 审批模态框 -->
+        <div v-if="showApprove" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+                <h3 class="text-lg font-semibold mb-4">
+                    <i class="ri-check-double-line text-green-500"></i> 审批证书
+                </h3>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">有效期（天）</label>
+                        <input type="number" v-model.number="approveForm.validity_days" 
+                               class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">证书类型</label>
+                        <select v-model="approveForm.cert_type" 
+                                class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+                            <option value="server">服务器证书</option>
+                            <option value="client">客户端证书</option>
+                            <option value="both">服务器+客户端</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">设备类型</label>
+                        <select v-model="approveForm.device_type" 
+                                class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+                            <option value="Device">普通设备</option>
+                            <option value="Developer">开发机</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">开发机可以导出加密配置包</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">额外 IP SAN（逗号分隔）</label>
+                        <input type="text" v-model="approveForm.additional_ips" placeholder="例如: 192.168.1.1, 10.0.0.1"
+                               class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button @click="showApprove = false" 
+                            class="px-4 py-2 border rounded hover:bg-gray-50">
+                        取消
+                    </button>
+                    <button @click="approveRequest" 
+                            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                        确认签发
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 下载格式选择模态框 -->
+        <div v-if="downloadModal.show" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+                <h3 class="text-lg font-semibold mb-4">
+                    <i class="ri-download-line text-indigo-500"></i> 下载证书
+                </h3>
+                
+                <div class="mb-4 text-sm text-gray-600">
+                    <p><strong>证书:</strong> {{ downloadModal.cert?.common_name }}</p>
+                    <p><strong>序列号:</strong> <span class="font-mono text-xs">{{ downloadModal.cert?.serial_number }}</span></p>
+                </div>
+
+                <div class="space-y-3">
+                    <p class="text-sm font-medium text-gray-700">选择下载格式：</p>
+                    
+                    <button @click="downloadFormat('pem')" 
+                            class="w-full flex items-center justify-between px-4 py-3 border rounded-lg hover:bg-gray-50">
+                        <div class="flex items-center">
+                            <i class="ri-file-text-line text-xl text-blue-500 mr-3"></i>
+                            <div class="text-left">
+                                <div class="font-medium">PEM 格式 (.crt)</div>
+                                <div class="text-xs text-gray-500">适用于 curl、OpenSSL、nginx 等</div>
+                            </div>
+                        </div>
+                        <i class="ri-download-line text-gray-400"></i>
+                    </button>
+
+                    <button @click="downloadFormat('der')" 
+                            class="w-full flex items-center justify-between px-4 py-3 border rounded-lg hover:bg-gray-50">
+                        <div class="flex items-center">
+                            <i class="ri-file-code-line text-xl text-green-500 mr-3"></i>
+                            <div class="text-left">
+                                <div class="font-medium">DER 格式 (.cer)</div>
+                                <div class="text-xs text-gray-500">二进制格式，适用于 Windows/Java</div>
+                            </div>
+                        </div>
+                        <i class="ri-download-line text-gray-400"></i>
+                    </button>
+
+                    <button @click="downloadFormat('pkcs12')" 
+                            :disabled="!downloadModal.cert?.has_private_key"
+                            :class="[
+                                'w-full flex items-center justify-between px-4 py-3 border rounded-lg',
+                                downloadModal.cert?.has_private_key 
+                                    ? 'hover:bg-gray-50' 
+                                    : 'opacity-50 cursor-not-allowed bg-gray-50'
+                            ]">
+                        <div class="flex items-center">
+                            <i class="ri-lock-password-line text-xl text-purple-500 mr-3"></i>
+                            <div class="text-left">
+                                <div class="font-medium">PKCS#12 格式 (.p12)</div>
+                                <div v-if="downloadModal.cert?.has_private_key" class="text-xs text-gray-500">含证书和私钥，适用于浏览器、macOS 钥匙串</div>
+                                <div v-else class="text-xs text-red-500">不可用 - 此证书无私钥（设备证书的私钥不离开设备）</div>
+                            </div>
+                        </div>
+                        <i :class="['ri-download-line', downloadModal.cert?.has_private_key ? 'text-gray-400' : 'text-gray-300']"></i>
+                    </button>
+
+                    <button @click="downloadFormat('chain')" 
+                            class="w-full flex items-center justify-between px-4 py-3 border rounded-lg hover:bg-gray-50">
+                        <div class="flex items-center">
+                            <i class="ri-links-line text-xl text-orange-500 mr-3"></i>
+                            <div class="text-left">
+                                <div class="font-medium">CA 证书链</div>
+                                <div class="text-xs text-gray-500">用于验证服务器证书</div>
+                            </div>
+                        </div>
+                        <i class="ri-download-line text-gray-400"></i>
+                    </button>
+                </div>
+
+                <div class="mt-6 flex justify-end">
+                    <button @click="downloadModal.show = false" 
+                            class="px-4 py-2 border rounded hover:bg-gray-50">
+                        关闭
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 签发客户端证书模态框 -->
+        <div v-if="showClientCertForm" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
+                <div class="px-6 py-4 border-b">
+                    <h3 class="text-lg font-semibold">
+                        <i class="ri-user-star-line text-indigo-500"></i> 签发客户端证书
+                    </h3>
+                </div>
+                <div class="p-6 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">名称/标识 *</label>
+                        <input v-model="clientCertForm.name" type="text" placeholder="如：admin、operator、john"
+                               class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+                        <p class="text-xs text-gray-500 mt-1">用于识别证书持有者</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">角色 (OU)</label>
+                        <select v-model="clientCertForm.role" 
+                                class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+                            <option value="admin">admin - 管理员（完全权限）</option>
+                            <option value="operator">operator - 操作员（操作权限）</option>
+                            <option value="viewer">viewer - 观察者（只读权限）</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">决定证书持有者在 ESP32 上的权限级别</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">邮箱（可选）</label>
+                        <input v-model="clientCertForm.email" type="email" placeholder="user@example.com"
+                               class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">有效期（天）</label>
+                        <input v-model.number="clientCertForm.validity_days" type="number" min="1" max="3650"
+                               class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">用途说明（可选）</label>
+                        <input v-model="clientCertForm.description" type="text" placeholder="用于 API 访问"
+                               class="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                </div>
+                <div class="px-6 py-4 border-t flex justify-end space-x-3">
+                    <button @click="showClientCertForm = false" 
+                            class="px-4 py-2 border rounded hover:bg-gray-50">
+                        取消
+                    </button>
+                    <button @click="generateClientCert" 
+                            class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                        <i class="ri-shield-keyhole-line"></i> 签发证书
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 证书生成成功弹窗 -->
+        <div v-if="generatedCert" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-screen overflow-y-auto">
+                <div class="px-6 py-4 border-b bg-green-50">
+                    <h3 class="text-lg font-semibold text-green-700">
+                        <i class="ri-check-line"></i> 证书签发成功
+                    </h3>
+                </div>
+                <div class="p-6 space-y-4">
+                    <div class="bg-yellow-50 border border-yellow-200 rounded p-4">
+                        <p class="text-yellow-700 text-sm">
+                            <i class="ri-alert-line"></i> 
+                            <strong>重要：</strong>私钥仅显示一次，请立即下载保存！
+                        </p>
+                    </div>
+                    
+                    <div class="grid md:grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <span class="text-gray-500">名称:</span>
+                            <span class="ml-2 font-medium">{{ generatedCert.name }}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">序列号:</span>
+                            <span class="ml-2 font-mono text-xs">{{ generatedCert.serial_number }}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">有效期至:</span>
+                            <span class="ml-2">{{ formatDate(generatedCert.not_after) }}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">PKCS12 密码:</span>
+                            <span class="ml-2 font-mono bg-gray-100 px-2 py-0.5 rounded">{{ generatedCert.pkcs12_password }}</span>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap gap-2">
+                        <button @click="downloadPEM(generatedCert.certificate, generatedCert.name + '.crt')"
+                                class="px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
+                            <i class="ri-download-line"></i> 下载证书 (.crt)
+                        </button>
+                        <button @click="downloadPEM(generatedCert.private_key, generatedCert.name + '.key')"
+                                class="px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
+                            <i class="ri-download-line"></i> 下载私钥 (.key)
+                        </button>
+                        <button @click="downloadPKCS12()"
+                                class="px-3 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700">
+                            <i class="ri-download-line"></i> 下载 PKCS12 (.p12)
+                        </button>
+                        <button @click="downloadPEM(generatedCert.ca_chain, 'ca-chain.crt')"
+                                class="px-3 py-2 bg-gray-600 text-white rounded text-sm hover:bg-gray-700">
+                            <i class="ri-download-line"></i> 下载 CA 链
+                        </button>
+                    </div>
+                </div>
+                <div class="px-6 py-4 border-t flex justify-end">
+                    <button @click="closeGeneratedCert" 
+                            class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                        完成
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast 通知 -->
+        <div v-if="toast.show" 
+             class="fixed bottom-4 right-4 px-4 py-2 rounded-lg shadow-lg text-white transition-all"
+             :class="toast.type === 'success' ? 'bg-green-500' : 'bg-red-500'">
+            {{ toast.message }}
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+        
+        createApp({
+            data() {
+                return {
+                    token: localStorage.getItem('pki_token') || '',
+                    currentTab: 'dashboard',
+                    tabs: [
+                        { id: 'dashboard', name: '仪表盘', icon: 'ri-dashboard-line' },
+                        { id: 'requests', name: '待审批', icon: 'ri-file-list-line' },
+                        { id: 'certificates', name: '证书管理', icon: 'ri-shield-check-line' },
+                        { id: 'whitelist', name: '设备白名单', icon: 'ri-device-line' },
+                        { id: 'logs', name: '审计日志', icon: 'ri-history-line' },
+                    ],
+                    stats: {
+                        pending_requests: 0,
+                        total_certificates: 0,
+                        valid_certificates: 0,
+                        expiring_soon: 0,
+                        revoked_certificates: 0,
+                        whitelist_devices: 0,
+                        ca_days_until_expiry: 0
+                    },
+                    caInfo: null,
+                    pendingRequests: [],
+                    certificates: [],
+                    whitelistDevices: [],
+                    auditLogs: [],
+                    
+                    // 证书筛选
+                    certSearch: '',
+                    certTypeFilter: 'all',
+                    certStatusFilter: 'all',
+                    
+                    // 下载模态框
+                    downloadModal: {
+                        show: false,
+                        cert: null
+                    },
+                    
+                    // 客户端证书
+                    showClientCertForm: false,
+                    clientCertForm: {
+                        name: "",
+                        email: "",
+                        role: "operator",
+                        validity_days: 365,
+                        description: ""
+                    },
+                    generatedCert: null,
+                    
+                    // 审批
+                    showApprove: false,
+                    currentRequest: null,
+                    approveForm: {
+                        validity_days: 365,
+                        cert_type: 'server',
+                        device_type: 'Device',
+                        additional_ips: ''
+                    },
+                    
+                    // 白名单
+                    newDevice: {
+                        token: '',
+                        name: '',
+                        auto_approve: false,
+                        validity_days: 365
+                    },
+                    
+                    // 通知
+                    toast: {
+                        show: false,
+                        message: '',
+                        type: 'success'
+                    }
+                }
+            },
+            computed: {
+                filteredCerts() {
+                    let certs = this.certificates.map(cert => ({
+                        ...cert,
+                        isClient: cert.device_id.startsWith('client:'),
+                        clientName: cert.device_id.replace('client:', '')
+                    }));
+                    
+                    // 类型筛选
+                    if (this.certTypeFilter === 'device') {
+                        certs = certs.filter(c => !c.isClient);
+                    } else if (this.certTypeFilter === 'client') {
+                        certs = certs.filter(c => c.isClient);
+                    }
+                    
+                    // 状态筛选
+                    if (this.certStatusFilter === 'valid') {
+                        certs = certs.filter(c => !c.revoked_at && c.days_until_expiry >= 30);
+                    } else if (this.certStatusFilter === 'expiring') {
+                        certs = certs.filter(c => !c.revoked_at && c.days_until_expiry > 0 && c.days_until_expiry < 30);
+                    } else if (this.certStatusFilter === 'expired') {
+                        certs = certs.filter(c => !c.revoked_at && c.days_until_expiry <= 0);
+                    } else if (this.certStatusFilter === 'revoked') {
+                        certs = certs.filter(c => c.revoked_at);
+                    }
+                    
+                    // 搜索
+                    if (this.certSearch) {
+                        const search = this.certSearch.toLowerCase();
+                        certs = certs.filter(c => 
+                            c.device_id.toLowerCase().includes(search) ||
+                            c.common_name.toLowerCase().includes(search) ||
+                            c.serial_number.toLowerCase().includes(search)
+                        );
+                    }
+                    
+                    return certs;
+                }
+            },
+            methods: {
+                async api(endpoint, options = {}) {
+                    const headers = {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    };
+                    if (this.token) {
+                        headers['Authorization'] = `Bearer ${this.token}`;
+                    }
+                    
+                    const response = await fetch(`/api${endpoint}`, {
+                        ...options,
+                        headers
+                    });
+                    
+                    if (response.status === 401) {
+                        this.token = '';
+                        localStorage.removeItem('pki_token');
+                        window.location.href = '/login';
+                        return;
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.detail || `HTTP ${response.status}`);
+                    }
+                    
+                    return data;
+                },
+                
+                async loadData() {
+                    try {
+                        const [dashboard, requests, certs, whitelist, logs, caInfo] = await Promise.all([
+                            this.api('/dashboard'),
+                            this.api('/requests'),
+                            this.api('/certificates'),
+                            this.api('/whitelist'),
+                            this.api('/audit-logs'),
+                            this.api('/ca/info')
+                        ]);
+                        
+                        this.stats = dashboard;
+                        this.pendingRequests = requests.requests;
+                        this.certificates = certs.certificates;
+                        this.whitelistDevices = whitelist.devices;
+                        this.auditLogs = logs.logs;
+                        this.caInfo = caInfo;
+                    } catch (e) {
+                        console.error('Failed to load data:', e);
+                    }
+                },
+                
+                formatDate(dateStr) {
+                    if (!dateStr) return '-';
+                    const date = new Date(dateStr);
+                    return date.toLocaleString('zh-CN', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                },
+                
+                showToast(message, type = 'success') {
+                    this.toast = { show: true, message, type };
+                    setTimeout(() => this.toast.show = false, 3000);
+                },
+                
+                // 审批相关
+                showApproveModal(req) {
+                    this.currentRequest = req;
+                    this.approveForm = {
+                        validity_days: req.validity_days,
+                        cert_type: req.cert_type,
+                        device_type: 'Device',
+                        additional_ips: ''
+                    };
+                    this.showApprove = true;
+                },
+                
+                async approveRequest() {
+                    try {
+                        const body = {
+                            validity_days: this.approveForm.validity_days,
+                            cert_type: this.approveForm.cert_type,
+                            device_type: this.approveForm.device_type
+                        };
+                        if (this.approveForm.additional_ips) {
+                            body.additional_ips = this.approveForm.additional_ips.split(',').map(s => s.trim());
+                        }
+                        
+                        await this.api(`/requests/${this.currentRequest.id}/approve`, {
+                            method: 'POST',
+                            body: JSON.stringify(body)
+                        });
+                        
+                        this.showApprove = false;
+                        this.showToast('证书签发成功');
+                        this.loadData();
+                    } catch (e) {
+                        this.showToast('签发失败: ' + e.message, 'error');
+                    }
+                },
+                
+                async rejectRequest(req) {
+                    const reason = prompt('请输入拒绝原因:');
+                    if (!reason) return;
+                    
+                    try {
+                        await this.api(`/requests/${req.id}/reject`, {
+                            method: 'POST',
+                            body: JSON.stringify({ reason })
+                        });
+                        this.showToast('已拒绝请求');
+                        this.loadData();
+                    } catch (e) {
+                        this.showToast('操作失败', 'error');
+                    }
+                },
+                
+                // 下载相关
+                async showDownloadModal(cert) {
+                    // 先获取证书详情，检查是否有私钥
+                    try {
+                        const data = await this.api(`/certificates/${cert.id}/download`);
+                        cert.has_private_key = data.has_private_key || false;
+                    } catch (e) {
+                        cert.has_private_key = false;
+                    }
+                    
+                    this.downloadModal = {
+                        show: true,
+                        cert: cert
+                    };
+                },
+                
+                async downloadFormat(format) {
+                    const cert = this.downloadModal.cert;
+                    const filename = cert.isClient ? cert.clientName : cert.device_id;
+                    
+                    try {
+                        if (format === 'pem') {
+                            const data = await this.api(`/certificates/${cert.id}/download`);
+                            this.downloadPEM(data.certificate, `${filename}.crt`);
+                        } else if (format === 'der') {
+                            const data = await this.api(`/certificates/${cert.id}/download?format=der`);
+                            if (data.der_base64) {
+                                this.downloadBase64(data.der_base64, `${filename}.cer`, 'application/x-x509-ca-cert');
+                            } else {
+                                // 如果后端不支持 DER，用 PEM 代替
+                                this.downloadPEM(data.certificate, `${filename}.crt`);
+                                this.showToast('DER 格式暂不支持，已下载 PEM 格式', 'error');
+                                return;
+                            }
+                        } else if (format === 'pkcs12') {
+                            const data = await this.api(`/certificates/${cert.id}/download?format=pkcs12`);
+                            if (data.pkcs12_base64 && data.pkcs12_password) {
+                                this.downloadBase64(data.pkcs12_base64, `${filename}.p12`, 'application/x-pkcs12');
+                                this.showToast(`下载成功，PKCS12 密码: ${data.pkcs12_password}`, 'success');
+                                // 显示密码弹窗
+                                alert(`PKCS12 文件密码：${data.pkcs12_password}\n\n请妥善保存此密码！`);
+                                return;
+                            } else {
+                                this.showToast('此证书不支持 PKCS12 下载（私钥未存储）', 'error');
+                                return;
+                            }
+                        } else if (format === 'chain') {
+                            const data = await this.api(`/certificates/${cert.id}/download`);
+                            this.downloadPEM(data.ca_chain, 'ca-chain.crt');
+                        }
+                        
+                        this.showToast('下载成功');
+                    } catch (e) {
+                        this.showToast('下载失败: ' + e.message, 'error');
+                    }
+                },
+                
+                downloadPEM(content, filename) {
+                    const blob = new Blob([content], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                },
+                
+                downloadBase64(base64, filename, mimeType) {
+                    const byteStr = atob(base64);
+                    const arr = new Uint8Array(byteStr.length);
+                    for (let i = 0; i < byteStr.length; i++) {
+                        arr[i] = byteStr.charCodeAt(i);
+                    }
+                    const blob = new Blob([arr], { type: mimeType });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                },
+                
+                // 证书操作
+                async revokeCert(cert) {
+                    const reason = prompt('请输入吊销原因:');
+                    if (!reason) return;
+                    
+                    const name = cert.isClient ? cert.clientName : cert.device_id;
+                    if (!confirm(`确定要吊销证书 "${name}" 吗？此操作不可逆！`)) return;
+                    
+                    try {
+                        await this.api(`/certificates/${cert.id}/revoke`, {
+                            method: 'POST',
+                            body: JSON.stringify({ reason })
+                        });
+                        this.showToast('证书已吊销');
+                        this.loadData();
+                    } catch (e) {
+                        this.showToast('吊销失败: ' + e.message, 'error');
+                    }
+                },
+                
+                async deleteCert(cert) {
+                    const name = cert.isClient ? cert.clientName : cert.device_id;
+                    
+                    if (!cert.revoked_at && cert.days_until_expiry > 0) {
+                        this.showToast('只能删除已过期或已吊销的证书', 'error');
+                        return;
+                    }
+                    
+                    if (!confirm(`确定要删除证书 "${name}" 吗？此操作不可恢复！`)) return;
+                    
+                    try {
+                        await this.api(`/certificates/${cert.id}`, {
+                            method: 'DELETE'
+                        });
+                        this.showToast('证书已删除');
+                        this.loadData();
+                    } catch (e) {
+                        this.showToast('删除失败: ' + e.message, 'error');
+                    }
+                },
+                
+                // 客户端证书
+                async generateClientCert() {
+                    if (!this.clientCertForm.name.trim()) {
+                        alert('请输入名称');
+                        return;
+                    }
+                    
+                    try {
+                        const res = await this.api('/client-certs/generate', {
+                            method: 'POST',
+                            body: JSON.stringify(this.clientCertForm)
+                        });
+                        
+                        this.generatedCert = {
+                            ...res,
+                            name: this.clientCertForm.name
+                        };
+                        
+                        this.showClientCertForm = false;
+                        this.clientCertForm = {
+                            name: "",
+                            email: "",
+                            role: "operator",
+                            validity_days: 365,
+                            description: ""
+                        };
+                        
+                        await this.loadData();
+                    } catch (e) {
+                        alert('签发失败: ' + e.message);
+                    }
+                },
+                
+                downloadPKCS12() {
+                    const byteStr = atob(this.generatedCert.pkcs12_base64);
+                    const arr = new Uint8Array(byteStr.length);
+                    for (let i = 0; i < byteStr.length; i++) {
+                        arr[i] = byteStr.charCodeAt(i);
+                    }
+                    const blob = new Blob([arr], { type: 'application/x-pkcs12' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = this.generatedCert.name + '.p12';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                },
+                
+                closeGeneratedCert() {
+                    this.generatedCert = null;
+                },
+                
+                // 白名单
+                async addDevice() {
+                    if (!this.newDevice.token) {
+                        this.showToast('请输入设备 Token', 'error');
+                        return;
+                    }
+                    
+                    try {
+                        await this.api('/whitelist', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                device_token: this.newDevice.token,
+                                device_name: this.newDevice.name || null,
+                                auto_approve: this.newDevice.auto_approve,
+                                validity_days: this.newDevice.validity_days
+                            })
+                        });
+                        
+                        this.newDevice = { token: '', name: '', auto_approve: false, validity_days: 365 };
+                        this.showToast('设备添加成功');
+                        this.loadData();
+                    } catch (e) {
+                        this.showToast('添加失败', 'error');
+                    }
+                },
+                
+                async removeDevice(device) {
+                    if (!confirm(`确定要移除设备 ${device.device_name || device.device_token} 吗？`)) return;
+                    
+                    try {
+                        await this.api(`/whitelist/${device.id}`, { method: 'DELETE' });
+                        this.showToast('设备已移除');
+                        this.loadData();
+                    } catch (e) {
+                        this.showToast('移除失败', 'error');
+                    }
+                },
+                
+                async logout() {
+                    await this.api('/auth/logout', { method: 'POST' });
+                    this.token = '';
+                    localStorage.removeItem('pki_token');
+                    window.location.href = '/login';
+                }
+            },
+            mounted() {
+                if (!this.token) {
+                    window.location.href = '/login';
+                    return;
+                }
+                this.loadData();
+                // 每 30 秒刷新数据
+                setInterval(() => this.loadData(), 30000);
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

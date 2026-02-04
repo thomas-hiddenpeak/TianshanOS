@@ -842,6 +842,11 @@ static ts_log_level_t get_effective_level(const char *tag)
     return s_log_ctx.global_level;
 }
 
+/**
+ * @brief Rotate log file when size limit reached
+ * @note Reserved for log file rotation feature
+ */
+__attribute__((unused))
 static void rotate_log_file(void)
 {
     if (s_log_ctx.log_file != NULL) {

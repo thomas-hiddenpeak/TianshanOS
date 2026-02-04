@@ -1638,9 +1638,43 @@ ${source_id.field_id:default}   # 默认值
 | LPMU_RESET | 2 | LPMU 复位 |
 | FAN_PWM_0 | 41 | 风扇 PWM |
 
-### F. 修订历史
+### F. 配置导入导出
+
+自动化配置支持通过 Config Pack 系统进行加密导入导出：
+
+#### API 端点
+
+| API | 功能 |
+|-----|------|
+| `automation.sources.export` | 导出数据源为 .tscfg |
+| `automation.sources.import` | 导入数据源配置包 |
+| `automation.rules.export` | 导出规则为 .tscfg |
+| `automation.rules.import` | 导入规则配置包 |
+| `automation.actions.export` | 导出动作模板为 .tscfg |
+| `automation.actions.import` | 导入动作模板配置包 |
+
+#### 存储路径
+
+| 配置类型 | SD 卡路径 |
+|---------|----------|
+| 数据源 | `/sdcard/config/sources/` |
+| 规则 | `/sdcard/config/rules/` |
+| 动作模板 | `/sdcard/config/actions/` |
+
+#### 导入流程
+
+1. 上传 .tscfg 文件
+2. 后端验证签名（不解密）
+3. 预览配置 ID、签名者信息
+4. 确认导入 → 保存到 SD 卡
+5. 重启系统后自动解密并加载
+
+详细 API 文档参见：[API_REFERENCE.md](API_REFERENCE.md#自动化配置导入导出-api)
+
+### G. 修订历史
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
 | 1.0 | 2026-01-26 | 初始版本 |
 | 1.1 | 2026-01-26 | 更新内置数据源映射到实际代码；重新设计 Dashboard WebUI |
+| 2.2 | 2026-02-04 | 添加配置导入导出功能文档 |

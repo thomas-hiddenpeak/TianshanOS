@@ -21,8 +21,6 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char *TAG = "cmd_nat";
-
 /* 命令参数定义 */
 static struct {
     struct arg_lit *status;

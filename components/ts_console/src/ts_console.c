@@ -108,7 +108,9 @@ void ts_console_end_interruptible(void)
  * @brief 检查是否有 Ctrl+C 输入（非阻塞）
  * 
  * 在命令执行期间调用，检测用户是否按下 Ctrl+C
+ * @note Reserved for interruptible command feature
  */
+__attribute__((unused))
 static void check_for_interrupt(void)
 {
     if (!s_console.interruptible_mode) {

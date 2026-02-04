@@ -79,6 +79,7 @@ typedef enum {
  */
 typedef struct {
     char subject_cn[TS_CERT_DEVICE_ID_MAX_LEN];  /**< Subject Common Name */
+    char subject_ou[32];                         /**< Subject Organizational Unit */
     char issuer_cn[TS_CERT_DEVICE_ID_MAX_LEN];   /**< Issuer Common Name */
     int64_t not_before;                          /**< Valid from (Unix timestamp) */
     int64_t not_after;                           /**< Valid until (Unix timestamp) */

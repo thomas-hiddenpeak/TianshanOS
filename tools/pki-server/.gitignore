@@ -1,0 +1,77 @@
+# ============================================
+# TianShanOS PKI Server - Git Ignore
+# ============================================
+# ⚠️  CRITICAL: Never commit private keys or secrets!
+# ============================================
+
+# ===================
+# Environment & Secrets
+# ===================
+.env
+.env.*
+!.env.example
+
+# ===================
+# Database
+# ===================
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# ===================
+# Private Keys & Certificates
+# ===================
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+*_key
+*_key_*
+
+# ===================
+# Python
+# ===================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# ===================
+# Backup Files
+# ===================
+*.bak
+*.backup
+*.old
+
+# ===================
+# IDE & Editor
+# ===================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ===================
+# Logs
+# ===================
+*.log
+logs/
+
+# ===================
+# Temporary
+# ===================
+tmp/
+temp/
+*.tmp

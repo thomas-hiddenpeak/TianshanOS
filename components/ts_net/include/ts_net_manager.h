@@ -38,8 +38,8 @@ extern "C" {
 #define TS_NET_MAC_ADDR_LEN         6
 
 /** 默认配置 */
-#define TS_NET_DEFAULT_IP           "192.168.1.100"
-#define TS_NET_DEFAULT_GATEWAY      "192.168.1.1"
+#define TS_NET_DEFAULT_IP           "10.10.99.97"
+#define TS_NET_DEFAULT_GATEWAY      "10.10.99.100"
 #define TS_NET_DEFAULT_NETMASK      "255.255.255.0"
 #define TS_NET_DEFAULT_DNS          "8.8.8.8"
 #define TS_NET_DEFAULT_HOSTNAME     "tianshaos"

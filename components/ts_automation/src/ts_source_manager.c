@@ -17,6 +17,7 @@
 #include "ts_variable.h"
 #include "ts_jsonpath.h"
 #include "ts_config_module.h"
+#include "ts_config_pack.h"
 // ts_var.h 已废弃，统一使用 ts_variable.h（ts_automation 变量系统）
 
 #include "esp_log.h"
@@ -51,6 +52,9 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <unistd.h>
 
 static const char *TAG = "ts_source_mgr";
 
@@ -58,6 +62,9 @@ static const char *TAG = "ts_source_mgr";
 #define NVS_NAMESPACE       "ts_auto_src"
 #define NVS_KEY_COUNT       "count"
 #define NVS_KEY_PREFIX      "src_"
+
+// SD 卡独立文件目录
+#define SOURCES_SDCARD_DIR  "/sdcard/config/sources"
 
 /*===========================================================================*/
 /*                          Socket.IO 协议常量                                */
@@ -236,6 +243,202 @@ static char *source_to_json(const ts_auto_source_t *src)
     return json_str;
 }
 
+/* Forward declarations for SD card loading */
+static esp_err_t json_to_source(const char *json_str, ts_auto_source_t *src);
+
+/*===========================================================================*/
+/*                          SD 卡独立文件操作                                  */
+/*===========================================================================*/
+
+/**
+ * @brief 确保 sources 目录存在
+ */
+static esp_err_t ensure_sources_dir(void)
+{
+    struct stat st;
+    
+    /* 确保 /sdcard/config 存在 */
+    if (stat("/sdcard/config", &st) != 0) {
+        if (mkdir("/sdcard/config", 0755) != 0) {
+            ESP_LOGE(TAG, "Failed to create /sdcard/config");
+            return ESP_FAIL;
+        }
+    }
+    
+    /* 确保 /sdcard/config/sources 存在 */
+    if (stat(SOURCES_SDCARD_DIR, &st) != 0) {
+        if (mkdir(SOURCES_SDCARD_DIR, 0755) != 0) {
+            ESP_LOGE(TAG, "Failed to create %s", SOURCES_SDCARD_DIR);
+            return ESP_FAIL;
+        }
+    }
+    
+    return ESP_OK;
+}
+
+/**
+ * @brief 导出单个数据源到独立文件
+ */
+static esp_err_t export_source_to_file(const ts_auto_source_t *src)
+{
+    if (!src || !src->id[0]) return ESP_ERR_INVALID_ARG;
+    
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "%s/%s.json", SOURCES_SDCARD_DIR, src->id);
+    
+    char *json = source_to_json(src);
+    if (!json) return ESP_ERR_NO_MEM;
+    
+    FILE *fp = fopen(filepath, "w");
+    if (!fp) {
+        free(json);
+        ESP_LOGE(TAG, "Failed to open file: %s", filepath);
+        return ESP_FAIL;
+    }
+    
+    fprintf(fp, "%s\n", json);
+    fclose(fp);
+    free(json);
+    
+    ESP_LOGD(TAG, "Exported source to %s", filepath);
+    return ESP_OK;
+}
+
+/**
+ * @brief 删除单个数据源的独立文件
+ */
+static esp_err_t delete_source_file(const char *id)
+{
+    if (!id || !id[0]) return ESP_ERR_INVALID_ARG;
+    
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "%s/%s.json", SOURCES_SDCARD_DIR, id);
+    
+    if (unlink(filepath) == 0) {
+        ESP_LOGD(TAG, "Deleted source file: %s", filepath);
+        return ESP_OK;
+    }
+    
+    return ESP_OK;  /* 文件不存在也算成功 */
+}
+
+/**
+ * @brief 从独立文件目录加载所有数据源
+ * 
+ * 支持 .tscfg 加密配置优先加载
+ */
+static esp_err_t load_sources_from_dir(void)
+{
+    DIR *dir = opendir(SOURCES_SDCARD_DIR);
+    if (!dir) {
+        ESP_LOGD(TAG, "Sources directory not found: %s", SOURCES_SDCARD_DIR);
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    int loaded = 0;
+    struct dirent *entry;
+    
+    while ((entry = readdir(dir)) != NULL) {
+        /* 跳过非 .json 和非 .tscfg 文件 */
+        size_t len = strlen(entry->d_name);
+        bool is_json = (len >= 6 && strcmp(entry->d_name + len - 5, ".json") == 0);
+        bool is_tscfg = (len >= 7 && strcmp(entry->d_name + len - 6, ".tscfg") == 0);
+        
+        if (!is_json && !is_tscfg) {
+            continue;
+        }
+        
+        /* 对于 .json 文件，检查是否存在对应的 .tscfg（跳过以使用加密版本） */
+        if (is_json) {
+            char tscfg_name[128];
+            snprintf(tscfg_name, sizeof(tscfg_name), "%.*s.tscfg", (int)(len - 5), entry->d_name);
+            char tscfg_path[192];
+            snprintf(tscfg_path, sizeof(tscfg_path), "%s/%s", SOURCES_SDCARD_DIR, tscfg_name);
+            struct stat st;
+            if (stat(tscfg_path, &st) == 0) {
+                ESP_LOGD(TAG, "Skipping %s (will use .tscfg)", entry->d_name);
+                continue;
+            }
+        }
+        
+        /* 限制文件名长度避免缓冲区溢出 */
+        if (len > 60) {
+            continue;
+        }
+        
+        char filepath[128];
+        if (is_tscfg) {
+            snprintf(filepath, sizeof(filepath), "%s/%.*s.json", 
+                     SOURCES_SDCARD_DIR, (int)(len - 6), entry->d_name);
+        } else {
+            snprintf(filepath, sizeof(filepath), "%s/%.60s", SOURCES_SDCARD_DIR, entry->d_name);
+        }
+        
+        /* 使用 .tscfg 优先加载 */
+        char *content = NULL;
+        size_t content_len = 0;
+        bool used_tscfg = false;
+        
+        esp_err_t ret = ts_config_pack_load_with_priority(
+            filepath, &content, &content_len, &used_tscfg);
+        
+        if (ret != ESP_OK) {
+            continue;
+        }
+        
+        /* 解析并添加 */
+        ts_auto_source_t *src = heap_caps_malloc(sizeof(ts_auto_source_t), MALLOC_CAP_SPIRAM);
+        if (!src) src = malloc(sizeof(ts_auto_source_t));
+        if (src) {
+            memset(src, 0, sizeof(ts_auto_source_t));
+            if (json_to_source(content, src) == ESP_OK && src->id[0]) {
+                if (s_src_ctx.count < s_src_ctx.capacity) {
+                    memcpy(&s_src_ctx.sources[s_src_ctx.count], src, sizeof(ts_auto_source_t));
+                    s_src_ctx.count++;
+                    loaded++;
+                    ESP_LOGD(TAG, "Loaded source from file: %s%s", src->id,
+                             used_tscfg ? " (encrypted)" : "");
+                }
+            }
+            free(src);
+        }
+        free(content);
+    }
+    
+    closedir(dir);
+    
+    if (loaded > 0) {
+        ESP_LOGI(TAG, "Loaded %d sources from directory: %s", loaded, SOURCES_SDCARD_DIR);
+        return ESP_OK;
+    }
+    
+    return ESP_ERR_NOT_FOUND;
+}
+
+/**
+ * @brief 导出所有数据源到独立文件目录
+ */
+static esp_err_t export_all_sources_to_dir(void)
+{
+    if (!ts_storage_sd_mounted()) {
+        ESP_LOGD(TAG, "SD card not mounted, skip export");
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    esp_err_t ret = ensure_sources_dir();
+    if (ret != ESP_OK) return ret;
+    
+    int exported = 0;
+    for (int i = 0; i < s_src_ctx.count; i++) {
+        if (export_source_to_file(&s_src_ctx.sources[i]) == ESP_OK) {
+            exported++;
+        }
+    }
+    
+    ESP_LOGI(TAG, "Exported %d sources to directory: %s", exported, SOURCES_SDCARD_DIR);
+    return ESP_OK;
+}
+
 /**
  * 从 JSON 反序列化数据源
  */
@@ -373,7 +576,7 @@ static esp_err_t json_to_source(const char *json_str, ts_auto_source_t *src)
 }
 
 /**
- * 保存所有数据源到 NVS
+ * 保存所有数据源到 NVS 和 SD 卡
  */
 static esp_err_t save_sources_to_nvs(void)
 {
@@ -395,11 +598,7 @@ static esp_err_t save_sources_to_nvs(void)
         return ret;
     }
 
-    // 为 SD 卡导出准备 JSON 数组
-    cJSON *export_json = cJSON_CreateObject();
-    cJSON *sources_array = cJSON_CreateArray();
-
-    // 保存每个数据源
+    // 保存每个数据源到 NVS
     for (int i = 0; i < s_src_ctx.count; i++) {
         char key[16];
         snprintf(key, sizeof(key), "%s%d", NVS_KEY_PREFIX, i);
@@ -412,13 +611,6 @@ static esp_err_t save_sources_to_nvs(void)
 
         // 保存到 NVS
         ret = nvs_set_str(handle, key, json);
-        
-        // 同时添加到 SD 卡 JSON 数组
-        cJSON *src_obj = cJSON_Parse(json);
-        if (src_obj) {
-            cJSON_AddItemToArray(sources_array, src_obj);
-        }
-
         free(json);
 
         if (ret != ESP_OK) {
@@ -429,19 +621,12 @@ static esp_err_t save_sources_to_nvs(void)
     ret = nvs_commit(handle);
     nvs_close(handle);
 
-    // 构建完整 JSON 并导出到 SD 卡
-    cJSON_AddItemToObject(export_json, "sources", sources_array);
-    cJSON_AddNumberToObject(export_json, "count", s_src_ctx.count);
-
-    // 使用新的 API 导出到 SD 卡
-    esp_err_t sd_ret = ts_config_module_export_custom_json(TS_CONFIG_MODULE_SOURCES, export_json);
-    cJSON_Delete(export_json);
-
-    if (sd_ret != ESP_OK && sd_ret != TS_CONFIG_ERR_SD_NOT_MOUNTED) {
-        ESP_LOGW(TAG, "Failed to export sources to SD card: %s", esp_err_to_name(sd_ret));
+    // 同时导出到 SD 卡独立文件目录
+    if (ts_storage_sd_mounted()) {
+        export_all_sources_to_dir();
     }
 
-    ESP_LOGI(TAG, "Saved %d sources to NVS", s_src_ctx.count);
+    ESP_LOGI(TAG, "Saved %d sources to NVS and SD card", s_src_ctx.count);
     return ret;
 }
 
@@ -451,22 +636,35 @@ static esp_err_t load_sources_from_file(const char *filepath);
 /**
  * 从存储加载数据源
  * 
- * Priority: SD card file > NVS > empty (遵循系统配置优先级原则)
+ * Priority: SD card directory > SD card single file > NVS > empty
+ * 当从 NVS 加载后，自动导出到 SD 卡（如果 SD 卡已挂载）
  */
 static esp_err_t load_sources_from_nvs(void)
 {
     esp_err_t ret;
+    bool loaded_from_sdcard = false;
     
-    /* 1. 优先从 SD 卡加载 */
+    /* 1. 优先从 SD 卡独立文件目录加载 */
     if (ts_storage_sd_mounted()) {
+        ret = load_sources_from_dir();
+        if (ret == ESP_OK && s_src_ctx.count > 0) {
+            ESP_LOGI(TAG, "Loaded %d sources from SD card directory", s_src_ctx.count);
+            loaded_from_sdcard = true;
+            goto save_to_nvs;
+        }
+        
+        /* 2. 尝试从单一文件加载（兼容旧格式） */
         ret = load_sources_from_file("/sdcard/config/sources.json");
         if (ret == ESP_OK && s_src_ctx.count > 0) {
-            ESP_LOGI(TAG, "Loaded %d sources from SD card", s_src_ctx.count);
-            return ESP_OK;  /* SD 卡配置已自动保存到 NVS */
+            ESP_LOGI(TAG, "Loaded %d sources from SD card file", s_src_ctx.count);
+            loaded_from_sdcard = true;
+            /* 迁移到独立文件格式 */
+            export_all_sources_to_dir();
+            goto save_to_nvs;
         }
     }
     
-    /* 2. SD 卡无配置，从 NVS 加载 */
+    /* 3. SD 卡无配置，从 NVS 加载 */
     uint8_t count = 0;
     nvs_handle_t handle;
     ret = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
@@ -515,9 +713,6 @@ static esp_err_t load_sources_from_nvs(void)
                     memcpy(&s_src_ctx.sources[s_src_ctx.count], src, sizeof(ts_auto_source_t));
                     s_src_ctx.count++;
                     ESP_LOGD(TAG, "Loaded source: %s", src->id);
-
-    // 记录需要自动连接的 Socket.IO 源（不在此处连接，等待 start_all 时连接）
-                    // Socket.IO 源在 ts_source_start_all() 中连接，确保网络就绪
                 }
                 free(src);
             }
@@ -527,43 +722,48 @@ static esp_err_t load_sources_from_nvs(void)
 
     nvs_close(handle);
     ESP_LOGI(TAG, "Loaded %d sources from NVS", s_src_ctx.count);
+    
+    /* 从 NVS 加载后，导出到 SD 卡（如果 SD 卡已挂载且有数据） */
+    if (s_src_ctx.count > 0 && ts_storage_sd_mounted()) {
+        ESP_LOGI(TAG, "Exporting NVS sources to SD card...");
+        export_all_sources_to_dir();
+    }
+    
+    return ESP_OK;
 
+save_to_nvs:
+    /* 从 SD 卡加载后，保存到 NVS */
+    if (loaded_from_sdcard && s_src_ctx.count > 0) {
+        save_sources_to_nvs();
+    }
     return ESP_OK;
 }
 
 /**
  * Load sources from SD card JSON file
+ * 
+ * 支持 .tscfg 加密配置优先加载
  */
 static esp_err_t load_sources_from_file(const char *filepath)
 {
     if (!filepath) return ESP_ERR_INVALID_ARG;
     
-    FILE *f = fopen(filepath, "r");
-    if (!f) {
+    /* 使用 .tscfg 优先加载 */
+    char *content = NULL;
+    size_t content_len = 0;
+    bool used_tscfg = false;
+    
+    esp_err_t ret = ts_config_pack_load_with_priority(
+        filepath, &content, &content_len, &used_tscfg);
+    
+    if (ret != ESP_OK) {
         ESP_LOGD(TAG, "Cannot open file: %s", filepath);
-        return ESP_ERR_NOT_FOUND;
+        return ret;
     }
     
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    
-    if (size <= 0 || size > 16384) {
-        fclose(f);
-        ESP_LOGW(TAG, "File too large or empty: %s (%ld bytes)", filepath, size);
-        return ESP_ERR_INVALID_SIZE;
+    if (used_tscfg) {
+        ESP_LOGI(TAG, "Loaded encrypted sources from .tscfg");
     }
-    
-    char *content = heap_caps_malloc(size + 1, MALLOC_CAP_SPIRAM);
-    if (!content) content = malloc(size + 1);
-    if (!content) {
-        fclose(f);
-        return ESP_ERR_NO_MEM;
-    }
-    
-    size_t read_size = fread(content, 1, size, f);
-    fclose(f);
-    content[read_size] = '\0';
     
     cJSON *root = cJSON_Parse(content);
     free(content);
@@ -998,7 +1198,9 @@ static int process_source_mappings(ts_auto_source_t *src, cJSON *json_data)
  * @param count 路径数量
  * @param results 输出值数组
  * @return 成功提取的数量
+ * @note Reserved for batch JSONPath extraction feature
  */
+__attribute__((unused))
 static int batch_extract_json(cJSON *json_data, const char **paths, int count, ts_auto_value_t *results)
 {
     if (!json_data || !paths || !results || count <= 0) {
@@ -1124,7 +1326,7 @@ static esp_err_t read_rest_source(ts_auto_source_t *src, ts_auto_value_t *value)
 
         ret = esp_http_client_open(client, 0);
         if (ret == ESP_OK) {
-            int content_length = esp_http_client_fetch_headers(client);
+            esp_http_client_fetch_headers(client);  // 获取头部（返回值未使用，chunked 模式下可能为负数）
             int status_code = esp_http_client_get_status_code(client);
 
             if (status_code == 200) {
@@ -1384,11 +1586,54 @@ esp_err_t ts_source_manager_init(void)
     s_src_ctx.running = false;
     s_src_ctx.initialized = true;
 
-    // 从 NVS 加载已保存的数据源
-    load_sources_from_nvs();
+    // 延迟加载数据源（等待 SD 卡挂载，避免栈溢出）
+    // load_sources_from_nvs() 在延迟任务中执行
+    extern void ts_source_deferred_load_task(void *arg);
+    BaseType_t task_ret = xTaskCreateWithCaps(
+        ts_source_deferred_load_task,
+        "src_load",
+        8192,               // 8KB 栈用于 SD 卡 I/O
+        NULL,
+        tskIDLE_PRIORITY + 1,
+        NULL,
+        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT
+    );
+    if (task_ret != pdPASS) {
+        ESP_LOGW(TAG, "Failed to create deferred load task, loading synchronously");
+        load_sources_from_nvs();
+    }
 
-    ESP_LOGI(TAG, "Source manager initialized with %d sources", s_src_ctx.count);
+    ESP_LOGI(TAG, "Source manager initialized (loading deferred)");
     return ESP_OK;
+}
+
+/**
+ * @brief 延迟加载任务 - 等待 SD 卡挂载后加载数据源并启动
+ */
+void ts_source_deferred_load_task(void *arg)
+{
+    (void)arg;
+    
+    // 等待 2.5 秒，确保 SD 卡和 NVS 都已就绪
+    vTaskDelay(pdMS_TO_TICKS(2500));
+    
+    if (!s_src_ctx.initialized) {
+        ESP_LOGW(TAG, "Source manager not initialized, skip deferred load");
+        vTaskDelete(NULL);
+        return;
+    }
+    
+    ESP_LOGI(TAG, "Deferred source loading started");
+    load_sources_from_nvs();
+    ESP_LOGI(TAG, "Deferred source loading complete: %d sources", s_src_ctx.count);
+    
+    // 加载完成后，启动所有已启用的数据源连接
+    if (s_src_ctx.count > 0) {
+        ESP_LOGI(TAG, "Starting loaded data sources...");
+        ts_source_start_all();
+    }
+    
+    vTaskDelete(NULL);
 }
 
 esp_err_t ts_source_manager_deinit(void)

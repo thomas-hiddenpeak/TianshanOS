@@ -160,6 +160,69 @@ esp_err_t ts_ssh_hosts_config_touch(const char *id);
  */
 esp_err_t ts_ssh_hosts_config_clear(void);
 
+/*===========================================================================*/
+/*                    Iterator/Pagination API (内存优化)                       */
+/*===========================================================================*/
+
+/**
+ * @brief 迭代器回调函数类型
+ * 
+ * @param config 当前主机配置（只读）
+ * @param index 当前索引（0-based）
+ * @param user_data 用户数据
+ * @return true 继续遍历, false 停止遍历
+ */
+typedef bool (*ts_ssh_host_iterator_cb_t)(const ts_ssh_host_config_t *config,
+                                           size_t index, void *user_data);
+
+/**
+ * @brief 流式遍历所有主机配置（内存优化）
+ * 
+ * 每次只加载一条配置到内存，通过回调处理。
+ * 
+ * @param callback 回调函数
+ * @param user_data 传递给回调的用户数据
+ * @param offset 起始偏移（分页用）
+ * @param limit 最大返回数量（0 表示不限制）
+ * @param[out] total_count 输出总数量（可为 NULL）
+ * @return ESP_OK 成功
+ */
+esp_err_t ts_ssh_hosts_config_iterate(ts_ssh_host_iterator_cb_t callback,
+                                       void *user_data,
+                                       size_t offset,
+                                       size_t limit,
+                                       size_t *total_count);
+
+/*===========================================================================*/
+/*                    SD Card Export/Import (持久化备份)                       */
+/*===========================================================================*/
+
+/** SD 卡配置文件路径（主配置文件） */
+#define TS_SSH_HOSTS_SDCARD_PATH  "/sdcard/config/ssh_hosts.json"
+
+/** SD 卡独立文件目录（每个主机一个文件） */
+#define TS_SSH_HOSTS_SDCARD_DIR   "/sdcard/config/ssh_hosts"
+
+/**
+ * @brief 导出所有主机配置到 SD 卡
+ * 
+ * @return ESP_OK 成功，ESP_ERR_NOT_FOUND SD卡未挂载
+ */
+esp_err_t ts_ssh_hosts_config_export_to_sdcard(void);
+
+/**
+ * @brief 从 SD 卡导入主机配置
+ * 
+ * @param merge 是否合并（true=保留现有，false=清空后导入）
+ * @return ESP_OK 成功，ESP_ERR_NOT_FOUND 文件不存在
+ */
+esp_err_t ts_ssh_hosts_config_import_from_sdcard(bool merge);
+
+/**
+ * @brief 同步到 SD 卡（内部调用，add/remove 后自动触发）
+ */
+void ts_ssh_hosts_config_sync_to_sdcard(void);
+
 #ifdef __cplusplus
 }
 #endif

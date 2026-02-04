@@ -20,6 +20,7 @@ idf_component_register(
         ts_security
         ts_console
         ts_jsonpath
+        ts_config_pack
         esp_http_client
         espressif__esp_websocket_client
 )

@@ -12,8 +12,10 @@
 #include "ts_ssh_client.h"
 #include "ts_core.h"  /* TS_CALLOC_PSRAM */
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/idf_additions.h"
 #include "freertos/semphr.h"
 
 #include <libssh2.h>
@@ -513,10 +515,12 @@ esp_err_t ts_port_forward_start(ts_port_forward_t forward)
         return ESP_FAIL;
     }
 
-    /* 创建转发任务 */
+    /* 创建转发任务
+     * 使用 PSRAM 栈以减少 DRAM 压力（纯 libssh2 网络操作，不涉及 NVS/Flash）*/
     forward->stop_flag = false;
-    BaseType_t ret = xTaskCreate(forward_task, "ssh_forward", 4096,
-                                  forward, 5, &forward->task_handle);
+    BaseType_t ret = xTaskCreateWithCaps(forward_task, "ssh_forward", 4096,
+                                          forward, 5, &forward->task_handle,
+                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (ret != pdPASS) {
         close(forward->listen_sock);
         forward->listen_sock = -1;
