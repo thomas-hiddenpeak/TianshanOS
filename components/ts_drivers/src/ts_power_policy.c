@@ -23,6 +23,7 @@
 #include "ts_variable.h"
 #include "ts_event.h"
 #include "ts_config.h"
+#include "ts_config_pack.h"
 #include "ts_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -150,37 +151,22 @@ static esp_err_t load_config_from_sdcard(void)
         return ESP_ERR_NOT_FOUND;
     }
     
-    /* 读取文件内容 */
-    FILE *fp = fopen(CONFIG_SD_FILE, "r");
-    if (fp == NULL) {
+    /* 使用 .tscfg 优先加载 */
+    char *buf = NULL;
+    size_t buf_size = 0;
+    bool used_tscfg = false;
+    
+    esp_err_t ret = ts_config_pack_load_with_priority(
+        CONFIG_SD_FILE, &buf, &buf_size, &used_tscfg);
+    
+    if (ret != ESP_OK) {
         TS_LOGD(TAG, "SD config file not found: %s", CONFIG_SD_FILE);
         return ESP_ERR_NOT_FOUND;
     }
     
-    /* 获取文件大小 */
-    fseek(fp, 0, SEEK_END);
-    long fsize = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-    
-    if (fsize <= 0 || fsize > 4096) {
-        TS_LOGE(TAG, "Invalid config file size: %ld", fsize);
-        fclose(fp);
-        return ESP_ERR_INVALID_SIZE;
+    if (used_tscfg) {
+        TS_LOGI(TAG, "Loaded encrypted config from .tscfg");
     }
-    
-    /* 分配内存并读取 */
-    char *buf = heap_caps_malloc(fsize + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (buf == NULL) {
-        buf = malloc(fsize + 1);
-    }
-    if (buf == NULL) {
-        fclose(fp);
-        return ESP_ERR_NO_MEM;
-    }
-    
-    size_t read_size = fread(buf, 1, fsize, fp);
-    fclose(fp);
-    buf[read_size] = '\0';
     
     /* 解析 JSON */
     cJSON *root = cJSON_Parse(buf);

@@ -191,14 +191,16 @@ static esp_err_t api_config_pack_verify(const cJSON *params, ts_api_result_t *re
 }
 
 /**
- * @brief config.pack.import - Import and decrypt a .tscfg package
+ * @brief config.pack.import - Validate a .tscfg file in place
  * 
  * Parameters:
- * - content: .tscfg JSON content
- * - path: Alternative - path to .tscfg file
- * - apply: If true, apply the configuration (default: false, just verify and return)
+ * - path: Path to already uploaded .tscfg file
  * 
- * Returns decrypted configuration content.
+ * Validates the file without copying. Use this after file upload via
+ * storage API to get metadata and validation status.
+ * 
+ * Note: The upload hook already performs auto-validation and sends
+ * WebSocket notification. This API is for explicit re-validation.
  */
 static esp_err_t api_config_pack_import(const cJSON *params, ts_api_result_t *result)
 {
@@ -207,72 +209,18 @@ static esp_err_t api_config_pack_import(const cJSON *params, ts_api_result_t *re
         return ESP_ERR_INVALID_ARG;
     }
     
-    const cJSON *content = cJSON_GetObjectItem(params, "content");
     const cJSON *path = cJSON_GetObjectItem(params, "path");
-    
-    const char *tscfg_json = NULL;
-    size_t tscfg_len = 0;
-    char *file_buf = NULL;
-    
-    if (content && cJSON_IsString(content)) {
-        tscfg_json = content->valuestring;
-        tscfg_len = strlen(tscfg_json);
-    } else if (path && cJSON_IsString(path)) {
-        /* 从文件读取 */
-        FILE *f = fopen(path->valuestring, "r");
-        if (!f) {
-            ts_api_result_error(result, TS_API_ERR_NOT_FOUND, "File not found");
-            return ESP_ERR_NOT_FOUND;
-        }
-        
-        fseek(f, 0, SEEK_END);
-        long file_size = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        
-        if (file_size <= 0 || file_size > 65536) {
-            fclose(f);
-            ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Invalid file size");
-            return ESP_ERR_INVALID_SIZE;
-        }
-        
-        file_buf = PACK_MALLOC(file_size + 1);
-        if (!file_buf) {
-            fclose(f);
-            ts_api_result_error(result, TS_API_ERR_NO_MEM, "Memory allocation failed");
-            return ESP_ERR_NO_MEM;
-        }
-        
-        fread(file_buf, 1, file_size, f);
-        fclose(f);
-        file_buf[file_size] = '\0';
-        
-        tscfg_json = file_buf;
-        tscfg_len = file_size;
-    } else {
-        ts_api_result_error(result, TS_API_ERR_INVALID_ARG,
-                           "Missing 'content' or 'path' parameter");
+    if (!path || !cJSON_IsString(path)) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'path' parameter");
         return ESP_ERR_INVALID_ARG;
     }
     
-    /* 使用新的导入函数：验证 + 保存加密文件（不解密） */
+    /* 验证配置包（不复制） */
     ts_config_pack_metadata_t metadata = {0};
-    char saved_path[128] = {0};
-    
-    ts_config_pack_result_t pack_result = ts_config_pack_import(
-        tscfg_json,
-        tscfg_len,
-        &metadata,
-        saved_path,
-        sizeof(saved_path)
+    ts_config_pack_result_t pack_result = ts_config_pack_validate_file(
+        path->valuestring,
+        &metadata
     );
-    
-    free(file_buf);  /* 如果是从文件读取的，释放缓冲区 */
-    
-    if (pack_result != TS_CONFIG_PACK_OK) {
-        ts_api_result_error(result, TS_API_ERR_INTERNAL, 
-                           ts_config_pack_strerror(pack_result));
-        return ESP_FAIL;
-    }
     
     /* 构建响应 */
     cJSON *data = cJSON_CreateObject();
@@ -281,29 +229,82 @@ static esp_err_t api_config_pack_import(const cJSON *params, ts_api_result_t *re
         return ESP_ERR_NO_MEM;
     }
     
-    /* 元数据（不含解密内容） */
-    cJSON_AddStringToObject(data, "name", metadata.name);
-    cJSON_AddStringToObject(data, "description", metadata.description);
-    cJSON_AddStringToObject(data, "source_file", metadata.source_file);
-    cJSON_AddStringToObject(data, "target_device", metadata.target_device);
-    cJSON_AddNumberToObject(data, "created_at", (double)metadata.created_at);
-    cJSON_AddStringToObject(data, "saved_path", saved_path);
+    cJSON_AddBoolToObject(data, "valid", pack_result == TS_CONFIG_PACK_OK);
+    cJSON_AddNumberToObject(data, "result_code", pack_result);
+    cJSON_AddStringToObject(data, "result_message", ts_config_pack_strerror(pack_result));
+    cJSON_AddStringToObject(data, "path", path->valuestring);
     
-    /* 签名信息 */
-    cJSON *sig = cJSON_CreateObject();
-    cJSON_AddBoolToObject(sig, "valid", metadata.sig_info.valid);
-    cJSON_AddBoolToObject(sig, "is_official", metadata.sig_info.is_official);
-    cJSON_AddStringToObject(sig, "signer_cn", metadata.sig_info.signer_cn);
-    cJSON_AddStringToObject(sig, "signer_ou", metadata.sig_info.signer_ou);
-    cJSON_AddNumberToObject(sig, "signed_at", (double)metadata.sig_info.signed_at);
-    cJSON_AddItemToObject(data, "signature", sig);
+    if (pack_result == TS_CONFIG_PACK_OK) {
+        /* 元数据 */
+        cJSON_AddStringToObject(data, "name", metadata.name);
+        cJSON_AddStringToObject(data, "description", metadata.description);
+        cJSON_AddStringToObject(data, "source_file", metadata.source_file);
+        cJSON_AddStringToObject(data, "target_device", metadata.target_device);
+        cJSON_AddNumberToObject(data, "created_at", (double)metadata.created_at);
+        
+        /* 签名信息 */
+        cJSON *sig = cJSON_CreateObject();
+        cJSON_AddBoolToObject(sig, "valid", metadata.sig_info.valid);
+        cJSON_AddBoolToObject(sig, "is_official", metadata.sig_info.is_official);
+        cJSON_AddStringToObject(sig, "signer_cn", metadata.sig_info.signer_cn);
+        cJSON_AddStringToObject(sig, "signer_ou", metadata.sig_info.signer_ou);
+        cJSON_AddNumberToObject(sig, "signed_at", (double)metadata.sig_info.signed_at);
+        cJSON_AddItemToObject(data, "signature", sig);
+        
+        TS_LOGI(TAG, "Config pack validated: %s (%s)", metadata.name, path->valuestring);
+    }
     
-    /* 标记：配置已保存（加密状态），未解密 */
-    cJSON_AddBoolToObject(data, "imported", true);
-    cJSON_AddBoolToObject(data, "decrypted", false);
-    cJSON_AddStringToObject(data, "note", "Config saved encrypted. Use config.pack.content to decrypt.");
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/**
+ * @brief config.pack.apply - Apply configuration from a validated .tscfg file
+ * 
+ * Parameters:
+ * - path: Path to .tscfg file
+ * 
+ * Decrypts and applies the configuration to the system.
+ */
+static esp_err_t api_config_pack_apply(const cJSON *params, ts_api_result_t *result)
+{
+    if (!params) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing parameters");
+        return ESP_ERR_INVALID_ARG;
+    }
     
-    TS_LOGI(TAG, "Config pack imported: %s -> %s", metadata.name, saved_path);
+    const cJSON *path = cJSON_GetObjectItem(params, "path");
+    if (!path || !cJSON_IsString(path)) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'path' parameter");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    /* 应用配置包 */
+    cJSON *applied_modules = NULL;
+    ts_config_pack_result_t pack_result = ts_config_pack_apply_file(
+        path->valuestring,
+        &applied_modules
+    );
+    
+    /* 构建响应 */
+    cJSON *data = cJSON_CreateObject();
+    if (!data) {
+        if (applied_modules) cJSON_Delete(applied_modules);
+        ts_api_result_error(result, TS_API_ERR_NO_MEM, "Memory allocation failed");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    cJSON_AddBoolToObject(data, "success", pack_result == TS_CONFIG_PACK_OK);
+    cJSON_AddNumberToObject(data, "result_code", pack_result);
+    cJSON_AddStringToObject(data, "result_message", ts_config_pack_strerror(pack_result));
+    cJSON_AddStringToObject(data, "path", path->valuestring);
+    
+    if (pack_result == TS_CONFIG_PACK_OK && applied_modules) {
+        cJSON_AddItemToObject(data, "applied_modules", applied_modules);
+        TS_LOGI(TAG, "Config pack applied: %s", path->valuestring);
+    } else {
+        if (applied_modules) cJSON_Delete(applied_modules);
+    }
     
     ts_api_result_ok(result, data);
     return ESP_OK;
@@ -638,9 +639,17 @@ esp_err_t ts_api_config_pack_register(void)
         },
         {
             .name = "config.pack.import",
-            .description = "Import and decrypt a .tscfg package",
+            .description = "Validate an uploaded .tscfg file in place",
             .category = TS_API_CAT_CONFIG,
             .handler = api_config_pack_import,
+            .requires_auth = false,
+            .permission = NULL
+        },
+        {
+            .name = "config.pack.apply",
+            .description = "Apply configuration from a validated .tscfg file",
+            .category = TS_API_CAT_CONFIG,
+            .handler = api_config_pack_apply,
             .requires_auth = true,
             .permission = "config.write"
         },

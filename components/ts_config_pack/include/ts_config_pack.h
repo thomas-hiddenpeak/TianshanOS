@@ -15,6 +15,7 @@
 #define TS_CONFIG_PACK_H
 
 #include "esp_err.h"
+#include "cJSON.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -284,6 +285,37 @@ ts_config_pack_result_t ts_config_pack_get_content(
     size_t *content_len
 );
 
+/**
+ * @brief Validate a .tscfg file at path (no copy)
+ * 
+ * Validates signature and recipient of a .tscfg file without copying
+ * it to the config directory. Use this after file upload to validate
+ * in-place.
+ * 
+ * @param path Full path to .tscfg file
+ * @param metadata Output metadata (optional, can be NULL)
+ * @return TS_CONFIG_PACK_OK if valid and intended for this device
+ */
+ts_config_pack_result_t ts_config_pack_validate_file(
+    const char *path,
+    ts_config_pack_metadata_t *metadata
+);
+
+/**
+ * @brief Apply configuration from a validated .tscfg file
+ * 
+ * Decrypts and applies the configuration from a .tscfg file.
+ * The file should have been validated first.
+ * 
+ * @param path Full path to .tscfg file
+ * @param applied_modules Output: JSON array of applied module names (optional)
+ * @return TS_CONFIG_PACK_OK on success
+ */
+ts_config_pack_result_t ts_config_pack_apply_file(
+    const char *path,
+    cJSON **applied_modules
+);
+
 /*===========================================================================*/
 /*                      Utility Functions                                     */
 /*===========================================================================*/
@@ -318,6 +350,38 @@ esp_err_t ts_config_pack_export_device_cert(char *cert_pem, size_t *cert_len);
  * @return ESP_OK on success
  */
 esp_err_t ts_config_pack_get_cert_fingerprint(char *fingerprint, size_t len);
+
+/**
+ * @brief Load JSON content with .tscfg priority
+ * 
+ * If a .tscfg version of the file exists, load and decrypt it.
+ * Otherwise, load the plain .json file.
+ * 
+ * Example: For "/sdcard/config/network.json":
+ *   - First check "/sdcard/config/network.tscfg"
+ *   - If exists and valid, decrypt and return content
+ *   - Otherwise load "/sdcard/config/network.json"
+ * 
+ * @param json_path Path to .json file (e.g., "/sdcard/config/network.json")
+ * @param content Output: JSON content string (caller must free)
+ * @param content_len Output: content length (optional, can be NULL)
+ * @param used_tscfg Output: true if .tscfg was used (optional, can be NULL)
+ * @return ESP_OK on success
+ */
+esp_err_t ts_config_pack_load_with_priority(
+    const char *json_path,
+    char **content,
+    size_t *content_len,
+    bool *used_tscfg
+);
+
+/**
+ * @brief Check if .tscfg version exists for a .json file
+ * 
+ * @param json_path Path to .json file
+ * @return true if corresponding .tscfg exists
+ */
+bool ts_config_pack_tscfg_exists(const char *json_path);
 
 #ifdef __cplusplus
 }

@@ -23,5 +23,5 @@ idf_component_register(
     SRCS ${TS_HAL_SRCS}
     INCLUDE_DIRS "include" "platform/esp32s3" "platform/esp32p4"
     REQUIRES ts_core driver esp_driver_gpio esp_driver_ledc esp_driver_i2c esp_driver_spi esp_driver_uart esp_adc spi_flash esp_psram log
-    PRIV_REQUIRES nvs_flash
+    PRIV_REQUIRES nvs_flash ts_config_pack
 )

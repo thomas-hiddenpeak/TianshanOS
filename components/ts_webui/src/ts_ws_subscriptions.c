@@ -59,6 +59,7 @@ static const topic_mapping_t s_topic_map[] = {
     {"service.list",     TS_EVENT_BASE_SYSTEM,     TS_EVENT_SYSTEM_INFO_CHANGED, 5000},
     {"device.status",    TS_EVENT_BASE_DEVICE_MON, TS_EVENT_DEVICE_STATUS_CHANGED, 2000},
     {"ota.progress",     TS_EVENT_BASE_OTA,        TS_EVENT_OTA_PROGRESS_UPDATE, 1000},
+    {"config.pack.validated", NULL,                0,                             0},     /* 推送驱动主题 */
 };
 #define TOPIC_MAP_SIZE (sizeof(s_topic_map) / sizeof(s_topic_map[0]))
 

@@ -8,6 +8,9 @@
  * - automation.variables.list/get/set - Variable management
  * - automation.rules.list/enable/disable/trigger - Rule management
  * - automation.sources.list - Data source listing
+ * - automation.sources.export/import - Source config pack export/import
+ * - automation.rules.export/import - Rule config pack export/import
+ * - automation.actions.export/import - Action template config pack export/import
  *
  * @author TianShanOS Team
  * @version 1.0.0
@@ -19,14 +22,24 @@
 #include "ts_rule_engine.h"
 #include "ts_source_manager.h"
 #include "ts_action_manager.h"
+#include "ts_config_pack.h"
+#include "ts_cert.h"
 #include "ts_log.h"
 #include "cJSON.h"
 #include "esp_heap_caps.h"
 #include "esp_crt_bundle.h"
 #include "esp_log.h"
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <time.h>
 
 static const char *TAG = "api_automation";
+
+/* SD 卡配置目录 */
+#define SOURCES_SDCARD_DIR  "/sdcard/config/sources"
+#define RULES_SDCARD_DIR    "/sdcard/config/rules"
+#define ACTIONS_SDCARD_DIR  "/sdcard/config/actions"
 
 /*===========================================================================*/
 /*                           Helper Functions                                 */
@@ -1191,9 +1204,21 @@ static esp_err_t api_automation_rules_delete(const cJSON *params, ts_api_result_
         return ESP_OK;
     }
 
-    esp_err_t ret = ts_rule_unregister(id_param->valuestring);
+    const char *rule_id = id_param->valuestring;
+    esp_err_t ret = ts_rule_unregister(rule_id);
     
     if (ret == ESP_OK) {
+        // 同时删除 SD 卡上的配置文件（.json 和 .tscfg）
+        char filepath[128];
+        snprintf(filepath, sizeof(filepath), "%s/%s.json", RULES_SDCARD_DIR, rule_id);
+        if (unlink(filepath) == 0) {
+            TS_LOGI(TAG, "Deleted rule config: %s", filepath);
+        }
+        snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", RULES_SDCARD_DIR, rule_id);
+        if (unlink(filepath) == 0) {
+            TS_LOGI(TAG, "Deleted rule config pack: %s", filepath);
+        }
+        
         result->code = TS_API_OK;
         result->message = strdup("Rule deleted");
     } else if (ret == ESP_ERR_NOT_FOUND) {
@@ -1754,9 +1779,21 @@ static esp_err_t api_automation_sources_delete(const cJSON *params, ts_api_resul
         return ESP_OK;
     }
 
-    esp_err_t ret = ts_source_unregister(id_param->valuestring);
+    const char *source_id = id_param->valuestring;
+    esp_err_t ret = ts_source_unregister(source_id);
     
     if (ret == ESP_OK) {
+        // 同时删除 SD 卡上的配置文件（.json 和 .tscfg）
+        char filepath[128];
+        snprintf(filepath, sizeof(filepath), "%s/%s.json", SOURCES_SDCARD_DIR, source_id);
+        if (unlink(filepath) == 0) {
+            TS_LOGI(TAG, "Deleted source config: %s", filepath);
+        }
+        snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", SOURCES_SDCARD_DIR, source_id);
+        if (unlink(filepath) == 0) {
+            TS_LOGI(TAG, "Deleted source config pack: %s", filepath);
+        }
+        
         result->code = TS_API_OK;
         result->message = strdup("Source deleted");
     } else if (ret == ESP_ERR_NOT_FOUND) {
@@ -2759,9 +2796,21 @@ static esp_err_t api_automation_actions_delete(const cJSON *params, ts_api_resul
         return ESP_OK;
     }
     
-    esp_err_t ret = ts_action_template_remove(id->valuestring);
+    const char *action_id = id->valuestring;
+    esp_err_t ret = ts_action_template_remove(action_id);
     
     if (ret == ESP_OK) {
+        // 同时删除 SD 卡上的配置文件（.json 和 .tscfg）
+        char filepath[128];
+        snprintf(filepath, sizeof(filepath), "%s/%s.json", ACTIONS_SDCARD_DIR, action_id);
+        if (unlink(filepath) == 0) {
+            TS_LOGI(TAG, "Deleted action config: %s", filepath);
+        }
+        snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", ACTIONS_SDCARD_DIR, action_id);
+        if (unlink(filepath) == 0) {
+            TS_LOGI(TAG, "Deleted action config pack: %s", filepath);
+        }
+        
         result->code = TS_API_OK;
         result->message = strdup("Action template deleted");
     } else if (ret == ESP_ERR_NOT_FOUND) {
@@ -3975,6 +4024,951 @@ cleanup:
 }
 
 /*===========================================================================*/
+/*                    Source Export/Import APIs                               */
+/*===========================================================================*/
+
+/**
+ * @brief Serialize source to JSON for export
+ */
+static cJSON *source_to_export_json(const ts_auto_source_t *source)
+{
+    cJSON *obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "id", source->id);
+    cJSON_AddStringToObject(obj, "label", source->label);
+    
+    const char *type_str = "unknown";
+    switch (source->type) {
+        case TS_AUTO_SRC_WEBSOCKET: type_str = "websocket"; break;
+        case TS_AUTO_SRC_SOCKETIO: type_str = "socketio"; break;
+        case TS_AUTO_SRC_REST: type_str = "rest"; break;
+        case TS_AUTO_SRC_VARIABLE: type_str = "variable"; break;
+        default: type_str = "unknown"; break;
+    }
+    cJSON_AddStringToObject(obj, "type", type_str);
+    cJSON_AddBoolToObject(obj, "enabled", source->enabled);
+    cJSON_AddBoolToObject(obj, "auto_discover", source->auto_discover);
+    cJSON_AddNumberToObject(obj, "poll_interval_ms", source->poll_interval_ms);
+    
+    // Type-specific config
+    switch (source->type) {
+        case TS_AUTO_SRC_WEBSOCKET:
+            cJSON_AddStringToObject(obj, "uri", source->websocket.uri);
+            cJSON_AddNumberToObject(obj, "reconnect_ms", source->websocket.reconnect_ms);
+            break;
+        case TS_AUTO_SRC_SOCKETIO:
+            cJSON_AddStringToObject(obj, "url", source->socketio.url);
+            cJSON_AddStringToObject(obj, "event", source->socketio.event);
+            cJSON_AddNumberToObject(obj, "reconnect_ms", source->socketio.reconnect_ms);
+            break;
+        case TS_AUTO_SRC_REST:
+            cJSON_AddStringToObject(obj, "url", source->rest.url);
+            cJSON_AddStringToObject(obj, "method", source->rest.method);
+            if (source->rest.auth_header[0]) {
+                cJSON_AddStringToObject(obj, "auth_header", source->rest.auth_header);
+            }
+            break;
+        case TS_AUTO_SRC_VARIABLE:
+            if (source->variable.ssh_host_id[0]) {
+                cJSON_AddStringToObject(obj, "ssh_host_id", source->variable.ssh_host_id);
+            }
+            if (source->variable.ssh_command[0]) {
+                cJSON_AddStringToObject(obj, "ssh_command", source->variable.ssh_command);
+            }
+            if (source->variable.var_prefix[0]) {
+                cJSON_AddStringToObject(obj, "var_prefix", source->variable.var_prefix);
+            }
+            break;
+        default:
+            break;
+    }
+    
+    // Mappings
+    if (source->mapping_count > 0) {
+        cJSON *mappings = cJSON_AddArrayToObject(obj, "mappings");
+        for (int i = 0; i < source->mapping_count && i < TS_AUTO_MAX_MAPPINGS; i++) {
+            cJSON *map = cJSON_CreateObject();
+            cJSON_AddStringToObject(map, "json_path", source->mappings[i].json_path);
+            cJSON_AddStringToObject(map, "var_name", source->mappings[i].var_name);
+            if (source->mappings[i].transform[0]) {
+                cJSON_AddStringToObject(map, "transform", source->mappings[i].transform);
+            }
+            cJSON_AddItemToArray(mappings, map);
+        }
+    }
+    
+    return obj;
+}
+
+/**
+ * @brief automation.sources.export - Export data source as config pack
+ */
+static esp_err_t api_automation_sources_export(const cJSON *params, ts_api_result_t *result)
+{
+    if (!params) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing parameters");
+        return ESP_OK;
+    }
+    
+    const cJSON *id = cJSON_GetObjectItem(params, "id");
+    if (!id || !cJSON_IsString(id) || !id->valuestring[0]) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'id' parameter");
+        return ESP_OK;
+    }
+    
+    if (!ts_config_pack_can_export()) {
+        ts_api_result_error(result, TS_API_ERR_NO_PERMISSION, 
+            "This device is not authorized to export config packs");
+        return ESP_OK;
+    }
+    
+    // Get source
+    ts_auto_source_t source_copy;
+    const ts_auto_source_t *source = ts_source_get(id->valuestring);
+    if (!source) {
+        ts_api_result_error(result, TS_API_ERR_NOT_FOUND, "Source not found");
+        return ESP_OK;
+    }
+    // Copy to avoid holding lock
+    memcpy(&source_copy, source, sizeof(ts_auto_source_t));
+    
+    // Build export JSON
+    cJSON *export_json = cJSON_CreateObject();
+    cJSON_AddStringToObject(export_json, "type", "automation_source");
+    cJSON_AddItemToObject(export_json, "source", source_to_export_json(&source_copy));
+    
+    char *json_str = cJSON_PrintUnformatted(export_json);
+    cJSON_Delete(export_json);
+    if (!json_str) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to serialize config");
+        return ESP_OK;
+    }
+    
+    // Get recipient certificate
+    const cJSON *recipient_cert = cJSON_GetObjectItem(params, "recipient_cert");
+    char *cert_pem = NULL;
+    size_t cert_len = 0;
+    bool free_cert = false;
+    
+    if (recipient_cert && cJSON_IsString(recipient_cert) && recipient_cert->valuestring[0]) {
+        cert_pem = recipient_cert->valuestring;
+        cert_len = strlen(cert_pem);
+    } else {
+        cert_pem = heap_caps_malloc(4096, MALLOC_CAP_SPIRAM);
+        if (!cert_pem) {
+            cJSON_free(json_str);
+            ts_api_result_error(result, TS_API_ERR_INTERNAL, "Out of memory");
+            return ESP_OK;
+        }
+        cert_len = 4096;
+        esp_err_t ret = ts_cert_get_certificate(cert_pem, &cert_len);
+        if (ret != ESP_OK) {
+            free(cert_pem);
+            cJSON_free(json_str);
+            ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to get device certificate");
+            return ESP_OK;
+        }
+        free_cert = true;
+    }
+    
+    // Create encrypted config pack
+    ts_config_pack_export_opts_t opts = {
+        .recipient_cert_pem = cert_pem,
+        .recipient_cert_len = cert_len,
+        .description = "Automation data source configuration"
+    };
+    
+    char *tscfg_output = NULL;
+    size_t tscfg_len = 0;
+    ts_config_pack_result_t pack_result = ts_config_pack_create(
+        source_copy.id, json_str, strlen(json_str), &opts, &tscfg_output, &tscfg_len);
+    
+    cJSON_free(json_str);
+    if (free_cert) free(cert_pem);
+    
+    if (pack_result != TS_CONFIG_PACK_OK) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to create config pack");
+        return ESP_OK;
+    }
+    
+    // Return result
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "tscfg", tscfg_output);
+    char filename[80];
+    snprintf(filename, sizeof(filename), "source_%s.tscfg", source_copy.id);
+    cJSON_AddStringToObject(data, "filename", filename);
+    
+    free(tscfg_output);
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/**
+ * @brief automation.sources.import - Import data source from config pack
+ */
+static esp_err_t api_automation_sources_import(const cJSON *params, ts_api_result_t *result)
+{
+    if (!params) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing parameters");
+        return ESP_OK;
+    }
+    
+    const cJSON *tscfg = cJSON_GetObjectItem(params, "tscfg");
+    const cJSON *filename = cJSON_GetObjectItem(params, "filename");
+    if (!tscfg || !cJSON_IsString(tscfg) || !tscfg->valuestring[0]) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'tscfg' parameter");
+        return ESP_OK;
+    }
+    
+    const cJSON *overwrite = cJSON_GetObjectItem(params, "overwrite");
+    const cJSON *preview = cJSON_GetObjectItem(params, "preview");
+    bool do_overwrite = overwrite && cJSON_IsTrue(overwrite);
+    bool do_preview = preview && cJSON_IsTrue(preview);
+    
+    // Lightweight verification
+    ts_config_pack_sig_info_t sig_info = {0};
+    ts_config_pack_result_t pack_result = ts_config_pack_verify_mem(
+        tscfg->valuestring, strlen(tscfg->valuestring), &sig_info);
+    
+    if (pack_result != TS_CONFIG_PACK_OK) {
+        const char *err_msg = "Failed to verify config pack";
+        if (pack_result == TS_CONFIG_PACK_ERR_RECIPIENT) {
+            err_msg = "This config pack is not for this device";
+        } else if (pack_result == TS_CONFIG_PACK_ERR_SIGNATURE) {
+            err_msg = "Invalid signature";
+        }
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, err_msg);
+        return ESP_OK;
+    }
+    
+    // Extract config ID from filename
+    char config_id[64] = {0};
+    if (filename && cJSON_IsString(filename) && filename->valuestring[0]) {
+        const char *name = filename->valuestring;
+        // Strip "source_" prefix if present
+        if (strncmp(name, "source_", 7) == 0) {
+            name += 7;
+        }
+        const char *dot = strrchr(name, '.');
+        if (dot && strcmp(dot, ".tscfg") == 0) {
+            size_t len = dot - name;
+            if (len > sizeof(config_id) - 1) len = sizeof(config_id) - 1;
+            strncpy(config_id, name, len);
+        } else {
+            strncpy(config_id, name, sizeof(config_id) - 1);
+        }
+    } else {
+        snprintf(config_id, sizeof(config_id), "src_%lld", (long long)time(NULL));
+    }
+    
+    // Check if exists
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", SOURCES_SDCARD_DIR, config_id);
+    struct stat st;
+    bool exists = (stat(filepath, &st) == 0);
+    if (!exists) {
+        snprintf(filepath, sizeof(filepath), "%s/%s.json", SOURCES_SDCARD_DIR, config_id);
+        exists = (stat(filepath, &st) == 0);
+    }
+    
+    // Preview mode
+    if (do_preview) {
+        cJSON *data = cJSON_CreateObject();
+        cJSON_AddBoolToObject(data, "valid", true);
+        cJSON_AddStringToObject(data, "type", "automation_source");
+        cJSON_AddStringToObject(data, "id", config_id);
+        cJSON_AddBoolToObject(data, "exists", exists);
+        cJSON_AddStringToObject(data, "signer", sig_info.signer_cn[0] ? sig_info.signer_cn : "unknown");
+        cJSON_AddBoolToObject(data, "official", sig_info.is_official);
+        cJSON_AddStringToObject(data, "note", "Content will be decrypted on system restart");
+        ts_api_result_ok(result, data);
+        return ESP_OK;
+    }
+    
+    if (exists && !do_overwrite) {
+        cJSON *data = cJSON_CreateObject();
+        cJSON_AddStringToObject(data, "id", config_id);
+        cJSON_AddBoolToObject(data, "exists", true);
+        cJSON_AddStringToObject(data, "message", "Source config already exists, set overwrite=true to replace");
+        ts_api_result_ok(result, data);
+        return ESP_OK;
+    }
+    
+    // Ensure directory exists
+    if (stat(SOURCES_SDCARD_DIR, &st) != 0) {
+        mkdir(SOURCES_SDCARD_DIR, 0755);
+    }
+    
+    // Save .tscfg file
+    snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", SOURCES_SDCARD_DIR, config_id);
+    FILE *f = fopen(filepath, "w");
+    if (!f) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to create config file");
+        return ESP_OK;
+    }
+    
+    size_t written = fwrite(tscfg->valuestring, 1, strlen(tscfg->valuestring), f);
+    fclose(f);
+    
+    if (written != strlen(tscfg->valuestring)) {
+        unlink(filepath);
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to write config file");
+        return ESP_OK;
+    }
+    
+    // Delete old .json if overwriting
+    if (do_overwrite) {
+        char json_path[128];
+        snprintf(json_path, sizeof(json_path), "%s/%s.json", SOURCES_SDCARD_DIR, config_id);
+        unlink(json_path);
+    }
+    
+    TS_LOGI(TAG, "Source config imported: %s (will be loaded on restart)", filepath);
+    
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "id", config_id);
+    cJSON_AddStringToObject(data, "path", filepath);
+    cJSON_AddBoolToObject(data, "imported", true);
+    cJSON_AddBoolToObject(data, "overwritten", exists && do_overwrite);
+    cJSON_AddStringToObject(data, "note", "Restart system to load the new config");
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/*===========================================================================*/
+/*                    Rule Export/Import APIs                                 */
+/*===========================================================================*/
+
+/**
+ * @brief Serialize rule to JSON for export
+ */
+static cJSON *rule_to_export_json(const ts_auto_rule_t *rule)
+{
+    cJSON *obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "id", rule->id);
+    cJSON_AddStringToObject(obj, "name", rule->name);
+    if (rule->icon[0]) {
+        cJSON_AddStringToObject(obj, "icon", rule->icon);
+    }
+    cJSON_AddBoolToObject(obj, "enabled", rule->enabled);
+    cJSON_AddBoolToObject(obj, "manual_trigger", rule->manual_trigger);
+    cJSON_AddNumberToObject(obj, "cooldown_ms", rule->cooldown_ms);
+    cJSON_AddStringToObject(obj, "logic", 
+                            rule->conditions.logic == TS_AUTO_LOGIC_OR ? "or" : "and");
+    
+    // Conditions
+    cJSON *conditions = cJSON_AddArrayToObject(obj, "conditions");
+    for (int i = 0; i < rule->conditions.count; i++) {
+        const ts_auto_condition_t *c = &rule->conditions.conditions[i];
+        cJSON *cond = cJSON_CreateObject();
+        cJSON_AddStringToObject(cond, "variable", c->variable);
+        cJSON_AddStringToObject(cond, "operator", operator_to_string(c->op));
+        switch (c->value.type) {
+            case TS_AUTO_VAL_BOOL:
+                cJSON_AddBoolToObject(cond, "value", c->value.bool_val);
+                break;
+            case TS_AUTO_VAL_INT:
+                cJSON_AddNumberToObject(cond, "value", c->value.int_val);
+                break;
+            case TS_AUTO_VAL_FLOAT:
+                cJSON_AddNumberToObject(cond, "value", c->value.float_val);
+                break;
+            case TS_AUTO_VAL_STRING:
+                cJSON_AddStringToObject(cond, "value", c->value.str_val);
+                break;
+            default:
+                cJSON_AddNullToObject(cond, "value");
+                break;
+        }
+        cJSON_AddItemToArray(conditions, cond);
+    }
+    
+    // Actions
+    cJSON *actions = cJSON_AddArrayToObject(obj, "actions");
+    for (int i = 0; i < rule->action_count; i++) {
+        const ts_auto_action_t *a = &rule->actions[i];
+        cJSON *act = cJSON_CreateObject();
+        
+        const char *type_str = "log";
+        switch (a->type) {
+            case TS_AUTO_ACT_LED: type_str = "led"; break;
+            case TS_AUTO_ACT_GPIO: type_str = "gpio"; break;
+            case TS_AUTO_ACT_DEVICE_CTRL: type_str = "device"; break;
+            case TS_AUTO_ACT_CLI: type_str = "cli"; break;
+            case TS_AUTO_ACT_LOG: type_str = "log"; break;
+            case TS_AUTO_ACT_SET_VAR: type_str = "set_var"; break;
+            case TS_AUTO_ACT_WEBHOOK: type_str = "webhook"; break;
+            case TS_AUTO_ACT_SSH_CMD: type_str = "ssh"; break;
+            case TS_AUTO_ACT_SSH_CMD_REF: type_str = "ssh_cmd_ref"; break;
+            default: type_str = "log"; break;
+        }
+        cJSON_AddStringToObject(act, "type", type_str);
+        cJSON_AddNumberToObject(act, "delay_ms", a->delay_ms);
+        
+        if (a->template_id[0]) {
+            cJSON_AddStringToObject(act, "template_id", a->template_id);
+        }
+        
+        // Type-specific fields
+        switch (a->type) {
+            case TS_AUTO_ACT_LED:
+                cJSON_AddStringToObject(act, "device", a->led.device);
+                cJSON_AddNumberToObject(act, "index", a->led.index);
+                cJSON_AddNumberToObject(act, "r", a->led.r);
+                cJSON_AddNumberToObject(act, "g", a->led.g);
+                cJSON_AddNumberToObject(act, "b", a->led.b);
+                if (a->led.effect[0]) {
+                    cJSON_AddStringToObject(act, "effect", a->led.effect);
+                }
+                cJSON_AddNumberToObject(act, "duration_ms", a->led.duration_ms);
+                break;
+            case TS_AUTO_ACT_CLI:
+                cJSON_AddStringToObject(act, "command", a->cli.command);
+                break;
+            case TS_AUTO_ACT_LOG:
+                cJSON_AddStringToObject(act, "message", a->log.message);
+                cJSON_AddNumberToObject(act, "level", a->log.level);
+                break;
+            case TS_AUTO_ACT_SSH_CMD_REF:
+                cJSON_AddStringToObject(act, "cmd_id", a->ssh_ref.cmd_id);
+                break;
+            default:
+                break;
+        }
+        
+        cJSON_AddItemToArray(actions, act);
+    }
+    
+    return obj;
+}
+
+/**
+ * @brief automation.rules.export - Export rule as config pack
+ */
+static esp_err_t api_automation_rules_export(const cJSON *params, ts_api_result_t *result)
+{
+    if (!params) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing parameters");
+        return ESP_OK;
+    }
+    
+    const cJSON *id = cJSON_GetObjectItem(params, "id");
+    if (!id || !cJSON_IsString(id) || !id->valuestring[0]) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'id' parameter");
+        return ESP_OK;
+    }
+    
+    if (!ts_config_pack_can_export()) {
+        ts_api_result_error(result, TS_API_ERR_NO_PERMISSION, 
+            "This device is not authorized to export config packs");
+        return ESP_OK;
+    }
+    
+    const ts_auto_rule_t *rule = ts_rule_get(id->valuestring);
+    if (!rule) {
+        ts_api_result_error(result, TS_API_ERR_NOT_FOUND, "Rule not found");
+        return ESP_OK;
+    }
+    
+    // Build export JSON
+    cJSON *export_json = cJSON_CreateObject();
+    cJSON_AddStringToObject(export_json, "type", "automation_rule");
+    cJSON_AddItemToObject(export_json, "rule", rule_to_export_json(rule));
+    
+    char *json_str = cJSON_PrintUnformatted(export_json);
+    cJSON_Delete(export_json);
+    if (!json_str) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to serialize config");
+        return ESP_OK;
+    }
+    
+    // Get recipient certificate
+    const cJSON *recipient_cert = cJSON_GetObjectItem(params, "recipient_cert");
+    char *cert_pem = NULL;
+    size_t cert_len = 0;
+    bool free_cert = false;
+    
+    if (recipient_cert && cJSON_IsString(recipient_cert) && recipient_cert->valuestring[0]) {
+        cert_pem = recipient_cert->valuestring;
+        cert_len = strlen(cert_pem);
+    } else {
+        cert_pem = heap_caps_malloc(4096, MALLOC_CAP_SPIRAM);
+        if (!cert_pem) {
+            cJSON_free(json_str);
+            ts_api_result_error(result, TS_API_ERR_INTERNAL, "Out of memory");
+            return ESP_OK;
+        }
+        cert_len = 4096;
+        esp_err_t ret = ts_cert_get_certificate(cert_pem, &cert_len);
+        if (ret != ESP_OK) {
+            free(cert_pem);
+            cJSON_free(json_str);
+            ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to get device certificate");
+            return ESP_OK;
+        }
+        free_cert = true;
+    }
+    
+    // Create encrypted config pack
+    ts_config_pack_export_opts_t opts = {
+        .recipient_cert_pem = cert_pem,
+        .recipient_cert_len = cert_len,
+        .description = "Automation rule configuration"
+    };
+    
+    char *tscfg_output = NULL;
+    size_t tscfg_len = 0;
+    ts_config_pack_result_t pack_result = ts_config_pack_create(
+        rule->id, json_str, strlen(json_str), &opts, &tscfg_output, &tscfg_len);
+    
+    cJSON_free(json_str);
+    if (free_cert) free(cert_pem);
+    
+    if (pack_result != TS_CONFIG_PACK_OK) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to create config pack");
+        return ESP_OK;
+    }
+    
+    // Return result
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "tscfg", tscfg_output);
+    char filename[80];
+    snprintf(filename, sizeof(filename), "rule_%s.tscfg", rule->id);
+    cJSON_AddStringToObject(data, "filename", filename);
+    
+    free(tscfg_output);
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/**
+ * @brief automation.rules.import - Import rule from config pack
+ */
+static esp_err_t api_automation_rules_import(const cJSON *params, ts_api_result_t *result)
+{
+    if (!params) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing parameters");
+        return ESP_OK;
+    }
+    
+    const cJSON *tscfg = cJSON_GetObjectItem(params, "tscfg");
+    const cJSON *filename = cJSON_GetObjectItem(params, "filename");
+    if (!tscfg || !cJSON_IsString(tscfg) || !tscfg->valuestring[0]) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'tscfg' parameter");
+        return ESP_OK;
+    }
+    
+    const cJSON *overwrite = cJSON_GetObjectItem(params, "overwrite");
+    const cJSON *preview = cJSON_GetObjectItem(params, "preview");
+    bool do_overwrite = overwrite && cJSON_IsTrue(overwrite);
+    bool do_preview = preview && cJSON_IsTrue(preview);
+    
+    // Lightweight verification
+    ts_config_pack_sig_info_t sig_info = {0};
+    ts_config_pack_result_t pack_result = ts_config_pack_verify_mem(
+        tscfg->valuestring, strlen(tscfg->valuestring), &sig_info);
+    
+    if (pack_result != TS_CONFIG_PACK_OK) {
+        const char *err_msg = "Failed to verify config pack";
+        if (pack_result == TS_CONFIG_PACK_ERR_RECIPIENT) {
+            err_msg = "This config pack is not for this device";
+        } else if (pack_result == TS_CONFIG_PACK_ERR_SIGNATURE) {
+            err_msg = "Invalid signature";
+        }
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, err_msg);
+        return ESP_OK;
+    }
+    
+    // Extract config ID from filename
+    char config_id[64] = {0};
+    if (filename && cJSON_IsString(filename) && filename->valuestring[0]) {
+        const char *name = filename->valuestring;
+        if (strncmp(name, "rule_", 5) == 0) {
+            name += 5;
+        }
+        const char *dot = strrchr(name, '.');
+        if (dot && strcmp(dot, ".tscfg") == 0) {
+            size_t len = dot - name;
+            if (len > sizeof(config_id) - 1) len = sizeof(config_id) - 1;
+            strncpy(config_id, name, len);
+        } else {
+            strncpy(config_id, name, sizeof(config_id) - 1);
+        }
+    } else {
+        snprintf(config_id, sizeof(config_id), "rule_%lld", (long long)time(NULL));
+    }
+    
+    // Check if exists
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", RULES_SDCARD_DIR, config_id);
+    struct stat st;
+    bool exists = (stat(filepath, &st) == 0);
+    if (!exists) {
+        snprintf(filepath, sizeof(filepath), "%s/%s.json", RULES_SDCARD_DIR, config_id);
+        exists = (stat(filepath, &st) == 0);
+    }
+    
+    // Preview mode
+    if (do_preview) {
+        cJSON *data = cJSON_CreateObject();
+        cJSON_AddBoolToObject(data, "valid", true);
+        cJSON_AddStringToObject(data, "type", "automation_rule");
+        cJSON_AddStringToObject(data, "id", config_id);
+        cJSON_AddBoolToObject(data, "exists", exists);
+        cJSON_AddStringToObject(data, "signer", sig_info.signer_cn[0] ? sig_info.signer_cn : "unknown");
+        cJSON_AddBoolToObject(data, "official", sig_info.is_official);
+        cJSON_AddStringToObject(data, "note", "Content will be decrypted on system restart");
+        ts_api_result_ok(result, data);
+        return ESP_OK;
+    }
+    
+    if (exists && !do_overwrite) {
+        cJSON *data = cJSON_CreateObject();
+        cJSON_AddStringToObject(data, "id", config_id);
+        cJSON_AddBoolToObject(data, "exists", true);
+        cJSON_AddStringToObject(data, "message", "Rule config already exists, set overwrite=true to replace");
+        ts_api_result_ok(result, data);
+        return ESP_OK;
+    }
+    
+    // Ensure directory exists
+    if (stat(RULES_SDCARD_DIR, &st) != 0) {
+        mkdir(RULES_SDCARD_DIR, 0755);
+    }
+    
+    // Save .tscfg file
+    snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", RULES_SDCARD_DIR, config_id);
+    FILE *f = fopen(filepath, "w");
+    if (!f) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to create config file");
+        return ESP_OK;
+    }
+    
+    size_t written = fwrite(tscfg->valuestring, 1, strlen(tscfg->valuestring), f);
+    fclose(f);
+    
+    if (written != strlen(tscfg->valuestring)) {
+        unlink(filepath);
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to write config file");
+        return ESP_OK;
+    }
+    
+    // Delete old .json if overwriting
+    if (do_overwrite) {
+        char json_path[128];
+        snprintf(json_path, sizeof(json_path), "%s/%s.json", RULES_SDCARD_DIR, config_id);
+        unlink(json_path);
+    }
+    
+    TS_LOGI(TAG, "Rule config imported: %s (will be loaded on restart)", filepath);
+    
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "id", config_id);
+    cJSON_AddStringToObject(data, "path", filepath);
+    cJSON_AddBoolToObject(data, "imported", true);
+    cJSON_AddBoolToObject(data, "overwritten", exists && do_overwrite);
+    cJSON_AddStringToObject(data, "note", "Restart system to load the new config");
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/*===========================================================================*/
+/*                    Action Template Export/Import APIs                      */
+/*===========================================================================*/
+
+/**
+ * @brief Serialize action template to JSON for export
+ */
+static cJSON *action_template_to_export_json(const ts_action_template_t *tpl)
+{
+    cJSON *obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(obj, "id", tpl->id);
+    cJSON_AddStringToObject(obj, "name", tpl->name);
+    cJSON_AddStringToObject(obj, "description", tpl->description);
+    cJSON_AddBoolToObject(obj, "enabled", tpl->enabled);
+    cJSON_AddBoolToObject(obj, "async", tpl->async);
+    cJSON_AddStringToObject(obj, "type", action_type_to_string(tpl->action.type));
+    cJSON_AddNumberToObject(obj, "delay_ms", tpl->action.delay_ms);
+    
+    // Type-specific config
+    switch (tpl->action.type) {
+        case TS_AUTO_ACT_CLI: {
+            cJSON *cli = cJSON_AddObjectToObject(obj, "cli");
+            cJSON_AddStringToObject(cli, "command", tpl->action.cli.command);
+            cJSON_AddStringToObject(cli, "var_name", tpl->action.cli.var_name);
+            cJSON_AddNumberToObject(cli, "timeout_ms", tpl->action.cli.timeout_ms);
+            break;
+        }
+        case TS_AUTO_ACT_SSH_CMD_REF: {
+            cJSON *ssh_ref = cJSON_AddObjectToObject(obj, "ssh_ref");
+            cJSON_AddStringToObject(ssh_ref, "cmd_id", tpl->action.ssh_ref.cmd_id);
+            break;
+        }
+        case TS_AUTO_ACT_LED: {
+            cJSON *led = cJSON_AddObjectToObject(obj, "led");
+            cJSON_AddStringToObject(led, "device", tpl->action.led.device);
+            char color_str[8];
+            snprintf(color_str, sizeof(color_str), "#%02X%02X%02X",
+                     tpl->action.led.r, tpl->action.led.g, tpl->action.led.b);
+            cJSON_AddStringToObject(led, "color", color_str);
+            cJSON_AddNumberToObject(led, "brightness", tpl->action.led.brightness);
+            if (tpl->action.led.effect[0]) {
+                cJSON_AddStringToObject(led, "effect", tpl->action.led.effect);
+            }
+            cJSON_AddNumberToObject(led, "duration_ms", tpl->action.led.duration_ms);
+            break;
+        }
+        case TS_AUTO_ACT_LOG: {
+            cJSON *log_obj = cJSON_AddObjectToObject(obj, "log");
+            cJSON_AddNumberToObject(log_obj, "level", tpl->action.log.level);
+            cJSON_AddStringToObject(log_obj, "message", tpl->action.log.message);
+            break;
+        }
+        case TS_AUTO_ACT_WEBHOOK: {
+            cJSON *webhook = cJSON_AddObjectToObject(obj, "webhook");
+            cJSON_AddStringToObject(webhook, "url", tpl->action.webhook.url);
+            cJSON_AddStringToObject(webhook, "method", tpl->action.webhook.method);
+            cJSON_AddStringToObject(webhook, "body_template", tpl->action.webhook.body_template);
+            break;
+        }
+        default:
+            break;
+    }
+    
+    return obj;
+}
+
+/**
+ * @brief automation.actions.export - Export action template as config pack
+ */
+static esp_err_t api_automation_actions_export(const cJSON *params, ts_api_result_t *result)
+{
+    if (!params) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing parameters");
+        return ESP_OK;
+    }
+    
+    const cJSON *id = cJSON_GetObjectItem(params, "id");
+    if (!id || !cJSON_IsString(id) || !id->valuestring[0]) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'id' parameter");
+        return ESP_OK;
+    }
+    
+    if (!ts_config_pack_can_export()) {
+        ts_api_result_error(result, TS_API_ERR_NO_PERMISSION, 
+            "This device is not authorized to export config packs");
+        return ESP_OK;
+    }
+    
+    ts_action_template_t tpl;
+    esp_err_t ret = ts_action_template_get(id->valuestring, &tpl);
+    if (ret != ESP_OK) {
+        ts_api_result_error(result, TS_API_ERR_NOT_FOUND, "Action template not found");
+        return ESP_OK;
+    }
+    
+    // Build export JSON
+    cJSON *export_json = cJSON_CreateObject();
+    cJSON_AddStringToObject(export_json, "type", "action_template");
+    cJSON_AddItemToObject(export_json, "template", action_template_to_export_json(&tpl));
+    
+    char *json_str = cJSON_PrintUnformatted(export_json);
+    cJSON_Delete(export_json);
+    if (!json_str) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to serialize config");
+        return ESP_OK;
+    }
+    
+    // Get recipient certificate
+    const cJSON *recipient_cert = cJSON_GetObjectItem(params, "recipient_cert");
+    char *cert_pem = NULL;
+    size_t cert_len = 0;
+    bool free_cert = false;
+    
+    if (recipient_cert && cJSON_IsString(recipient_cert) && recipient_cert->valuestring[0]) {
+        cert_pem = recipient_cert->valuestring;
+        cert_len = strlen(cert_pem);
+    } else {
+        cert_pem = heap_caps_malloc(4096, MALLOC_CAP_SPIRAM);
+        if (!cert_pem) {
+            cJSON_free(json_str);
+            ts_api_result_error(result, TS_API_ERR_INTERNAL, "Out of memory");
+            return ESP_OK;
+        }
+        cert_len = 4096;
+        ret = ts_cert_get_certificate(cert_pem, &cert_len);
+        if (ret != ESP_OK) {
+            free(cert_pem);
+            cJSON_free(json_str);
+            ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to get device certificate");
+            return ESP_OK;
+        }
+        free_cert = true;
+    }
+    
+    // Create encrypted config pack
+    ts_config_pack_export_opts_t opts = {
+        .recipient_cert_pem = cert_pem,
+        .recipient_cert_len = cert_len,
+        .description = "Automation action template"
+    };
+    
+    char *tscfg_output = NULL;
+    size_t tscfg_len = 0;
+    ts_config_pack_result_t pack_result = ts_config_pack_create(
+        tpl.id, json_str, strlen(json_str), &opts, &tscfg_output, &tscfg_len);
+    
+    cJSON_free(json_str);
+    if (free_cert) free(cert_pem);
+    
+    if (pack_result != TS_CONFIG_PACK_OK) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to create config pack");
+        return ESP_OK;
+    }
+    
+    // Return result
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "tscfg", tscfg_output);
+    char filename[80];
+    snprintf(filename, sizeof(filename), "action_%s.tscfg", tpl.id);
+    cJSON_AddStringToObject(data, "filename", filename);
+    
+    free(tscfg_output);
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/**
+ * @brief automation.actions.import - Import action template from config pack
+ */
+static esp_err_t api_automation_actions_import(const cJSON *params, ts_api_result_t *result)
+{
+    if (!params) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing parameters");
+        return ESP_OK;
+    }
+    
+    const cJSON *tscfg = cJSON_GetObjectItem(params, "tscfg");
+    const cJSON *filename = cJSON_GetObjectItem(params, "filename");
+    if (!tscfg || !cJSON_IsString(tscfg) || !tscfg->valuestring[0]) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'tscfg' parameter");
+        return ESP_OK;
+    }
+    
+    const cJSON *overwrite = cJSON_GetObjectItem(params, "overwrite");
+    const cJSON *preview = cJSON_GetObjectItem(params, "preview");
+    bool do_overwrite = overwrite && cJSON_IsTrue(overwrite);
+    bool do_preview = preview && cJSON_IsTrue(preview);
+    
+    // Lightweight verification
+    ts_config_pack_sig_info_t sig_info = {0};
+    ts_config_pack_result_t pack_result = ts_config_pack_verify_mem(
+        tscfg->valuestring, strlen(tscfg->valuestring), &sig_info);
+    
+    if (pack_result != TS_CONFIG_PACK_OK) {
+        const char *err_msg = "Failed to verify config pack";
+        if (pack_result == TS_CONFIG_PACK_ERR_RECIPIENT) {
+            err_msg = "This config pack is not for this device";
+        } else if (pack_result == TS_CONFIG_PACK_ERR_SIGNATURE) {
+            err_msg = "Invalid signature";
+        }
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, err_msg);
+        return ESP_OK;
+    }
+    
+    // Extract config ID from filename
+    char config_id[64] = {0};
+    if (filename && cJSON_IsString(filename) && filename->valuestring[0]) {
+        const char *name = filename->valuestring;
+        if (strncmp(name, "action_", 7) == 0) {
+            name += 7;
+        }
+        const char *dot = strrchr(name, '.');
+        if (dot && strcmp(dot, ".tscfg") == 0) {
+            size_t len = dot - name;
+            if (len > sizeof(config_id) - 1) len = sizeof(config_id) - 1;
+            strncpy(config_id, name, len);
+        } else {
+            strncpy(config_id, name, sizeof(config_id) - 1);
+        }
+    } else {
+        snprintf(config_id, sizeof(config_id), "action_%lld", (long long)time(NULL));
+    }
+    
+    // Check if exists
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", ACTIONS_SDCARD_DIR, config_id);
+    struct stat st;
+    bool exists = (stat(filepath, &st) == 0);
+    if (!exists) {
+        snprintf(filepath, sizeof(filepath), "%s/%s.json", ACTIONS_SDCARD_DIR, config_id);
+        exists = (stat(filepath, &st) == 0);
+    }
+    
+    // Preview mode
+    if (do_preview) {
+        cJSON *data = cJSON_CreateObject();
+        cJSON_AddBoolToObject(data, "valid", true);
+        cJSON_AddStringToObject(data, "type", "action_template");
+        cJSON_AddStringToObject(data, "id", config_id);
+        cJSON_AddBoolToObject(data, "exists", exists);
+        cJSON_AddStringToObject(data, "signer", sig_info.signer_cn[0] ? sig_info.signer_cn : "unknown");
+        cJSON_AddBoolToObject(data, "official", sig_info.is_official);
+        cJSON_AddStringToObject(data, "note", "Content will be decrypted on system restart");
+        ts_api_result_ok(result, data);
+        return ESP_OK;
+    }
+    
+    if (exists && !do_overwrite) {
+        cJSON *data = cJSON_CreateObject();
+        cJSON_AddStringToObject(data, "id", config_id);
+        cJSON_AddBoolToObject(data, "exists", true);
+        cJSON_AddStringToObject(data, "message", "Action template already exists, set overwrite=true to replace");
+        ts_api_result_ok(result, data);
+        return ESP_OK;
+    }
+    
+    // Ensure directory exists
+    if (stat(ACTIONS_SDCARD_DIR, &st) != 0) {
+        mkdir(ACTIONS_SDCARD_DIR, 0755);
+    }
+    
+    // Save .tscfg file
+    snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", ACTIONS_SDCARD_DIR, config_id);
+    FILE *f = fopen(filepath, "w");
+    if (!f) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to create config file");
+        return ESP_OK;
+    }
+    
+    size_t written = fwrite(tscfg->valuestring, 1, strlen(tscfg->valuestring), f);
+    fclose(f);
+    
+    if (written != strlen(tscfg->valuestring)) {
+        unlink(filepath);
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to write config file");
+        return ESP_OK;
+    }
+    
+    // Delete old .json if overwriting
+    if (do_overwrite) {
+        char json_path[128];
+        snprintf(json_path, sizeof(json_path), "%s/%s.json", ACTIONS_SDCARD_DIR, config_id);
+        unlink(json_path);
+    }
+    
+    TS_LOGI(TAG, "Action template imported: %s (will be loaded on restart)", filepath);
+    
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "id", config_id);
+    cJSON_AddStringToObject(data, "path", filepath);
+    cJSON_AddBoolToObject(data, "imported", true);
+    cJSON_AddBoolToObject(data, "overwritten", exists && do_overwrite);
+    cJSON_AddStringToObject(data, "note", "Restart system to load the new config");
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/*===========================================================================*/
 /*                           API Registration                                 */
 /*===========================================================================*/
 
@@ -4323,6 +5317,63 @@ esp_err_t ts_api_automation_register(void)
         .requires_auth = false,
     };
     ts_api_register(&ep_proxy_sio);
+
+    // Export/Import APIs - Sources
+    ts_api_endpoint_t ep_sources_export = {
+        .name = "automation.sources.export",
+        .description = "Export data source as config pack (.tscfg)",
+        .category = TS_API_CAT_SYSTEM,
+        .handler = api_automation_sources_export,
+        .requires_auth = true,
+    };
+    ts_api_register(&ep_sources_export);
+
+    ts_api_endpoint_t ep_sources_import = {
+        .name = "automation.sources.import",
+        .description = "Import data source from config pack",
+        .category = TS_API_CAT_SYSTEM,
+        .handler = api_automation_sources_import,
+        .requires_auth = true,
+    };
+    ts_api_register(&ep_sources_import);
+
+    // Export/Import APIs - Rules
+    ts_api_endpoint_t ep_rules_export = {
+        .name = "automation.rules.export",
+        .description = "Export rule as config pack (.tscfg)",
+        .category = TS_API_CAT_SYSTEM,
+        .handler = api_automation_rules_export,
+        .requires_auth = true,
+    };
+    ts_api_register(&ep_rules_export);
+
+    ts_api_endpoint_t ep_rules_import = {
+        .name = "automation.rules.import",
+        .description = "Import rule from config pack",
+        .category = TS_API_CAT_SYSTEM,
+        .handler = api_automation_rules_import,
+        .requires_auth = true,
+    };
+    ts_api_register(&ep_rules_import);
+
+    // Export/Import APIs - Action Templates
+    ts_api_endpoint_t ep_actions_export = {
+        .name = "automation.actions.export",
+        .description = "Export action template as config pack (.tscfg)",
+        .category = TS_API_CAT_SYSTEM,
+        .handler = api_automation_actions_export,
+        .requires_auth = true,
+    };
+    ts_api_register(&ep_actions_export);
+
+    ts_api_endpoint_t ep_actions_import = {
+        .name = "automation.actions.import",
+        .description = "Import action template from config pack",
+        .category = TS_API_CAT_SYSTEM,
+        .handler = api_automation_actions_import,
+        .requires_auth = true,
+    };
+    ts_api_register(&ep_actions_import);
 
     TS_LOGI(TAG, "Automation APIs registered");
     return ESP_OK;

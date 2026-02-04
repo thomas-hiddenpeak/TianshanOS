@@ -17,6 +17,7 @@
 #include "ts_variable.h"
 #include "ts_jsonpath.h"
 #include "ts_config_module.h"
+#include "ts_config_pack.h"
 // ts_var.h 已废弃，统一使用 ts_variable.h（ts_automation 变量系统）
 
 #include "esp_log.h"
@@ -323,6 +324,8 @@ static esp_err_t delete_source_file(const char *id)
 
 /**
  * @brief 从独立文件目录加载所有数据源
+ * 
+ * 支持 .tscfg 加密配置优先加载
  */
 static esp_err_t load_sources_from_dir(void)
 {
@@ -336,10 +339,26 @@ static esp_err_t load_sources_from_dir(void)
     struct dirent *entry;
     
     while ((entry = readdir(dir)) != NULL) {
-        /* 跳过非 .json 文件 */
+        /* 跳过非 .json 和非 .tscfg 文件 */
         size_t len = strlen(entry->d_name);
-        if (len < 6 || strcmp(entry->d_name + len - 5, ".json") != 0) {
+        bool is_json = (len >= 6 && strcmp(entry->d_name + len - 5, ".json") == 0);
+        bool is_tscfg = (len >= 7 && strcmp(entry->d_name + len - 6, ".tscfg") == 0);
+        
+        if (!is_json && !is_tscfg) {
             continue;
+        }
+        
+        /* 对于 .json 文件，检查是否存在对应的 .tscfg（跳过以使用加密版本） */
+        if (is_json) {
+            char tscfg_name[128];
+            snprintf(tscfg_name, sizeof(tscfg_name), "%.*s.tscfg", (int)(len - 5), entry->d_name);
+            char tscfg_path[192];
+            snprintf(tscfg_path, sizeof(tscfg_path), "%s/%s", SOURCES_SDCARD_DIR, tscfg_name);
+            struct stat st;
+            if (stat(tscfg_path, &st) == 0) {
+                ESP_LOGD(TAG, "Skipping %s (will use .tscfg)", entry->d_name);
+                continue;
+            }
         }
         
         /* 限制文件名长度避免缓冲区溢出 */
@@ -348,31 +367,24 @@ static esp_err_t load_sources_from_dir(void)
         }
         
         char filepath[128];
-        snprintf(filepath, sizeof(filepath), "%s/%.60s", SOURCES_SDCARD_DIR, entry->d_name);
-        
-        /* 读取文件内容 */
-        FILE *fp = fopen(filepath, "r");
-        if (!fp) continue;
-        
-        fseek(fp, 0, SEEK_END);
-        long size = ftell(fp);
-        fseek(fp, 0, SEEK_SET);
-        
-        if (size <= 0 || size > 8192) {
-            fclose(fp);
-            continue;
+        if (is_tscfg) {
+            snprintf(filepath, sizeof(filepath), "%s/%.*s.json", 
+                     SOURCES_SDCARD_DIR, (int)(len - 6), entry->d_name);
+        } else {
+            snprintf(filepath, sizeof(filepath), "%s/%.60s", SOURCES_SDCARD_DIR, entry->d_name);
         }
         
-        char *content = heap_caps_malloc(size + 1, MALLOC_CAP_SPIRAM);
-        if (!content) content = malloc(size + 1);
-        if (!content) {
-            fclose(fp);
+        /* 使用 .tscfg 优先加载 */
+        char *content = NULL;
+        size_t content_len = 0;
+        bool used_tscfg = false;
+        
+        esp_err_t ret = ts_config_pack_load_with_priority(
+            filepath, &content, &content_len, &used_tscfg);
+        
+        if (ret != ESP_OK) {
             continue;
         }
-        
-        size_t read_size = fread(content, 1, size, fp);
-        fclose(fp);
-        content[read_size] = '\0';
         
         /* 解析并添加 */
         ts_auto_source_t *src = heap_caps_malloc(sizeof(ts_auto_source_t), MALLOC_CAP_SPIRAM);
@@ -384,7 +396,8 @@ static esp_err_t load_sources_from_dir(void)
                     memcpy(&s_src_ctx.sources[s_src_ctx.count], src, sizeof(ts_auto_source_t));
                     s_src_ctx.count++;
                     loaded++;
-                    ESP_LOGD(TAG, "Loaded source from file: %s", src->id);
+                    ESP_LOGD(TAG, "Loaded source from file: %s%s", src->id,
+                             used_tscfg ? " (encrypted)" : "");
                 }
             }
             free(src);
@@ -728,37 +741,29 @@ save_to_nvs:
 
 /**
  * Load sources from SD card JSON file
+ * 
+ * 支持 .tscfg 加密配置优先加载
  */
 static esp_err_t load_sources_from_file(const char *filepath)
 {
     if (!filepath) return ESP_ERR_INVALID_ARG;
     
-    FILE *f = fopen(filepath, "r");
-    if (!f) {
+    /* 使用 .tscfg 优先加载 */
+    char *content = NULL;
+    size_t content_len = 0;
+    bool used_tscfg = false;
+    
+    esp_err_t ret = ts_config_pack_load_with_priority(
+        filepath, &content, &content_len, &used_tscfg);
+    
+    if (ret != ESP_OK) {
         ESP_LOGD(TAG, "Cannot open file: %s", filepath);
-        return ESP_ERR_NOT_FOUND;
+        return ret;
     }
     
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    
-    if (size <= 0 || size > 16384) {
-        fclose(f);
-        ESP_LOGW(TAG, "File too large or empty: %s (%ld bytes)", filepath, size);
-        return ESP_ERR_INVALID_SIZE;
+    if (used_tscfg) {
+        ESP_LOGI(TAG, "Loaded encrypted sources from .tscfg");
     }
-    
-    char *content = heap_caps_malloc(size + 1, MALLOC_CAP_SPIRAM);
-    if (!content) content = malloc(size + 1);
-    if (!content) {
-        fclose(f);
-        return ESP_ERR_NO_MEM;
-    }
-    
-    size_t read_size = fread(content, 1, size, f);
-    fclose(f);
-    content[read_size] = '\0';
     
     cJSON *root = cJSON_Parse(content);
     free(content);

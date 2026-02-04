@@ -48,6 +48,99 @@
 | Phase 34: 配置包加密系统 (Config Pack) | ✅ 完成 | 100% | 2026-02-04 |
 | Phase 35: 数据源重启修复 | ✅ 完成 | 100% | 2026-02-04 |
 | Phase 36: 启动日志优化 & Config Pack 完善 | ✅ 完成 | 100% | 2026-02-04 |
+| Phase 37: 自动化配置导入导出 | ✅ 完成 | 100% | 2026-02-04 |
+
+---
+
+## 📋 Phase 37: 自动化配置导入导出 ✅
+
+**时间**：2026年2月4日  
+**目标**：为自动化系统（数据源、规则、动作模板）添加配置包导入导出功能
+
+### 功能概述
+
+扩展 Config Pack 系统到自动化引擎，支持：
+- 数据源配置的加密导出/导入
+- 规则配置的加密导出/导入
+- 动作模板配置的加密导出/导入
+- 删除时同步清理 SD 卡配置文件
+
+### 新增 API
+
+| API | 功能 | 说明 |
+|-----|------|------|
+| `automation.sources.export` | 导出数据源 | 生成 .tscfg 配置包 |
+| `automation.sources.import` | 导入数据源 | 验证签名 → 保存到 SD 卡 |
+| `automation.rules.export` | 导出规则 | 生成 .tscfg 配置包 |
+| `automation.rules.import` | 导入规则 | 验证签名 → 保存到 SD 卡 |
+| `automation.actions.export` | 导出动作模板 | 生成 .tscfg 配置包 |
+| `automation.actions.import` | 导入动作模板 | 验证签名 → 保存到 SD 卡 |
+
+### SD 卡存储路径
+
+| 配置类型 | 存储路径 |
+|---------|---------|
+| 数据源 | `/sdcard/config/sources/` |
+| 规则 | `/sdcard/config/rules/` |
+| 动作模板 | `/sdcard/config/actions/` |
+
+### 导出流程
+
+1. 检查设备导出权限（`ts_config_pack_can_export()`）
+2. 序列化配置数据为 JSON
+3. 使用目标证书（用户提供）或本机证书加密
+4. 返回 .tscfg 配置包内容和建议文件名
+
+### 导入流程
+
+1. 轻量级签名验证（`ts_config_pack_verify_mem()`）
+2. **预览模式**：返回配置 ID、签名者、是否已存在
+3. **确认导入**：保存 .tscfg 文件到 SD 卡
+4. **重启后生效**：系统启动时自动解密加载
+
+### 删除同步
+
+删除数据源/规则/动作模板时，同时删除 SD 卡上的配置文件：
+
+```c
+// 删除内存中的配置
+esp_err_t ret = ts_rule_unregister(rule_id);
+
+if (ret == ESP_OK) {
+    // 同时删除 SD 卡上的配置文件（.json 和 .tscfg）
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "%s/%s.json", RULES_SDCARD_DIR, rule_id);
+    unlink(filepath);
+    snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", RULES_SDCARD_DIR, rule_id);
+    unlink(filepath);
+}
+```
+
+### WebUI 界面
+
+**新增导入按钮**（在各区块标题栏）：
+- 📥 数据源导入
+- 📥 规则导入
+- 📥 动作模板导入
+
+**新增导出按钮**（在各行操作列）：
+- 📤 每个数据源行
+- 📤 每个规则行
+- 📤 每个动作模板行
+
+### 文件变更
+
+| 文件 | 变更 |
+|------|------|
+| `ts_api_automation.c` | 添加 6 个导入导出 API；删除时同步清理 SD 卡文件 |
+| `app.js` | 添加导入导出模态框和按钮 |
+
+### 验证
+
+- ✅ 编译通过
+- ✅ 导出生成有效 .tscfg 文件
+- ✅ 导入正确验证签名
+- ✅ 删除时清理 SD 卡文件
 
 ---
 

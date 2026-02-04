@@ -7487,6 +7487,23 @@ async function uploadFiles() {
             if (items[i]) {
                 items[i].innerHTML = `<span>${file.name}</span><span class="success">✓ 完成</span>`;
             }
+            
+            // 检查是否是配置包上传，显示验证结果
+            if (result.config_pack) {
+                const pack = result.config_pack;
+                if (pack.valid) {
+                    const signer = pack.signature?.signer_cn || '未知';
+                    const isOfficial = pack.signature?.is_official ? '(官方)' : '';
+                    showToast(`配置包验证成功 ✓\n签名者: ${signer} ${isOfficial}`, 'success', 5000);
+                    
+                    // 显示应用确认对话框
+                    setTimeout(() => {
+                        showConfigPackApplyConfirm(targetPath, pack);
+                    }, 500);
+                } else {
+                    showToast(`配置包验证失败: ${pack.result_message}`, 'error', 5000);
+                }
+            }
         } catch (e) {
             console.error('Upload error:', e);
             if (items[i]) {
@@ -7676,6 +7693,10 @@ let sshCommands = {};
 /**
  * 从 ESP32 后端加载 SSH 指令
  * 所有指令都保存在 NVS 中，不同浏览器看到相同数据
+ * 
+ * 指令 ID 格式：
+ * - 新格式（语义化）: 基于名称生成，如 "Start_Jetson_Inference", "Check_GPU_Status"
+ * - 旧格式（兼容）: "cmd_xxxxxxxx" (随机 hex)
  */
 async function loadSshCommands() {
     try {
@@ -7683,7 +7704,36 @@ async function loadSshCommands() {
         if (result && result.data && result.data.commands) {
             // 按 host_id 组织
             sshCommands = {};
+            // 收集孤儿命令（单独分组）
+            const orphanCommands = [];
+            
             for (const cmd of result.data.commands) {
+                // 如果是孤儿命令，单独收集
+                if (cmd.orphan) {
+                    orphanCommands.push({
+                        id: cmd.id,
+                        name: cmd.name,
+                        command: cmd.command,
+                        desc: cmd.desc || '',
+                        icon: cmd.icon || '🚀',
+                        nohup: cmd.nohup || false,
+                        expectPattern: cmd.expectPattern || '',
+                        failPattern: cmd.failPattern || '',
+                        extractPattern: cmd.extractPattern || '',
+                        varName: cmd.varName || '',
+                        timeout: cmd.timeout || 30,
+                        stopOnMatch: cmd.stopOnMatch || false,
+                        serviceMode: cmd.serviceMode || false,
+                        readyPattern: cmd.readyPattern || '',
+                        serviceFailPattern: cmd.serviceFailPattern || '',
+                        readyTimeout: cmd.readyTimeout || 120,
+                        readyInterval: cmd.readyInterval || 5000,
+                        orphan: true,
+                        originalHostId: cmd.host_id  // 保留原始 host_id 用于显示
+                    });
+                    continue;
+                }
+                
                 if (!sshCommands[cmd.host_id]) {
                     sshCommands[cmd.host_id] = [];
                 }
@@ -7706,8 +7756,14 @@ async function loadSshCommands() {
                     readyPattern: cmd.readyPattern || '',
                     serviceFailPattern: cmd.serviceFailPattern || '',
                     readyTimeout: cmd.readyTimeout || 120,
-                    readyInterval: cmd.readyInterval || 5000
+                    readyInterval: cmd.readyInterval || 5000,
+                    orphan: false
                 });
+            }
+            
+            // 如果有孤儿命令，创建特殊分组
+            if (orphanCommands.length > 0) {
+                sshCommands['__orphan__'] = orphanCommands;
             }
         }
     } catch (e) {
@@ -7720,11 +7776,13 @@ async function loadSshCommands() {
  * 保存单个 SSH 指令到后端
  * @param {string} hostId - 主机 ID
  * @param {object} cmdData - 指令数据
- * @param {number|null} existingId - 已有指令 ID（编辑时传入）
- * @returns {Promise<number>} 返回指令 ID
+ * @param {string|null} existingId - 已有指令 ID（编辑时传入，如 "AGX_Power_On"）
+ * @returns {Promise<string>} 返回指令 ID（新建时基于名称生成，如 "Start_Service"）
  */
-async function saveSshCommandToBackend(hostId, cmdData, existingId = null) {
+async function saveSshCommandToBackend(hostId, cmdData, cmdId) {
+    /* ID 是必填参数，由前端输入 */
     const params = {
+        id: cmdId,  // 必填
         host_id: hostId,
         name: cmdData.name,
         command: cmdData.command,
@@ -7745,21 +7803,16 @@ async function saveSshCommandToBackend(hostId, cmdData, existingId = null) {
         ...(cmdData.readyInterval && { readyInterval: cmdData.readyInterval })
     };
     
-    // 编辑模式：传入 ID
-    if (existingId !== null) {
-        params.id = existingId;
-    }
-    
     const result = await api.call('ssh.commands.add', params);
-    if (result && result.data && result.data.id) {
+    if (result && result.code === 0 && result.data && result.data.id) {
         return result.data.id;
     }
-    throw new Error('Failed to save command');
+    throw new Error(result?.message || 'Failed to save command');
 }
 
 /**
  * 从后端删除 SSH 指令
- * @param {number} cmdId - 指令 ID
+ * @param {string} cmdId - 指令 ID（如 "AGX_Power_On" 或 "cmd_xxxxxxxx"）
  */
 async function deleteSshCommandFromBackend(cmdId) {
     await api.call('ssh.commands.remove', { id: cmdId });
@@ -7811,6 +7864,7 @@ async function loadCommandsPage() {
                 <div class="section-header">
                     <h2>🖥️ 选择主机</h2>
                     <div class="section-actions">
+                        <button class="btn" onclick="showImportSshCommandModal()" style="background:#17a2b8;color:white">📥 导入指令</button>
                         <button class="btn btn-primary" onclick="showAddCommandModal()">➕ 新建指令</button>
                     </div>
                 </div>
@@ -7890,7 +7944,14 @@ async function loadCommandsPage() {
                 </div>
                 <div class="modal-body">
                     <form id="command-form" onsubmit="return false;">
-                        <input type="hidden" id="cmd-edit-id">
+                        <div class="form-group" id="cmd-id-group">
+                            <label>指令 ID *</label>
+                            <input type="text" id="cmd-edit-id" placeholder="例如：restart_nginx, check_status" 
+                                   pattern="^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$"
+                                   oninput="validateCommandId(this)" required>
+                            <small style="color:#666">唯一标识符，仅限字母、数字、下划线、连字符，不能以 _ 或 - 开头/结尾</small>
+                            <span id="cmd-id-error" class="error-hint" style="display:none;color:var(--danger-color);font-size:12px"></span>
+                        </div>
                         <div class="form-group">
                             <label>指令名称 *</label>
                             <input type="text" id="cmd-name" placeholder="例如：重启服务" required>
@@ -8379,7 +8440,11 @@ async function loadHostSelector() {
         // 存储主机数据
         window._cmdHostsList = hosts;
         
-        container.innerHTML = hosts.map(h => `
+        // 检查是否有孤儿命令
+        const hasOrphanCommands = sshCommands['__orphan__'] && sshCommands['__orphan__'].length > 0;
+        const orphanCount = hasOrphanCommands ? sshCommands['__orphan__'].length : 0;
+        
+        let html = hosts.map(h => `
             <div class="host-card ${selectedHostId === h.id ? 'selected' : ''}" 
                  onclick="selectHost('${escapeHtml(h.id)}')" 
                  data-host-id="${escapeHtml(h.id)}">
@@ -8387,6 +8452,21 @@ async function loadHostSelector() {
                 <div class="host-info">${escapeHtml(h.username)}@${escapeHtml(h.host)}:${h.port}</div>
             </div>
         `).join('');
+        
+        // 如果有孤儿命令，添加特殊分组
+        if (hasOrphanCommands) {
+            html += `
+            <div class="host-card orphan-group ${selectedHostId === '__orphan__' ? 'selected' : ''}" 
+                 onclick="selectHost('__orphan__')" 
+                 data-host-id="__orphan__"
+                 style="background:#fff3cd;border-color:#ffc107">
+                <div class="host-name">⚠️ 孤儿命令</div>
+                <div class="host-info" style="color:#856404">${orphanCount} 个命令引用了不存在的主机</div>
+            </div>
+            `;
+        }
+        
+        container.innerHTML = html;
         
         // 如果之前有选中的主机，刷新指令列表
         if (selectedHostId) {
@@ -8431,6 +8511,14 @@ function refreshCommandsList() {
     }
     
     container.innerHTML = hostCommands.map((cmd, idx) => {
+        // 孤儿命令警告（引用的主机不存在）
+        const isOrphan = cmd.orphan === true;
+        const orphanWarningHtml = isOrphan ? `
+            <div class="orphan-warning" style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:4px 8px;margin-bottom:8px;color:#856404;font-size:12px;">
+                ⚠️ 主机 "${escapeHtml(cmd.originalHostId || '?')}" 不存在，请删除或重新关联
+            </div>
+        ` : '';
+        
         // 构建模式匹配标签
         const hasPatternsConfig = cmd.expectPattern || cmd.failPattern || cmd.extractPattern;
         const patternsHtml = hasPatternsConfig ? `
@@ -8470,8 +8558,12 @@ function refreshCommandsList() {
             ? `<span class="cmd-icon"><img src="/api/v1/file/download?path=${encodeURIComponent(iconValue)}" alt="icon" onerror="this.parentElement.textContent='🚀'"></span>`
             : `<span class="cmd-icon">${iconValue}</span>`;
         
+        // 孤儿命令禁用执行按钮
+        const execBtnDisabled = isOrphan ? 'disabled style="opacity:0.5;cursor:not-allowed"' : '';
+        
         return `
-        <div class="command-card" data-cmd-idx="${idx}" data-has-service="${cmd.serviceMode || false}">
+        <div class="command-card ${isOrphan ? 'orphan-command' : ''}" data-cmd-idx="${idx}" data-has-service="${cmd.serviceMode || false}" ${isOrphan ? 'style="border:2px solid #ffc107;background:#fffbe6"' : ''}>
+            ${orphanWarningHtml}
             <div class="cmd-header">
                 ${iconHtml}
                 <span class="cmd-name" title="${escapeHtml(cmd.name)}">${escapeHtml(cmd.name)}</span>
@@ -8481,9 +8573,10 @@ function refreshCommandsList() {
             ${cmd.desc ? `<div class="cmd-desc" title="${escapeHtml(cmd.desc)}">${escapeHtml(cmd.desc)}</div>` : ''}
             <div class="cmd-code" title="${escapeHtml(cmd.command)}">${escapeHtml(cmd.command.split('\n')[0])}${cmd.command.includes('\n') ? ' ...' : ''}</div>
             <div class="cmd-actions">
-                <button class="btn btn-sm btn-exec" onclick="executeCommand(${idx})" title="执行">▶️</button>
+                <button class="btn btn-sm btn-exec" onclick="executeCommand(${idx})" title="${isOrphan ? '主机不存在，无法执行' : '执行'}" ${execBtnDisabled}>▶️</button>
                 ${serviceActionsHtml}
                 ${varBtnHtml}
+                <button class="btn btn-sm" onclick="exportSshCommand('${escapeHtml(cmd.id)}')" title="导出配置" style="background:#17a2b8;color:white">📤</button>
                 <button class="btn btn-sm" onclick="editCommand(${idx})" title="编辑">✏️</button>
                 <button class="btn btn-sm" onclick="deleteCommand(${idx})" title="删除" style="background:#dc3545;color:white">🗑️</button>
             </div>
@@ -8558,7 +8651,18 @@ function showAddCommandModal() {
     }
     
     document.getElementById('command-modal-title').textContent = '➕ 新建指令';
-    document.getElementById('cmd-edit-id').value = '';
+    
+    /* 新建模式：ID 可编辑 */
+    const idInput = document.getElementById('cmd-edit-id');
+    const idGroup = document.getElementById('cmd-id-group');
+    idInput.value = '';
+    idInput.readOnly = false;
+    idInput.style.backgroundColor = '';
+    idInput.style.cursor = '';
+    idInput.style.borderColor = '';
+    idGroup.classList.remove('edit-mode');
+    document.getElementById('cmd-id-error').style.display = 'none';
+    
     document.getElementById('cmd-name').value = '';
     document.getElementById('cmd-command').value = '';
     document.getElementById('cmd-desc').value = '';
@@ -8836,7 +8940,51 @@ function selectCmdIcon(icon) {
     });
 }
 
+/**
+ * 验证指令 ID 格式
+ * 规则：只允许字母、数字、下划线、连字符，不能以 _ 或 - 开头/结尾
+ */
+function validateCommandId(input) {
+    const value = input.value;
+    const errorSpan = document.getElementById('cmd-id-error');
+    
+    if (!value) {
+        input.style.borderColor = '';
+        errorSpan.style.display = 'none';
+        return false;
+    }
+    
+    // 验证规则
+    const validPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$/;
+    const hasInvalidChars = /[^a-zA-Z0-9_-]/.test(value);
+    const startsWithInvalid = /^[_-]/.test(value);
+    const endsWithInvalid = /[_-]$/.test(value);
+    
+    let errorMsg = '';
+    if (hasInvalidChars) {
+        errorMsg = '只允许字母、数字、下划线、连字符';
+    } else if (startsWithInvalid) {
+        errorMsg = '不能以 _ 或 - 开头';
+    } else if (endsWithInvalid) {
+        errorMsg = '不能以 _ 或 - 结尾';
+    } else if (value.length > 31) {
+        errorMsg = 'ID 过长（最多 31 个字符）';
+    }
+    
+    if (errorMsg) {
+        input.style.borderColor = 'var(--danger-color)';
+        errorSpan.textContent = '⚠️ ' + errorMsg;
+        errorSpan.style.display = 'block';
+        return false;
+    }
+    
+    input.style.borderColor = 'var(--success-color)';
+    errorSpan.style.display = 'none';
+    return true;
+}
+
 async function saveCommand() {
+    const cmdId = document.getElementById('cmd-edit-id').value.trim();
     const name = document.getElementById('cmd-name').value.trim();
     const command = document.getElementById('cmd-command').value.trim();
     const desc = document.getElementById('cmd-desc').value.trim();
@@ -8848,7 +8996,7 @@ async function saveCommand() {
     const varName = document.getElementById('cmd-var-name').value.trim();
     const timeout = parseInt(document.getElementById('cmd-timeout').value) || 30;
     const stopOnMatch = document.getElementById('cmd-stop-on-match').checked;
-    const editId = document.getElementById('cmd-edit-id').value;
+    const isEditMode = document.getElementById('cmd-id-group').classList.contains('edit-mode');
     
     // 服务模式字段
     const serviceMode = document.getElementById('cmd-service-mode')?.checked || false;
@@ -8859,6 +9007,18 @@ async function saveCommand() {
     
     if (!name || !command) {
         showToast('请填写指令名称和命令', 'warning');
+        return;
+    }
+    
+    /* ID 验证（必填） */
+    if (!cmdId) {
+        showToast('请填写指令 ID', 'warning');
+        document.getElementById('cmd-edit-id').focus();
+        return;
+    }
+    if (!validateCommandId(document.getElementById('cmd-edit-id'))) {
+        showToast('指令 ID 格式不正确', 'warning');
+        document.getElementById('cmd-edit-id').focus();
         return;
     }
     
@@ -8896,20 +9056,19 @@ async function saveCommand() {
     };
     
     try {
-        // 获取已有指令的 ID（编辑模式）
-        let existingId = null;
-        if (editId !== '') {
-            const existingCmd = sshCommands[selectedHostId][parseInt(editId)];
-            existingId = existingCmd?.id || null;
-        }
+        /* 
+         * ID 由用户在前端输入，直接传给后端
+         * 后端会验证 ID 格式，如果 ID 已存在则执行更新
+         */
+        const savedId = await saveSshCommandToBackend(selectedHostId, cmdData, cmdId);
+        cmdData.id = savedId;
         
-        // 保存到后端
-        const newId = await saveSshCommandToBackend(selectedHostId, cmdData, existingId);
-        cmdData.id = newId;
-        
-        if (editId !== '') {
-            // 编辑模式：更新本地缓存
-            sshCommands[selectedHostId][parseInt(editId)] = cmdData;
+        if (isEditMode) {
+            // 编辑模式：更新本地缓存（根据 ID 查找）
+            const existingIdx = sshCommands[selectedHostId].findIndex(c => c.id === cmdId);
+            if (existingIdx >= 0) {
+                sshCommands[selectedHostId][existingIdx] = cmdData;
+            }
             showToast('指令已更新', 'success');
         } else {
             // 新建模式：添加到本地缓存
@@ -8931,7 +9090,16 @@ function editCommand(idx) {
     if (!cmd) return;
     
     document.getElementById('command-modal-title').textContent = '✏️ 编辑指令';
-    document.getElementById('cmd-edit-id').value = idx;
+    
+    /* 编辑模式：设置 ID 并标记为只读 */
+    const idInput = document.getElementById('cmd-edit-id');
+    const idGroup = document.getElementById('cmd-id-group');
+    idInput.value = cmd.id || '';
+    idInput.readOnly = true;
+    idInput.style.backgroundColor = 'var(--bg-tertiary)';
+    idInput.style.cursor = 'not-allowed';
+    idGroup.classList.add('edit-mode');
+    
     document.getElementById('cmd-name').value = cmd.name;
     document.getElementById('cmd-command').value = cmd.command;
     document.getElementById('cmd-desc').value = cmd.desc || '';
@@ -8997,6 +9165,346 @@ function editCommand(idx) {
     updateNohupState();
     // 更新服务模式状态
     updateServiceModeState();
+}
+
+/**
+ * 导出 SSH 指令配置为 .tscfg 文件
+ * 开发机：显示模态框输入目标证书
+ * 非开发机：使用设备证书自加密
+ */
+async function exportSshCommand(cmdId) {
+    // 确保已加载设备类型信息
+    if (!window._configPackStatus) {
+        try {
+            const result = await api.configPackInfo();
+            window._configPackStatus = result.data;
+        } catch (e) {
+            console.warn('无法获取设备类型信息，使用默认导出', e);
+        }
+    }
+    
+    // 检查设备类型
+    const canExport = window._configPackStatus?.can_export;
+    
+    if (canExport) {
+        // 开发机：显示模态框让用户输入目标证书和选项
+        showExportSshCommandModal(cmdId);
+    } else {
+        // 非开发机：直接使用设备证书加密，询问是否包含主机
+        const includeHost = confirm('是否同时导出该指令依赖的主机配置？\n\n点击「确定」将主机配置一起打包（推荐），点击「取消」仅导出指令。');
+        await doExportSshCommand(cmdId, null, includeHost);
+    }
+}
+
+/**
+ * 显示导出 SSH 指令模态框（开发机专用）
+ */
+function showExportSshCommandModal(cmdId) {
+    let modal = document.getElementById('export-ssh-cmd-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'export-ssh-cmd-modal';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:600px">
+            <h2>📤 导出 SSH 指令配置</h2>
+            <p style="color:#666;font-size:0.9rem">导出指令 <strong>${escapeHtml(cmdId)}</strong> 的配置为加密配置包</p>
+            
+            <div class="form-group" style="margin-top:15px">
+                <label>
+                    <input type="checkbox" id="export-ssh-cmd-include-host" checked> 同时导出依赖的主机配置
+                </label>
+                <div style="font-size:0.85em;color:#666;margin-top:4px">💡 推荐勾选，便于在目标设备完整导入</div>
+            </div>
+            
+            <div class="form-group">
+                <label>目标设备证书 (PEM)</label>
+                <textarea id="export-ssh-cmd-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
+                <div style="font-size:0.85em;color:#666;margin-top:4px">💡 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+            </div>
+            
+            <div id="export-ssh-cmd-result" class="result-box hidden" style="margin-top:10px"></div>
+            
+            <div class="form-actions" style="margin-top:15px">
+                <button class="btn" onclick="hideExportSshCommandModal()">取消</button>
+                <button class="btn btn-primary" id="export-ssh-cmd-btn" onclick="doExportSshCommandFromModal('${escapeHtml(cmdId)}')">📤 导出</button>
+            </div>
+        </div>
+    `;
+    
+    modal.classList.remove('hidden');
+}
+
+function hideExportSshCommandModal() {
+    const modal = document.getElementById('export-ssh-cmd-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function doExportSshCommandFromModal(cmdId) {
+    const certText = document.getElementById('export-ssh-cmd-cert').value.trim();
+    const includeHost = document.getElementById('export-ssh-cmd-include-host').checked;
+    const resultBox = document.getElementById('export-ssh-cmd-result');
+    const exportBtn = document.getElementById('export-ssh-cmd-btn');
+    
+    resultBox.classList.remove('hidden', 'success', 'error');
+    resultBox.textContent = '🔄 正在生成配置包...';
+    exportBtn.disabled = true;
+    
+    try {
+        await doExportSshCommand(cmdId, certText || null, includeHost);
+        resultBox.className = 'result-box success';
+        resultBox.textContent = '✅ 导出成功！';
+        setTimeout(() => hideExportSshCommandModal(), 1000);
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+    } finally {
+        exportBtn.disabled = false;
+    }
+}
+
+/**
+ * 执行导出 SSH 指令
+ * @param {string} cmdId - 指令 ID
+ * @param {string|null} recipientCert - 目标证书（null 使用设备证书）
+ * @param {boolean} includeHost - 是否包含主机配置
+ */
+async function doExportSshCommand(cmdId, recipientCert, includeHost) {
+    const params = { 
+        id: cmdId,
+        include_host: includeHost
+    };
+    if (recipientCert) {
+        params.recipient_cert = recipientCert;
+    }
+    
+    const result = await api.call('ssh.commands.export', params);
+    
+    if (result.code !== 0) {
+        throw new Error(result.message || '导出失败');
+    }
+    
+    const data = result.data;
+    if (!data?.tscfg) {
+        throw new Error('无效的响应数据');
+    }
+    
+    // 下载文件
+    const blob = new Blob([data.tscfg], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = data.filename || `${cmdId}.tscfg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    const msg = data.host_included 
+        ? `已导出指令配置（包含主机 ${data.host_id}）: ${data.filename}`
+        : `已导出指令配置: ${data.filename}`;
+    showToast(msg, 'success');
+}
+
+/**
+ * 显示导入 SSH 指令配置弹窗
+ */
+async function showImportSshCommandModal() {
+    let modal = document.getElementById('import-ssh-cmd-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'import-ssh-cmd-modal';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    
+    // 加载主机列表用于下拉选择
+    let hostsOptions = '<option value="">-- 使用配置中的主机 --</option>';
+    try {
+        const result = await api.call('ssh.hosts.list', {});
+        const hosts = result.data?.hosts || [];
+        for (const h of hosts) {
+            hostsOptions += `<option value="${escapeHtml(h.id)}">${escapeHtml(h.id)} (${escapeHtml(h.host)}:${h.port})</option>`;
+        }
+    } catch (e) {
+        console.warn('Failed to load hosts list:', e);
+    }
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:600px">
+            <h2>📥 导入 SSH 指令配置</h2>
+            <p style="color:#666;font-size:0.9rem">选择 .tscfg 配置包文件以导入 SSH 指令</p>
+            
+            <!-- 步骤 1: 选择文件 -->
+            <div id="import-ssh-cmd-step1">
+                <div class="form-group" style="margin-top:15px">
+                    <label>选择文件</label>
+                    <input type="file" id="import-ssh-cmd-file" class="form-control" accept=".tscfg" onchange="previewSshCommandImport()">
+                </div>
+            </div>
+            
+            <!-- 步骤 2: 预览 (默认隐藏) -->
+            <div id="import-ssh-cmd-step2" style="display:none">
+                <div class="info-card" style="background:#f8f9fa;padding:15px;border-radius:8px;margin-top:15px">
+                    <h4 style="margin:0 0 10px 0">📋 配置包内容</h4>
+                    <div id="import-ssh-cmd-preview"></div>
+                </div>
+                <div class="form-group" style="margin-top:15px">
+                    <label>
+                        <input type="checkbox" id="import-ssh-cmd-overwrite"> 覆盖已存在的配置
+                    </label>
+                </div>
+                <div class="form-group" id="import-ssh-cmd-host-group" style="display:none">
+                    <label>
+                        <input type="checkbox" id="import-ssh-cmd-host" checked> 同时导入包含的主机配置
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>绑定到主机（可选）</label>
+                    <select id="import-ssh-cmd-target-host" class="form-control">
+                        ${hostsOptions}
+                    </select>
+                    <small style="color:#888">留空则使用配置包中指定的主机</small>
+                </div>
+            </div>
+            
+            <div id="import-ssh-cmd-result" class="result-box hidden" style="margin-top:10px"></div>
+            
+            <div class="form-actions" style="margin-top:15px">
+                <button class="btn" onclick="hideImportSshCommandModal()">取消</button>
+                <button class="btn btn-primary" id="import-ssh-cmd-btn" onclick="confirmSshCommandImport()" disabled>📥 确认导入</button>
+            </div>
+        </div>
+    `;
+    
+    window._importSshCmdTscfg = null;
+    modal.classList.remove('hidden');
+}
+
+function hideImportSshCommandModal() {
+    const modal = document.getElementById('import-ssh-cmd-modal');
+    if (modal) modal.classList.add('hidden');
+    window._importSshCmdTscfg = null;
+}
+
+/**
+ * 预览 SSH 指令导入内容
+ */
+async function previewSshCommandImport() {
+    const fileInput = document.getElementById('import-ssh-cmd-file');
+    const resultBox = document.getElementById('import-ssh-cmd-result');
+    const step2 = document.getElementById('import-ssh-cmd-step2');
+    const previewDiv = document.getElementById('import-ssh-cmd-preview');
+    const hostGroup = document.getElementById('import-ssh-cmd-host-group');
+    const importBtn = document.getElementById('import-ssh-cmd-btn');
+    
+    if (!fileInput.files || !fileInput.files[0]) return;
+    
+    const file = fileInput.files[0];
+    
+    resultBox.classList.remove('hidden', 'success', 'error', 'warning');
+    resultBox.textContent = '🔄 正在验证配置包...';
+    importBtn.disabled = true;
+    step2.style.display = 'none';
+    
+    try {
+        const content = await file.text();
+        window._importSshCmdTscfg = content;
+        window._importSshCmdFilename = file.name;  // 保存文件名
+        
+        const result = await api.call('ssh.commands.import', { 
+            tscfg: content,
+            filename: file.name,
+            preview: true
+        });
+        
+        if (result.code === 0 && result.data?.valid) {
+            const data = result.data;
+            
+            // 轻量级验证只返回基本信息
+            let html = `
+                <table style="width:100%;font-size:0.9em">
+                    <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
+                    <tr><td style="color:#666">类型:</td><td>${data.type === 'ssh_command' ? '📋 SSH 指令' : data.type}</td></tr>
+                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '✅ 官方' : ''}</td></tr>
+                    <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
+                </table>
+            `;
+            
+            // 隐藏主机选项（因为现在不解密，不知道是否包含主机）
+            if (hostGroup) hostGroup.style.display = 'none';
+            
+            if (data.exists) {
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">⚠️ 该配置已存在，导入将覆盖现有文件</div>`;
+            }
+            
+            previewDiv.innerHTML = html;
+            step2.style.display = 'block';
+            resultBox.className = 'result-box success';
+            resultBox.textContent = '✅ 签名验证通过';
+            importBtn.disabled = false;
+        } else {
+            resultBox.className = 'result-box error';
+            resultBox.textContent = '❌ ' + (result.message || '无法验证配置包');
+        }
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+    }
+}
+
+/**
+ * 确认导入 SSH 指令
+ */
+async function confirmSshCommandImport() {
+    const overwrite = document.getElementById('import-ssh-cmd-overwrite').checked;
+    const resultBox = document.getElementById('import-ssh-cmd-result');
+    const importBtn = document.getElementById('import-ssh-cmd-btn');
+    
+    if (!window._importSshCmdTscfg) {
+        showToast('请先选择文件', 'error');
+        return;
+    }
+    
+    resultBox.classList.remove('hidden', 'success', 'error', 'warning');
+    resultBox.textContent = '🔄 正在保存配置...';
+    importBtn.disabled = true;
+    
+    try {
+        const params = { 
+            tscfg: window._importSshCmdTscfg,
+            filename: window._importSshCmdFilename,
+            overwrite: overwrite
+        };
+        
+        const result = await api.call('ssh.commands.import', params);
+        
+        if (result.code === 0) {
+            const data = result.data;
+            if (data?.exists && !data?.imported) {
+                resultBox.className = 'result-box warning';
+                resultBox.textContent = `⚠️ 配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                importBtn.disabled = false;
+            } else {
+                resultBox.className = 'result-box success';
+                resultBox.innerHTML = `✅ 已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
+                showToast(`已导入配置，重启后生效`, 'success');
+                // 不刷新列表，因为还没加载
+                setTimeout(() => hideImportSshCommandModal(), 2000);
+            }
+        } else {
+            resultBox.className = 'result-box error';
+            resultBox.textContent = '❌ ' + (result.message || '导入失败');
+            importBtn.disabled = false;
+        }
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+        importBtn.disabled = false;
+    }
 }
 
 async function deleteCommand(idx) {
@@ -9798,7 +10306,10 @@ async function loadSecurityPage() {
             
             <div class="section">
                 <h2>🖥️ 已部署主机</h2>
-                <p style="color:#666;margin-bottom:15px;font-size:0.9em">💡 通过上方密钥的「部署」按钮将公钥部署到远程服务器后，主机将自动出现在此列表</p>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px">
+                    <p style="color:#666;font-size:0.9em;margin:0">💡 通过上方密钥的「部署」按钮将公钥部署到远程服务器后，主机将自动出现在此列表</p>
+                    <button class="btn btn-sm" onclick="showImportSshHostModal()" style="background:#17a2b8;color:white">📥 导入主机</button>
+                </div>
                 <table class="data-table">
                     <thead>
                         <tr><th>主机 ID</th><th>地址</th><th>端口</th><th>用户名</th><th>部署密钥</th><th>操作</th></tr>
@@ -10435,6 +10946,7 @@ async function refreshSshHostsList() {
                 <td><span class="badge badge-info">🔑 ${escapeHtml(h.keyid || 'default')}</span></td>
                 <td>
                     <button class="btn btn-sm" onclick="testSshHostByIndex(${idx})" title="测试连接">🔍 测试</button>
+                    <button class="btn btn-sm" onclick="exportSshHost('${escapeHtml(h.id)}')" title="导出配置为 .tscfg" style="background:#17a2b8;color:white">📤 导出</button>
                     <button class="btn btn-sm btn-danger" onclick="revokeKeyFromHost(${idx})" title="撤销公钥">🔓 撤销</button>
                     <button class="btn btn-sm" onclick="removeHostByIndex(${idx})" title="仅移除本地记录" style="background:#6c757d;color:white">🗑️ 移除</button>
                 </td>
@@ -10592,6 +11104,302 @@ async function testSshHostByIndex(index) {
     } catch (e) {
         console.error('Test SSH connection error:', e);
         showToast(`❌ 测试失败: ${e.message}`, 'error');
+    }
+}
+
+/**
+ * 导出 SSH 主机配置为 .tscfg 文件
+ * 开发机：显示模态框输入目标证书
+ * 非开发机：使用设备证书自加密
+ */
+async function exportSshHost(hostId) {
+    // 确保已加载设备类型信息
+    if (!window._configPackStatus) {
+        try {
+            const result = await api.configPackInfo();
+            window._configPackStatus = result.data;
+        } catch (e) {
+            console.warn('无法获取设备类型信息，使用默认导出', e);
+        }
+    }
+    
+    // 检查设备类型
+    const canExport = window._configPackStatus?.can_export;
+    
+    if (canExport) {
+        // 开发机：显示模态框让用户输入目标证书
+        showExportSshHostModal(hostId);
+    } else {
+        // 非开发机：直接使用设备证书加密
+        await doExportSshHost(hostId, null);
+    }
+}
+
+/**
+ * 显示导出 SSH 主机模态框（开发机专用）
+ */
+function showExportSshHostModal(hostId) {
+    let modal = document.getElementById('export-ssh-host-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'export-ssh-host-modal';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:600px">
+            <h2>📤 导出 SSH 主机配置</h2>
+            <p style="color:#666;font-size:0.9rem">导出主机 <strong>${escapeHtml(hostId)}</strong> 的配置为加密配置包</p>
+            
+            <div class="form-group" style="margin-top:15px">
+                <label>目标设备证书 (PEM)</label>
+                <textarea id="export-ssh-host-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
+                <div style="font-size:0.85em;color:#666;margin-top:4px">💡 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+            </div>
+            
+            <div id="export-ssh-host-result" class="result-box hidden" style="margin-top:10px"></div>
+            
+            <div class="form-actions" style="margin-top:15px">
+                <button class="btn" onclick="hideExportSshHostModal()">取消</button>
+                <button class="btn btn-primary" id="export-ssh-host-btn" onclick="doExportSshHostFromModal('${escapeHtml(hostId)}')">📤 导出</button>
+            </div>
+        </div>
+    `;
+    
+    modal.classList.remove('hidden');
+}
+
+function hideExportSshHostModal() {
+    const modal = document.getElementById('export-ssh-host-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function doExportSshHostFromModal(hostId) {
+    const certText = document.getElementById('export-ssh-host-cert').value.trim();
+    const resultBox = document.getElementById('export-ssh-host-result');
+    const exportBtn = document.getElementById('export-ssh-host-btn');
+    
+    resultBox.classList.remove('hidden', 'success', 'error');
+    resultBox.textContent = '🔄 正在生成配置包...';
+    exportBtn.disabled = true;
+    
+    try {
+        await doExportSshHost(hostId, certText || null);
+        resultBox.className = 'result-box success';
+        resultBox.textContent = '✅ 导出成功！';
+        setTimeout(() => hideExportSshHostModal(), 1000);
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+    } finally {
+        exportBtn.disabled = false;
+    }
+}
+
+/**
+ * 执行导出 SSH 主机
+ * @param {string} hostId - 主机 ID
+ * @param {string|null} recipientCert - 目标证书（null 使用设备证书）
+ */
+async function doExportSshHost(hostId, recipientCert) {
+    const params = { id: hostId };
+    if (recipientCert) {
+        params.recipient_cert = recipientCert;
+    }
+    
+    const result = await api.call('ssh.hosts.export', params);
+    
+    if (result.code !== 0) {
+        throw new Error(result.message || '导出失败');
+    }
+    
+    const data = result.data;
+    if (!data?.tscfg) {
+        throw new Error('无效的响应数据');
+    }
+    
+    // 下载文件
+    const blob = new Blob([data.tscfg], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = data.filename || `${hostId}.tscfg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    showToast(`已导出主机配置: ${data.filename}`, 'success');
+}
+
+/**
+ * 显示导入 SSH 主机配置弹窗
+ */
+function showImportSshHostModal() {
+    let modal = document.getElementById('import-ssh-host-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'import-ssh-host-modal';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:550px">
+            <h2>📥 导入 SSH 主机配置</h2>
+            <p style="color:#666;font-size:0.9rem">选择 .tscfg 配置包文件以导入 SSH 主机配置</p>
+            
+            <!-- 步骤 1: 选择文件 -->
+            <div id="import-ssh-host-step1">
+                <div class="form-group" style="margin-top:15px">
+                    <label>选择文件</label>
+                    <input type="file" id="import-ssh-host-file" class="form-control" accept=".tscfg" onchange="previewSshHostImport()">
+                </div>
+            </div>
+            
+            <!-- 步骤 2: 预览 (默认隐藏) -->
+            <div id="import-ssh-host-step2" style="display:none">
+                <div class="info-card" style="background:#f8f9fa;padding:15px;border-radius:8px;margin-top:15px">
+                    <h4 style="margin:0 0 10px 0">📋 配置包内容</h4>
+                    <div id="import-ssh-host-preview"></div>
+                </div>
+                <div class="form-group" style="margin-top:15px">
+                    <label>
+                        <input type="checkbox" id="import-ssh-host-overwrite"> 覆盖已存在的配置
+                    </label>
+                </div>
+            </div>
+            
+            <div id="import-ssh-host-result" class="result-box hidden" style="margin-top:10px"></div>
+            
+            <div class="form-actions" style="margin-top:15px">
+                <button class="btn" onclick="hideImportSshHostModal()">取消</button>
+                <button class="btn btn-primary" id="import-ssh-host-btn" onclick="confirmSshHostImport()" disabled>📥 确认导入</button>
+            </div>
+        </div>
+    `;
+    
+    // 存储 tscfg 内容
+    window._importSshHostTscfg = null;
+    
+    modal.classList.remove('hidden');
+}
+
+function hideImportSshHostModal() {
+    const modal = document.getElementById('import-ssh-host-modal');
+    if (modal) modal.classList.add('hidden');
+    window._importSshHostTscfg = null;
+}
+
+/**
+ * 预览 SSH 主机导入内容
+ */
+async function previewSshHostImport() {
+    const fileInput = document.getElementById('import-ssh-host-file');
+    const resultBox = document.getElementById('import-ssh-host-result');
+    const step2 = document.getElementById('import-ssh-host-step2');
+    const previewDiv = document.getElementById('import-ssh-host-preview');
+    const importBtn = document.getElementById('import-ssh-host-btn');
+    
+    if (!fileInput.files || !fileInput.files[0]) return;
+    
+    const file = fileInput.files[0];
+    
+    resultBox.classList.remove('hidden', 'success', 'error', 'warning');
+    resultBox.textContent = '🔄 正在验证配置包...';
+    importBtn.disabled = true;
+    step2.style.display = 'none';
+    
+    try {
+        const content = await file.text();
+        window._importSshHostTscfg = content;
+        window._importSshHostFilename = file.name;  // 保存文件名
+        
+        // 预览模式调用（轻量级验证，不解密）
+        const result = await api.call('ssh.hosts.import', { 
+            tscfg: content,
+            filename: file.name,
+            preview: true
+        });
+        
+        if (result.code === 0 && result.data?.valid) {
+            const data = result.data;
+            
+            // 构建预览 HTML（轻量级验证只返回基本信息）
+            let html = `
+                <table style="width:100%;font-size:0.9em">
+                    <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
+                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '✅ 官方' : ''}</td></tr>
+                    <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
+                </table>
+            `;
+            
+            if (data.exists) {
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">⚠️ 该配置已存在，导入将覆盖现有文件</div>`;
+            }
+            
+            previewDiv.innerHTML = html;
+            step2.style.display = 'block';
+            resultBox.className = 'result-box success';
+            resultBox.textContent = '✅ 签名验证通过';
+            importBtn.disabled = false;
+        } else {
+            resultBox.className = 'result-box error';
+            resultBox.textContent = '❌ ' + (result.message || '无法验证配置包');
+        }
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+    }
+}
+
+/**
+ * 确认导入 SSH 主机
+ */
+async function confirmSshHostImport() {
+    const overwrite = document.getElementById('import-ssh-host-overwrite').checked;
+    const resultBox = document.getElementById('import-ssh-host-result');
+    const importBtn = document.getElementById('import-ssh-host-btn');
+    
+    if (!window._importSshHostTscfg) {
+        showToast('请先选择文件', 'error');
+        return;
+    }
+    
+    resultBox.classList.remove('hidden', 'success', 'error', 'warning');
+    resultBox.textContent = '🔄 正在保存配置...';
+    importBtn.disabled = true;
+    
+    try {
+        const result = await api.call('ssh.hosts.import', { 
+            tscfg: window._importSshHostTscfg,
+            filename: window._importSshHostFilename,
+            overwrite: overwrite
+        });
+        
+        if (result.code === 0) {
+            const data = result.data;
+            if (data?.exists && !data?.imported) {
+                resultBox.className = 'result-box warning';
+                resultBox.textContent = `⚠️ 配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                importBtn.disabled = false;
+            } else {
+                resultBox.className = 'result-box success';
+                resultBox.innerHTML = `✅ 已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
+                showToast(`已导入配置，重启后生效`, 'success');
+                // 不刷新列表，因为还没加载
+                setTimeout(() => hideImportSshHostModal(), 2000);
+            }
+        } else {
+            resultBox.className = 'result-box error';
+            resultBox.textContent = '❌ ' + (result.message || '导入失败');
+            importBtn.disabled = false;
+        }
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+        importBtn.disabled = false;
     }
 }
 
@@ -11328,6 +12136,80 @@ async function importConfigPack() {
     } catch (e) {
         resultBox.className = 'result-box error';
         resultBox.textContent = '❌ 导入失败: ' + e.message;
+    }
+}
+
+/**
+ * 显示配置包应用确认对话框
+ * 当通过文件管理上传 .tscfg 文件并验证成功后调用
+ */
+function showConfigPackApplyConfirm(path, packInfo) {
+    const sig = packInfo.signature || {};
+    const signerInfo = sig.signer_cn ? `${sig.signer_cn}${sig.is_official ? ' (官方)' : ''}` : '未知';
+    
+    // 创建确认对话框
+    const dialog = document.createElement('div');
+    dialog.className = 'modal';
+    dialog.id = 'config-pack-apply-confirm';
+    dialog.innerHTML = `
+        <div class="modal-content" style="max-width:450px">
+            <div class="modal-header">
+                <span class="modal-title">📦 配置包已上传</span>
+            </div>
+            <div class="modal-body">
+                <div style="background:#e8f5e9;padding:12px;border-radius:6px;margin-bottom:15px">
+                    <div style="color:#2e7d32;font-weight:bold;margin-bottom:8px">✅ 验证成功</div>
+                    <div style="font-size:0.9em;color:#333">
+                        <div>📄 文件: <code>${path.split('/').pop()}</code></div>
+                        <div>🔐 签名者: ${signerInfo}</div>
+                        ${sig.is_official ? '<div style="color:#1976d2">✓ 官方签名</div>' : ''}
+                    </div>
+                </div>
+                <p style="margin:0;color:#666;font-size:0.9em">
+                    配置包已保存到设备。是否立即应用此配置？
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="closeConfigPackApplyConfirm()">稍后应用</button>
+                <button class="btn btn-primary" onclick="applyConfigPackFromPath('${path}')">🚀 立即应用</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(dialog);
+}
+
+function closeConfigPackApplyConfirm() {
+    const dialog = document.getElementById('config-pack-apply-confirm');
+    if (dialog) {
+        dialog.remove();
+    }
+}
+
+/**
+ * 应用指定路径的配置包
+ */
+async function applyConfigPackFromPath(path) {
+    closeConfigPackApplyConfirm();
+    showToast('🔄 正在应用配置...', 'info');
+    
+    try {
+        const result = await api.call('config.pack.apply', { path }, 'POST');
+        if (result.code !== 0) {
+            throw new Error(result.message || result.data?.result_message || '应用失败');
+        }
+        
+        const data = result.data;
+        if (data.success) {
+            const modules = data.applied_modules || [];
+            const moduleList = modules.length > 0 ? modules.join(', ') : '无';
+            showToast(`✅ 配置已应用\n模块: ${moduleList}`, 'success', 5000);
+        } else {
+            showToast(`❌ 应用失败: ${data.result_message}`, 'error');
+        }
+    } catch (e) {
+        console.error('Apply config pack error:', e);
+        showToast('❌ 应用失败: ' + e.message, 'error');
     }
 }
 
@@ -12257,7 +13139,7 @@ function formatBytes(bytes) {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-function showToast(message, type = 'info') {
+function showToast(message, type = 'info', duration = 3000) {
     // 创建 toast 元素
     let toast = document.getElementById('toast');
     if (!toast) {
@@ -12266,12 +13148,13 @@ function showToast(message, type = 'info') {
         document.body.appendChild(toast);
     }
     
-    toast.textContent = message;
+    // 支持多行文本（将 \n 转为 <br>）
+    toast.innerHTML = message.replace(/\n/g, '<br>');
     toast.className = `toast toast-${type} show`;
     
     setTimeout(() => {
         toast.classList.remove('show');
-    }, 3000);
+    }, duration);
 }
 
 // =========================================================================
@@ -12847,9 +13730,18 @@ window.selectCmdIcon = selectCmdIcon;
 window.saveCommand = saveCommand;
 window.editCommand = editCommand;
 window.deleteCommand = deleteCommand;
+window.exportSshCommand = exportSshCommand;
+window.showExportSshCommandModal = showExportSshCommandModal;
+window.hideExportSshCommandModal = hideExportSshCommandModal;
+window.doExportSshCommandFromModal = doExportSshCommandFromModal;
+window.showImportSshCommandModal = showImportSshCommandModal;
+window.hideImportSshCommandModal = hideImportSshCommandModal;
+window.previewSshCommandImport = previewSshCommandImport;
+window.confirmSshCommandImport = confirmSshCommandImport;
 window.executeCommand = executeCommand;
 window.cancelExecution = cancelExecution;
 window.clearExecResult = clearExecResult;
+window.validateCommandId = validateCommandId;
 // Security page functions
 window.refreshSshHostsList = refreshSshHostsList;
 window.refreshKnownHostsList = refreshKnownHostsList;
@@ -12859,6 +13751,14 @@ window.deleteSshHostFromSecurity = deleteSshHostFromSecurity;
 window.testSshConnection = testSshConnection;
 window.testSshHostByIndex = testSshHostByIndex;
 window.removeHostByIndex = removeHostByIndex;
+window.exportSshHost = exportSshHost;
+window.showExportSshHostModal = showExportSshHostModal;
+window.hideExportSshHostModal = hideExportSshHostModal;
+window.doExportSshHostFromModal = doExportSshHostFromModal;
+window.showImportSshHostModal = showImportSshHostModal;
+window.hideImportSshHostModal = hideImportSshHostModal;
+window.previewSshHostImport = previewSshHostImport;
+window.confirmSshHostImport = confirmSshHostImport;
 window.revokeKeyFromHost = revokeKeyFromHost;
 window.hideRevokeHostModal = hideRevokeHostModal;
 window.doRevokeFromHost = doRevokeFromHost;
@@ -15128,6 +16028,7 @@ async function loadAutomationPage() {
                     <h2>📡 数据源</h2>
                     <div class="section-actions">
                         <button class="btn btn-primary btn-sm" onclick="showAddSourceModal()">➕ 添加</button>
+                        <button class="btn btn-sm" onclick="showImportSourceModal()" title="导入配置包">📥 导入</button>
                         <button class="btn btn-sm" onclick="refreshSources()">🔄</button>
                     </div>
                 </div>
@@ -15144,6 +16045,7 @@ async function loadAutomationPage() {
                     <h2>📋 规则列表</h2>
                     <div class="section-actions">
                         <button class="btn btn-primary btn-sm" onclick="showAddRuleModal()">➕ 添加</button>
+                        <button class="btn btn-sm" onclick="showImportRuleModal()" title="导入配置包">📥 导入</button>
                         <button class="btn btn-sm" onclick="refreshRules()">🔄</button>
                     </div>
                 </div>
@@ -15160,6 +16062,7 @@ async function loadAutomationPage() {
                     <h2>⚡ 动作模板</h2>
                     <div class="section-actions">
                         <button class="btn btn-primary btn-sm" onclick="showAddActionModal()">➕ 添加</button>
+                        <button class="btn btn-sm" onclick="showImportActionModal()" title="导入配置包">📥 导入</button>
                         <button class="btn btn-sm" onclick="refreshActions()">🔄</button>
                     </div>
                 </div>
@@ -15313,6 +16216,7 @@ async function refreshRules() {
                                     <button class="btn btn-sm" onclick="toggleRule('${r.id}', ${!r.enabled})" title="${r.enabled ? '禁用' : '启用'}">${r.enabled ? '🔴' : '🟢'}</button>
                                     <button class="btn btn-sm" onclick="triggerRule('${r.id}')" title="手动触发">▶️</button>
                                     <button class="btn btn-sm" onclick="editRule('${r.id}')" title="编辑">✏️</button>
+                                    <button class="btn btn-sm" onclick="showExportRuleModal('${r.id}')" title="导出配置包">📤</button>
                                     <button class="btn btn-sm btn-danger" onclick="deleteRule('${r.id}')" title="删除">🗑️</button>
                                 </td>
                             </tr>
@@ -15396,6 +16300,7 @@ async function refreshSources() {
                                 <td style="white-space:nowrap">
                                     <button class="btn btn-sm" onclick="showSourceVariables('${s.id}')" title="查看变量">📊</button>
                                     <button class="btn btn-sm" onclick="toggleSource('${s.id}', ${!s.enabled})" title="${s.enabled ? '禁用' : '启用'}">${s.enabled ? '🔴' : '🟢'}</button>
+                                    <button class="btn btn-sm" onclick="showExportSourceModal('${s.id}')" title="导出配置包">📤</button>
                                     <button class="btn btn-sm btn-danger" onclick="deleteSource('${s.id}')" title="删除">🗑️</button>
                                 </td>
                             </tr>
@@ -15603,6 +16508,7 @@ async function refreshActions() {
                                 <td>
                                     <button class="btn btn-xs" onclick="testAction('${a.id}')" title="测试">▶️</button>
                                     <button class="btn btn-xs" onclick="editAction('${a.id}')" title="编辑">✏️</button>
+                                    <button class="btn btn-xs" onclick="showExportActionModal('${a.id}')" title="导出配置包">📤</button>
                                     <button class="btn btn-danger btn-xs" onclick="deleteAction('${a.id}')" title="删除">🗑️</button>
                                 </td>
                             </tr>
@@ -19624,4 +20530,748 @@ window.updateRuleIconPreview = updateRuleIconPreview;
 // 快捷操作
 window.refreshQuickActions = refreshQuickActions;
 window.triggerQuickAction = triggerQuickAction;
+
+/*===========================================================================*/
+/*              Automation Export/Import Functions                             */
+/*===========================================================================*/
+
+/**
+ * 显示导出数据源配置模态框
+ */
+function showExportSourceModal(sourceId) {
+    let modal = document.getElementById('export-source-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'export-source-modal';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:600px">
+            <h2>📤 导出数据源配置</h2>
+            <p style="color:#666;font-size:0.9rem">导出数据源 <strong>${escapeHtml(sourceId)}</strong> 的配置为加密配置包</p>
+            
+            <div class="form-group">
+                <label>目标设备证书 (PEM)</label>
+                <textarea id="export-source-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
+                <div style="font-size:0.85em;color:#666;margin-top:4px">💡 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+            </div>
+            
+            <div id="export-source-result" class="result-box hidden" style="margin-top:10px"></div>
+            
+            <div class="form-actions" style="margin-top:15px">
+                <button class="btn" onclick="hideExportSourceModal()">取消</button>
+                <button class="btn btn-primary" id="export-source-btn" onclick="doExportSource('${escapeHtml(sourceId)}')">📤 导出</button>
+            </div>
+        </div>
+    `;
+    
+    modal.classList.remove('hidden');
+}
+
+function hideExportSourceModal() {
+    const modal = document.getElementById('export-source-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function doExportSource(sourceId) {
+    const certText = document.getElementById('export-source-cert').value.trim();
+    const resultBox = document.getElementById('export-source-result');
+    const exportBtn = document.getElementById('export-source-btn');
+    
+    resultBox.classList.remove('hidden', 'success', 'error');
+    resultBox.textContent = '🔄 正在生成配置包...';
+    exportBtn.disabled = true;
+    
+    try {
+        const params = { id: sourceId };
+        if (certText) params.recipient_cert = certText;
+        
+        const result = await api.call('automation.sources.export', params);
+        if (result.code !== 0) throw new Error(result.message || '导出失败');
+        
+        const data = result.data;
+        if (!data?.tscfg) throw new Error('无效的响应数据');
+        
+        // 下载文件
+        const blob = new Blob([data.tscfg], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = data.filename || `source_${sourceId}.tscfg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        resultBox.className = 'result-box success';
+        resultBox.textContent = '✅ 导出成功！';
+        showToast(`已导出数据源配置: ${data.filename}`, 'success');
+        setTimeout(() => hideExportSourceModal(), 1000);
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+    } finally {
+        exportBtn.disabled = false;
+    }
+}
+
+/**
+ * 显示导入数据源配置模态框
+ */
+function showImportSourceModal() {
+    let modal = document.getElementById('import-source-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'import-source-modal';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:600px">
+            <h2>📥 导入数据源配置</h2>
+            <p style="color:#666;font-size:0.9rem">选择 .tscfg 配置包文件以导入数据源</p>
+            
+            <div id="import-source-step1">
+                <div class="form-group" style="margin-top:15px">
+                    <label>选择文件</label>
+                    <input type="file" id="import-source-file" class="form-control" accept=".tscfg" onchange="previewSourceImport()">
+                </div>
+            </div>
+            
+            <div id="import-source-step2" style="display:none">
+                <div class="info-card" style="background:#f8f9fa;padding:15px;border-radius:8px;margin-top:15px">
+                    <h4 style="margin:0 0 10px 0">📋 配置包内容</h4>
+                    <div id="import-source-preview"></div>
+                </div>
+                <div class="form-group" style="margin-top:15px">
+                    <label>
+                        <input type="checkbox" id="import-source-overwrite"> 覆盖已存在的配置
+                    </label>
+                </div>
+            </div>
+            
+            <div id="import-source-result" class="result-box hidden" style="margin-top:10px"></div>
+            
+            <div class="form-actions" style="margin-top:15px">
+                <button class="btn" onclick="hideImportSourceModal()">取消</button>
+                <button class="btn btn-primary" id="import-source-btn" onclick="confirmSourceImport()" disabled>📥 确认导入</button>
+            </div>
+        </div>
+    `;
+    
+    window._importSourceTscfg = null;
+    modal.classList.remove('hidden');
+}
+
+function hideImportSourceModal() {
+    const modal = document.getElementById('import-source-modal');
+    if (modal) modal.classList.add('hidden');
+    window._importSourceTscfg = null;
+}
+
+async function previewSourceImport() {
+    const fileInput = document.getElementById('import-source-file');
+    const resultBox = document.getElementById('import-source-result');
+    const step2 = document.getElementById('import-source-step2');
+    const previewDiv = document.getElementById('import-source-preview');
+    const importBtn = document.getElementById('import-source-btn');
+    
+    if (!fileInput.files || !fileInput.files[0]) return;
+    
+    const file = fileInput.files[0];
+    
+    resultBox.classList.remove('hidden', 'success', 'error');
+    resultBox.textContent = '🔄 正在验证配置包...';
+    importBtn.disabled = true;
+    step2.style.display = 'none';
+    
+    try {
+        const content = await file.text();
+        window._importSourceTscfg = content;
+        window._importSourceFilename = file.name;
+        
+        const result = await api.call('automation.sources.import', { 
+            tscfg: content,
+            filename: file.name,
+            preview: true
+        });
+        
+        if (result.code === 0 && result.data?.valid) {
+            const data = result.data;
+            let html = `
+                <table style="width:100%;font-size:0.9em">
+                    <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
+                    <tr><td style="color:#666">类型:</td><td>📡 数据源</td></tr>
+                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '✅ 官方' : ''}</td></tr>
+                    <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
+                </table>
+            `;
+            if (data.exists) {
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">⚠️ 该配置已存在，导入将覆盖现有文件</div>`;
+            }
+            previewDiv.innerHTML = html;
+            step2.style.display = 'block';
+            resultBox.className = 'result-box success';
+            resultBox.textContent = '✅ 签名验证通过';
+            importBtn.disabled = false;
+        } else {
+            resultBox.className = 'result-box error';
+            resultBox.textContent = '❌ ' + (result.message || '无法验证配置包');
+        }
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+    }
+}
+
+async function confirmSourceImport() {
+    const overwrite = document.getElementById('import-source-overwrite').checked;
+    const resultBox = document.getElementById('import-source-result');
+    const importBtn = document.getElementById('import-source-btn');
+    
+    if (!window._importSourceTscfg) {
+        showToast('请先选择文件', 'error');
+        return;
+    }
+    
+    resultBox.classList.remove('hidden', 'success', 'error');
+    resultBox.textContent = '🔄 正在保存配置...';
+    importBtn.disabled = true;
+    
+    try {
+        const params = { 
+            tscfg: window._importSourceTscfg,
+            filename: window._importSourceFilename,
+            overwrite: overwrite
+        };
+        
+        const result = await api.call('automation.sources.import', params);
+        
+        if (result.code === 0) {
+            const data = result.data;
+            if (data?.exists && !data?.imported) {
+                resultBox.className = 'result-box warning';
+                resultBox.textContent = `⚠️ 配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                importBtn.disabled = false;
+            } else {
+                resultBox.className = 'result-box success';
+                resultBox.innerHTML = `✅ 已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
+                showToast(`已导入配置，重启后生效`, 'success');
+                setTimeout(() => hideImportSourceModal(), 2000);
+            }
+        } else {
+            resultBox.className = 'result-box error';
+            resultBox.textContent = '❌ ' + (result.message || '导入失败');
+            importBtn.disabled = false;
+        }
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+        importBtn.disabled = false;
+    }
+}
+
+/**
+ * 显示导出规则配置模态框
+ */
+function showExportRuleModal(ruleId) {
+    let modal = document.getElementById('export-rule-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'export-rule-modal';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:600px">
+            <h2>📤 导出规则配置</h2>
+            <p style="color:#666;font-size:0.9rem">导出规则 <strong>${escapeHtml(ruleId)}</strong> 的配置为加密配置包</p>
+            
+            <div class="form-group">
+                <label>目标设备证书 (PEM)</label>
+                <textarea id="export-rule-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
+                <div style="font-size:0.85em;color:#666;margin-top:4px">💡 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+            </div>
+            
+            <div id="export-rule-result" class="result-box hidden" style="margin-top:10px"></div>
+            
+            <div class="form-actions" style="margin-top:15px">
+                <button class="btn" onclick="hideExportRuleModal()">取消</button>
+                <button class="btn btn-primary" id="export-rule-btn" onclick="doExportRule('${escapeHtml(ruleId)}')">📤 导出</button>
+            </div>
+        </div>
+    `;
+    
+    modal.classList.remove('hidden');
+}
+
+function hideExportRuleModal() {
+    const modal = document.getElementById('export-rule-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function doExportRule(ruleId) {
+    const certText = document.getElementById('export-rule-cert').value.trim();
+    const resultBox = document.getElementById('export-rule-result');
+    const exportBtn = document.getElementById('export-rule-btn');
+    
+    resultBox.classList.remove('hidden', 'success', 'error');
+    resultBox.textContent = '🔄 正在生成配置包...';
+    exportBtn.disabled = true;
+    
+    try {
+        const params = { id: ruleId };
+        if (certText) params.recipient_cert = certText;
+        
+        const result = await api.call('automation.rules.export', params);
+        if (result.code !== 0) throw new Error(result.message || '导出失败');
+        
+        const data = result.data;
+        if (!data?.tscfg) throw new Error('无效的响应数据');
+        
+        // 下载文件
+        const blob = new Blob([data.tscfg], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = data.filename || `rule_${ruleId}.tscfg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        resultBox.className = 'result-box success';
+        resultBox.textContent = '✅ 导出成功！';
+        showToast(`已导出规则配置: ${data.filename}`, 'success');
+        setTimeout(() => hideExportRuleModal(), 1000);
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+    } finally {
+        exportBtn.disabled = false;
+    }
+}
+
+/**
+ * 显示导入规则配置模态框
+ */
+function showImportRuleModal() {
+    let modal = document.getElementById('import-rule-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'import-rule-modal';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:600px">
+            <h2>📥 导入规则配置</h2>
+            <p style="color:#666;font-size:0.9rem">选择 .tscfg 配置包文件以导入规则</p>
+            
+            <div id="import-rule-step1">
+                <div class="form-group" style="margin-top:15px">
+                    <label>选择文件</label>
+                    <input type="file" id="import-rule-file" class="form-control" accept=".tscfg" onchange="previewRuleImport()">
+                </div>
+            </div>
+            
+            <div id="import-rule-step2" style="display:none">
+                <div class="info-card" style="background:#f8f9fa;padding:15px;border-radius:8px;margin-top:15px">
+                    <h4 style="margin:0 0 10px 0">📋 配置包内容</h4>
+                    <div id="import-rule-preview"></div>
+                </div>
+                <div class="form-group" style="margin-top:15px">
+                    <label>
+                        <input type="checkbox" id="import-rule-overwrite"> 覆盖已存在的配置
+                    </label>
+                </div>
+            </div>
+            
+            <div id="import-rule-result" class="result-box hidden" style="margin-top:10px"></div>
+            
+            <div class="form-actions" style="margin-top:15px">
+                <button class="btn" onclick="hideImportRuleModal()">取消</button>
+                <button class="btn btn-primary" id="import-rule-btn" onclick="confirmRuleImport()" disabled>📥 确认导入</button>
+            </div>
+        </div>
+    `;
+    
+    window._importRuleTscfg = null;
+    modal.classList.remove('hidden');
+}
+
+function hideImportRuleModal() {
+    const modal = document.getElementById('import-rule-modal');
+    if (modal) modal.classList.add('hidden');
+    window._importRuleTscfg = null;
+}
+
+async function previewRuleImport() {
+    const fileInput = document.getElementById('import-rule-file');
+    const resultBox = document.getElementById('import-rule-result');
+    const step2 = document.getElementById('import-rule-step2');
+    const previewDiv = document.getElementById('import-rule-preview');
+    const importBtn = document.getElementById('import-rule-btn');
+    
+    if (!fileInput.files || !fileInput.files[0]) return;
+    
+    const file = fileInput.files[0];
+    
+    resultBox.classList.remove('hidden', 'success', 'error');
+    resultBox.textContent = '🔄 正在验证配置包...';
+    importBtn.disabled = true;
+    step2.style.display = 'none';
+    
+    try {
+        const content = await file.text();
+        window._importRuleTscfg = content;
+        window._importRuleFilename = file.name;
+        
+        const result = await api.call('automation.rules.import', { 
+            tscfg: content,
+            filename: file.name,
+            preview: true
+        });
+        
+        if (result.code === 0 && result.data?.valid) {
+            const data = result.data;
+            let html = `
+                <table style="width:100%;font-size:0.9em">
+                    <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
+                    <tr><td style="color:#666">类型:</td><td>📋 自动化规则</td></tr>
+                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '✅ 官方' : ''}</td></tr>
+                    <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
+                </table>
+            `;
+            if (data.exists) {
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">⚠️ 该配置已存在，导入将覆盖现有文件</div>`;
+            }
+            previewDiv.innerHTML = html;
+            step2.style.display = 'block';
+            resultBox.className = 'result-box success';
+            resultBox.textContent = '✅ 签名验证通过';
+            importBtn.disabled = false;
+        } else {
+            resultBox.className = 'result-box error';
+            resultBox.textContent = '❌ ' + (result.message || '无法验证配置包');
+        }
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+    }
+}
+
+async function confirmRuleImport() {
+    const overwrite = document.getElementById('import-rule-overwrite').checked;
+    const resultBox = document.getElementById('import-rule-result');
+    const importBtn = document.getElementById('import-rule-btn');
+    
+    if (!window._importRuleTscfg) {
+        showToast('请先选择文件', 'error');
+        return;
+    }
+    
+    resultBox.classList.remove('hidden', 'success', 'error');
+    resultBox.textContent = '🔄 正在保存配置...';
+    importBtn.disabled = true;
+    
+    try {
+        const params = { 
+            tscfg: window._importRuleTscfg,
+            filename: window._importRuleFilename,
+            overwrite: overwrite
+        };
+        
+        const result = await api.call('automation.rules.import', params);
+        
+        if (result.code === 0) {
+            const data = result.data;
+            if (data?.exists && !data?.imported) {
+                resultBox.className = 'result-box warning';
+                resultBox.textContent = `⚠️ 配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                importBtn.disabled = false;
+            } else {
+                resultBox.className = 'result-box success';
+                resultBox.innerHTML = `✅ 已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
+                showToast(`已导入配置，重启后生效`, 'success');
+                setTimeout(() => hideImportRuleModal(), 2000);
+            }
+        } else {
+            resultBox.className = 'result-box error';
+            resultBox.textContent = '❌ ' + (result.message || '导入失败');
+            importBtn.disabled = false;
+        }
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+        importBtn.disabled = false;
+    }
+}
+
+/**
+ * 显示导出动作模板配置模态框
+ */
+function showExportActionModal(actionId) {
+    let modal = document.getElementById('export-action-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'export-action-modal';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:600px">
+            <h2>📤 导出动作模板</h2>
+            <p style="color:#666;font-size:0.9rem">导出动作模板 <strong>${escapeHtml(actionId)}</strong> 的配置为加密配置包</p>
+            
+            <div class="form-group">
+                <label>目标设备证书 (PEM)</label>
+                <textarea id="export-action-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
+                <div style="font-size:0.85em;color:#666;margin-top:4px">💡 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+            </div>
+            
+            <div id="export-action-result" class="result-box hidden" style="margin-top:10px"></div>
+            
+            <div class="form-actions" style="margin-top:15px">
+                <button class="btn" onclick="hideExportActionModal()">取消</button>
+                <button class="btn btn-primary" id="export-action-btn" onclick="doExportAction('${escapeHtml(actionId)}')">📤 导出</button>
+            </div>
+        </div>
+    `;
+    
+    modal.classList.remove('hidden');
+}
+
+function hideExportActionModal() {
+    const modal = document.getElementById('export-action-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function doExportAction(actionId) {
+    const certText = document.getElementById('export-action-cert').value.trim();
+    const resultBox = document.getElementById('export-action-result');
+    const exportBtn = document.getElementById('export-action-btn');
+    
+    resultBox.classList.remove('hidden', 'success', 'error');
+    resultBox.textContent = '🔄 正在生成配置包...';
+    exportBtn.disabled = true;
+    
+    try {
+        const params = { id: actionId };
+        if (certText) params.recipient_cert = certText;
+        
+        const result = await api.call('automation.actions.export', params);
+        if (result.code !== 0) throw new Error(result.message || '导出失败');
+        
+        const data = result.data;
+        if (!data?.tscfg) throw new Error('无效的响应数据');
+        
+        // 下载文件
+        const blob = new Blob([data.tscfg], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = data.filename || `action_${actionId}.tscfg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        resultBox.className = 'result-box success';
+        resultBox.textContent = '✅ 导出成功！';
+        showToast(`已导出动作模板: ${data.filename}`, 'success');
+        setTimeout(() => hideExportActionModal(), 1000);
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+    } finally {
+        exportBtn.disabled = false;
+    }
+}
+
+/**
+ * 显示导入动作模板配置模态框
+ */
+function showImportActionModal() {
+    let modal = document.getElementById('import-action-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'import-action-modal';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:600px">
+            <h2>📥 导入动作模板</h2>
+            <p style="color:#666;font-size:0.9rem">选择 .tscfg 配置包文件以导入动作模板</p>
+            
+            <div id="import-action-step1">
+                <div class="form-group" style="margin-top:15px">
+                    <label>选择文件</label>
+                    <input type="file" id="import-action-file" class="form-control" accept=".tscfg" onchange="previewActionImport()">
+                </div>
+            </div>
+            
+            <div id="import-action-step2" style="display:none">
+                <div class="info-card" style="background:#f8f9fa;padding:15px;border-radius:8px;margin-top:15px">
+                    <h4 style="margin:0 0 10px 0">📋 配置包内容</h4>
+                    <div id="import-action-preview"></div>
+                </div>
+                <div class="form-group" style="margin-top:15px">
+                    <label>
+                        <input type="checkbox" id="import-action-overwrite"> 覆盖已存在的配置
+                    </label>
+                </div>
+            </div>
+            
+            <div id="import-action-result" class="result-box hidden" style="margin-top:10px"></div>
+            
+            <div class="form-actions" style="margin-top:15px">
+                <button class="btn" onclick="hideImportActionModal()">取消</button>
+                <button class="btn btn-primary" id="import-action-btn" onclick="confirmActionImport()" disabled>📥 确认导入</button>
+            </div>
+        </div>
+    `;
+    
+    window._importActionTscfg = null;
+    modal.classList.remove('hidden');
+}
+
+function hideImportActionModal() {
+    const modal = document.getElementById('import-action-modal');
+    if (modal) modal.classList.add('hidden');
+    window._importActionTscfg = null;
+}
+
+async function previewActionImport() {
+    const fileInput = document.getElementById('import-action-file');
+    const resultBox = document.getElementById('import-action-result');
+    const step2 = document.getElementById('import-action-step2');
+    const previewDiv = document.getElementById('import-action-preview');
+    const importBtn = document.getElementById('import-action-btn');
+    
+    if (!fileInput.files || !fileInput.files[0]) return;
+    
+    const file = fileInput.files[0];
+    
+    resultBox.classList.remove('hidden', 'success', 'error');
+    resultBox.textContent = '🔄 正在验证配置包...';
+    importBtn.disabled = true;
+    step2.style.display = 'none';
+    
+    try {
+        const content = await file.text();
+        window._importActionTscfg = content;
+        window._importActionFilename = file.name;
+        
+        const result = await api.call('automation.actions.import', { 
+            tscfg: content,
+            filename: file.name,
+            preview: true
+        });
+        
+        if (result.code === 0 && result.data?.valid) {
+            const data = result.data;
+            let html = `
+                <table style="width:100%;font-size:0.9em">
+                    <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
+                    <tr><td style="color:#666">类型:</td><td>⚡ 动作模板</td></tr>
+                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '✅ 官方' : ''}</td></tr>
+                    <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
+                </table>
+            `;
+            if (data.exists) {
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">⚠️ 该配置已存在，导入将覆盖现有文件</div>`;
+            }
+            previewDiv.innerHTML = html;
+            step2.style.display = 'block';
+            resultBox.className = 'result-box success';
+            resultBox.textContent = '✅ 签名验证通过';
+            importBtn.disabled = false;
+        } else {
+            resultBox.className = 'result-box error';
+            resultBox.textContent = '❌ ' + (result.message || '无法验证配置包');
+        }
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+    }
+}
+
+async function confirmActionImport() {
+    const overwrite = document.getElementById('import-action-overwrite').checked;
+    const resultBox = document.getElementById('import-action-result');
+    const importBtn = document.getElementById('import-action-btn');
+    
+    if (!window._importActionTscfg) {
+        showToast('请先选择文件', 'error');
+        return;
+    }
+    
+    resultBox.classList.remove('hidden', 'success', 'error');
+    resultBox.textContent = '🔄 正在保存配置...';
+    importBtn.disabled = true;
+    
+    try {
+        const params = { 
+            tscfg: window._importActionTscfg,
+            filename: window._importActionFilename,
+            overwrite: overwrite
+        };
+        
+        const result = await api.call('automation.actions.import', params);
+        
+        if (result.code === 0) {
+            const data = result.data;
+            if (data?.exists && !data?.imported) {
+                resultBox.className = 'result-box warning';
+                resultBox.textContent = `⚠️ 配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                importBtn.disabled = false;
+            } else {
+                resultBox.className = 'result-box success';
+                resultBox.innerHTML = `✅ 已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
+                showToast(`已导入配置，重启后生效`, 'success');
+                setTimeout(() => hideImportActionModal(), 2000);
+            }
+        } else {
+            resultBox.className = 'result-box error';
+            resultBox.textContent = '❌ ' + (result.message || '导入失败');
+            importBtn.disabled = false;
+        }
+    } catch (e) {
+        resultBox.className = 'result-box error';
+        resultBox.textContent = '❌ ' + e.message;
+        importBtn.disabled = false;
+    }
+}
+
+// 导出导入函数
+window.showExportSourceModal = showExportSourceModal;
+window.hideExportSourceModal = hideExportSourceModal;
+window.doExportSource = doExportSource;
+window.showImportSourceModal = showImportSourceModal;
+window.hideImportSourceModal = hideImportSourceModal;
+window.previewSourceImport = previewSourceImport;
+window.confirmSourceImport = confirmSourceImport;
+window.showExportRuleModal = showExportRuleModal;
+window.hideExportRuleModal = hideExportRuleModal;
+window.doExportRule = doExportRule;
+window.showImportRuleModal = showImportRuleModal;
+window.hideImportRuleModal = hideImportRuleModal;
+window.previewRuleImport = previewRuleImport;
+window.confirmRuleImport = confirmRuleImport;
+window.showExportActionModal = showExportActionModal;
+window.hideExportActionModal = hideExportActionModal;
+window.doExportAction = doExportAction;
+window.showImportActionModal = showImportActionModal;
+window.hideImportActionModal = hideImportActionModal;
+window.previewActionImport = previewActionImport;
+window.confirmActionImport = confirmActionImport;
 

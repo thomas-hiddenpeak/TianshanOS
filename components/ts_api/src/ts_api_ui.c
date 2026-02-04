@@ -26,6 +26,7 @@
 #include "ts_api.h"
 #include "ts_log.h"
 #include "ts_storage.h"
+#include "ts_config_pack.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "cJSON.h"
@@ -50,40 +51,28 @@
 
 /**
  * @brief 从 SD 卡加载 widgets 配置
+ * 
+ * 支持 .tscfg 加密配置优先加载
  * @return cJSON* 配置对象，失败返回 NULL（调用者负责释放）
  */
 static cJSON *load_widgets_from_sdcard(void)
 {
-    FILE *f = fopen(UI_WIDGETS_FILE, "r");
-    if (!f) {
+    /* 使用 .tscfg 优先加载 */
+    char *content = NULL;
+    size_t content_len = 0;
+    bool used_tscfg = false;
+    
+    esp_err_t ret = ts_config_pack_load_with_priority(
+        UI_WIDGETS_FILE, &content, &content_len, &used_tscfg);
+    
+    if (ret != ESP_OK) {
         TS_LOGD(TAG, "SD card file not found: %s", UI_WIDGETS_FILE);
         return NULL;
     }
     
-    /* 获取文件大小 */
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    
-    if (size <= 0 || size > UI_WIDGETS_MAX_SIZE * 2) {
-        TS_LOGW(TAG, "Invalid file size: %ld", size);
-        fclose(f);
-        return NULL;
+    if (used_tscfg) {
+        TS_LOGI(TAG, "Loaded encrypted widgets from .tscfg");
     }
-    
-    /* 读取文件内容 */
-    char *content = heap_caps_malloc(size + 1, MALLOC_CAP_SPIRAM);
-    if (!content) {
-        content = malloc(size + 1);
-    }
-    if (!content) {
-        fclose(f);
-        return NULL;
-    }
-    
-    size_t read = fread(content, 1, size, f);
-    fclose(f);
-    content[read] = '\0';
     
     /* 解析 JSON */
     cJSON *json = cJSON_Parse(content);

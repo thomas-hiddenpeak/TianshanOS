@@ -10,6 +10,8 @@
 #include "ts_storage.h"
 #include "ts_log.h"
 #include "ts_ota.h"
+#include "ts_config_pack.h"
+#include "ts_ws_subscriptions.h"
 #include "cJSON.h"
 #include "esp_http_server.h"
 #include <string.h>
@@ -485,6 +487,53 @@ static esp_err_t file_upload_handler(ts_http_request_t *req, void *user_data)
     cJSON_AddStringToObject(response, "path", path);
     cJSON_AddNumberToObject(response, "size", req->body_len);
     cJSON_AddStringToObject(response, "status", "uploaded");
+    
+    // === 检测 .tscfg 配置包并自动验证 ===
+    const char *ext = strrchr(path, '.');
+    if (ext && strcasecmp(ext, TS_CONFIG_PACK_EXT) == 0) {
+        TS_LOGI(TAG, "Detected config pack upload: %s", path);
+        
+        // 验证配置包
+        ts_config_pack_sig_info_t sig_info = {0};
+        ts_config_pack_result_t pack_result = ts_config_pack_verify(path, &sig_info);
+        
+        // 添加验证结果到响应
+        cJSON *validation = cJSON_CreateObject();
+        cJSON_AddBoolToObject(validation, "valid", pack_result == TS_CONFIG_PACK_OK);
+        cJSON_AddNumberToObject(validation, "result_code", pack_result);
+        cJSON_AddStringToObject(validation, "result_message", ts_config_pack_strerror(pack_result));
+        
+        if (pack_result == TS_CONFIG_PACK_OK || sig_info.signer_cn[0] != '\0') {
+            cJSON *sig = cJSON_CreateObject();
+            cJSON_AddBoolToObject(sig, "valid", sig_info.valid);
+            cJSON_AddBoolToObject(sig, "is_official", sig_info.is_official);
+            cJSON_AddStringToObject(sig, "signer_cn", sig_info.signer_cn);
+            cJSON_AddStringToObject(sig, "signer_ou", sig_info.signer_ou);
+            cJSON_AddNumberToObject(sig, "signed_at", (double)sig_info.signed_at);
+            cJSON_AddItemToObject(validation, "signature", sig);
+        }
+        
+        cJSON_AddItemToObject(response, "config_pack", validation);
+        
+        // 通过 WebSocket 广播验证结果
+        cJSON *ws_data = cJSON_CreateObject();
+        cJSON_AddStringToObject(ws_data, "path", path);
+        cJSON_AddStringToObject(ws_data, "status", 
+                               pack_result == TS_CONFIG_PACK_OK ? "success" : "error");
+        cJSON_AddNumberToObject(ws_data, "result_code", pack_result);
+        cJSON_AddStringToObject(ws_data, "result_message", ts_config_pack_strerror(pack_result));
+        
+        if (pack_result == TS_CONFIG_PACK_OK || sig_info.signer_cn[0] != '\0') {
+            cJSON *ws_sig = cJSON_CreateObject();
+            cJSON_AddBoolToObject(ws_sig, "valid", sig_info.valid);
+            cJSON_AddBoolToObject(ws_sig, "is_official", sig_info.is_official);
+            cJSON_AddStringToObject(ws_sig, "signer_cn", sig_info.signer_cn);
+            cJSON_AddItemToObject(ws_data, "signature", ws_sig);
+        }
+        
+        ts_ws_broadcast_to_topic("config.pack.validated", ws_data);
+        cJSON_Delete(ws_data);
+    }
     
     char *json = cJSON_PrintUnformatted(response);
     cJSON_Delete(response);

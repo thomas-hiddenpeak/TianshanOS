@@ -27,11 +27,17 @@
 #include "ts_known_hosts.h"
 #include "ts_ssh_hosts_config.h"
 #include "ts_ssh_commands_config.h"
+#include "ts_config_pack.h"
+#include "ts_cert.h"
 #include "ts_webui.h"
 #include "ts_log.h"
+#include "esp_log.h"
 #include "esp_heap_caps.h"
 #include <string.h>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <time.h>
 
 #define TAG "api_ssh"
 
@@ -1400,6 +1406,274 @@ static esp_err_t api_ssh_hosts_get(const cJSON *params, ts_api_result_t *result)
     return ESP_OK;
 }
 
+/**
+ * @brief ssh.hosts.export - 导出单个 SSH 主机配置为 .tscfg
+ * 
+ * Params: {
+ *   "id": "agx0",                    // 主机 ID
+ *   "recipient_cert": "-----BEGIN..." // 可选，目标设备证书（不提供则加密给本机）
+ * }
+ * 
+ * Response: {
+ *   "tscfg": "{ ... }",  // .tscfg JSON 内容
+ *   "filename": "agx0.tscfg"
+ * }
+ */
+static esp_err_t api_ssh_hosts_export(const cJSON *params, ts_api_result_t *result)
+{
+    if (!params) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing parameters");
+        return ESP_OK;
+    }
+    
+    const cJSON *id = cJSON_GetObjectItem(params, "id");
+    if (!id || !cJSON_IsString(id) || !id->valuestring[0]) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'id' parameter");
+        return ESP_OK;
+    }
+    
+    /* 检查导出权限 */
+    if (!ts_config_pack_can_export()) {
+        ts_api_result_error(result, TS_API_ERR_NO_PERMISSION, 
+            "This device is not authorized to export config packs");
+        return ESP_OK;
+    }
+    
+    /* 获取主机配置 */
+    ts_ssh_host_config_t config;
+    esp_err_t ret = ts_ssh_hosts_config_get(id->valuestring, &config);
+    if (ret != ESP_OK) {
+        ts_api_result_error(result, TS_API_ERR_NOT_FOUND, "Host not found");
+        return ESP_OK;
+    }
+    
+    /* 构建 JSON 内容 */
+    cJSON *host_json = cJSON_CreateObject();
+    cJSON_AddStringToObject(host_json, "id", config.id);
+    cJSON_AddStringToObject(host_json, "host", config.host);
+    cJSON_AddNumberToObject(host_json, "port", config.port);
+    cJSON_AddStringToObject(host_json, "username", config.username);
+    cJSON_AddStringToObject(host_json, "auth_type", 
+        config.auth_type == TS_SSH_HOST_AUTH_KEY ? "key" : "password");
+    if (config.keyid[0]) {
+        cJSON_AddStringToObject(host_json, "keyid", config.keyid);
+    }
+    cJSON_AddBoolToObject(host_json, "enabled", config.enabled);
+    
+    char *json_str = cJSON_PrintUnformatted(host_json);
+    cJSON_Delete(host_json);
+    if (!json_str) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to serialize config");
+        return ESP_OK;
+    }
+    
+    /* 获取接收方证书（默认使用本机证书） */
+    const cJSON *recipient_cert = cJSON_GetObjectItem(params, "recipient_cert");
+    char *cert_pem = NULL;
+    size_t cert_len = 0;
+    
+    if (recipient_cert && cJSON_IsString(recipient_cert) && recipient_cert->valuestring[0]) {
+        cert_pem = recipient_cert->valuestring;
+        cert_len = strlen(cert_pem);
+    } else {
+        /* 使用本机证书 */
+        cert_pem = heap_caps_malloc(4096, MALLOC_CAP_SPIRAM);
+        if (!cert_pem) {
+            cJSON_free(json_str);
+            ts_api_result_error(result, TS_API_ERR_INTERNAL, "Out of memory");
+            return ESP_OK;
+        }
+        cert_len = 4096;
+        ret = ts_cert_get_certificate(cert_pem, &cert_len);
+        if (ret != ESP_OK) {
+            free(cert_pem);
+            cJSON_free(json_str);
+            ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to get device certificate");
+            return ESP_OK;
+        }
+    }
+    
+    /* 创建加密配置包 */
+    ts_config_pack_export_opts_t opts = {
+        .recipient_cert_pem = cert_pem,
+        .recipient_cert_len = cert_len,
+        .description = "SSH host configuration"
+    };
+    
+    char *tscfg_output = NULL;
+    size_t tscfg_len = 0;
+    
+    ts_config_pack_result_t pack_result = ts_config_pack_create(
+        config.id, json_str, strlen(json_str), &opts, &tscfg_output, &tscfg_len);
+    
+    cJSON_free(json_str);
+    if (!recipient_cert || !cJSON_IsString(recipient_cert)) {
+        free(cert_pem);  /* 只有本机分配的才需要释放 */
+    }
+    
+    if (pack_result != TS_CONFIG_PACK_OK) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to create config pack");
+        return ESP_OK;
+    }
+    
+    /* 返回结果 */
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "tscfg", tscfg_output);
+    
+    char filename[64];
+    snprintf(filename, sizeof(filename), "%s.tscfg", config.id);
+    cJSON_AddStringToObject(data, "filename", filename);
+    
+    free(tscfg_output);
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/**
+ * @brief ssh.hosts.import - 导入 SSH 主机配置（从 .tscfg）
+ * 
+ * Params: {
+ *   "tscfg": "{ ... }",  // .tscfg JSON 内容
+ *   "overwrite": false   // 可选，是否覆盖已存在的配置
+ * }
+ * 
+ * Response: {
+ *   "id": "agx0",
+ *   "host": "192.168.1.100",
+ *   "imported": true
+ * }
+ */
+static esp_err_t api_ssh_hosts_import(const cJSON *params, ts_api_result_t *result)
+{
+    if (!params) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing parameters");
+        return ESP_OK;
+    }
+    
+    const cJSON *tscfg = cJSON_GetObjectItem(params, "tscfg");
+    const cJSON *filename = cJSON_GetObjectItem(params, "filename");
+    if (!tscfg || !cJSON_IsString(tscfg) || !tscfg->valuestring[0]) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'tscfg' parameter");
+        return ESP_OK;
+    }
+    
+    const cJSON *overwrite = cJSON_GetObjectItem(params, "overwrite");
+    const cJSON *preview = cJSON_GetObjectItem(params, "preview");
+    bool do_overwrite = overwrite && cJSON_IsTrue(overwrite);
+    bool do_preview = preview && cJSON_IsTrue(preview);
+    
+    /* 轻量级验证：只验证签名和目标设备，不解密内容 */
+    ts_config_pack_sig_info_t sig_info = {0};
+    ts_config_pack_result_t pack_result = ts_config_pack_verify_mem(
+        tscfg->valuestring, strlen(tscfg->valuestring), &sig_info);
+    
+    if (pack_result != TS_CONFIG_PACK_OK) {
+        const char *err_msg = "Failed to verify config pack";
+        if (pack_result == TS_CONFIG_PACK_ERR_RECIPIENT) {
+            err_msg = "This config pack is not for this device";
+        } else if (pack_result == TS_CONFIG_PACK_ERR_SIGNATURE) {
+            err_msg = "Invalid signature";
+        }
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, err_msg);
+        return ESP_OK;
+    }
+    
+    /* 从文件名推断配置 ID（格式：xxx.tscfg） */
+    char config_id[64] = {0};
+    if (filename && cJSON_IsString(filename) && filename->valuestring[0]) {
+        const char *name = filename->valuestring;
+        const char *dot = strrchr(name, '.');
+        if (dot && strcmp(dot, ".tscfg") == 0) {
+            size_t len = dot - name;
+            if (len > sizeof(config_id) - 1) len = sizeof(config_id) - 1;
+            strncpy(config_id, name, len);
+        } else {
+            strncpy(config_id, name, sizeof(config_id) - 1);
+        }
+    } else {
+        /* 没有文件名，生成一个基于时间戳的 ID */
+        snprintf(config_id, sizeof(config_id), "host_%lld", (long long)time(NULL));
+    }
+    
+    /* 检查是否已存在（通过检查 .tscfg 或 .json 文件） */
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", TS_SSH_HOSTS_SDCARD_DIR, config_id);
+    struct stat st;
+    bool exists = (stat(filepath, &st) == 0);
+    if (!exists) {
+        snprintf(filepath, sizeof(filepath), "%s/%s.json", TS_SSH_HOSTS_SDCARD_DIR, config_id);
+        exists = (stat(filepath, &st) == 0);
+    }
+    
+    /* 预览模式：只返回验证结果，不保存 */
+    if (do_preview) {
+        cJSON *data = cJSON_CreateObject();
+        cJSON_AddBoolToObject(data, "valid", true);
+        cJSON_AddStringToObject(data, "id", config_id);
+        cJSON_AddBoolToObject(data, "exists", exists);
+        cJSON_AddStringToObject(data, "signer", sig_info.signer_cn[0] ? sig_info.signer_cn : "unknown");
+        cJSON_AddBoolToObject(data, "official", sig_info.is_official);
+        cJSON_AddStringToObject(data, "note", "Content will be decrypted on system restart");
+        
+        ts_api_result_ok(result, data);
+        return ESP_OK;
+    }
+    
+    if (exists && !do_overwrite) {
+        cJSON *data = cJSON_CreateObject();
+        cJSON_AddStringToObject(data, "id", config_id);
+        cJSON_AddBoolToObject(data, "exists", true);
+        cJSON_AddStringToObject(data, "message", "Host config already exists, set overwrite=true to replace");
+        ts_api_result_ok(result, data);
+        return ESP_OK;
+    }
+    
+    /* 确保目录存在 */
+    if (stat(TS_SSH_HOSTS_SDCARD_DIR, &st) != 0) {
+        if (mkdir(TS_SSH_HOSTS_SDCARD_DIR, 0755) != 0) {
+            ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to create hosts directory");
+            return ESP_OK;
+        }
+    }
+    
+    /* 直接保存 .tscfg 文件到 SD 卡 */
+    snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", TS_SSH_HOSTS_SDCARD_DIR, config_id);
+    FILE *f = fopen(filepath, "w");
+    if (!f) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to create config file");
+        return ESP_OK;
+    }
+    
+    size_t written = fwrite(tscfg->valuestring, 1, strlen(tscfg->valuestring), f);
+    fclose(f);
+    
+    if (written != strlen(tscfg->valuestring)) {
+        unlink(filepath);
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to write config file");
+        return ESP_OK;
+    }
+    
+    /* 如果覆盖，删除旧的 .json 文件（如果存在） */
+    if (do_overwrite) {
+        char json_path[128];
+        snprintf(json_path, sizeof(json_path), "%s/%s.json", TS_SSH_HOSTS_SDCARD_DIR, config_id);
+        unlink(json_path);  /* 忽略错误，可能本来就不存在 */
+    }
+    
+    ESP_LOGI(TAG, "SSH host config imported: %s (will be loaded on restart)", filepath);
+    
+    /* 返回结果 */
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "id", config_id);
+    cJSON_AddStringToObject(data, "path", filepath);
+    cJSON_AddBoolToObject(data, "imported", true);
+    cJSON_AddBoolToObject(data, "overwritten", exists && do_overwrite);
+    cJSON_AddStringToObject(data, "note", "Restart system to load the new config");
+    
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
 /*===========================================================================*/
 /*                       SSH Command Config APIs                              */
 /*===========================================================================*/
@@ -1412,7 +1686,20 @@ typedef struct {
 } cmd_list_ctx_t;
 
 /**
+ * @brief 检查主机 ID 是否存在
+ */
+static bool is_host_exists(const char *host_id)
+{
+    if (!host_id || !host_id[0]) return false;
+    
+    ts_ssh_host_config_t config;
+    return ts_ssh_hosts_config_get(host_id, &config) == ESP_OK;
+}
+
+/**
  * @brief 将单个命令配置转换为 JSON 对象
+ * 
+ * 自动检测孤儿命令（引用了不存在的主机）
  */
 static cJSON *cmd_config_to_json(const ts_ssh_command_config_t *cfg)
 {
@@ -1425,6 +1712,11 @@ static cJSON *cmd_config_to_json(const ts_ssh_command_config_t *cfg)
     cJSON_AddStringToObject(item, "command", cfg->command);
     cJSON_AddStringToObject(item, "desc", cfg->desc);
     cJSON_AddStringToObject(item, "icon", cfg->icon);
+    
+    /* 检查是否为孤儿命令（引用的主机不存在） */
+    bool orphan = !is_host_exists(cfg->host_id);
+    cJSON_AddBoolToObject(item, "orphan", orphan);
+    
     if (cfg->expect_pattern[0]) {
         cJSON_AddStringToObject(item, "expectPattern", cfg->expect_pattern);
     }
@@ -1552,10 +1844,41 @@ static esp_err_t api_ssh_commands_add(const cJSON *params, ts_api_result_t *resu
         return ESP_OK;
     }
     
+    const cJSON *id = cJSON_GetObjectItem(params, "id");
     const cJSON *host_id = cJSON_GetObjectItem(params, "host_id");
     const cJSON *name = cJSON_GetObjectItem(params, "name");
     const cJSON *command = cJSON_GetObjectItem(params, "command");
-    const cJSON *id = cJSON_GetObjectItem(params, "id");
+    
+    /* ID 是必填参数，必须由前端提供格式正确的语义化 ID */
+    if (!id || !cJSON_IsString(id) || !id->valuestring[0]) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, 
+            "Missing 'id' parameter (required: letters, numbers, _, -)");
+        return ESP_OK;
+    }
+    
+    /* 验证 ID 格式：只允许字母、数字、下划线、连字符 */
+    const char *id_str = id->valuestring;
+    size_t id_len = strlen(id_str);
+    if (id_len > 31) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, 
+            "ID too long (max 31 characters)");
+        return ESP_OK;
+    }
+    if (id_str[0] == '_' || id_str[0] == '-' || 
+        id_str[id_len - 1] == '_' || id_str[id_len - 1] == '-') {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, 
+            "ID cannot start or end with _ or -");
+        return ESP_OK;
+    }
+    for (size_t i = 0; i < id_len; i++) {
+        char c = id_str[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || 
+              (c >= '0' && c <= '9') || c == '_' || c == '-')) {
+            ts_api_result_error(result, TS_API_ERR_INVALID_ARG, 
+                "Invalid ID format (allowed: a-z, A-Z, 0-9, _, -)");
+            return ESP_OK;
+        }
+    }
     
     if (!host_id || !cJSON_IsString(host_id) || !host_id->valuestring[0]) {
         ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'host_id' parameter");
@@ -1576,10 +1899,8 @@ static esp_err_t api_ssh_commands_add(const cJSON *params, ts_api_result_t *resu
         .enabled = true,
     };
     
-    /* 可选 ID（用于更新） */
-    if (id && cJSON_IsString(id)) {
-        strncpy(config.id, id->valuestring, sizeof(config.id) - 1);
-    }
+    /* ID 是必填参数 */
+    strncpy(config.id, id->valuestring, sizeof(config.id) - 1);
     
     strncpy(config.host_id, host_id->valuestring, sizeof(config.host_id) - 1);
     strncpy(config.name, name->valuestring, sizeof(config.name) - 1);
@@ -1764,6 +2085,322 @@ static esp_err_t api_ssh_commands_get(const cJSON *params, ts_api_result_t *resu
     return ESP_OK;
 }
 
+/**
+ * @brief ssh.commands.export - 导出单个 SSH 指令配置为 .tscfg
+ * 
+ * Params: {
+ *   "id": "check_gpu",               // 指令 ID
+ *   "include_host": false,           // 可选，是否包含依赖的主机配置
+ *   "recipient_cert": "-----BEGIN..." // 可选，目标设备证书
+ * }
+ * 
+ * Response: {
+ *   "tscfg": "{ ... }",
+ *   "filename": "check_gpu.tscfg",
+ *   "host_included": false,
+ *   "host_id": "agx0"               // 依赖的主机 ID
+ * }
+ */
+static esp_err_t api_ssh_commands_export(const cJSON *params, ts_api_result_t *result)
+{
+    if (!params) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing parameters");
+        return ESP_OK;
+    }
+    
+    const cJSON *id = cJSON_GetObjectItem(params, "id");
+    if (!id || !cJSON_IsString(id) || !id->valuestring[0]) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'id' parameter");
+        return ESP_OK;
+    }
+    
+    /* 检查导出权限 */
+    if (!ts_config_pack_can_export()) {
+        ts_api_result_error(result, TS_API_ERR_NO_PERMISSION, 
+            "This device is not authorized to export config packs");
+        return ESP_OK;
+    }
+    
+    const cJSON *include_host = cJSON_GetObjectItem(params, "include_host");
+    bool do_include_host = include_host && cJSON_IsTrue(include_host);
+    
+    /* 获取指令配置 */
+    ts_ssh_command_config_t cmd_config;
+    esp_err_t ret = ts_ssh_commands_config_get(id->valuestring, &cmd_config);
+    if (ret != ESP_OK) {
+        ts_api_result_error(result, TS_API_ERR_NOT_FOUND, "Command not found");
+        return ESP_OK;
+    }
+    
+    /* 构建导出内容 */
+    cJSON *export_json = cJSON_CreateObject();
+    cJSON_AddStringToObject(export_json, "type", "ssh_command");
+    
+    /* 指令配置 */
+    cJSON *cmd_json = cJSON_CreateObject();
+    cJSON_AddStringToObject(cmd_json, "id", cmd_config.id);
+    cJSON_AddStringToObject(cmd_json, "host_id", cmd_config.host_id);
+    cJSON_AddStringToObject(cmd_json, "name", cmd_config.name);
+    cJSON_AddStringToObject(cmd_json, "command", cmd_config.command);
+    if (cmd_config.desc[0]) cJSON_AddStringToObject(cmd_json, "desc", cmd_config.desc);
+    if (cmd_config.icon[0]) cJSON_AddStringToObject(cmd_json, "icon", cmd_config.icon);
+    if (cmd_config.expect_pattern[0]) cJSON_AddStringToObject(cmd_json, "expectPattern", cmd_config.expect_pattern);
+    if (cmd_config.fail_pattern[0]) cJSON_AddStringToObject(cmd_json, "failPattern", cmd_config.fail_pattern);
+    if (cmd_config.extract_pattern[0]) cJSON_AddStringToObject(cmd_json, "extractPattern", cmd_config.extract_pattern);
+    if (cmd_config.var_name[0]) cJSON_AddStringToObject(cmd_json, "varName", cmd_config.var_name);
+    cJSON_AddNumberToObject(cmd_json, "timeout", cmd_config.timeout_sec);
+    cJSON_AddBoolToObject(cmd_json, "stopOnMatch", cmd_config.stop_on_match);
+    cJSON_AddBoolToObject(cmd_json, "nohup", cmd_config.nohup);
+    cJSON_AddBoolToObject(cmd_json, "enabled", cmd_config.enabled);
+    if (cmd_config.service_mode) {
+        cJSON_AddBoolToObject(cmd_json, "serviceMode", true);
+        if (cmd_config.ready_pattern[0]) cJSON_AddStringToObject(cmd_json, "readyPattern", cmd_config.ready_pattern);
+        if (cmd_config.service_fail_pattern[0]) cJSON_AddStringToObject(cmd_json, "serviceFailPattern", cmd_config.service_fail_pattern);
+        if (cmd_config.ready_timeout_sec > 0) cJSON_AddNumberToObject(cmd_json, "readyTimeout", cmd_config.ready_timeout_sec);
+        if (cmd_config.ready_check_interval_ms > 0) cJSON_AddNumberToObject(cmd_json, "readyInterval", cmd_config.ready_check_interval_ms);
+    }
+    cJSON_AddItemToObject(export_json, "command", cmd_json);
+    
+    /* 可选包含主机配置 */
+    bool host_included = false;
+    if (do_include_host && cmd_config.host_id[0]) {
+        ts_ssh_host_config_t host_config;
+        if (ts_ssh_hosts_config_get(cmd_config.host_id, &host_config) == ESP_OK) {
+            cJSON *host_json = cJSON_CreateObject();
+            cJSON_AddStringToObject(host_json, "id", host_config.id);
+            cJSON_AddStringToObject(host_json, "host", host_config.host);
+            cJSON_AddNumberToObject(host_json, "port", host_config.port);
+            cJSON_AddStringToObject(host_json, "username", host_config.username);
+            cJSON_AddStringToObject(host_json, "auth_type", 
+                host_config.auth_type == TS_SSH_HOST_AUTH_KEY ? "key" : "password");
+            if (host_config.keyid[0]) {
+                cJSON_AddStringToObject(host_json, "keyid", host_config.keyid);
+            }
+            cJSON_AddItemToObject(export_json, "host", host_json);
+            host_included = true;
+        }
+    }
+    
+    char *json_str = cJSON_PrintUnformatted(export_json);
+    cJSON_Delete(export_json);
+    if (!json_str) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to serialize config");
+        return ESP_OK;
+    }
+    
+    /* 获取接收方证书 */
+    const cJSON *recipient_cert = cJSON_GetObjectItem(params, "recipient_cert");
+    char *cert_pem = NULL;
+    size_t cert_len = 0;
+    bool free_cert = false;
+    
+    if (recipient_cert && cJSON_IsString(recipient_cert) && recipient_cert->valuestring[0]) {
+        cert_pem = recipient_cert->valuestring;
+        cert_len = strlen(cert_pem);
+    } else {
+        cert_pem = heap_caps_malloc(4096, MALLOC_CAP_SPIRAM);
+        if (!cert_pem) {
+            cJSON_free(json_str);
+            ts_api_result_error(result, TS_API_ERR_INTERNAL, "Out of memory");
+            return ESP_OK;
+        }
+        cert_len = 4096;
+        ret = ts_cert_get_certificate(cert_pem, &cert_len);
+        if (ret != ESP_OK) {
+            free(cert_pem);
+            cJSON_free(json_str);
+            ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to get device certificate");
+            return ESP_OK;
+        }
+        free_cert = true;
+    }
+    
+    /* 创建加密配置包 */
+    ts_config_pack_export_opts_t opts = {
+        .recipient_cert_pem = cert_pem,
+        .recipient_cert_len = cert_len,
+        .description = host_included ? "SSH command with host" : "SSH command configuration"
+    };
+    
+    char *tscfg_output = NULL;
+    size_t tscfg_len = 0;
+    
+    ts_config_pack_result_t pack_result = ts_config_pack_create(
+        cmd_config.id, json_str, strlen(json_str), &opts, &tscfg_output, &tscfg_len);
+    
+    cJSON_free(json_str);
+    if (free_cert) free(cert_pem);
+    
+    if (pack_result != TS_CONFIG_PACK_OK) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to create config pack");
+        return ESP_OK;
+    }
+    
+    /* 返回结果 */
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "tscfg", tscfg_output);
+    
+    char filename[64];
+    snprintf(filename, sizeof(filename), "%s.tscfg", cmd_config.id);
+    cJSON_AddStringToObject(data, "filename", filename);
+    cJSON_AddBoolToObject(data, "host_included", host_included);
+    cJSON_AddStringToObject(data, "host_id", cmd_config.host_id);
+    
+    free(tscfg_output);
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/**
+ * @brief ssh.commands.import - 导入 SSH 指令配置（从 .tscfg）
+ * 
+ * Params: {
+ *   "tscfg": "{ ... }",
+ *   "overwrite": false,    // 可选，是否覆盖已存在的指令
+ *   "import_host": true,   // 可选，是否同时导入包含的主机配置
+ *   "target_host_id": ""   // 可选，强制使用指定的主机 ID（覆盖配置中的 host_id）
+ * }
+ * 
+ * Response: {
+ *   "id": "check_gpu",
+ *   "imported": true,
+ *   "host_imported": false,
+ *   "host_missing": false,  // 如果依赖的主机不存在且未包含
+ *   "host_id": "agx0"
+ * }
+ */
+static esp_err_t api_ssh_commands_import(const cJSON *params, ts_api_result_t *result)
+{
+    if (!params) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing parameters");
+        return ESP_OK;
+    }
+    
+    const cJSON *tscfg = cJSON_GetObjectItem(params, "tscfg");
+    const cJSON *filename = cJSON_GetObjectItem(params, "filename");
+    if (!tscfg || !cJSON_IsString(tscfg) || !tscfg->valuestring[0]) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Missing 'tscfg' parameter");
+        return ESP_OK;
+    }
+    
+    const cJSON *overwrite = cJSON_GetObjectItem(params, "overwrite");
+    const cJSON *preview = cJSON_GetObjectItem(params, "preview");
+    bool do_overwrite = overwrite && cJSON_IsTrue(overwrite);
+    bool do_preview = preview && cJSON_IsTrue(preview);
+    
+    /* 轻量级验证：只验证签名和目标设备，不解密内容 */
+    ts_config_pack_sig_info_t sig_info = {0};
+    ts_config_pack_result_t pack_result = ts_config_pack_verify_mem(
+        tscfg->valuestring, strlen(tscfg->valuestring), &sig_info);
+    
+    if (pack_result != TS_CONFIG_PACK_OK) {
+        const char *err_msg = "Failed to verify config pack";
+        if (pack_result == TS_CONFIG_PACK_ERR_RECIPIENT) {
+            err_msg = "This config pack is not for this device";
+        } else if (pack_result == TS_CONFIG_PACK_ERR_SIGNATURE) {
+            err_msg = "Invalid signature";
+        }
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, err_msg);
+        return ESP_OK;
+    }
+    
+    /* 从文件名推断配置 ID（格式：xxx.tscfg） */
+    char config_id[64] = {0};
+    if (filename && cJSON_IsString(filename) && filename->valuestring[0]) {
+        const char *name = filename->valuestring;
+        const char *dot = strrchr(name, '.');
+        if (dot && strcmp(dot, ".tscfg") == 0) {
+            size_t len = dot - name;
+            if (len > sizeof(config_id) - 1) len = sizeof(config_id) - 1;
+            strncpy(config_id, name, len);
+        } else {
+            strncpy(config_id, name, sizeof(config_id) - 1);
+        }
+    } else {
+        /* 没有文件名，生成一个基于时间戳的 ID */
+        snprintf(config_id, sizeof(config_id), "cmd_%lld", (long long)time(NULL));
+    }
+    
+    /* 检查是否已存在（通过检查 .tscfg 或 .json 文件） */
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", TS_SSH_COMMANDS_SDCARD_DIR, config_id);
+    struct stat st;
+    bool exists = (stat(filepath, &st) == 0);
+    if (!exists) {
+        snprintf(filepath, sizeof(filepath), "%s/%s.json", TS_SSH_COMMANDS_SDCARD_DIR, config_id);
+        exists = (stat(filepath, &st) == 0);
+    }
+    
+    /* 预览模式：只返回验证结果，不保存 */
+    if (do_preview) {
+        cJSON *data = cJSON_CreateObject();
+        cJSON_AddBoolToObject(data, "valid", true);
+        cJSON_AddStringToObject(data, "type", "ssh_command");
+        cJSON_AddStringToObject(data, "id", config_id);
+        cJSON_AddBoolToObject(data, "exists", exists);
+        cJSON_AddStringToObject(data, "signer", sig_info.signer_cn[0] ? sig_info.signer_cn : "unknown");
+        cJSON_AddBoolToObject(data, "official", sig_info.is_official);
+        cJSON_AddStringToObject(data, "note", "Content will be decrypted on system restart");
+        
+        ts_api_result_ok(result, data);
+        return ESP_OK;
+    }
+    
+    if (exists && !do_overwrite) {
+        cJSON *data = cJSON_CreateObject();
+        cJSON_AddStringToObject(data, "id", config_id);
+        cJSON_AddBoolToObject(data, "exists", true);
+        cJSON_AddStringToObject(data, "message", "Command config already exists, set overwrite=true to replace");
+        ts_api_result_ok(result, data);
+        return ESP_OK;
+    }
+    
+    /* 确保目录存在 */
+    if (stat(TS_SSH_COMMANDS_SDCARD_DIR, &st) != 0) {
+        if (mkdir(TS_SSH_COMMANDS_SDCARD_DIR, 0755) != 0) {
+            ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to create commands directory");
+            return ESP_OK;
+        }
+    }
+    
+    /* 直接保存 .tscfg 文件到 SD 卡 */
+    snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", TS_SSH_COMMANDS_SDCARD_DIR, config_id);
+    FILE *f = fopen(filepath, "w");
+    if (!f) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to create config file");
+        return ESP_OK;
+    }
+    
+    size_t written = fwrite(tscfg->valuestring, 1, strlen(tscfg->valuestring), f);
+    fclose(f);
+    
+    if (written != strlen(tscfg->valuestring)) {
+        unlink(filepath);
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to write config file");
+        return ESP_OK;
+    }
+    
+    /* 如果覆盖，删除旧的 .json 文件（如果存在） */
+    if (do_overwrite) {
+        char json_path[128];
+        snprintf(json_path, sizeof(json_path), "%s/%s.json", TS_SSH_COMMANDS_SDCARD_DIR, config_id);
+        unlink(json_path);  /* 忽略错误，可能本来就不存在 */
+    }
+    
+    ESP_LOGI(TAG, "SSH command config imported: %s (will be loaded on restart)", filepath);
+    
+    /* 返回结果 */
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddStringToObject(data, "id", config_id);
+    cJSON_AddStringToObject(data, "path", filepath);
+    cJSON_AddBoolToObject(data, "imported", true);
+    cJSON_AddBoolToObject(data, "overwritten", exists && do_overwrite);
+    cJSON_AddStringToObject(data, "note", "Restart system to load the new config");
+    
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
 /*===========================================================================*/
 /*                          Registration                                      */
 /*===========================================================================*/
@@ -1847,6 +2484,20 @@ static const ts_api_endpoint_t ssh_endpoints[] = {
         .handler = api_ssh_hosts_get,
         .requires_auth = false,
     },
+    {
+        .name = "ssh.hosts.export",
+        .description = "Export SSH host configuration as .tscfg",
+        .category = TS_API_CAT_SECURITY,
+        .handler = api_ssh_hosts_export,
+        .requires_auth = true,
+    },
+    {
+        .name = "ssh.hosts.import",
+        .description = "Import SSH host configuration from .tscfg",
+        .category = TS_API_CAT_SECURITY,
+        .handler = api_ssh_hosts_import,
+        .requires_auth = true,
+    },
     /* SSH Command Config APIs */
     {
         .name = "ssh.commands.list",
@@ -1875,6 +2526,20 @@ static const ts_api_endpoint_t ssh_endpoints[] = {
         .category = TS_API_CAT_SECURITY,
         .handler = api_ssh_commands_get,
         .requires_auth = false,
+    },
+    {
+        .name = "ssh.commands.export",
+        .description = "Export SSH command configuration as .tscfg",
+        .category = TS_API_CAT_SECURITY,
+        .handler = api_ssh_commands_export,
+        .requires_auth = true,
+    },
+    {
+        .name = "ssh.commands.import",
+        .description = "Import SSH command configuration from .tscfg",
+        .category = TS_API_CAT_SECURITY,
+        .handler = api_ssh_commands_import,
+        .requires_auth = true,
     },
 };
 

@@ -13,6 +13,7 @@
 #include "ts_core.h"  /* TS_MALLOC_PSRAM */
 #include "ts_log.h"
 #include "ts_config.h"
+#include "ts_config_pack.h"
 #include "cJSON.h"
 #include "nvs_flash.h"
 #include "nvs.h"
@@ -270,31 +271,22 @@ esp_err_t ts_pin_manager_load_config(const char *path)
     
     TS_LOGI(TAG, "Loading pin config from: %s", path);
     
-    /* Read file content */
-    FILE *f = fopen(path, "r");
-    if (f == NULL) {
+    /* 使用 .tscfg 优先加载 */
+    char *content = NULL;
+    size_t content_len = 0;
+    bool used_tscfg = false;
+    
+    esp_err_t ret = ts_config_pack_load_with_priority(
+        path, &content, &content_len, &used_tscfg);
+    
+    if (ret != ESP_OK) {
         TS_LOGW(TAG, "Failed to open pin config file: %s", path);
         return ESP_ERR_NOT_FOUND;
     }
     
-    fseek(f, 0, SEEK_END);
-    long fsize = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    
-    if (fsize <= 0 || fsize > 8192) {
-        fclose(f);
-        return ESP_ERR_INVALID_SIZE;
+    if (used_tscfg) {
+        TS_LOGI(TAG, "Loaded encrypted pin config from .tscfg");
     }
-    
-    char *content = TS_MALLOC_PSRAM(fsize + 1);
-    if (content == NULL) {
-        fclose(f);
-        return ESP_ERR_NO_MEM;
-    }
-    
-    size_t read_size = fread(content, 1, fsize, f);
-    fclose(f);
-    content[read_size] = '\0';
     
     /* Parse JSON */
     cJSON *root = cJSON_Parse(content);

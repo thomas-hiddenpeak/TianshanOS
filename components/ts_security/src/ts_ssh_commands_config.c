@@ -9,6 +9,7 @@
 #include "ts_ssh_commands_config.h"
 #include "ts_variable.h"
 #include "ts_automation_types.h"
+#include "ts_config_pack.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "nvs.h"
@@ -24,6 +25,7 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
 
 static const char *TAG = "ts_ssh_cmd_cfg";
 
@@ -71,6 +73,10 @@ static struct {
     SemaphoreHandle_t mutex;
 } s_state = {0};
 
+/* 前向声明 - SD 卡操作 */
+static bool is_sdcard_mounted(void);
+static void delete_command_file(const char *id);
+
 /*===========================================================================*/
 /*                          Internal Functions                                */
 /*===========================================================================*/
@@ -87,11 +93,38 @@ static uint32_t get_current_time(void)
     return (uint32_t)now;
 }
 
-static void generate_id(char *id, size_t size)
+/**
+ * @brief 验证 ID 格式是否安全
+ * 
+ * 安全的 ID 格式：
+ * - 只允许字母（a-z, A-Z）、数字（0-9）、下划线（_）、连字符（-）
+ * - 长度至少 1 个字符
+ * - 不能以下划线或连字符开头/结尾
+ * 
+ * @param id 待验证的 ID
+ * @return true 格式合法，false 格式非法
+ */
+static bool is_valid_id(const char *id)
 {
-    /* 生成简单的唯一 ID: cmd_XXXXXXXX */
-    uint32_t random = esp_random();
-    snprintf(id, size, "cmd_%08lx", (unsigned long)random);
+    if (!id || !id[0]) return false;
+    
+    size_t len = strlen(id);
+    if (len > TS_SSH_CMD_ID_MAX - 1) return false;
+    
+    /* 不能以下划线或连字符开头/结尾 */
+    if (id[0] == '_' || id[0] == '-') return false;
+    if (id[len - 1] == '_' || id[len - 1] == '-') return false;
+    
+    /* 只允许字母、数字、下划线、连字符 */
+    for (size_t i = 0; i < len; i++) {
+        char c = id[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || 
+              (c >= '0' && c <= '9') || c == '_' || c == '-')) {
+            return false;
+        }
+    }
+    
+    return true;
 }
 
 /**
@@ -184,6 +217,9 @@ static void precreate_all_variables(void)
 /** 延迟导出标志 */
 static bool s_pending_export = false;
 
+/** 正在从 SD 卡加载中（禁止触发同步） */
+static bool s_loading_from_sdcard = false;
+
 /**
  * @brief 延迟加载/导出任务 - 在独立任务中处理 SD 卡操作（避免 main 任务栈溢出）
  * 
@@ -201,33 +237,52 @@ static void deferred_export_task(void *arg)
     
     size_t nvs_count = ts_ssh_commands_config_count();
     
-    /* 尝试从 SD 卡加载（优先级最高） */
-    ESP_LOGI(TAG, "Deferred: trying to load from SD card...");
-    esp_err_t import_ret = ts_ssh_commands_config_import_from_sdcard(true);  /* merge=true 保留 NVS */
+    /* 
+     * 配置加载优先级：SD 卡 (.tscfg > .json) > NVS
+     * 
+     * 如果 SD 卡有配置文件，以 SD 卡为权威来源（清空 NVS 后导入）
+     * 如果 SD 卡没有配置文件，保留 NVS 数据并导出到 SD 卡
+     */
+    ESP_LOGI(TAG, "Deferred: checking SD card for config (NVS has %d commands)...", (int)nvs_count);
     
-    size_t count = ts_ssh_commands_config_count();
+    /* 检查 SD 卡目录是否有配置文件（.tscfg 或 .json） */
+    bool sdcard_has_config = false;
     
-    if (import_ret == ESP_OK && count > nvs_count) {
-        /* SD 卡有新数据，清空 NVS 后重新导入（确保 SD 卡为权威来源） */
-        ESP_LOGI(TAG, "SD card has new data (%d > %d), reimporting...", (int)count, (int)nvs_count);
+    DIR *dir = opendir(TS_SSH_COMMANDS_SDCARD_DIR);
+    if (dir) {
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            size_t len = strlen(entry->d_name);
+            if ((len >= 6 && strcmp(entry->d_name + len - 5, ".json") == 0) ||
+                (len >= 7 && strcmp(entry->d_name + len - 6, ".tscfg") == 0)) {
+                sdcard_has_config = true;
+                break;
+            }
+        }
+        closedir(dir);
+    }
+    
+    if (sdcard_has_config) {
+        /* SD 卡有配置，清空 NVS 后导入（SD 卡为权威来源） */
+        ESP_LOGI(TAG, "SD card has config, clearing NVS and importing...");
         ts_ssh_commands_config_clear();
-        ts_ssh_commands_config_import_from_sdcard(false);
-        count = ts_ssh_commands_config_count();
-        ESP_LOGI(TAG, "Loaded %d commands from SD card", (int)count);
-    } else if (import_ret == ESP_OK) {
-        /* SD 卡加载成功，但数据量不比 NVS 多（已合并） */
-        ESP_LOGI(TAG, "Merged SD card data with NVS (%d commands total)", (int)count);
-    } else if (import_ret == ESP_ERR_NOT_FOUND) {
-        /* SD 卡文件不存在/无效，导出 NVS 数据到 SD 卡 */
+        
+        esp_err_t import_ret = ts_ssh_commands_config_import_from_sdcard(false);
+        size_t count = ts_ssh_commands_config_count();
+        
+        if (import_ret == ESP_OK) {
+            ESP_LOGI(TAG, "Loaded %d commands from SD card (.tscfg > .json)", (int)count);
+        } else {
+            ESP_LOGW(TAG, "SD card import failed: %s", esp_err_to_name(import_ret));
+        }
+    } else {
+        /* SD 卡没有配置文件，保留 NVS 数据并导出到 SD 卡 */
         if (nvs_count > 0) {
-            ESP_LOGI(TAG, "SD card file not found, exporting %d commands from NVS", (int)nvs_count);
+            ESP_LOGI(TAG, "SD card has no config, exporting %d commands from NVS", (int)nvs_count);
             ts_ssh_commands_config_export_to_sdcard();
         } else {
             ESP_LOGI(TAG, "No commands in SD card or NVS");
         }
-    } else {
-        /* 其他错误（如 SD 卡未挂载） */
-        ESP_LOGW(TAG, "SD card import failed: %s", esp_err_to_name(import_ret));
     }
     
     s_pending_export = false;
@@ -304,7 +359,19 @@ bool ts_ssh_commands_config_is_initialized(void)
 esp_err_t ts_ssh_commands_config_add(const ts_ssh_command_config_t *config,
                                       char *out_id, size_t out_id_size)
 {
-    if (!s_state.initialized || !config || !config->host_id[0] || !config->name[0]) {
+    /* 强制要求 ID：前端必须提供格式正确的语义化 ID */
+    if (!s_state.initialized || !config || !config->id[0] || 
+        !config->host_id[0] || !config->name[0]) {
+        ESP_LOGE(TAG, "Invalid args: id=%s, host_id=%s, name=%s",
+                 config ? config->id : "null",
+                 config ? config->host_id : "null", 
+                 config ? config->name : "null");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    /* 验证 ID 格式 */
+    if (!is_valid_id(config->id)) {
+        ESP_LOGE(TAG, "Invalid ID format: '%s' (allowed: a-z, A-Z, 0-9, _, -)", config->id);
         return ESP_ERR_INVALID_ARG;
     }
     
@@ -316,22 +383,15 @@ esp_err_t ts_ssh_commands_config_add(const ts_ssh_command_config_t *config,
     char key[16];
     nvs_cmd_entry_t entry;
     size_t len;
-    char new_id[TS_SSH_CMD_ID_MAX] = {0};
     
-    /* 如果没有提供 ID，生成一个 */
-    if (config->id[0]) {
-        strncpy(new_id, config->id, sizeof(new_id) - 1);
-    } else {
-        generate_id(new_id, sizeof(new_id));
-    }
-    
+    /* 遍历所有槽位，检查 ID 是否冲突 */
     for (int i = 0; i < TS_SSH_COMMANDS_MAX; i++) {
         make_nvs_key(i, key, sizeof(key));
         len = sizeof(entry);
         esp_err_t ret = nvs_get_blob(s_state.nvs, key, &entry, &len);
         
         if (ret == ESP_OK && len == sizeof(entry)) {
-            if (strcmp(entry.id, new_id) == 0) {
+            if (strcmp(entry.id, config->id) == 0) {
                 existing_index = i;
                 break;
             }
@@ -349,7 +409,7 @@ esp_err_t ts_ssh_commands_config_add(const ts_ssh_command_config_t *config,
     
     /* 构建 NVS 条目 */
     memset(&entry, 0, sizeof(entry));
-    strncpy(entry.id, new_id, sizeof(entry.id) - 1);
+    strncpy(entry.id, config->id, sizeof(entry.id) - 1);
     strncpy(entry.host_id, config->host_id, sizeof(entry.host_id) - 1);
     strncpy(entry.name, config->name, sizeof(entry.name) - 1);
     strncpy(entry.command, config->command, sizeof(entry.command) - 1);
@@ -386,9 +446,9 @@ esp_err_t ts_ssh_commands_config_add(const ts_ssh_command_config_t *config,
                  existing_index >= 0 ? "Updated" : "Added",
                  entry.name, entry.id);
         
-        /* 输出生成的 ID */
+        /* 输出 ID */
         if (out_id && out_id_size > 0) {
-            strncpy(out_id, new_id, out_id_size - 1);
+            strncpy(out_id, config->id, out_id_size - 1);
             out_id[out_id_size - 1] = '\0';
         }
         
@@ -397,8 +457,10 @@ esp_err_t ts_ssh_commands_config_add(const ts_ssh_command_config_t *config,
             precreate_command_variables(entry.var_name);
         }
         
-        /* 同步到 SD 卡 */
-        ts_ssh_commands_config_sync_to_sdcard();
+        /* 同步到 SD 卡（加载期间不触发，避免文件描述符用尽） */
+        if (!s_loading_from_sdcard) {
+            ts_ssh_commands_config_sync_to_sdcard();
+        }
     }
     
     return ret;
@@ -434,9 +496,9 @@ esp_err_t ts_ssh_commands_config_remove(const char *id)
     
     xSemaphoreGive(s_state.mutex);
     
-    /* 同步到 SD 卡 */
+    /* 同步删除 SD 卡文件（直接删除，不重新导出） */
     if (ret == ESP_OK) {
-        ts_ssh_commands_config_sync_to_sdcard();
+        delete_command_file(id);
     }
     
     return ret;
@@ -902,6 +964,171 @@ static esp_err_t ensure_commands_dir(void)
 }
 
 /**
+ * @brief 删除 SD 卡上的指令配置文件
+ * 
+ * 同时尝试删除 .json 和 .tscfg 文件（如果存在）
+ */
+static void delete_command_file(const char *id)
+{
+    if (!id || !id[0] || !is_sdcard_mounted()) {
+        return;
+    }
+    
+    char filepath[128];
+    
+    /* 删除 .json 文件 */
+    snprintf(filepath, sizeof(filepath), "%s/%s.json", TS_SSH_COMMANDS_SDCARD_DIR, id);
+    if (unlink(filepath) == 0) {
+        ESP_LOGI(TAG, "Deleted SD card file: %s", filepath);
+    }
+    
+    /* 删除 .tscfg 文件（如果存在） */
+    snprintf(filepath, sizeof(filepath), "%s/%s.tscfg", TS_SSH_COMMANDS_SDCARD_DIR, id);
+    if (unlink(filepath) == 0) {
+        ESP_LOGI(TAG, "Deleted SD card file: %s", filepath);
+    }
+}
+
+/* 前向声明 */
+static esp_err_t json_to_cmd(const cJSON *obj, ts_ssh_command_config_t *cfg);
+
+/**
+ * @brief 从独立文件目录加载所有 SSH 命令
+ * 
+ * 支持 .tscfg 加密配置优先加载
+ * 设计逻辑与 rules/actions/sources 目录一致
+ */
+static esp_err_t load_commands_from_dir(void)
+{
+    DIR *dir = opendir(TS_SSH_COMMANDS_SDCARD_DIR);
+    if (!dir) {
+        ESP_LOGD(TAG, "Commands directory not found: %s", TS_SSH_COMMANDS_SDCARD_DIR);
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    int loaded = 0;
+    int skipped = 0;
+    struct dirent *entry;
+    
+    /* 使用堆分配避免栈溢出 */
+    ts_ssh_command_config_t *cfg = heap_caps_malloc(sizeof(ts_ssh_command_config_t), MALLOC_CAP_SPIRAM);
+    if (!cfg) cfg = malloc(sizeof(ts_ssh_command_config_t));
+    if (!cfg) {
+        closedir(dir);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    while ((entry = readdir(dir)) != NULL) {
+        /* 跳过非 .json 和非 .tscfg 文件 */
+        size_t len = strlen(entry->d_name);
+        bool is_json = (len >= 6 && strcmp(entry->d_name + len - 5, ".json") == 0);
+        bool is_tscfg = (len >= 7 && strcmp(entry->d_name + len - 6, ".tscfg") == 0);
+        
+        if (!is_json && !is_tscfg) {
+            continue;
+        }
+        
+        /* 对于 .json 文件，检查是否存在对应的 .tscfg（跳过以使用加密版本） */
+        if (is_json) {
+            char tscfg_name[128];
+            snprintf(tscfg_name, sizeof(tscfg_name), "%.*s.tscfg", (int)(len - 5), entry->d_name);
+            char tscfg_path[192];
+            snprintf(tscfg_path, sizeof(tscfg_path), "%s/%s", TS_SSH_COMMANDS_SDCARD_DIR, tscfg_name);
+            struct stat st;
+            if (stat(tscfg_path, &st) == 0) {
+                ESP_LOGD(TAG, "Skipping %s (will use .tscfg)", entry->d_name);
+                continue;  /* 跳过 .json，稍后处理 .tscfg */
+            }
+        }
+        
+        /* 限制文件名长度避免缓冲区溢出 */
+        if (len > 60) {
+            continue;
+        }
+        
+        char filepath[128];
+        if (is_tscfg) {
+            /* .tscfg 文件 - 构建对应的 .json 路径用于 load_with_priority */
+            snprintf(filepath, sizeof(filepath), "%s/%.*s.json", 
+                     TS_SSH_COMMANDS_SDCARD_DIR, (int)(len - 6), entry->d_name);
+        } else {
+            snprintf(filepath, sizeof(filepath), "%s/%.60s", TS_SSH_COMMANDS_SDCARD_DIR, entry->d_name);
+        }
+        
+        /* 使用 .tscfg 优先加载 */
+        char *content = NULL;
+        size_t content_len = 0;
+        bool used_tscfg = false;
+        
+        esp_err_t ret = ts_config_pack_load_with_priority(
+            filepath, &content, &content_len, &used_tscfg);
+        
+        if (ret != ESP_OK) {
+            continue;
+        }
+        
+        /* 解析 JSON */
+        cJSON *root = cJSON_Parse(content);
+        free(content);
+        
+        if (!root) {
+            ESP_LOGW(TAG, "Failed to parse JSON from %s", filepath);
+            skipped++;
+            continue;
+        }
+        
+        /* 判断 JSON 格式：
+         * - 配置包格式（.tscfg 解密后）: {"type":"ssh_command", "command":{...}}
+         * - 直接格式（.json）: {"id":"...", "host_id":"...", ...}
+         */
+        cJSON *cmd_obj = root;
+        cJSON *type_item = cJSON_GetObjectItem(root, "type");
+        if (type_item && cJSON_IsString(type_item) && 
+            strcmp(type_item->valuestring, "ssh_command") == 0) {
+            /* 配置包格式，提取 command 对象 */
+            cJSON *cmd_item = cJSON_GetObjectItem(root, "command");
+            if (cmd_item && cJSON_IsObject(cmd_item)) {
+                cmd_obj = cmd_item;
+                ESP_LOGD(TAG, "Detected config pack format for %s", filepath);
+            } else {
+                ESP_LOGW(TAG, "Invalid config pack format (missing 'command'): %s", filepath);
+                cJSON_Delete(root);
+                skipped++;
+                continue;
+            }
+        }
+        
+        /* 解析并添加 */
+        memset(cfg, 0, sizeof(ts_ssh_command_config_t));
+        if (json_to_cmd(cmd_obj, cfg) == ESP_OK && cfg->host_id[0] && cfg->name[0]) {
+            esp_err_t add_ret = ts_ssh_commands_config_add(cfg, NULL, 0);
+            if (add_ret == ESP_OK) {
+                loaded++;
+                ESP_LOGD(TAG, "Loaded command from file: %s%s", cfg->id, 
+                         used_tscfg ? " (encrypted)" : "");
+            } else {
+                skipped++;
+            }
+        } else {
+            skipped++;
+        }
+        
+        cJSON_Delete(root);
+    }
+    
+    free(cfg);
+    closedir(dir);
+    
+    if (loaded > 0) {
+        ESP_LOGI(TAG, "Loaded %d SSH commands from directory: %s (skipped %d)", 
+                 loaded, TS_SSH_COMMANDS_SDCARD_DIR, skipped);
+        return ESP_OK;
+    }
+    
+    return ESP_ERR_NOT_FOUND;
+}
+
+/**
  * @brief 导出单条指令到独立文件
  */
 static esp_err_t export_command_to_file(const ts_ssh_command_config_t *cfg)
@@ -994,23 +1221,30 @@ static esp_err_t json_to_cmd(const cJSON *obj, ts_ssh_command_config_t *cfg)
     item = cJSON_GetObjectItem(obj, "icon");
     if (item && cJSON_IsString(item)) strncpy(cfg->icon, item->valuestring, sizeof(cfg->icon) - 1);
     
+    /* 支持 snake_case 和 camelCase 两种格式 */
     item = cJSON_GetObjectItem(obj, "expect_pattern");
+    if (!item) item = cJSON_GetObjectItem(obj, "expectPattern");
     if (item && cJSON_IsString(item)) strncpy(cfg->expect_pattern, item->valuestring, sizeof(cfg->expect_pattern) - 1);
     
     item = cJSON_GetObjectItem(obj, "fail_pattern");
+    if (!item) item = cJSON_GetObjectItem(obj, "failPattern");
     if (item && cJSON_IsString(item)) strncpy(cfg->fail_pattern, item->valuestring, sizeof(cfg->fail_pattern) - 1);
     
     item = cJSON_GetObjectItem(obj, "extract_pattern");
+    if (!item) item = cJSON_GetObjectItem(obj, "extractPattern");
     if (item && cJSON_IsString(item)) strncpy(cfg->extract_pattern, item->valuestring, sizeof(cfg->extract_pattern) - 1);
     
     item = cJSON_GetObjectItem(obj, "var_name");
+    if (!item) item = cJSON_GetObjectItem(obj, "varName");
     if (item && cJSON_IsString(item)) strncpy(cfg->var_name, item->valuestring, sizeof(cfg->var_name) - 1);
     
     item = cJSON_GetObjectItem(obj, "timeout_sec");
+    if (!item) item = cJSON_GetObjectItem(obj, "timeout");
     if (item && cJSON_IsNumber(item)) cfg->timeout_sec = (uint16_t)item->valueint;
     else cfg->timeout_sec = 30;
     
     item = cJSON_GetObjectItem(obj, "stop_on_match");
+    if (!item) item = cJSON_GetObjectItem(obj, "stopOnMatch");
     if (item && cJSON_IsBool(item)) cfg->stop_on_match = cJSON_IsTrue(item);
     
     item = cJSON_GetObjectItem(obj, "nohup");
@@ -1022,18 +1256,23 @@ static esp_err_t json_to_cmd(const cJSON *obj, ts_ssh_command_config_t *cfg)
     
     /* 服务模式字段 */
     item = cJSON_GetObjectItem(obj, "service_mode");
+    if (!item) item = cJSON_GetObjectItem(obj, "serviceMode");
     if (item && cJSON_IsBool(item)) cfg->service_mode = cJSON_IsTrue(item);
     
     item = cJSON_GetObjectItem(obj, "ready_pattern");
+    if (!item) item = cJSON_GetObjectItem(obj, "readyPattern");
     if (item && cJSON_IsString(item)) strncpy(cfg->ready_pattern, item->valuestring, sizeof(cfg->ready_pattern) - 1);
     
     item = cJSON_GetObjectItem(obj, "service_fail_pattern");
+    if (!item) item = cJSON_GetObjectItem(obj, "serviceFailPattern");
     if (item && cJSON_IsString(item)) strncpy(cfg->service_fail_pattern, item->valuestring, sizeof(cfg->service_fail_pattern) - 1);
     
     item = cJSON_GetObjectItem(obj, "ready_timeout_sec");
+    if (!item) item = cJSON_GetObjectItem(obj, "readyTimeout");
     if (item && cJSON_IsNumber(item)) cfg->ready_timeout_sec = (uint16_t)item->valueint;
     
     item = cJSON_GetObjectItem(obj, "ready_check_interval_ms");
+    if (!item) item = cJSON_GetObjectItem(obj, "readyInterval");
     if (item && cJSON_IsNumber(item)) cfg->ready_check_interval_ms = (uint16_t)item->valueint;
     
     item = cJSON_GetObjectItem(obj, "created_time");
@@ -1107,32 +1346,19 @@ esp_err_t ts_ssh_commands_config_export_to_sdcard(void)
         return ret;
     }
     
-    /* 打开单文件写入 */
-    FILE *fp = fopen(TS_SSH_COMMANDS_SDCARD_PATH, "w");
-    if (!fp) {
-        ESP_LOGE(TAG, "Failed to open file for writing: %s", TS_SSH_COMMANDS_SDCARD_PATH);
-        return ESP_FAIL;
-    }
-    
-    /* 写入 JSON 数组开头 */
-    fprintf(fp, "[\n");
-    
+    /* 只导出到独立文件（不再生成主配置文件） */
     export_ctx_t ctx = {
-        .fp = fp,
+        .fp = NULL,           /* 不写主配置文件 */
         .count = 0,
         .first = true,
-        .export_dir = true,  /* 同时导出到独立文件 */
+        .export_dir = true,   /* 导出到独立文件 */
     };
     
     /* 使用迭代器逐条导出 */
     ret = ts_ssh_commands_config_iterate(export_iterator_cb, &ctx, 0, 0, NULL);
     
-    /* 写入 JSON 数组结尾 */
-    fprintf(fp, "\n]\n");
-    fclose(fp);
-    
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Exported %d SSH commands to %s", ctx.count, TS_SSH_COMMANDS_SDCARD_PATH);
+        ESP_LOGI(TAG, "Exported %d SSH commands to %s/", ctx.count, TS_SSH_COMMANDS_SDCARD_DIR);
     }
     
     return ret;
@@ -1148,86 +1374,21 @@ esp_err_t ts_ssh_commands_config_import_from_sdcard(bool merge)
         return ESP_ERR_NOT_FOUND;
     }
     
-    /* 检查文件是否存在 */
-    struct stat st;
-    if (stat(TS_SSH_COMMANDS_SDCARD_PATH, &st) != 0) {
-        ESP_LOGD(TAG, "Config file not found: %s", TS_SSH_COMMANDS_SDCARD_PATH);
-        return ESP_ERR_NOT_FOUND;
-    }
-    
-    /* 检查文件是否为空或太小（至少需要 "[]" = 2 字节） */
-    if (st.st_size < 2) {
-        ESP_LOGW(TAG, "Config file empty or too small (%ld bytes), treating as not found", (long)st.st_size);
-        return ESP_ERR_NOT_FOUND;
-    }
-    
-    /* 读取文件 */
-    FILE *fp = fopen(TS_SSH_COMMANDS_SDCARD_PATH, "r");
-    if (!fp) {
-        ESP_LOGE(TAG, "Failed to open file: %s", TS_SSH_COMMANDS_SDCARD_PATH);
-        return ESP_FAIL;
-    }
-    
-    /* 分配缓冲区读取文件（优先使用 PSRAM） */
-    char *buffer = heap_caps_malloc(st.st_size + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!buffer) {
-        /* PSRAM 不可用，fallback 到 DRAM */
-        buffer = malloc(st.st_size + 1);
-    }
-    if (!buffer) {
-        fclose(fp);
-        ESP_LOGE(TAG, "Failed to allocate %ld bytes for config file", (long)st.st_size);
-        return ESP_ERR_NO_MEM;
-    }
-    
-    size_t read_size = fread(buffer, 1, st.st_size, fp);
-    fclose(fp);
-    buffer[read_size] = '\0';
-    
-    /* 解析 JSON */
-    cJSON *root = cJSON_Parse(buffer);
-    free(buffer);
-    
-    if (!root) {
-        ESP_LOGW(TAG, "Failed to parse JSON from %s, treating as not found", TS_SSH_COMMANDS_SDCARD_PATH);
-        return ESP_ERR_NOT_FOUND;  /* 无效 JSON 视为文件不存在，触发重新导出 */
-    }
-    
-    if (!cJSON_IsArray(root)) {
-        ESP_LOGE(TAG, "Root element is not an array");
-        cJSON_Delete(root);
-        return ESP_FAIL;
-    }
+    /* 设置加载标志，禁止 add 函数触发同步 */
+    s_loading_from_sdcard = true;
     
     /* 如果不是合并模式，先清空现有配置 */
     if (!merge) {
         ts_ssh_commands_config_clear();
     }
     
-    /* 逐条导入 */
-    int imported = 0;
-    int skipped = 0;
-    cJSON *item;
-    cJSON_ArrayForEach(item, root) {
-        ts_ssh_command_config_t cfg;
-        if (json_to_cmd(item, &cfg) == ESP_OK && cfg.host_id[0] && cfg.name[0]) {
-            esp_err_t add_ret = ts_ssh_commands_config_add(&cfg, NULL, 0);
-            if (add_ret == ESP_OK) {
-                imported++;
-            } else {
-                skipped++;
-            }
-        } else {
-            skipped++;
-        }
-    }
+    /* 只从目录加载独立文件（.tscfg 优先于 .json） */
+    esp_err_t ret = load_commands_from_dir();
     
-    cJSON_Delete(root);
+    /* 清除加载标志 */
+    s_loading_from_sdcard = false;
     
-    ESP_LOGI(TAG, "Imported %d SSH commands from %s (skipped %d)", 
-             imported, TS_SSH_COMMANDS_SDCARD_PATH, skipped);
-    
-    return ESP_OK;
+    return ret;
 }
 
 /**

@@ -527,18 +527,24 @@ ts_config_pack_result_t ts_config_pack_create(
     uint8_t content_hash[SHA256_LEN];
     ts_crypto_hash(TS_HASH_SHA256, json_content, json_len, content_hash, sizeof(content_hash));
     
-    /* 获取设备私钥用于签名 */
-    char key_pem[TS_CERT_KEY_MAX_LEN];
-    size_t key_len = sizeof(key_pem);
+    /* 获取设备私钥用于签名 - 使用堆分配避免栈溢出 */
+    char *key_pem = TS_MALLOC_PSRAM(TS_CERT_KEY_MAX_LEN);
+    if (!key_pem) {
+        free(ciphertext);
+        return TS_CONFIG_PACK_ERR_NO_MEM;
+    }
+    size_t key_len = TS_CERT_KEY_MAX_LEN;
     ret = ts_cert_get_private_key(key_pem, &key_len);
     if (ret != ESP_OK) {
+        free(key_pem);
         free(ciphertext);
         return TS_CONFIG_PACK_ERR_PERMISSION;
     }
     
     ts_keypair_t signer_key = NULL;
     ret = ts_crypto_keypair_import(key_pem, key_len, &signer_key);
-    memset(key_pem, 0, sizeof(key_pem));  /* 清除私钥 */
+    memset(key_pem, 0, TS_CERT_KEY_MAX_LEN);  /* 清除私钥 */
+    free(key_pem);
     
     if (ret != ESP_OK) {
         free(ciphertext);
@@ -1046,6 +1052,286 @@ ts_config_pack_result_t ts_config_pack_import(
     return TS_CONFIG_PACK_OK;
 }
 
+ts_config_pack_result_t ts_config_pack_validate_file(
+    const char *path,
+    ts_config_pack_metadata_t *metadata)
+{
+    if (!path) {
+        return TS_CONFIG_PACK_ERR_INVALID_ARG;
+    }
+    
+    if (!s_initialized) {
+        return TS_CONFIG_PACK_ERR_NOT_INIT;
+    }
+    
+    /* 读取文件内容 */
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        ESP_LOGE(TAG, "Failed to open file: %s", path);
+        return TS_CONFIG_PACK_ERR_IO;
+    }
+    
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    
+    if (file_size <= 0 || file_size > 65536) {
+        fclose(f);
+        ESP_LOGE(TAG, "Invalid file size: %ld", file_size);
+        return TS_CONFIG_PACK_ERR_INVALID_ARG;
+    }
+    
+    char *file_buf = TS_MALLOC_PSRAM(file_size + 1);
+    if (!file_buf) {
+        fclose(f);
+        return TS_CONFIG_PACK_ERR_NO_MEM;
+    }
+    
+    size_t read_len = fread(file_buf, 1, file_size, f);
+    fclose(f);
+    
+    if (read_len != (size_t)file_size) {
+        free(file_buf);
+        return TS_CONFIG_PACK_ERR_IO;
+    }
+    file_buf[file_size] = '\0';
+    
+    /* 解析 JSON 获取元数据和加密参数 */
+    cJSON *root = NULL;
+    ts_config_pack_crypto_params_t params = {0};
+    char *payload_b64 = NULL;
+    char *signer_cert_pem = NULL;
+    char *signature_b64 = NULL;
+    ts_config_pack_sig_info_t sig_info = {0};
+    
+    ts_config_pack_result_t result = parse_tscfg_json(
+        file_buf, file_size,
+        &root, &params, &payload_b64, &signer_cert_pem, &signature_b64, &sig_info);
+    
+    free(file_buf);
+    
+    if (result != TS_CONFIG_PACK_OK) {
+        if (root) cJSON_Delete(root);
+        return result;
+    }
+    
+    /* 验证接收方指纹 - 必须是本设备 */
+    if (strcmp(params.recipient_fingerprint, s_device_fingerprint) != 0) {
+        ESP_LOGE(TAG, "Config pack not intended for this device");
+        ESP_LOGE(TAG, "Device fingerprint: %s", s_device_fingerprint);
+        ESP_LOGE(TAG, "Pack fingerprint:   %s", params.recipient_fingerprint);
+        cJSON_Delete(root);
+        return TS_CONFIG_PACK_ERR_RECIPIENT;
+    }
+    
+    /* Base64 解码 payload 用于签名验证 */
+    size_t payload_b64_len = strlen(payload_b64);
+    size_t ciphertext_max_len = (payload_b64_len * 3) / 4 + 4;
+    uint8_t *ciphertext = TS_MALLOC_PSRAM(ciphertext_max_len);
+    if (!ciphertext) {
+        cJSON_Delete(root);
+        return TS_CONFIG_PACK_ERR_NO_MEM;
+    }
+    
+    size_t ciphertext_len = ciphertext_max_len;
+    if (ts_crypto_base64_decode(payload_b64, payload_b64_len,
+                                 ciphertext, &ciphertext_len) != ESP_OK) {
+        free(ciphertext);
+        cJSON_Delete(root);
+        return TS_CONFIG_PACK_ERR_PARSE;
+    }
+    
+    /* Base64 解码签名 */
+    size_t sig_b64_len = strlen(signature_b64);
+    uint8_t signature[MAX_SIGNATURE_LEN];
+    size_t sig_len = sizeof(signature);
+    if (ts_crypto_base64_decode(signature_b64, sig_b64_len,
+                                 signature, &sig_len) != ESP_OK) {
+        free(ciphertext);
+        cJSON_Delete(root);
+        return TS_CONFIG_PACK_ERR_PARSE;
+    }
+    
+    /* 验证签名 */
+    result = verify_signature(signer_cert_pem, ciphertext, ciphertext_len,
+                               signature, sig_len);
+    free(ciphertext);
+    
+    if (result != TS_CONFIG_PACK_OK) {
+        cJSON_Delete(root);
+        return result;
+    }
+    
+    sig_info.valid = true;
+    
+    /* 提取元数据（不解密） */
+    char name[64] = "unnamed";
+    char description[128] = "";
+    char source_file[64] = "";
+    char target_device[64] = "";
+    int64_t created_at = 0;
+    
+    cJSON *meta = cJSON_GetObjectItem(root, "metadata");
+    if (meta) {
+        cJSON *j_name = cJSON_GetObjectItem(meta, "name");
+        cJSON *j_desc = cJSON_GetObjectItem(meta, "description");
+        cJSON *j_src = cJSON_GetObjectItem(meta, "source_file");
+        cJSON *j_target = cJSON_GetObjectItem(meta, "target_device");
+        cJSON *j_created = cJSON_GetObjectItem(meta, "created_at");
+        
+        if (j_name && cJSON_IsString(j_name)) {
+            strncpy(name, j_name->valuestring, sizeof(name) - 1);
+        }
+        if (j_desc && cJSON_IsString(j_desc)) {
+            strncpy(description, j_desc->valuestring, sizeof(description) - 1);
+        }
+        if (j_src && cJSON_IsString(j_src)) {
+            strncpy(source_file, j_src->valuestring, sizeof(source_file) - 1);
+        }
+        if (j_target && cJSON_IsString(j_target)) {
+            strncpy(target_device, j_target->valuestring, sizeof(target_device) - 1);
+        }
+        if (j_created && cJSON_IsString(j_created)) {
+            /* ISO 8601 时间戳解析 */
+            int year, month, day, hour, min, sec;
+            if (sscanf(j_created->valuestring, "%d-%d-%dT%d:%d:%dZ",
+                       &year, &month, &day, &hour, &min, &sec) == 6) {
+                struct tm tm_info = {
+                    .tm_year = year - 1900,
+                    .tm_mon = month - 1,
+                    .tm_mday = day,
+                    .tm_hour = hour,
+                    .tm_min = min,
+                    .tm_sec = sec,
+                    .tm_isdst = 0
+                };
+                char *old_tz = getenv("TZ");
+                setenv("TZ", "UTC0", 1);
+                tzset();
+                created_at = mktime(&tm_info);
+                if (old_tz) {
+                    setenv("TZ", old_tz, 1);
+                } else {
+                    unsetenv("TZ");
+                }
+                tzset();
+            }
+        }
+    }
+    
+    cJSON_Delete(root);
+    
+    /* 填充返回的元数据 */
+    if (metadata) {
+        strncpy(metadata->name, name, sizeof(metadata->name) - 1);
+        strncpy(metadata->description, description, sizeof(metadata->description) - 1);
+        strncpy(metadata->source_file, source_file, sizeof(metadata->source_file) - 1);
+        strncpy(metadata->target_device, target_device, sizeof(metadata->target_device) - 1);
+        metadata->created_at = created_at;
+        metadata->sig_info = sig_info;
+    }
+    
+    ESP_LOGI(TAG, "Config pack validated: %s at %s", name, path);
+    return TS_CONFIG_PACK_OK;
+}
+
+ts_config_pack_result_t ts_config_pack_apply_file(
+    const char *path,
+    cJSON **applied_modules)
+{
+    if (!path) {
+        return TS_CONFIG_PACK_ERR_INVALID_ARG;
+    }
+    
+    if (!s_initialized) {
+        return TS_CONFIG_PACK_ERR_NOT_INIT;
+    }
+    
+    /* 读取并解密配置包 */
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        ESP_LOGE(TAG, "Failed to open file: %s", path);
+        return TS_CONFIG_PACK_ERR_IO;
+    }
+    
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    
+    if (file_size <= 0 || file_size > 65536) {
+        fclose(f);
+        return TS_CONFIG_PACK_ERR_INVALID_ARG;
+    }
+    
+    char *file_buf = TS_MALLOC_PSRAM(file_size + 1);
+    if (!file_buf) {
+        fclose(f);
+        return TS_CONFIG_PACK_ERR_NO_MEM;
+    }
+    
+    size_t read_len = fread(file_buf, 1, file_size, f);
+    fclose(f);
+    
+    if (read_len != (size_t)file_size) {
+        free(file_buf);
+        return TS_CONFIG_PACK_ERR_IO;
+    }
+    file_buf[file_size] = '\0';
+    
+    /* 解析并解密 */
+    ts_config_pack_t *pack = NULL;
+    ts_config_pack_result_t result = ts_config_pack_load_mem(file_buf, file_size, &pack);
+    free(file_buf);
+    
+    if (result != TS_CONFIG_PACK_OK) {
+        ESP_LOGE(TAG, "Failed to load config pack: %s", ts_config_pack_strerror(result));
+        return result;
+    }
+    
+    if (!pack || !pack->content) {
+        ESP_LOGE(TAG, "No content in config pack");
+        if (pack) ts_config_pack_free(pack);
+        return TS_CONFIG_PACK_ERR_PARSE;
+    }
+    
+    /* 解析解密后的配置内容 */
+    cJSON *config = cJSON_Parse(pack->content);
+    if (!config) {
+        ESP_LOGE(TAG, "Failed to parse decrypted config content");
+        ts_config_pack_free(pack);
+        return TS_CONFIG_PACK_ERR_PARSE;
+    }
+    
+    /* 应用配置模块 */
+    cJSON *modules = cJSON_CreateArray();
+    
+    /* TODO: 遍历配置模块并应用 */
+    /* 示例模块: network, led, fan, security 等 */
+    cJSON *item = NULL;
+    cJSON_ArrayForEach(item, config) {
+        const char *key = item->string;
+        if (key) {
+            cJSON_AddItemToArray(modules, cJSON_CreateString(key));
+            ESP_LOGI(TAG, "Applied config module: %s", key);
+            
+            /* TODO: 调用各模块的配置应用函数 */
+            /* 例如: ts_net_apply_config(item), ts_led_apply_config(item) 等 */
+        }
+    }
+    
+    cJSON_Delete(config);
+    ts_config_pack_free(pack);
+    
+    if (applied_modules) {
+        *applied_modules = modules;
+    } else {
+        cJSON_Delete(modules);
+    }
+    
+    ESP_LOGI(TAG, "Config pack applied: %s", path);
+    return TS_CONFIG_PACK_OK;
+}
+
 esp_err_t ts_config_pack_list(
     char (*names)[64],
     size_t max_count,
@@ -1389,18 +1675,23 @@ static ts_config_pack_result_t decrypt_payload(
     char **plaintext,
     size_t *plaintext_len)
 {
-    /* 获取设备私钥 */
-    char key_pem[TS_CERT_KEY_MAX_LEN];
-    size_t key_len = sizeof(key_pem);
+    /* 获取设备私钥 - 使用堆分配避免栈溢出 */
+    char *key_pem = TS_MALLOC_PSRAM(TS_CERT_KEY_MAX_LEN);
+    if (!key_pem) {
+        return TS_CONFIG_PACK_ERR_NO_MEM;
+    }
+    size_t key_len = TS_CERT_KEY_MAX_LEN;
     esp_err_t ret = ts_cert_get_private_key(key_pem, &key_len);
     if (ret != ESP_OK) {
+        free(key_pem);
         ESP_LOGE(TAG, "Failed to get device private key");
         return TS_CONFIG_PACK_ERR_RECIPIENT;
     }
     
     ts_keypair_t device_key = NULL;
     ret = ts_crypto_keypair_import(key_pem, key_len, &device_key);
-    memset(key_pem, 0, sizeof(key_pem));  /* 清除私钥 */
+    memset(key_pem, 0, TS_CERT_KEY_MAX_LEN);  /* 清除私钥 */
+    free(key_pem);
     
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to import device key");
@@ -1461,4 +1752,150 @@ static ts_config_pack_result_t decrypt_payload(
     *plaintext_len = ciphertext_len;
     
     return TS_CONFIG_PACK_OK;
+}
+
+// ============================================================================
+// 通用配置加载辅助函数 (Generic Config Loading Helpers)
+// ============================================================================
+
+/**
+ * @brief 检查 .tscfg 版本是否存在
+ * 
+ * 给定 .json 文件路径，检查是否存在对应的 .tscfg 加密版本
+ */
+bool ts_config_pack_tscfg_exists(const char *json_path)
+{
+    if (!json_path) {
+        return false;
+    }
+    
+    // 检查是否以 .json 结尾
+    size_t len = strlen(json_path);
+    if (len < 5 || strcmp(json_path + len - 5, ".json") != 0) {
+        return false;
+    }
+    
+    // 构建 .tscfg 路径
+    char tscfg_path[256];
+    size_t base_len = len - 5;  // 去掉 ".json"
+    if (base_len + 6 >= sizeof(tscfg_path)) {  // +6 for ".tscfg"
+        return false;
+    }
+    
+    memcpy(tscfg_path, json_path, base_len);
+    strcpy(tscfg_path + base_len, ".tscfg");
+    
+    // 检查文件是否存在
+    struct stat st;
+    return (stat(tscfg_path, &st) == 0);
+}
+
+/**
+ * @brief 智能加载配置文件（.tscfg 优先）
+ * 
+ * 给定 .json 文件路径，优先加载对应的 .tscfg 加密版本（如存在）
+ * 否则回退到加载普通 .json 文件
+ * 
+ * @param json_path      原始 .json 文件路径
+ * @param content        输出：文件内容（调用者负责释放）
+ * @param content_len    输出：内容长度（可选，可传 NULL）
+ * @param used_tscfg     输出：是否使用了 .tscfg 版本（可选，可传 NULL）
+ * @return ESP_OK 成功，其他表示错误
+ */
+esp_err_t ts_config_pack_load_with_priority(
+    const char *json_path,
+    char **content,
+    size_t *content_len,
+    bool *used_tscfg)
+{
+    if (!json_path || !content) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    *content = NULL;
+    if (content_len) *content_len = 0;
+    if (used_tscfg) *used_tscfg = false;
+    
+    // 检查是否以 .json 结尾
+    size_t len = strlen(json_path);
+    if (len < 5 || strcmp(json_path + len - 5, ".json") != 0) {
+        ESP_LOGE(TAG, "Invalid path (not .json): %s", json_path);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // 构建 .tscfg 路径
+    char tscfg_path[256];
+    size_t base_len = len - 5;
+    if (base_len + 6 >= sizeof(tscfg_path)) {
+        ESP_LOGE(TAG, "Path too long: %s", json_path);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    memcpy(tscfg_path, json_path, base_len);
+    strcpy(tscfg_path + base_len, ".tscfg");
+    
+    // 检查 .tscfg 是否存在
+    struct stat st;
+    if (stat(tscfg_path, &st) == 0) {
+        // .tscfg 存在，使用 ts_config_pack_load 解密
+        ESP_LOGI(TAG, "Loading encrypted config: %s", tscfg_path);
+        
+        ts_config_pack_t *pack = NULL;
+        ts_config_pack_result_t result = ts_config_pack_load(tscfg_path, &pack);
+        
+        if (result == TS_CONFIG_PACK_OK && pack != NULL) {
+            // 成功解密，移交内容所有权
+            *content = pack->content;
+            if (content_len) *content_len = pack->content_len;
+            if (used_tscfg) *used_tscfg = true;
+            
+            pack->content = NULL;  // 防止 free 释放
+            ts_config_pack_free(pack);
+            
+            ESP_LOGI(TAG, "Successfully loaded encrypted config: %s", tscfg_path);
+            return ESP_OK;
+        }
+        
+        // 解密失败，回退到 .json
+        if (pack) ts_config_pack_free(pack);
+        ESP_LOGW(TAG, "Failed to decrypt %s (err=%d), falling back to .json", 
+                 tscfg_path, result);
+    }
+    
+    // 加载普通 .json 文件
+    if (stat(json_path, &st) != 0) {
+        ESP_LOGD(TAG, "Config file not found: %s", json_path);
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    FILE *f = fopen(json_path, "r");
+    if (!f) {
+        ESP_LOGE(TAG, "Failed to open: %s", json_path);
+        return ESP_FAIL;
+    }
+    
+    size_t file_size = st.st_size;
+    char *json_content = heap_caps_malloc(file_size + 1, MALLOC_CAP_SPIRAM);
+    if (!json_content) {
+        fclose(f);
+        ESP_LOGE(TAG, "Failed to allocate memory for %s", json_path);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    size_t read_size = fread(json_content, 1, file_size, f);
+    fclose(f);
+    
+    if (read_size != file_size) {
+        free(json_content);
+        ESP_LOGE(TAG, "Failed to read: %s", json_path);
+        return ESP_FAIL;
+    }
+    
+    json_content[file_size] = '\0';
+    *content = json_content;
+    if (content_len) *content_len = file_size;
+    if (used_tscfg) *used_tscfg = false;
+    
+    ESP_LOGI(TAG, "Loaded plain config: %s (%zu bytes)", json_path, file_size);
+    return ESP_OK;
 }

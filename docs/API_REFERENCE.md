@@ -1308,6 +1308,149 @@ POST /api/v1/ota/www/start_sdcard
 - SD 卡: `/sdcard/config/ui_widgets.json`
 - NVS: namespace `ts_ui`, key `widgets`
 
+---
+
+## 自动化配置导入导出 API
+
+### automation.sources.export
+导出数据源配置为加密配置包。
+
+**请求**: `POST /api/v1/call`
+```json
+{
+  "method": "automation.sources.export",
+  "params": {
+    "id": "agx_monitor",
+    "recipient_cert": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+  }
+}
+```
+
+**参数**:
+- `id`: 数据源 ID（必填）
+- `recipient_cert`: 目标设备证书 PEM（可选，留空使用本机证书）
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "tscfg": "TSCFG01...(Base64编码的配置包)",
+    "filename": "source_agx_monitor.tscfg"
+  }
+}
+```
+
+### automation.sources.import
+导入数据源配置包。
+
+**请求**: `POST /api/v1/call`
+```json
+{
+  "method": "automation.sources.import",
+  "params": {
+    "tscfg": "TSCFG01...(Base64编码的配置包)",
+    "filename": "source_agx_monitor.tscfg",
+    "preview": true,
+    "overwrite": false
+  }
+}
+```
+
+**参数**:
+- `tscfg`: 配置包内容（必填）
+- `filename`: 原文件名，用于提取配置 ID（可选）
+- `preview`: 预览模式，只验证不导入（可选）
+- `overwrite`: 覆盖已存在的配置（可选）
+
+**响应（预览模式）**:
+```json
+{
+  "code": 0,
+  "data": {
+    "valid": true,
+    "type": "automation_source",
+    "id": "agx_monitor",
+    "exists": false,
+    "signer": "TIANSHAN-DEV-001",
+    "official": true,
+    "note": "Content will be decrypted on system restart"
+  }
+}
+```
+
+**响应（确认导入）**:
+```json
+{
+  "code": 0,
+  "data": {
+    "id": "agx_monitor",
+    "path": "/sdcard/config/sources/agx_monitor.tscfg",
+    "imported": true,
+    "overwritten": false,
+    "note": "Restart system to load the new config"
+  }
+}
+```
+
+### automation.rules.export
+导出规则配置为加密配置包。
+
+**请求**: `POST /api/v1/call`
+```json
+{
+  "method": "automation.rules.export",
+  "params": {
+    "id": "temp_alert",
+    "recipient_cert": "..."
+  }
+}
+```
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "tscfg": "TSCFG01...",
+    "filename": "rule_temp_alert.tscfg"
+  }
+}
+```
+
+### automation.rules.import
+导入规则配置包（参数和响应格式同 sources.import）。
+
+### automation.actions.export
+导出动作模板配置为加密配置包。
+
+**请求**: `POST /api/v1/call`
+```json
+{
+  "method": "automation.actions.export",
+  "params": {
+    "id": "notify_slack",
+    "recipient_cert": "..."
+  }
+}
+```
+
+**响应**:
+```json
+{
+  "code": 0,
+  "data": {
+    "tscfg": "TSCFG01...",
+    "filename": "action_notify_slack.tscfg"
+  }
+}
+```
+
+### automation.actions.import
+导入动作模板配置包（参数和响应格式同 sources.import）。
+
+---
+
 ## 错误码
 
 | 代码 | 含义 |

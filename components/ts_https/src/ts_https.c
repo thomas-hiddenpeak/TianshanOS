@@ -228,9 +228,10 @@ esp_err_t ts_https_start(void)
     
     /* 使用 PSRAM 分配任务栈，避免 DRAM 紧张时启动失败
      * 默认 task_caps = MALLOC_CAP_INTERNAL 会导致 ESP_ERR_HTTPD_TASK
-     * 当 DRAM 碎片化或不足时无法分配 10KB 栈 */
+     * 当 DRAM 碎片化或不足时无法分配栈
+     * 16KB 栈以支持复杂 API 操作（如解密、JSON 解析等） */
     config.httpd.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
-    config.httpd.stack_size = 12288;  // 12KB，TLS 需要较大栈
+    config.httpd.stack_size = 16384;  // 16KB，支持复杂 API 操作
     
     // Server certificate and key
     config.servercert = (const uint8_t *)s_server_cert;

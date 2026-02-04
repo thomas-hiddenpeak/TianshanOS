@@ -197,8 +197,11 @@ esp_err_t ts_ssh_hosts_config_iterate(ts_ssh_host_iterator_cb_t callback,
 /*                    SD Card Export/Import (持久化备份)                       */
 /*===========================================================================*/
 
-/** SD 卡配置文件路径 */
+/** SD 卡配置文件路径（主配置文件） */
 #define TS_SSH_HOSTS_SDCARD_PATH  "/sdcard/config/ssh_hosts.json"
+
+/** SD 卡独立文件目录（每个主机一个文件） */
+#define TS_SSH_HOSTS_SDCARD_DIR   "/sdcard/config/ssh_hosts"
 
 /**
  * @brief 导出所有主机配置到 SD 卡
