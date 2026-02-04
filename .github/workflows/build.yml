@@ -3,6 +3,8 @@ name: TianShanOS Build
 on:
   push:
     branches: [main, develop]
+    tags:
+      - 'v*'  # 版本标签触发
     paths-ignore:
       - '**.md'
       - 'docs/**'
