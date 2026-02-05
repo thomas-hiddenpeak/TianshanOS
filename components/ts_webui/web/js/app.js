@@ -533,9 +533,9 @@ async function loadSystemPage() {
                 <div class="card">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
                         <h3 style="margin:0">资源监控</h3>
-                        <div onclick="showServicesModal()" style="cursor:pointer;font-size:0.9em;color:#666;padding:4px 12px;border-radius:4px;background:#f0f8ff">
-                            <i class="ri-service-line"></i> 服务 <span id="services-running" style="color:#666;font-weight:bold">-</span>/<span id="services-total" style="color:#666">-</span>
-                        </div>
+                        <button class="btn btn-sm btn-service-style" onclick="showServicesModal()" style="cursor:pointer">
+                            <i class="ri-service-line"></i> 服务 <span id="services-running" style="font-weight:bold">-</span>/<span id="services-total">-</span>
+                        </button>
                     </div>
                     <div class="card-content" style="display:flex;gap:20px">
                         <div style="flex:1">
@@ -685,8 +685,8 @@ async function loadSystemPage() {
                 <div class="led-page-header">
                     <h2>LED 控制</h2>
                     <div class="led-quick-actions">
-                        <button class="btn btn-sm" onclick="refreshSystemLeds()">🔄 刷新</button>
-                        <button class="btn btn-sm" onclick="allLedsOff()">⏹ 全部关闭</button>
+                        <button class="btn btn-sm" onclick="refreshSystemLeds()" style="color:#666"><i class="ri-refresh-line"></i></button>
+                        <button class="btn btn-sm" onclick="allLedsOff()" style="color:#666">全部关闭</button>
                     </div>
                 </div>
                 <div id="system-led-devices-grid" class="led-devices-grid">
@@ -1252,7 +1252,7 @@ function updateCpuInfo(data) {
     let html = '';
     data.cores.forEach(core => {
         const usage = Math.round(core.usage || 0);
-        const color = usage > 80 ? '#e74c3c' : (usage > 50 ? '#f39c12' : '#2ecc71');
+        const color = usage > 80 ? '#e74c3c' : (usage > 50 ? '#f39c12' : '#2e7d32');
         html += `
             <p style="font-size:0.85em;margin:3px 0"><strong>Core ${core.id}:</strong> ${usage}%</p>
             <div class="progress-bar" style="height:10px">
@@ -1375,7 +1375,7 @@ function updateFanInfo(data) {
                 <div class="fan-mode-tabs">
                     <button class="fan-mode-tab ${mode === 'off' ? 'active off' : ''}" 
                             onclick="setFanMode(${fan.id}, 'off')">关闭</button>
-                    <button class="fan-mode-tab ${mode === 'manual' ? 'active manual' : ''}" 
+                    <button class="fan-mode-tab manual ${mode === 'manual' ? 'active' : ''}" 
                             onclick="setFanMode(${fan.id}, 'manual')">手动</button>
                     <button class="fan-mode-tab ${mode === 'auto' ? 'active auto' : ''}" 
                             onclick="setFanMode(${fan.id}, 'auto')">自动</button>
@@ -1446,7 +1446,7 @@ function updateServiceList(data) {
     tbody.innerHTML = '';
     services.forEach(svc => {
         const tr = document.createElement('tr');
-        const stateClass = svc.state === 'RUNNING' ? 'status-ok' : 
+        const stateClass = svc.state === 'RUNNING' ? 'status-running' : 
                           svc.state === 'ERROR' ? 'status-error' : 'status-warn';
         tr.innerHTML = `
             <td>${svc.name}</td>
@@ -15454,15 +15454,15 @@ function renderTaskRows(tasks, formatBytes) {
         const alloc = task.stack_alloc || 0;
         const used = task.stack_used || 0;
         const usagePct = task.stack_usage_pct || 0;
-        const hwmColor = hwm < 256 ? '#e74c3c' : hwm < 512 ? '#f39c12' : '#2ecc71';
-        const usageColor = usagePct >= 90 ? '#e74c3c' : usagePct >= 75 ? '#f39c12' : '#2ecc71';
+        const hwmColor = hwm < 256 ? '#c62828' : hwm < 512 ? '#f57c00' : '#2e7d32';
+        const usageColor = usagePct >= 90 ? '#c62828' : usagePct >= 75 ? '#f57c00' : '#2e7d32';
         const stateIcon = {
-            'Running': '<i class="ri-checkbox-blank-circle-fill" style="color:#22c55e"></i>',
-            'Ready': '<i class="ri-checkbox-blank-circle-fill" style="color:#3b82f6"></i>', 
-            'Blocked': '<i class="ri-checkbox-blank-circle-fill" style="color:#eab308"></i>',
-            'Suspended': '<i class="ri-checkbox-blank-circle-fill" style="color:#9ca3af"></i>',
-            'Deleted': '<i class="ri-checkbox-blank-circle-fill" style="color:#ef4444"></i>'
-        }[task.state] || '<i class="ri-checkbox-blank-circle-fill" style="color:#374151"></i>';
+            'Running': '<i class="ri-checkbox-blank-circle-fill" style="color:#2e7d32"></i>',
+            'Ready': '<i class="ri-checkbox-blank-circle-fill" style="color:#007bff"></i>', 
+            'Blocked': '<i class="ri-checkbox-blank-circle-fill" style="color:#f57c00"></i>',
+            'Suspended': '<i class="ri-checkbox-blank-circle-fill" style="color:#666"></i>',
+            'Deleted': '<i class="ri-checkbox-blank-circle-fill" style="color:#c62828"></i>'
+        }[task.state] || '<i class="ri-checkbox-blank-circle-fill" style="color:#666"></i>';
         return `
         <tr>
             <td><code>${task.name}</code></td>
@@ -15602,16 +15602,16 @@ async function refreshMemoryDetail() {
         
         // 获取进度条颜色
         const getProgressColor = (percent) => {
-            if (percent >= 85) return '#e74c3c';  // 红色 - 危险
-            if (percent >= 70) return '#f39c12';  // 橙色 - 警告
-            return '#2ecc71';  // 绿色 - 正常
+            if (percent >= 85) return '#c62828';  // 深红色 - 危险
+            if (percent >= 70) return '#f57c00';  // 橙色 - 警告
+            return '#2e7d32';  // 深绿色 - 正常
         };
         
         // 获取碎片化颜色
         const getFragColor = (frag) => {
-            if (frag >= 60) return '#e74c3c';
-            if (frag >= 40) return '#f39c12';
-            return '#2ecc71';
+            if (frag >= 60) return '#c62828';
+            if (frag >= 40) return '#f57c00';
+            return '#2e7d32';
         };
         
         // 构建提示信息 HTML
@@ -15658,7 +15658,7 @@ async function refreshMemoryDetail() {
                         </div>
                         <div class="info-row">
                             <span>空闲</span>
-                            <strong style="color:#2ecc71">${formatBytes(dram.free || 0)}</strong>
+                            <strong style="color:#2e7d32">${formatBytes(dram.free || 0)}</strong>
                         </div>
                     </div>
                 </div>
@@ -15688,7 +15688,7 @@ async function refreshMemoryDetail() {
                         </div>
                         <div class="info-row">
                             <span>空闲</span>
-                            <strong style="color:#2ecc71">${formatBytes(psram.free || 0)}</strong>
+                            <strong style="color:#2e7d32">${formatBytes(psram.free || 0)}</strong>
                         </div>
                     </div>
                 </div>
@@ -15736,7 +15736,7 @@ async function refreshMemoryDetail() {
                     </div>
                     <div class="iram-item">
                         <span class="iram-label">堆空闲</span>
-                        <span class="iram-value" style="color:#2ecc71">${formatBytes(iram.heap_free || 0)}</span>
+                        <span class="iram-value" style="color:#2e7d32">${formatBytes(iram.heap_free || 0)}</span>
                     </div>
                 </div>
             </div>
