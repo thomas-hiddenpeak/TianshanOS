@@ -6039,7 +6039,7 @@ body {
     display: flex;
     align-items: center;
     gap: 16px;
-    padding: 12px 16px;
+    padding: 12px 16px 12px 0;
     background: var(--bg-elevated);
     border-radius: 10px;
     margin-bottom: 16px;

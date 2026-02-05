@@ -44,3 +44,8 @@
 .ri-close-line:before { content: "\eb98"; }
 .ri-door-open-line:before { content: "\ec4c"; }
 .ri-checkbox-blank-circle-fill:before { content: "\eb7c"; }
+.ri-apps-line:before { content: "\ea44"; }
+.ri-line-chart-line:before { content: "\eeab"; }
+.ri-temp-hot-line:before { content: "\f1f4"; }
+.ri-dashboard-3-line:before { content: "\ec12"; }
+.ri-scan-line:before { content: "\f0bd"; }
