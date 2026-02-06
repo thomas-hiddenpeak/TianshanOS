@@ -627,7 +627,7 @@ async function loadSystemPage() {
                         <h2>设备面板</h2>
                         <div class="section-actions">
                             <button id="agx-power-btn" class="btn btn-sm btn-danger" onclick="toggleAgxPower()">🔴 AGX 已关闭</button>
-                            <button id="lpmu-power-btn" class="btn btn-sm btn-warning" onclick="toggleLpmuPower()">⚠️ LPMU 检测中</button>
+                            <button id="lpmu-power-btn" class="btn btn-sm btn-warning" onclick="toggleLpmuPower()"><i class="ri-alert-line"></i> LPMU 检测中</button>
                             <button class="btn btn-sm btn-service-style" onclick="showWidgetManager()"><i class="ri-apps-line"></i> 组件管理</button>
                         </div>
                     </div>
@@ -689,6 +689,7 @@ async function loadSystemPage() {
                     <h2>LED 控制</h2>
                     <div class="led-quick-actions">
                         <button class="btn btn-sm" onclick="refreshSystemLeds()" style="color:#666"><i class="ri-refresh-line"></i></button>
+                        <button class="btn btn-sm system-led-cc-btn" id="system-led-cc-btn" onclick="openLedModal('matrix', 'colorcorrection')" style="display:none;color:#666"><i class="ri-contrast-line"></i> 色彩校正</button>
                         <button class="btn btn-sm" onclick="allLedsOff()" style="color:#666">全部关闭</button>
                     </div>
                 </div>
@@ -1184,12 +1185,12 @@ function updateLpmuPowerButton(remainingSec = 0) {
             break;
         case 'detecting':
             const timeText = remainingSec > 0 ? ` (${remainingSec}s)` : '';
-            btn.innerHTML = `⏳ 状态获取中${timeText}`;
+            btn.innerHTML = `<i class="ri-hourglass-line"></i> 状态获取中${timeText}`;
             btn.className = 'btn btn-sm btn-warning';
             btn.title = '正在检测 LPMU 状态...\n最多等待 80 秒';
             break;
         default:
-            btn.innerHTML = '⚠️ LPMU 检测中';
+            btn.innerHTML = '<i class="ri-alert-line"></i> LPMU 检测中';
             btn.className = 'btn btn-sm btn-warning';
             btn.title = 'LPMU 状态未知\n点击触发电源按钮';
     }
@@ -2375,9 +2376,11 @@ async function refreshSystemLeds() {
             // 渲染设备卡片
             container.innerHTML = result.data.devices.map(dev => generateLedDeviceCard(dev)).join('');
             
-            // 加载字体列表
+            // 加载字体列表 & 显示色彩校正按钮
             if (result.data.devices.some(d => d.name === 'matrix' || d.layout === 'matrix')) {
                 loadFontList();
+                const ccBtn = document.getElementById('system-led-cc-btn');
+                if (ccBtn) ccBtn.style.display = '';
             }
         } else {
             container.innerHTML = `
@@ -4535,8 +4538,9 @@ async function loadLedPage() {
             <div class="led-page-header">
                 <h1>💡 LED 控制</h1>
                 <div class="led-quick-actions">
-                    <button class="btn btn-sm" onclick="refreshLedPage()">🔄 刷新</button>
-                    <button class="btn btn-sm" onclick="allLedsOff()">⏹ 全部关闭</button>
+                    <button class="btn btn-sm" onclick="refreshLedPage()" style="color:#666"><i class="ri-refresh-line"></i></button>
+                    <button class="btn btn-sm led-color-correction-btn" id="led-page-cc-btn" onclick="openLedModal('matrix', 'colorcorrection')" style="display:none;color:#666"><i class="ri-contrast-line"></i> 色彩校正</button>
+                    <button class="btn btn-sm" onclick="allLedsOff()" style="color:#666">全部关闭</button>
                 </div>
             </div>
             <div id="led-devices-grid" class="led-devices-grid">
@@ -4572,9 +4576,11 @@ async function refreshLedPage() {
             // 渲染设备卡片
             container.innerHTML = result.data.devices.map(dev => generateLedDeviceCard(dev)).join('');
             
-            // 加载字体列表
+            // 加载字体列表 & 显示色彩校正按钮
             if (result.data.devices.some(d => d.name === 'matrix' || d.layout === 'matrix')) {
                 loadFontList();
+                const ccBtn = document.getElementById('led-page-cc-btn');
+                if (ccBtn) ccBtn.style.display = '';
             }
         } else {
             container.innerHTML = `
@@ -4628,7 +4634,7 @@ function generateLedDeviceCard(dev) {
                  title="${eff}">${getEffectIcon(eff)}</button>`
     ).join('');
     
-    // Matrix 设备额外按钮
+    // Matrix 设备额外按钮（色彩校正按钮已移至页面头部）
     const matrixButtons = isMatrix ? `
         <button class="led-func-btn" onclick="openLedModal('${dev.name}', 'content')" title="图像/QR码">
             <span class="func-icon">📷</span>
@@ -4638,9 +4644,6 @@ function generateLedDeviceCard(dev) {
         </button>
         <button class="led-func-btn" onclick="openLedModal('${dev.name}', 'filter')" title="滤镜效果">
             <span class="func-icon">🎨</span>
-        </button>
-        <button class="led-func-btn" onclick="openLedModal('${dev.name}', 'colorcorrection')" title="${t('ledPage.colorCorrectionTitle')}">
-            <span class="func-icon">⚙️</span>
         </button>
     ` : '';
     
@@ -5103,8 +5106,7 @@ function generateLedModalContent(device, type) {
     } else if (type === 'colorcorrection') {
         // 色彩校正模态框
         return `
-            <div class="modal-section">
-                <h3>⚙️ ${t('ledPage.colorCorrectionTitle')}</h3>
+            <div class="modal-section cc-modal-section">
                 <div class="cc-enable-row">
                     <label>
                         <input type="checkbox" id="cc-enabled" onchange="previewColorCorrection()"> 
@@ -5112,7 +5114,7 @@ function generateLedModalContent(device, type) {
                     </label>
                 </div>
                 <div class="cc-section">
-                    <h4>🎯 ${t('ledPage.ccWhitePoint')}</h4>
+                    <h4>${t('ledPage.ccWhitePoint')}</h4>
                     <p class="cc-help-text">${t('ledPage.ccWhitePointHelp')}</p>
                     <div class="config-row">
                         <label>R</label>
@@ -5134,7 +5136,7 @@ function generateLedModalContent(device, type) {
                     </div>
                 </div>
                 <div class="cc-section">
-                    <h4>🌈 ${t('ledPage.ccGamma')}</h4>
+                    <h4>${t('ledPage.ccGamma')}</h4>
                     <p class="cc-help-text">${t('ledPage.ccGammaHelp')}</p>
                     <div class="config-row">
                         <label>${t('ledPage.ccGammaValue')}</label>
@@ -5144,7 +5146,7 @@ function generateLedModalContent(device, type) {
                     </div>
                 </div>
                 <div class="cc-section">
-                    <h4>☀️ ${t('ledPage.ccBrightness')}</h4>
+                    <h4>${t('ledPage.ccBrightness')}</h4>
                     <p class="cc-help-text">${t('ledPage.ccBrightnessHelp')}</p>
                     <div class="config-row">
                         <label>${t('ledPage.ccFactor')}</label>
@@ -5154,7 +5156,7 @@ function generateLedModalContent(device, type) {
                     </div>
                 </div>
                 <div class="cc-section">
-                    <h4>🎨 ${t('ledPage.ccSaturation')}</h4>
+                    <h4>${t('ledPage.ccSaturation')}</h4>
                     <p class="cc-help-text">${t('ledPage.ccSaturationHelp')}</p>
                     <div class="config-row">
                         <label>${t('ledPage.ccFactor')}</label>
@@ -5163,13 +5165,9 @@ function generateLedModalContent(device, type) {
                         <span id="cc-saturation-val">1.00</span>
                     </div>
                 </div>
-                <div class="cc-storage-row">
-                    <button class="btn btn-sm" onclick="ccExport()" title="${t('ledPage.ccExportTip')}">📤 ${t('ledPage.ccExport')}</button>
-                    <button class="btn btn-sm" onclick="ccImport()" title="${t('ledPage.ccImportTip')}">📥 ${t('ledPage.ccImport')}</button>
-                </div>
-                <div class="config-actions">
-                    <button class="btn btn-primary" onclick="applyColorCorrection()">💾 ${t('ledPage.ccApply')}</button>
-                    <button class="btn btn-warning" onclick="resetColorCorrection()">↩️ ${t('ledPage.ccReset')}</button>
+                <div class="config-actions cc-actions">
+                    <button class="btn btn-sm" onclick="resetColorCorrection()" style="color:#666">${t('ledPage.ccReset')}</button>
+                    <button class="btn btn-service-style btn-sm" onclick="applyColorCorrection()">${t('ledPage.ccApply')}</button>
                 </div>
             </div>
         `;
@@ -5190,15 +5188,30 @@ function openLedModal(device, type) {
         'content': `📷 ${device} - ${t('ledPage.contentTitle')}`,
         'text': `📝 ${device} - ${t('ledPage.textTitle')}`,
         'filter': `🎨 ${device} - ${t('ledPage.filterTitle')}`,
-        'colorcorrection': `⚙️ ${device} - ${t('ledPage.colorCorrectionTitle')}`
+        'colorcorrection': t('ledPage.ccGlobalTitle') || '全局色彩校正'
     };
     
     const modal = document.getElementById('led-modal');
     const title = document.getElementById('led-modal-title');
     const body = document.getElementById('led-modal-body');
+    const headerActions = document.getElementById('led-modal-header-actions');
     
     title.textContent = titleMap[type] || `${device} - 设置`;
     body.innerHTML = generateLedModalContent(device, type);
+    
+    // 色彩校正模态框：紧凑样式 + 头部导入/导出
+    if (type === 'colorcorrection') {
+        modal.querySelector('.modal-content').classList.add('cc-compact');
+        if (headerActions) {
+            headerActions.innerHTML = `
+                <button class="btn btn-sm btn-service-style" onclick="ccExport()" title="${t('ledPage.ccExportTip')}">${t('ledPage.ccExport')}</button>
+                <button class="btn btn-sm btn-service-style" onclick="ccImport()" title="${t('ledPage.ccImportTip')}">${t('ledPage.ccImport')}</button>
+            `;
+        }
+    } else {
+        modal.querySelector('.modal-content').classList.remove('cc-compact');
+        if (headerActions) headerActions.innerHTML = '';
+    }
     
     modal.classList.remove('hidden');
     

@@ -10,7 +10,7 @@
     --card-bg: #fff;
     --border-color: #ddd;
     --header-height: 60px;
-    --footer-height: 40px;
+    --footer-height: 50px;
 }
 
 * {
@@ -97,7 +97,7 @@ body {
 
 /* Footer */
 .footer {
-    height: var(--footer-height);
+    height: calc(var(--footer-height) - 5px);
     background: transparent;
     border-top: none;
     display: flex;
@@ -221,23 +221,43 @@ body {
 .modal-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
+    justify-content: flex-start;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
     border-bottom: 1px solid var(--border-color);
+    gap: 8px;
 }
 
 .modal-header h2 {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: 1rem;
+    line-height: 28px;
+    height: 28px;
+}
+
+#led-modal-header-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+    margin-right: 8px;
+    align-items: center;
+}
+
+#led-modal-header-actions .btn {
+    height: 28px;
+    line-height: 28px;
+    padding: 0 10px;
 }
 
 .modal-close {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
     font-size: 1.4rem;
     color: var(--text-secondary);
     background: none;
@@ -270,6 +290,80 @@ body {
 .led-modal {
     min-width: 420px;
     max-width: 560px;
+}
+
+/* 色彩校正模态框 - 紧凑版 (重构) */
+.cc-compact {
+    padding: 0 !important;
+    background: #f5f6fa !important;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.cc-compact .modal-header {
+    padding: 12px 20px !important;
+    background: #fff;
+    border-bottom: 1px solid #eee;
+    margin-bottom: 0;
+    display: flex;
+    align-items: flex-start; /* 顶部对齐 */
+    justify-content: space-between;
+    position: relative;
+}
+
+.cc-compact .modal-header h2 {
+    margin: 0 !important;
+    padding: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #333;
+    text-align: left;
+    line-height: 1.2; /* 确保标题紧贴顶部 */
+}
+
+.cc-compact #led-modal-header-actions {
+    display: flex;
+    gap: 8px;
+    margin-right: 35px; /* 为关闭按钮留位 */
+}
+
+.cc-compact .modal-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-size: 1.4rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: #888;
+    line-height: 1;
+}
+
+.cc-compact .modal-header .btn-service-style {
+    background: #f0f8ff;
+    color: #007bff;
+    border: 1px solid #d0e8ff;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-weight: 400; /* 取消加粗，与底部按钮一致 */
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+    line-height: 1.2; /* 与标题对齐的核心 */
+}
+
+.cc-compact .modal-header .btn-service-style:hover {
+    background: #007bff;
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(0, 123, 255, 0.3);
+}
+
+.cc-compact .modal-body {
+    padding: 20px;
+    background: #f5f6fa;
+    flex: 1;
+    overflow-y: auto;
+    max-height: 75vh;
 }
 
 .led-modal .modal-tabs {
@@ -454,50 +548,61 @@ body {
     margin-top: 12px;
 }
 
-/* Color Correction Modal */
+/* Color Correction Modal Cards (New Design) */
 .cc-enable-row {
+    background: #fff;
+    padding: 16px 20px;
+    border-radius: 12px;
     margin-bottom: 16px;
-    padding: 12px;
-    background: var(--bg-color);
-    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    border: 1px solid rgba(0,0,0,0.05);
 }
 
 .cc-enable-row label {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     font-weight: 600;
     cursor: pointer;
+    margin: 0;
+    width: 100%;
+    font-size: 1rem;
 }
 
 .cc-enable-row input[type="checkbox"] {
     width: 20px;
     height: 20px;
+    accent-color: #007bff;
 }
 
 .cc-section {
+    background: #fff;
+    padding: 20px;
+    border-radius: 12px;
     margin-bottom: 16px;
-    padding: 12px;
-    background: var(--bg-color);
-    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    border: 1px solid rgba(0,0,0,0.05);
 }
 
 .cc-section h4 {
-    font-size: 0.9rem;
+    font-size: 1rem;
+    font-weight: 600;
     margin: 0 0 8px 0;
-    color: var(--text-color);
+    color: #333;
 }
 
 .cc-help-text {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    margin: 0 0 10px 0;
-    line-height: 1.4;
-    opacity: 0.85;
+    font-size: 0.85rem;
+    color: #888;
+    margin: 0 0 20px 0;
+    line-height: 1.5;
 }
 
 .cc-section .config-row {
-    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
 }
 
 .cc-section .config-row:last-child {
@@ -506,21 +611,48 @@ body {
 
 .cc-section input[type="range"] {
     flex: 1;
-    min-width: 100px;
+    height: 6px;
+    border-radius: 3px;
+    background: #eee;
+}
+
+.cc-section input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #007bff;
+    box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3);
+    cursor: pointer;
 }
 
 .cc-section span {
-    min-width: 45px;
+    min-width: 50px;
     text-align: right;
-    font-family: monospace;
-    font-size: 0.85rem;
+    font-weight: 500;
+    color: #333;
+    font-family: inherit;
+    font-size: 1rem;
 }
 
-.cc-storage-row {
+.cc-actions {
+    position: sticky;
+    bottom: -20px;
+    margin: 20px -20px -20px -20px;
+    padding: 16px 24px;
+    background: #fff;
+    border-top: 1px solid #eee;
     display: flex;
-    gap: 8px;
-    justify-content: center;
-    margin-bottom: 12px;
+    justify-content: flex-end;
+    gap: 12px;
+    z-index: 100;
+}
+
+.cc-actions .btn {
+    padding: 8px 20px;
+    font-size: 0.95rem;
+    border-radius: 6px;
 }
 
 /* 文件选择器模态框 - 需要比其他模态框更高的 z-index，因为它会从其他模态框内打开 */
@@ -1115,8 +1247,8 @@ body {
 }
 
 .led-device-card.is-on {
-    border-color: #48bb78;
-    box-shadow: 0 0 20px rgba(72, 187, 120, 0.2);
+    border-color: #007bff;
+    box-shadow: 0 0 20px rgba(0, 123, 255, 0.2);
 }
 
 /* 卡片头部 */
@@ -1177,8 +1309,9 @@ body {
 }
 
 .led-device-status.effect {
-    background: rgba(90, 103, 216, 0.2);
-    color: var(--primary-color);
+    background: #f0f8ff;
+    color: #007bff;
+    border: 1px solid #d0e8ff;
 }
 
 /* 卡片控制区域 */

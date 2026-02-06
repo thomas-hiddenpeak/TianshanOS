@@ -2262,6 +2262,7 @@ i18n.registerLanguage('zh-CN', {
         saveConfig: '保存配置',
         // 色彩校正
         colorCorrectionTitle: '色彩校正',
+        ccGlobalTitle: '全局色彩校正',
         ccEnable: '启用全局色彩校正',
         ccWhitePoint: '白平衡 (RGB 缩放)',
         ccWhitePointHelp: '独立调整 RGB 通道修正色温。默认 1.0，<1.0 减少该通道，>1.0 增强该通道',

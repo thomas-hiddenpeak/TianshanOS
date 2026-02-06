@@ -45,3 +45,6 @@ tools/pki-server/*.crt
 *_key
 secrets/
 password*.txt
+
+# Documentation
+TianshanOS frontend modification.md

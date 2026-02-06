@@ -2261,6 +2261,7 @@ i18n.registerLanguage('en-US', {
         saveConfig: 'Save Config',
         // Color Correction
         colorCorrectionTitle: 'Color Correction',
+        ccGlobalTitle: 'Global Color Correction',
         ccEnable: 'Enable Global Color Correction',
         ccWhitePoint: 'White Balance (RGB Scaling)',
         ccWhitePointHelp: 'Adjust RGB channels independently to correct color temperature. 1.0=neutral, <1.0=decrease, >1.0=increase',

@@ -75,3 +75,7 @@
 .ri-save-fill:before { content: "\f0b2"; }
 .ri-shut-down-fill:before { content: "\f125"; }
 .ri-shut-down-line:before { content: "\f126"; }
+.ri-contrast-line:before { content: "\ebda"; }
+.ri-palette-line:before { content: "\efc5"; }
+.ri-hourglass-line:before { content: "\f339"; }
+.ri-alert-line:before { content: "\ea21"; }
