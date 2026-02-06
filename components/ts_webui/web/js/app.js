@@ -644,7 +644,7 @@ async function loadSystemPage() {
                     <div id="data-widgets-empty" class="data-widgets-empty" style="display:none;">
                         <div class="empty-icon"><i class="ri-box-3-line"></i></div>
                         <p>还没有添加数据组件</p>
-                        <button class="btn btn-service-style" onclick="showWidgetManager()">打开管理面板</button>
+                        <button class="btn btn-small btn-service-style" onclick="showWidgetManager()" style="font-size:0.85em">打开管理面板</button>
                     </div>
                 </div>
                 
@@ -6946,8 +6946,8 @@ async function loadFilesPage() {
                 </div>
                 
                 <div class="storage-tabs">
-                    <button class="tab-btn btn-service-style active" onclick="navigateToPath('/sdcard')">SD 卡</button>
-                    <button class="tab-btn btn-service-style" onclick="navigateToPath('/spiffs')">SPIFFS</button>
+                    <button class="tab-btn btn-gray active" onclick="navigateToPath('/sdcard')">SD 卡</button>
+                    <button class="tab-btn btn-gray" onclick="navigateToPath('/spiffs')">SPIFFS</button>
                     <div class="storage-controls" id="storage-controls">
                         <!-- 动态显示挂载/卸载按钮 -->
                     </div>
@@ -7369,8 +7369,8 @@ async function loadStorageStatus() {
         if (controlsContainer) {
             if (sdMounted) {
                 controlsContainer.innerHTML = `
-                    <button class="btn btn-sm btn-service-style" onclick="unmountSdCard()" title="卸载 SD 卡">
-                        卸载 SD
+                    <button class="btn btn-sm btn-danger" onclick="unmountSdCard()" title="卸载 SD 卡">
+                        <i class="ri-eject-line"></i> 卸载 SD
                     </button>
                 `;
             } else {
@@ -13184,14 +13184,14 @@ async function loadTerminalPage() {
         <div class="terminal-page">
             <div class="terminal-header">
                 <div class="terminal-actions">
-                    <button class="btn btn-sm" onclick="console.log('Button clicked!'); window.showTerminalLogsModal();">📋 日志</button>
-                    <button class="btn btn-sm" onclick="terminalClear()">清屏</button>
+                    <button class="btn btn-sm btn-service-style" onclick="console.log('Button clicked!'); window.showTerminalLogsModal();">日志</button>
+                    <button class="btn btn-sm btn-service-style" onclick="terminalClear()">清屏</button>
                     <button class="btn btn-sm btn-danger" onclick="terminalDisconnect()">断开</button>
                 </div>
             </div>
             <div class="terminal-container" id="terminal-container"></div>
             <div class="terminal-help">
-                <span>💡 提示: 输入 <code>help</code> 查看命令 | <code>Ctrl+C</code> 中断 | <code>Ctrl+L</code> 清屏 | <code>↑↓</code> 历史</span>
+                <span><i class="ri-information-line"></i> 提示: 输入 <code>help</code> 查看命令 | <code>Ctrl+C</code> 中断 | <code>Ctrl+L</code> 清屏 | <code>↑↓</code> 历史</span>
             </div>
         </div>
         

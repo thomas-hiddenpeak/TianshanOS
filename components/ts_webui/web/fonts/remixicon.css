@@ -65,3 +65,8 @@
 .ri-home-line:before { content: "\ee2b"; }
 .ri-toggle-line:before { content: "\f219"; }
 .ri-toggle-fill:before { content: "\f218"; }
+.ri-eject-line:before { content: "\ec88"; }
+.ri-lightbulb-line:before { content: "\eea9"; }
+.ri-lightbulb-flash-line:before { content: "\eea8"; }
+.ri-information-line:before { content: "\ee59"; }
+.ri-question-answer-line:before { content: "\f04e"; }

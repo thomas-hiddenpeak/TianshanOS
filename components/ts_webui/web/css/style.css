@@ -809,15 +809,27 @@ body {
 }
 
 .toast-success {
-    background: var(--secondary-color);
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
 }
 
 .toast-error {
-    background: var(--danger-color);
+    background: #ffebee;
+    color: #c62828;
+    border: 1px solid #ef9a9a;
+}
+
+.toast-warning {
+    background: #fff8e1;
+    color: #f57c00;
+    border: 1px solid #ffd54f;
 }
 
 .toast-info {
-    background: var(--primary-color);
+    background: #f0f8ff;
+    color: #007bff;
+    border: 1px solid #d0e8ff;
 }
 
 /* 数据表格 */
@@ -2589,7 +2601,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 0;
+    padding-bottom: 10px;
     border-bottom: 1px solid var(--border-color);
     margin-bottom: 10px;
 }
@@ -2807,6 +2819,26 @@ body {
     background: #007bff;
     color: white;
     border-color: #007bff;
+}
+
+/* 灰色 Tab 按钮样式（SD卡、SPIFFS） */
+.tab-btn.btn-gray {
+    padding: 4px 12px;
+    font-size: 0.85rem;
+    background: #f5f6fa;
+    color: #666;
+    border: 1px solid #dcdfe6;
+}
+
+.tab-btn.btn-gray:hover {
+    background: #ebeef5;
+    border-color: #c0c4cc;
+}
+
+.tab-btn.btn-gray.active {
+    background: #666;
+    color: white;
+    border-color: #666;
 }
 
 .tab-btn {
