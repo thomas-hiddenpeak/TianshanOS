@@ -450,6 +450,75 @@ body {
     margin-top: 12px;
 }
 
+/* Color Correction Modal */
+.cc-enable-row {
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--bg-color);
+    border-radius: 8px;
+}
+
+.cc-enable-row label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.cc-enable-row input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+}
+
+.cc-section {
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--bg-color);
+    border-radius: 8px;
+}
+
+.cc-section h4 {
+    font-size: 0.9rem;
+    margin: 0 0 8px 0;
+    color: var(--text-color);
+}
+
+.cc-help-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin: 0 0 10px 0;
+    line-height: 1.4;
+    opacity: 0.85;
+}
+
+.cc-section .config-row {
+    margin-bottom: 8px;
+}
+
+.cc-section .config-row:last-child {
+    margin-bottom: 0;
+}
+
+.cc-section input[type="range"] {
+    flex: 1;
+    min-width: 100px;
+}
+
+.cc-section span {
+    min-width: 45px;
+    text-align: right;
+    font-family: monospace;
+    font-size: 0.85rem;
+}
+
+.cc-storage-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-bottom: 12px;
+}
+
 /* 文件选择器模态框 - 需要比其他模态框更高的 z-index，因为它会从其他模态框内打开 */
 #file-picker-modal {
     z-index: 1100;

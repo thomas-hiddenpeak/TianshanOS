@@ -315,6 +315,13 @@ class TianShanAPI {
     async ledText(text, options = {}) { return this.call('led.text', { device: 'matrix', text, ...options }, 'POST'); }
     async ledTextStop(device = 'matrix') { return this.call('led.text.stop', { device }, 'POST'); }
     
+    // Color Correction APIs
+    async ledColorCorrectionGet() { return this.call('led.color_correction.get'); }
+    async ledColorCorrectionSet(config) { return this.call('led.color_correction.set', config, 'POST'); }
+    async ledColorCorrectionReset() { return this.call('led.color_correction.reset', null, 'POST'); }
+    async ledColorCorrectionExport() { return this.call('led.color_correction.export', null, 'POST'); }
+    async ledColorCorrectionImport() { return this.call('led.color_correction.import', null, 'POST'); }
+    
     // =====================================================================
     //                         网络 API (network.*, dhcp.*, nat.*)
     // =====================================================================

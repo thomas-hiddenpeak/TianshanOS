@@ -4,6 +4,7 @@
  */
 
 #include "ts_led_private.h"
+#include "ts_led_color_correction.h"
 #include "ts_log.h"
 #include "freertos/task.h"
 #include "esp_heap_caps.h"
@@ -97,6 +98,12 @@ esp_err_t ts_led_init(void)
     
     s_led.render_running = true;
     xTaskCreate(render_task, "led_render", 2560, NULL, 5, &s_led.render_task);
+    
+    /* 初始化色彩校正子系统 */
+    esp_err_t cc_ret = ts_led_cc_init();
+    if (cc_ret != ESP_OK) {
+        TS_LOGW(TAG, "Color correction init failed: %s (non-fatal)", esp_err_to_name(cc_ret));
+    }
     
     TS_LOGI(TAG, "LED subsystem initialized");
     return ESP_OK;

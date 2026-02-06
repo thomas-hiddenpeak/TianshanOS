@@ -24,6 +24,7 @@
 #include "ts_led_qrcode.h"
 #include "ts_led_font.h"
 #include "ts_led_text.h"
+#include "ts_led_color_correction.h"
 #include "ts_config_module.h"
 #include "ts_log.h"
 #include "argtable3/argtable3.h"
@@ -88,6 +89,19 @@ static struct {
     struct arg_int *density;          /**< 密度 (0-100) */
     struct arg_int *decay;            /**< 衰减 (0-255) */
     struct arg_int *amount;           /**< 程度/量 (-100 to +100) */
+    /* Color Correction */
+    struct arg_lit *cc;               /**< 显示色彩校正配置 */
+    struct arg_lit *cc_set;           /**< 设置色彩校正 */
+    struct arg_lit *cc_reset;         /**< 重置色彩校正 */
+    struct arg_lit *cc_export;        /**< 导出到SD卡 */
+    struct arg_lit *cc_import;        /**< 从SD卡导入 */
+    struct arg_lit *cc_enabled;       /**< 启用/禁用全局色彩校正 */
+    struct arg_dbl *cc_wp_r;          /**< 白点红色缩放 */
+    struct arg_dbl *cc_wp_g;          /**< 白点绿色缩放 */
+    struct arg_dbl *cc_wp_b;          /**< 白点蓝色缩放 */
+    struct arg_dbl *cc_gamma;         /**< Gamma值 */
+    struct arg_dbl *cc_brightness;    /**< 亮度因子 */
+    struct arg_dbl *cc_saturation;    /**< 饱和度因子 */
     struct arg_lit *json;
     struct arg_lit *help;
     struct arg_end *end;
@@ -1773,6 +1787,190 @@ static int do_led_qrcode(const char *device_name, const char *text,
 }
 
 /*===========================================================================*/
+/*                     Color Correction Commands                              */
+/*===========================================================================*/
+
+static int do_led_cc_status(bool json)
+{
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    esp_err_t ret = ts_api_call("led.color_correction.get", NULL, &result);
+    
+    if (ret == ESP_OK && result.code == TS_API_OK && result.data) {
+        if (json) {
+            char *json_str = cJSON_PrintUnformatted(result.data);
+            if (json_str) {
+                ts_console_printf("%s\n", json_str);
+                free(json_str);
+            }
+        } else {
+            /* Formatted output */
+            bool enabled = cJSON_IsTrue(cJSON_GetObjectItem(result.data, "enabled"));
+            ts_console_printf("Color Correction: %s\n", enabled ? "✅ Enabled" : "❌ Disabled");
+            ts_console_printf("─────────────────────────────────────\n");
+            
+            cJSON *wp = cJSON_GetObjectItem(result.data, "white_point");
+            if (wp) {
+                bool wp_en = cJSON_IsTrue(cJSON_GetObjectItem(wp, "enabled"));
+                float r = (float)cJSON_GetNumberValue(cJSON_GetObjectItem(wp, "red_scale"));
+                float g = (float)cJSON_GetNumberValue(cJSON_GetObjectItem(wp, "green_scale"));
+                float b = (float)cJSON_GetNumberValue(cJSON_GetObjectItem(wp, "blue_scale"));
+                ts_console_printf("White Point: %s  R:%.2f G:%.2f B:%.2f\n",
+                                 wp_en ? "✅" : "❌", r, g, b);
+            }
+            
+            cJSON *gamma = cJSON_GetObjectItem(result.data, "gamma");
+            if (gamma) {
+                bool gamma_en = cJSON_IsTrue(cJSON_GetObjectItem(gamma, "enabled"));
+                float val = (float)cJSON_GetNumberValue(cJSON_GetObjectItem(gamma, "gamma"));
+                ts_console_printf("Gamma:       %s  Value: %.2f\n", 
+                                 gamma_en ? "✅" : "❌", val);
+            }
+            
+            cJSON *brightness = cJSON_GetObjectItem(result.data, "brightness");
+            if (brightness) {
+                bool br_en = cJSON_IsTrue(cJSON_GetObjectItem(brightness, "enabled"));
+                float factor = (float)cJSON_GetNumberValue(cJSON_GetObjectItem(brightness, "factor"));
+                ts_console_printf("Brightness:  %s  Factor: %.2f\n",
+                                 br_en ? "✅" : "❌", factor);
+            }
+            
+            cJSON *saturation = cJSON_GetObjectItem(result.data, "saturation");
+            if (saturation) {
+                bool sat_en = cJSON_IsTrue(cJSON_GetObjectItem(saturation, "enabled"));
+                float factor = (float)cJSON_GetNumberValue(cJSON_GetObjectItem(saturation, "factor"));
+                ts_console_printf("Saturation:  %s  Factor: %.2f\n",
+                                 sat_en ? "✅" : "❌", factor);
+            }
+        }
+        ts_api_result_free(&result);
+        return 0;
+    }
+    
+    ts_console_error("Failed to get color correction config\n");
+    ts_api_result_free(&result);
+    return 1;
+}
+
+static int do_led_cc_set(bool enabled, double wp_r, double wp_g, double wp_b,
+                         double gamma, double brightness, double saturation)
+{
+    cJSON *params = cJSON_CreateObject();
+    
+    /* Global enable if explicitly provided */
+    cJSON_AddBoolToObject(params, "enabled", enabled);
+    
+    /* White point */
+    if (wp_r >= 0 || wp_g >= 0 || wp_b >= 0) {
+        cJSON *wp = cJSON_CreateObject();
+        cJSON_AddBoolToObject(wp, "enabled", true);
+        if (wp_r >= 0) cJSON_AddNumberToObject(wp, "red_scale", wp_r);
+        if (wp_g >= 0) cJSON_AddNumberToObject(wp, "green_scale", wp_g);
+        if (wp_b >= 0) cJSON_AddNumberToObject(wp, "blue_scale", wp_b);
+        cJSON_AddItemToObject(params, "white_point", wp);
+    }
+    
+    /* Gamma */
+    if (gamma >= 0) {
+        cJSON *g = cJSON_CreateObject();
+        cJSON_AddBoolToObject(g, "enabled", true);
+        cJSON_AddNumberToObject(g, "gamma", gamma);
+        cJSON_AddItemToObject(params, "gamma", g);
+    }
+    
+    /* Brightness */
+    if (brightness >= 0) {
+        cJSON *br = cJSON_CreateObject();
+        cJSON_AddBoolToObject(br, "enabled", true);
+        cJSON_AddNumberToObject(br, "factor", brightness);
+        cJSON_AddItemToObject(params, "brightness", br);
+    }
+    
+    /* Saturation */
+    if (saturation >= 0) {
+        cJSON *sat = cJSON_CreateObject();
+        cJSON_AddBoolToObject(sat, "enabled", true);
+        cJSON_AddNumberToObject(sat, "factor", saturation);
+        cJSON_AddItemToObject(params, "saturation", sat);
+    }
+    
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    esp_err_t ret = ts_api_call("led.color_correction.set", params, &result);
+    cJSON_Delete(params);
+    
+    if (ret == ESP_OK && result.code == TS_API_OK) {
+        ts_console_success("Color correction configuration updated\n");
+        ts_api_result_free(&result);
+        return 0;
+    }
+    
+    ts_console_error("Failed to set color correction: %s\n", 
+                    result.message ? result.message : "Unknown error");
+    ts_api_result_free(&result);
+    return 1;
+}
+
+static int do_led_cc_reset(void)
+{
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    esp_err_t ret = ts_api_call("led.color_correction.reset", NULL, &result);
+    
+    if (ret == ESP_OK && result.code == TS_API_OK) {
+        ts_console_success("Color correction reset to defaults\n");
+        ts_api_result_free(&result);
+        return 0;
+    }
+    
+    ts_console_error("Failed to reset color correction\n");
+    ts_api_result_free(&result);
+    return 1;
+}
+
+static int do_led_cc_export(void)
+{
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    esp_err_t ret = ts_api_call("led.color_correction.export", NULL, &result);
+    
+    if (ret == ESP_OK && result.code == TS_API_OK) {
+        cJSON *path = cJSON_GetObjectItem(result.data, "path");
+        ts_console_success("Color correction exported to: %s\n",
+                          path ? path->valuestring : "SD card");
+        ts_api_result_free(&result);
+        return 0;
+    }
+    
+    ts_console_error("Failed to export color correction\n");
+    ts_api_result_free(&result);
+    return 1;
+}
+
+static int do_led_cc_import(void)
+{
+    ts_api_result_t result;
+    ts_api_result_init(&result);
+    
+    esp_err_t ret = ts_api_call("led.color_correction.import", NULL, &result);
+    
+    if (ret == ESP_OK && result.code == TS_API_OK) {
+        ts_console_success("Color correction imported from SD card\n");
+        ts_api_result_free(&result);
+        return 0;
+    }
+    
+    ts_console_error("Failed to import color correction: %s\n",
+                    result.message ? result.message : "File not found");
+    ts_api_result_free(&result);
+    return 1;
+}
+
+/*===========================================================================*/
 /*                          Main Command Handler                              */
 /*===========================================================================*/
 
@@ -1956,6 +2154,37 @@ static int cmd_led(int argc, char **argv)
     bool invert_overlap = s_led_args.invert->count > 0;
     bool loop_scroll = s_led_args.loop->count > 0;
     
+    /* Color correction parameters */
+    double cc_wp_r = s_led_args.cc_wp_r->count > 0 ? s_led_args.cc_wp_r->dval[0] : -1;
+    double cc_wp_g = s_led_args.cc_wp_g->count > 0 ? s_led_args.cc_wp_g->dval[0] : -1;
+    double cc_wp_b = s_led_args.cc_wp_b->count > 0 ? s_led_args.cc_wp_b->dval[0] : -1;
+    double cc_gamma = s_led_args.cc_gamma->count > 0 ? s_led_args.cc_gamma->dval[0] : -1;
+    double cc_brightness = s_led_args.cc_brightness->count > 0 ? s_led_args.cc_brightness->dval[0] : -1;
+    double cc_saturation = s_led_args.cc_saturation->count > 0 ? s_led_args.cc_saturation->dval[0] : -1;
+    
+    /* Color correction commands */
+    if (s_led_args.cc_reset->count > 0) {
+        return do_led_cc_reset();
+    }
+    
+    if (s_led_args.cc_export->count > 0) {
+        return do_led_cc_export();
+    }
+    
+    if (s_led_args.cc_import->count > 0) {
+        return do_led_cc_import();
+    }
+    
+    if (s_led_args.cc_set->count > 0) {
+        bool enabled = s_led_args.cc_enabled->count > 0;
+        return do_led_cc_set(enabled, cc_wp_r, cc_wp_g, cc_wp_b, 
+                            cc_gamma, cc_brightness, cc_saturation);
+    }
+    
+    if (s_led_args.cc->count > 0) {
+        return do_led_cc_status(json);
+    }
+    
     // 停止文本覆盖层
     if (s_led_args.stop_text->count > 0) {
         const char *dev_name = device ? device : "matrix";
@@ -2122,9 +2351,22 @@ esp_err_t ts_cmd_led_register(void)
     s_led_args.density      = arg_int0(NULL, "density", "<0-100>", "Density parameter (0-100)");
     s_led_args.decay        = arg_int0(NULL, "decay", "<0-255>", "Decay/fade speed (0-255)");
     s_led_args.amount       = arg_int0(NULL, "amount", "<-100 to 100>", "Amount/contrast (-100 to +100)");
+    /* Color Correction */
+    s_led_args.cc           = arg_lit0(NULL, "cc", "Show color correction config");
+    s_led_args.cc_set       = arg_lit0(NULL, "cc-set", "Set color correction parameters");
+    s_led_args.cc_reset     = arg_lit0(NULL, "cc-reset", "Reset color correction to defaults");
+    s_led_args.cc_export    = arg_lit0(NULL, "cc-export", "Export color correction to SD card");
+    s_led_args.cc_import    = arg_lit0(NULL, "cc-import", "Import color correction from SD card");
+    s_led_args.cc_enabled   = arg_lit0(NULL, "cc-enabled", "Enable global color correction");
+    s_led_args.cc_wp_r      = arg_dbl0(NULL, "cc-wp-r", "<0-2>", "White point red scale");
+    s_led_args.cc_wp_g      = arg_dbl0(NULL, "cc-wp-g", "<0-2>", "White point green scale");
+    s_led_args.cc_wp_b      = arg_dbl0(NULL, "cc-wp-b", "<0-2>", "White point blue scale");
+    s_led_args.cc_gamma     = arg_dbl0(NULL, "cc-gamma", "<0.1-4>", "Gamma value");
+    s_led_args.cc_brightness = arg_dbl0(NULL, "cc-brightness", "<0-2>", "Brightness factor");
+    s_led_args.cc_saturation = arg_dbl0(NULL, "cc-saturation", "<0-2>", "Saturation factor");
     s_led_args.json         = arg_lit0("j", "json", "JSON output");
     s_led_args.help         = arg_lit0("h", "help", "Show help");
-    s_led_args.end          = arg_end(32);
+    s_led_args.end          = arg_end(48);  /* 增加错误计数限制 */
     
     const ts_console_cmd_t cmd = {
         .command = "led",

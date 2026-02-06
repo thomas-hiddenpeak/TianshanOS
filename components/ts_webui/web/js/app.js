@@ -4832,6 +4832,9 @@ function generateLedDeviceCard(dev) {
         <button class="led-func-btn" onclick="openLedModal('${dev.name}', 'filter')" title="${t('ledPage.filterTitle')}">
             <span class="func-icon">🎨</span>
         </button>
+        <button class="led-func-btn" onclick="openLedModal('${dev.name}', 'colorcorrection')" title="${t('ledPage.colorCorrectionTitle')}">
+            <span class="func-icon">⚙️</span>
+        </button>
     ` : '';
     
     return `
@@ -5287,6 +5290,79 @@ function generateLedModalContent(device, type) {
                 </div>
             </div>
         `;
+    } else if (type === 'colorcorrection') {
+        // 色彩校正模态框
+        return `
+            <div class="modal-section">
+                <h3>⚙️ ${t('ledPage.colorCorrectionTitle')}</h3>
+                <div class="cc-enable-row">
+                    <label>
+                        <input type="checkbox" id="cc-enabled" onchange="previewColorCorrection()"> 
+                        ${t('ledPage.ccEnable')}
+                    </label>
+                </div>
+                <div class="cc-section">
+                    <h4>🎯 ${t('ledPage.ccWhitePoint')}</h4>
+                    <p class="cc-help-text">${t('ledPage.ccWhitePointHelp')}</p>
+                    <div class="config-row">
+                        <label>R</label>
+                        <input type="range" min="0" max="200" value="100" id="cc-wp-r" 
+                               oninput="updateCcSliderValue('cc-wp-r-val', this.value / 100)">
+                        <span id="cc-wp-r-val">1.00</span>
+                    </div>
+                    <div class="config-row">
+                        <label>G</label>
+                        <input type="range" min="0" max="200" value="100" id="cc-wp-g" 
+                               oninput="updateCcSliderValue('cc-wp-g-val', this.value / 100)">
+                        <span id="cc-wp-g-val">1.00</span>
+                    </div>
+                    <div class="config-row">
+                        <label>B</label>
+                        <input type="range" min="0" max="200" value="100" id="cc-wp-b" 
+                               oninput="updateCcSliderValue('cc-wp-b-val', this.value / 100)">
+                        <span id="cc-wp-b-val">1.00</span>
+                    </div>
+                </div>
+                <div class="cc-section">
+                    <h4>🌈 ${t('ledPage.ccGamma')}</h4>
+                    <p class="cc-help-text">${t('ledPage.ccGammaHelp')}</p>
+                    <div class="config-row">
+                        <label>${t('ledPage.ccGammaValue')}</label>
+                        <input type="range" min="10" max="400" value="100" id="cc-gamma" 
+                               oninput="updateCcSliderValue('cc-gamma-val', this.value / 100)">
+                        <span id="cc-gamma-val">1.00</span>
+                    </div>
+                </div>
+                <div class="cc-section">
+                    <h4>☀️ ${t('ledPage.ccBrightness')}</h4>
+                    <p class="cc-help-text">${t('ledPage.ccBrightnessHelp')}</p>
+                    <div class="config-row">
+                        <label>${t('ledPage.ccFactor')}</label>
+                        <input type="range" min="0" max="200" value="100" id="cc-brightness" 
+                               oninput="updateCcSliderValue('cc-brightness-val', this.value / 100)">
+                        <span id="cc-brightness-val">1.00</span>
+                    </div>
+                </div>
+                <div class="cc-section">
+                    <h4>🎨 ${t('ledPage.ccSaturation')}</h4>
+                    <p class="cc-help-text">${t('ledPage.ccSaturationHelp')}</p>
+                    <div class="config-row">
+                        <label>${t('ledPage.ccFactor')}</label>
+                        <input type="range" min="0" max="200" value="100" id="cc-saturation" 
+                               oninput="updateCcSliderValue('cc-saturation-val', this.value / 100)">
+                        <span id="cc-saturation-val">1.00</span>
+                    </div>
+                </div>
+                <div class="cc-storage-row">
+                    <button class="btn btn-sm" onclick="ccExport()" title="${t('ledPage.ccExportTip')}">📤 ${t('ledPage.ccExport')}</button>
+                    <button class="btn btn-sm" onclick="ccImport()" title="${t('ledPage.ccImportTip')}">📥 ${t('ledPage.ccImport')}</button>
+                </div>
+                <div class="config-actions">
+                    <button class="btn btn-primary" onclick="applyColorCorrection()">💾 ${t('ledPage.ccApply')}</button>
+                    <button class="btn btn-warning" onclick="resetColorCorrection()">↩️ ${t('ledPage.ccReset')}</button>
+                </div>
+            </div>
+        `;
     }
     return `<p>${t('ledPage.unknownType')}</p>`;
 }
@@ -5303,7 +5379,8 @@ function openLedModal(device, type) {
         'effect': `🎬 ${device} - ${t('ledPage.effectTitle')}`,
         'content': `📷 ${device} - ${t('ledPage.contentTitle')}`,
         'text': `📝 ${device} - ${t('ledPage.textTitle')}`,
-        'filter': `🎨 ${device} - ${t('ledPage.filterTitle')}`
+        'filter': `🎨 ${device} - ${t('ledPage.filterTitle')}`,
+        'colorcorrection': `⚙️ ${device} - ${t('ledPage.colorCorrectionTitle')}`
     };
     
     const modal = document.getElementById('led-modal');
@@ -5318,6 +5395,11 @@ function openLedModal(device, type) {
     // 加载字体列表（如果是文本模态框）
     if (type === 'text') {
         loadFontListForModal();
+    }
+    
+    // 加载色彩校正配置
+    if (type === 'colorcorrection') {
+        loadColorCorrectionConfig();
     }
 }
 
@@ -5633,6 +5715,218 @@ async function stopFilterFromModal() {
         showToast(t('toast.stopped'), 'success');
     } catch (e) {
         showToast(`${t('toast.operationFailed')}: ${e.message}`, 'error');
+    }
+}
+
+// ============================================================
+// 色彩校正功能
+// ============================================================
+
+// 保存进入模态框时的初始配置（用于重置）
+let ccInitialConfig = null;
+
+// 防抖定时器
+let ccPreviewDebounce = null;
+
+// 更新滑块值显示并实时预览
+function updateCcSliderValue(elementId, value) {
+    const el = document.getElementById(elementId);
+    if (el) el.textContent = value.toFixed(2);
+    
+    // 防抖实时预览（200ms 延迟）
+    if (ccPreviewDebounce) clearTimeout(ccPreviewDebounce);
+    ccPreviewDebounce = setTimeout(() => {
+        previewColorCorrection();
+    }, 200);
+}
+
+// 实时预览色彩校正（不保存到 NVS）
+async function previewColorCorrection() {
+    const config = buildCcConfigFromUI();
+    try {
+        await api.ledColorCorrectionSet(config);
+    } catch (e) {
+        console.warn('Preview failed:', e);
+    }
+}
+
+// 从 UI 构建配置对象
+function buildCcConfigFromUI() {
+    return {
+        enabled: document.getElementById('cc-enabled')?.checked || false,
+        white_point: {
+            r: parseFloat(document.getElementById('cc-wp-r')?.value || 100) / 100,
+            g: parseFloat(document.getElementById('cc-wp-g')?.value || 100) / 100,
+            b: parseFloat(document.getElementById('cc-wp-b')?.value || 100) / 100,
+            enabled: true
+        },
+        gamma: {
+            value: parseFloat(document.getElementById('cc-gamma')?.value || 100) / 100,
+            enabled: true
+        },
+        brightness: {
+            factor: parseFloat(document.getElementById('cc-brightness')?.value || 100) / 100,
+            enabled: true
+        },
+        saturation: {
+            factor: parseFloat(document.getElementById('cc-saturation')?.value || 100) / 100,
+            enabled: true
+        }
+    };
+}
+
+// 加载色彩校正配置
+async function loadColorCorrectionConfig() {
+    try {
+        const result = await api.ledColorCorrectionGet();
+        if (result.code === 0 && result.data) {
+            const config = result.data;
+            
+            // 保存初始配置（用于重置）
+            ccInitialConfig = JSON.parse(JSON.stringify(config));
+            
+            // 更新 UI
+            applyCcConfigToUI(config);
+        }
+    } catch (e) {
+        console.error('Failed to load color correction config:', e);
+    }
+}
+
+// 将配置应用到 UI
+function applyCcConfigToUI(config) {
+    // 更新启用状态
+    const enabledEl = document.getElementById('cc-enabled');
+    if (enabledEl) enabledEl.checked = config.enabled;
+    
+    // 更新白点（支持 red_scale/green_scale/blue_scale 格式）
+    if (config.white_point) {
+        const r = config.white_point.red_scale ?? config.white_point.r ?? 1.0;
+        const g = config.white_point.green_scale ?? config.white_point.g ?? 1.0;
+        const b = config.white_point.blue_scale ?? config.white_point.b ?? 1.0;
+        updateCcSliderNoPreview('cc-wp-r', r * 100, r);
+        updateCcSliderNoPreview('cc-wp-g', g * 100, g);
+        updateCcSliderNoPreview('cc-wp-b', b * 100, b);
+    }
+    
+    // 更新 gamma（支持 gamma 或 value 格式）
+    if (config.gamma) {
+        const val = config.gamma.gamma ?? config.gamma.value ?? 1.0;
+        updateCcSliderNoPreview('cc-gamma', val * 100, val);
+    }
+    
+    // 更新亮度
+    if (config.brightness) {
+        updateCcSliderNoPreview('cc-brightness', config.brightness.factor * 100, config.brightness.factor);
+    }
+    
+    // 更新饱和度
+    if (config.saturation) {
+        updateCcSliderNoPreview('cc-saturation', config.saturation.factor * 100, config.saturation.factor);
+    }
+}
+
+// 更新滑块（不触发预览）
+function updateCcSliderNoPreview(sliderId, sliderValue, displayValue) {
+    const slider = document.getElementById(sliderId);
+    const valueEl = document.getElementById(sliderId + '-val');
+    if (slider) slider.value = Math.round(sliderValue);
+    if (valueEl) valueEl.textContent = displayValue.toFixed(2);
+}
+
+// 应用色彩校正配置（保存到 NVS）
+async function applyColorCorrection() {
+    const config = buildCcConfigFromUI();
+    
+    try {
+        // 先应用配置
+        const result = await api.ledColorCorrectionSet(config);
+        if (result.code === 0) {
+            // 导出到 NVS（通过 export 保存）
+            await api.ledColorCorrectionExport();
+            // 更新初始配置为当前配置
+            ccInitialConfig = JSON.parse(JSON.stringify(config));
+            showToast(t('ledPage.ccApplySuccess'), 'success');
+        } else {
+            showToast(t('ledPage.ccApplyFailed') + ': ' + result.message, 'error');
+        }
+    } catch (e) {
+        showToast(t('ledPage.ccApplyFailed') + ': ' + e.message, 'error');
+    }
+}
+
+// 重置色彩校正配置（恢复到进入模态框时的状态）
+async function resetColorCorrection() {
+    if (!ccInitialConfig) {
+        showToast(t('ledPage.ccResetFailed') + ': No initial config', 'error');
+        return;
+    }
+    
+    try {
+        // 恢复初始配置到 UI
+        applyCcConfigToUI(ccInitialConfig);
+        
+        // 发送初始配置到设备
+        const config = {
+            enabled: ccInitialConfig.enabled,
+            white_point: {
+                r: ccInitialConfig.white_point?.red_scale ?? 1.0,
+                g: ccInitialConfig.white_point?.green_scale ?? 1.0,
+                b: ccInitialConfig.white_point?.blue_scale ?? 1.0,
+                enabled: ccInitialConfig.white_point?.enabled ?? true
+            },
+            gamma: {
+                value: ccInitialConfig.gamma?.gamma ?? 1.0,
+                enabled: ccInitialConfig.gamma?.enabled ?? true
+            },
+            brightness: {
+                factor: ccInitialConfig.brightness?.factor ?? 1.0,
+                enabled: ccInitialConfig.brightness?.enabled ?? true
+            },
+            saturation: {
+                factor: ccInitialConfig.saturation?.factor ?? 1.0,
+                enabled: ccInitialConfig.saturation?.enabled ?? true
+            }
+        };
+        
+        const result = await api.ledColorCorrectionSet(config);
+        if (result.code === 0) {
+            showToast(t('ledPage.ccResetSuccess'), 'success');
+        } else {
+            showToast(t('ledPage.ccResetFailed') + ': ' + result.message, 'error');
+        }
+    } catch (e) {
+        showToast(t('ledPage.ccResetFailed') + ': ' + e.message, 'error');
+    }
+}
+
+// 导出色彩校正配置到 SD 卡
+async function ccExport() {
+    try {
+        const result = await api.ledColorCorrectionExport();
+        if (result.code === 0) {
+            showToast(t('ledPage.ccExportSuccess'), 'success');
+        } else {
+            showToast(t('ledPage.ccExportFailed') + ': ' + result.message, 'error');
+        }
+    } catch (e) {
+        showToast(t('ledPage.ccExportFailed') + ': ' + e.message, 'error');
+    }
+}
+
+// 从 SD 卡导入色彩校正配置
+async function ccImport() {
+    try {
+        const result = await api.ledColorCorrectionImport();
+        if (result.code === 0) {
+            // 重新加载配置到 UI
+            await loadColorCorrectionConfig();
+            showToast(t('ledPage.ccImportSuccess'), 'success');
+        } else {
+            showToast(t('ledPage.ccImportFailed') + ': ' + result.message, 'error');
+        }
+    } catch (e) {
+        showToast(t('ledPage.ccImportFailed') + ': ' + e.message, 'error');
     }
 }
 
