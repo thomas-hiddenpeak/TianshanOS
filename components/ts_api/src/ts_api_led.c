@@ -16,6 +16,7 @@
 #include "ts_led_text.h"
 #include "ts_led_font.h"
 #include "ts_led_effect.h"
+#include "ts_led_color_correction.h"
 #include <string.h>
 
 #define TAG "api_led"
@@ -1340,6 +1341,201 @@ static esp_err_t api_led_boot_config(const cJSON *params, ts_api_result_t *resul
 }
 
 /*===========================================================================*/
+/*                     Color Correction APIs                                  */
+/*===========================================================================*/
+
+/**
+ * @brief led.color_correction.get - Get color correction configuration
+ */
+static esp_err_t api_led_cc_get(const cJSON *params, ts_api_result_t *result)
+{
+    (void)params;
+    
+    if (!ts_led_cc_is_initialized()) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Color correction not initialized");
+        return ESP_OK;
+    }
+    
+    cJSON *data = ts_led_cc_config_to_json();
+    if (!data) {
+        ts_api_result_error(result, TS_API_ERR_NO_MEM, "Failed to create JSON");
+        return ESP_OK;
+    }
+    
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/**
+ * @brief led.color_correction.set - Set color correction configuration
+ */
+static esp_err_t api_led_cc_set(const cJSON *params, ts_api_result_t *result)
+{
+    if (!ts_led_cc_is_initialized()) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Color correction not initialized");
+        return ESP_OK;
+    }
+    
+    ts_led_cc_config_t config;
+    ts_led_cc_get_config(&config);
+    
+    /* Parse enabled flag */
+    const cJSON *enabled = cJSON_GetObjectItem(params, "enabled");
+    if (cJSON_IsBool(enabled)) {
+        config.enabled = cJSON_IsTrue(enabled);
+    }
+    
+    /* Parse white_point (支持 r/g/b 或 red_scale/green_scale/blue_scale) */
+    const cJSON *wp = cJSON_GetObjectItem(params, "white_point");
+    if (cJSON_IsObject(wp)) {
+        const cJSON *wp_en = cJSON_GetObjectItem(wp, "enabled");
+        if (cJSON_IsBool(wp_en)) config.white_point.enabled = cJSON_IsTrue(wp_en);
+        
+        const cJSON *red = cJSON_GetObjectItem(wp, "red_scale");
+        if (!red) red = cJSON_GetObjectItem(wp, "r");  /* WebUI compatibility */
+        if (cJSON_IsNumber(red)) config.white_point.red_scale = (float)red->valuedouble;
+        
+        const cJSON *green = cJSON_GetObjectItem(wp, "green_scale");
+        if (!green) green = cJSON_GetObjectItem(wp, "g");  /* WebUI compatibility */
+        if (cJSON_IsNumber(green)) config.white_point.green_scale = (float)green->valuedouble;
+        
+        const cJSON *blue = cJSON_GetObjectItem(wp, "blue_scale");
+        if (!blue) blue = cJSON_GetObjectItem(wp, "b");  /* WebUI compatibility */
+        if (cJSON_IsNumber(blue)) config.white_point.blue_scale = (float)blue->valuedouble;
+    }
+    
+    /* Parse gamma (支持 gamma 或 value) */
+    const cJSON *gamma = cJSON_GetObjectItem(params, "gamma");
+    if (cJSON_IsObject(gamma)) {
+        const cJSON *gamma_en = cJSON_GetObjectItem(gamma, "enabled");
+        if (cJSON_IsBool(gamma_en)) config.gamma.enabled = cJSON_IsTrue(gamma_en);
+        
+        const cJSON *gamma_val = cJSON_GetObjectItem(gamma, "gamma");
+        if (!gamma_val) gamma_val = cJSON_GetObjectItem(gamma, "value");  /* WebUI compatibility */
+        if (cJSON_IsNumber(gamma_val)) config.gamma.gamma = (float)gamma_val->valuedouble;
+    }
+    
+    /* Parse brightness */
+    const cJSON *brightness = cJSON_GetObjectItem(params, "brightness");
+    if (cJSON_IsObject(brightness)) {
+        const cJSON *br_en = cJSON_GetObjectItem(brightness, "enabled");
+        if (cJSON_IsBool(br_en)) config.brightness.enabled = cJSON_IsTrue(br_en);
+        
+        const cJSON *br_val = cJSON_GetObjectItem(brightness, "factor");
+        if (cJSON_IsNumber(br_val)) config.brightness.factor = (float)br_val->valuedouble;
+    }
+    
+    /* Parse saturation */
+    const cJSON *saturation = cJSON_GetObjectItem(params, "saturation");
+    if (cJSON_IsObject(saturation)) {
+        const cJSON *sat_en = cJSON_GetObjectItem(saturation, "enabled");
+        if (cJSON_IsBool(sat_en)) config.saturation.enabled = cJSON_IsTrue(sat_en);
+        
+        const cJSON *sat_val = cJSON_GetObjectItem(saturation, "factor");
+        if (cJSON_IsNumber(sat_val)) config.saturation.factor = (float)sat_val->valuedouble;
+    }
+    
+    /* Apply configuration */
+    esp_err_t ret = ts_led_cc_set_config(&config);
+    if (ret != ESP_OK) {
+        ts_api_result_error(result, TS_API_ERR_INVALID_ARG, "Invalid configuration");
+        return ESP_OK;
+    }
+    
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddBoolToObject(data, "success", true);
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/**
+ * @brief led.color_correction.reset - Reset color correction to defaults
+ */
+static esp_err_t api_led_cc_reset(const cJSON *params, ts_api_result_t *result)
+{
+    (void)params;
+    
+    if (!ts_led_cc_is_initialized()) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Color correction not initialized");
+        return ESP_OK;
+    }
+    
+    esp_err_t ret = ts_led_cc_reset_config();
+    if (ret != ESP_OK) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to reset configuration");
+        return ESP_OK;
+    }
+    
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddBoolToObject(data, "success", true);
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/**
+ * @brief led.color_correction.export - Export configuration to SD card
+ */
+static esp_err_t api_led_cc_export(const cJSON *params, ts_api_result_t *result)
+{
+    if (!ts_led_cc_is_initialized()) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Color correction not initialized");
+        return ESP_OK;
+    }
+    
+    const char *path = NULL;
+    const cJSON *path_param = cJSON_GetObjectItem(params, "path");
+    if (cJSON_IsString(path_param)) {
+        path = path_param->valuestring;
+    }
+    
+    esp_err_t ret = ts_led_cc_save_to_sdcard(path);
+    if (ret != ESP_OK) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Failed to export configuration");
+        return ESP_OK;
+    }
+    
+    cJSON *data = cJSON_CreateObject();
+    cJSON_AddBoolToObject(data, "success", true);
+    cJSON_AddStringToObject(data, "path", path ? path : TS_LED_CC_SDCARD_JSON_PATH);
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/**
+ * @brief led.color_correction.import - Import configuration from SD card
+ */
+static esp_err_t api_led_cc_import(const cJSON *params, ts_api_result_t *result)
+{
+    if (!ts_led_cc_is_initialized()) {
+        ts_api_result_error(result, TS_API_ERR_INTERNAL, "Color correction not initialized");
+        return ESP_OK;
+    }
+    
+    const char *path = NULL;
+    const cJSON *path_param = cJSON_GetObjectItem(params, "path");
+    if (cJSON_IsString(path_param)) {
+        path = path_param->valuestring;
+    }
+    
+    esp_err_t ret = ts_led_cc_load_from_sdcard(path);
+    if (ret != ESP_OK) {
+        ts_api_result_error(result, TS_API_ERR_NOT_FOUND, "Failed to import configuration");
+        return ESP_OK;
+    }
+    
+    /* Save imported config to NVS as well */
+    ts_led_cc_save_to_nvs();
+    
+    cJSON *data = ts_led_cc_config_to_json();
+    if (!data) {
+        data = cJSON_CreateObject();
+    }
+    cJSON_AddBoolToObject(data, "success", true);
+    ts_api_result_ok(result, data);
+    return ESP_OK;
+}
+
+/*===========================================================================*/
 /*                          Registration                                      */
 /*===========================================================================*/
 
@@ -1489,6 +1685,46 @@ static const ts_api_endpoint_t led_endpoints[] = {
         .category = TS_API_CAT_LED,
         .handler = api_led_boot_config,
         .requires_auth = false,
+    },
+    /* Color Correction APIs */
+    {
+        .name = "led.color_correction.get",
+        .description = "Get color correction configuration",
+        .category = TS_API_CAT_LED,
+        .handler = api_led_cc_get,
+        .requires_auth = false,
+    },
+    {
+        .name = "led.color_correction.set",
+        .description = "Set color correction configuration",
+        .category = TS_API_CAT_LED,
+        .handler = api_led_cc_set,
+        .requires_auth = false,
+        .permission = "led.config",
+    },
+    {
+        .name = "led.color_correction.reset",
+        .description = "Reset color correction to defaults",
+        .category = TS_API_CAT_LED,
+        .handler = api_led_cc_reset,
+        .requires_auth = false,
+        .permission = "led.config",
+    },
+    {
+        .name = "led.color_correction.export",
+        .description = "Export color correction config to SD card",
+        .category = TS_API_CAT_LED,
+        .handler = api_led_cc_export,
+        .requires_auth = false,
+        .permission = "led.config",
+    },
+    {
+        .name = "led.color_correction.import",
+        .description = "Import color correction config from SD card",
+        .category = TS_API_CAT_LED,
+        .handler = api_led_cc_import,
+        .requires_auth = false,
+        .permission = "led.config",
     },
 };
 

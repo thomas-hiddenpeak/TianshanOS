@@ -7,6 +7,7 @@
  */
 
 #include "ts_led_private.h"
+#include "ts_led_color_correction.h"
 #include "ts_log.h"
 #include "led_strip.h"
 #include "driver/spi_master.h"
@@ -77,11 +78,24 @@ esp_err_t ts_led_driver_send(ts_led_device_impl_t *dev)
     led_strip_handle_t strip = dev->strip_handle;
     uint8_t brightness = dev->brightness;
     
+    /* Check if color correction is enabled */
+    bool cc_enabled = ts_led_cc_is_enabled();
+    
     for (int i = 0; i < dev->config.led_count; i++) {
-        ts_led_rgb_t *px = &dev->framebuffer[i];
-        uint8_t r = (px->r * brightness) >> 8;
-        uint8_t g = (px->g * brightness) >> 8;
-        uint8_t b = (px->b * brightness) >> 8;
+        ts_led_rgb_t px = dev->framebuffer[i];
+        
+        /* Apply color correction if enabled */
+        if (cc_enabled) {
+            ts_led_rgb_t corrected;
+            if (ts_led_cc_apply_pixel(&px, &corrected) == ESP_OK) {
+                px = corrected;
+            }
+        }
+        
+        /* Apply device brightness */
+        uint8_t r = (px.r * brightness) >> 8;
+        uint8_t g = (px.g * brightness) >> 8;
+        uint8_t b = (px.b * brightness) >> 8;
         led_strip_set_pixel(strip, i, r, g, b);
     }
     
