@@ -63,3 +63,5 @@
 .ri-folder-add-line:before { content: "\ed5a"; }
 .ri-folder-line:before { content: "\ed6a"; }
 .ri-home-line:before { content: "\ee2b"; }
+.ri-toggle-line:before { content: "\f219"; }
+.ri-toggle-fill:before { content: "\f218"; }

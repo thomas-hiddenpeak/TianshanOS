@@ -584,7 +584,12 @@ async function loadSystemPage() {
                             <p><strong>输入:</strong> <span id="voltage">-</span> <span style="font-size:0.85em;color:#888">/ 内部 <span id="internal-voltage">-</span></span></p>
                             <p><strong>电流:</strong> <span id="current">-</span></p>
                             <p><strong>功率:</strong> <span id="power-watts">-</span></p>
-                            <p><strong>保护:</strong> <span id="protection-status">-</span></p>
+                            <p style="display:flex;align-items:center;gap:8px"><strong>保护:</strong> 
+                                <button id="protection-toggle-btn" onclick="toggleProtection()" title="点击切换保护状态" style="background:#f0f8ff;border:1px solid #d0e8ff;color:#007bff;padding:2px 8px;border-radius:4px;cursor:pointer;font-size:1.1em;display:flex;align-items:center">
+                                    <i id="protection-toggle-icon" class="ri-toggle-line"></i>
+                                </button>
+                                <span id="protection-status" style="font-size:0.85em">-</span>
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -798,8 +803,7 @@ async function refreshSystemPageOnce() {
         const protStatus = await api.powerProtectionStatus();
         if (protStatus.data) {
             const running = protStatus.data.running || protStatus.data.initialized;
-            document.getElementById('protection-status').textContent = 
-                running ? '已启用' : '已禁用';
+            updateProtectionUI(running);
         }
     } catch (e) { 
         document.getElementById('voltage').textContent = '-'; 
@@ -885,6 +889,69 @@ function updateUsbMuxButton() {
         btn.disabled = false;
         const colorClass = USB_MUX_COLORS[usbMuxTarget] || '';
         btn.className = 'btn btn-small ' + colorClass;
+    }
+}
+
+/**
+ * 更新保护状态 UI（图标和文字）
+ */
+function updateProtectionUI(running) {
+    const icon = document.getElementById('protection-toggle-icon');
+    const statusSpan = document.getElementById('protection-status');
+    const btn = document.getElementById('protection-toggle-btn');
+    
+    if (icon) {
+        icon.className = running ? 'ri-toggle-fill' : 'ri-toggle-line';
+    }
+    if (statusSpan) {
+        statusSpan.textContent = running ? '已启用' : '已禁用';
+        statusSpan.style.color = running ? '#2e7d32' : '#666';
+    }
+    if (btn) {
+        btn.style.color = running ? '#2e7d32' : '#007bff';
+        btn.style.borderColor = running ? '#a5d6a7' : '#d0e8ff';
+        btn.style.backgroundColor = running ? '#e8f5e9' : '#f0f8ff';
+    }
+}
+
+/**
+ * 切换电压保护状态
+ */
+async function toggleProtection() {
+    const btn = document.getElementById('protection-toggle-btn');
+    
+    // 获取当前状态
+    let currentRunning = false;
+    try {
+        const protStatus = await api.powerProtectionStatus();
+        currentRunning = protStatus.data?.running || protStatus.data?.initialized || false;
+    } catch (e) {
+        console.error('Failed to get protection status:', e);
+    }
+    
+    const newState = !currentRunning;
+    
+    // 临时禁用按钮防止重复点击
+    if (btn) btn.disabled = true;
+    
+    try {
+        const result = await api.powerProtectionSet({ enable: newState });
+        
+        if (result.code === 0) {
+            const isRunning = result.data?.running ?? newState;
+            updateProtectionUI(isRunning);
+            showToast(isRunning ? '电压保护已启用' : '电压保护已禁用', isRunning ? 'success' : 'warning');
+        } else {
+            // 恢复原状态
+            updateProtectionUI(currentRunning);
+            showToast('切换失败: ' + (result.message || '未知错误'), 'error');
+        }
+    } catch (e) {
+        // 恢复原状态
+        updateProtectionUI(currentRunning);
+        showToast('切换失败: ' + e.message, 'error');
+    } finally {
+        if (btn) btn.disabled = false;
     }
 }
 
