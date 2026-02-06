@@ -1,4 +1,4 @@
-# TianShanOS
+# TianshanOS
 
 [English](README_EN.md) | [中文](README.md)
 
@@ -20,7 +20,7 @@
 ║      ██║   ██║██║  ██║██║ ╚████║███████║██║  ██║██║  ██║██║ ╚████║   ║
 ║      ╚═╝   ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝   ║
 ║                                                                      ║
-║                         TianShanOS v0.4.0                            ║
+║                           TianshanOS                                 ║
 ║                ESP32 Rack Management Operating System                ║
 ║                                                                      ║
 ╚══════════════════════════════════════════════════════════════════════╝
@@ -28,9 +28,9 @@
 
 ---
 
-## 🚀 项目概述
+## 项目概述
 
-TianShanOS 是一个**面向配置而非面向代码**的嵌入式操作系统框架，基于 ESP-IDF v5.5+ 开发，用于 NVIDIA Jetson AGX + DFRobot LattePanda Mu 载板的机架管理。
+TianshanOS 是一个**面向配置而非面向代码**的嵌入式操作系统框架，基于 ESP-IDF v5.5+ 开发，用于 NVIDIA Jetson AGX + DFRobot LattePanda Mu 载板的机架管理。
 
 ### 核心特性
 
@@ -43,7 +43,7 @@ TianShanOS 是一个**面向配置而非面向代码**的嵌入式操作系统�
 - **跨平台设计** - 支持 ESP32-S3 和 ESP32-P4
 - **安全优先** - HTTPS/mTLS、SSH 公钥认证、PKI 证书管理、分级权限
 - **统一接口** - CLI 和 WebUI 共享 Core API，行为一致
-- **多语言支持** - 中/英/日/韩/德/法/西/乌克兰 8 种语言界面
+- **多语言支持** - 中/英双语界面
 - **CI/CD** - GitHub Actions 自动编译、Release 发布
 
 ### 系统架构
@@ -71,10 +71,10 @@ TianShanOS 是一个**面向配置而非面向代码**的嵌入式操作系统�
 
 ---
 
-## 📦 项目结构
+## 项目结构
 
 ```
-TianShanOS/
+TianshanOS/
 ├── .github/                # GitHub 配置
 │   └── workflows/          # CI/CD 工作流
 │       └── build.yml       # 自动编译 & Release
@@ -108,7 +108,7 @@ TianShanOS/
 
 ---
 
-## 🛠️ 开发环境
+## 开发环境
 
 ### 依赖
 - ESP-IDF v5.5.2+
@@ -120,7 +120,7 @@ TianShanOS/
 ```bash
 # 克隆项目
 git clone https://github.com/thomas-hiddenpeak/TianshanOS.git
-cd TianShanOS
+cd TianshanOS
 
 # 设置 ESP-IDF 环境
 . $HOME/esp/v5.5/esp-idf/export.sh
@@ -128,7 +128,7 @@ cd TianShanOS
 # 设置目标芯片
 idf.py set-target esp32s3
 
-# 配置项目 (TianShanOS 选项在顶层菜单)
+# 配置项目 (TianshanOS 选项在顶层菜单)
 idf.py menuconfig
 
 # 编译（带版本号更新）
@@ -146,7 +146,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 esptool.py --chip esp32s3 -p /dev/ttyACM0 write_flash \
     0x0 bootloader.bin \
     0x8000 partition-table.bin \
-    0x10000 TianShanOS.bin
+    0x10000 TianshanOS.bin
 ```
 
 ### VS Code 开发
@@ -157,7 +157,7 @@ esptool.py --chip esp32s3 -p /dev/ttyACM0 write_flash \
 
 ---
 
-## 📚 文档
+## 文档
 
 | 文档 | 描述 |
 |-----|------|
@@ -178,10 +178,10 @@ esptool.py --chip esp32s3 -p /dev/ttyACM0 write_flash \
 
 ---
 
-## 🎯 当前状态
+## 当前状态
 
 **版本**: 0.4.0  
-**阶段**: Phase 38 完成 - WebUI 多语言支持 (8种语言)
+**阶段**: Phase 38 完成 - WebUI 多语言支持
 
 ### 已完成功能
 
@@ -196,7 +196,7 @@ esptool.py --chip esp32s3 -p /dev/ttyACM0 write_flash \
 | 网络 | WiFi、以太网 W5500、HTTP/HTTPS 服务器 |
 | 安全 | 会话管理、Token 认证、AES-GCM、RSA/EC、SSH 客户端、PKI 证书管理 |
 | 驱动 | 风扇控制、电源监控 (ADC/INA3221/PZEM)、AGX/LPMU 电源控制、USB MUX |
-| WebUI | REST API 网关、WebSocket 广播、前端仪表盘、认证系统、8语言国际化 |
+| WebUI | REST API 网关、WebSocket 广播、前端仪表盘、认证系统、中英文国际化 |
 | OTA | 双分区升级、版本检测、完整性校验、自动回滚 |
 | 自动化引擎 | 触发器-条件-动作系统、SSH 远程执行、正则解析、变量系统、电压保护集成 |
 | CI/CD | GitHub Actions 自动编译、Tag 触发 Release 发布 |
@@ -234,30 +234,24 @@ esptool.py --chip esp32s3 -p /dev/ttyACM0 write_flash \
 
 ---
 
-## 🌐 多语言支持
+## 多语言支持
 
-WebUI 支持 8 种语言，根据浏览器设置自动检测：
+WebUI 支持中英文界面，根据浏览器设置自动检测：
 
 | 语言 | 代码 |
 |------|------|
-| 🇨🇳 简体中文 | zh-CN |
-| 🇺🇸 English | en-US |
-| 🇯🇵 日本語 | ja-JP |
-| 🇰🇷 한국어 | ko-KR |
-| 🇩🇪 Deutsch | de-DE |
-| 🇫🇷 Français | fr-FR |
-| 🇪🇸 Español | es-ES |
-| 🇺🇦 Українська | uk-UA |
+| 简体中文 | zh-CN |
+| English | en-US |
 
 ---
 
-## 👥 贡献者
+## 贡献者
 
 - Thomas (项目负责人)
 - massif-01
 
 ---
 
-## 📄 许可证
+## 许可证
 
 本项目采用 GPL-3.0 许可证，详见 [LICENSE](LICENSE) 文件。

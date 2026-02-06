@@ -534,7 +534,7 @@ async function loadSystemPage() {
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
                         <h3 style="margin:0">资源监控</h3>
                         <button class="btn btn-sm btn-service-style" onclick="showServicesModal()" style="cursor:pointer">
-                            <i class="ri-service-line"></i> 服务 <span id="services-running" style="font-weight:bold">-</span>/<span id="services-total">-</span>
+                            <i class="ri-service-line"></i> 服务 <span id="services-running">-</span>/<span id="services-total">-</span>
                         </button>
                     </div>
                     <div class="card-content" style="display:flex;gap:20px">
@@ -996,11 +996,11 @@ function updateAgxPowerButton() {
     if (!btn) return;
 
     if (agxPowerState) {
-        btn.innerHTML = '🟢 AGX 运行中';
+        btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#2e7d32"></i> AGX 运行中';
         btn.className = 'btn btn-sm btn-success';
         btn.title = '点击关闭 AGX 电源';
     } else {
-        btn.innerHTML = '🔴 AGX 已关闭';
+        btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#c62828"></i> AGX 已关闭';
         btn.className = 'btn btn-sm btn-danger';
         btn.title = '点击开启 AGX 电源';
     }
@@ -1173,12 +1173,12 @@ function updateLpmuPowerButton(remainingSec = 0) {
 
     switch (lpmuState) {
         case 'online':
-            btn.innerHTML = '🟢 LPMU 运行中';
+            btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#2e7d32"></i> LPMU 运行中';
             btn.className = 'btn btn-sm btn-success';
             btn.title = 'LPMU 在线 (ping 10.10.99.99 可达)\n点击触发电源按钮';
             break;
         case 'offline':
-            btn.innerHTML = '🔴 LPMU 已关闭';
+            btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#c62828"></i> LPMU 已关闭';
             btn.className = 'btn btn-sm btn-danger';
             btn.title = 'LPMU 离线 (ping 10.10.99.99 不可达)\n点击触发电源按钮';
             break;
@@ -1408,8 +1408,8 @@ function updateFanInfo(data) {
             const modeInfo = {
                 'off':    { label: '关闭', color: '#6b7280', icon: '⏹' },
                 'manual': { label: '手动', color: '#f59e0b', icon: '' },
-                'auto':   { label: '自动', color: '#10b981', icon: '⚙️' },
-                'curve':  { label: '曲线', color: '#3b82f6', icon: '📈' }
+                'auto':   { label: '自动', color: '#10b981', icon: '' },
+                'curve':  { label: '曲线', color: '#3b82f6', icon: '' }
             };
             const currentMode = modeInfo[mode] || modeInfo['auto'];
             
@@ -1427,7 +1427,6 @@ function updateFanInfo(data) {
                 <div class="fan-speed-display">
                     <span class="fan-speed-num">${displayDuty}</span>
                     <span class="fan-speed-percent">%</span>
-                    ${isCurveOrAuto && duty !== displayDuty ? `<div class="fan-rpm-small">当前: ${duty}%</div>` : ''}
                     ${rpm > 0 ? `<div class="fan-rpm-small">${rpm} RPM</div>` : ''}
                 </div>
                 
@@ -1435,7 +1434,7 @@ function updateFanInfo(data) {
                 <div class="fan-mode-tabs">
                     <button class="fan-mode-tab ${mode === 'off' ? 'active off' : ''}" 
                             onclick="setFanMode(${fan.id}, 'off')">关闭</button>
-                    <button class="fan-mode-tab manual ${mode === 'manual' ? 'active' : ''}" 
+                    <button class="fan-mode-tab ${mode === 'manual' ? 'active manual' : ''}" 
                             onclick="setFanMode(${fan.id}, 'manual')">手动</button>
                     <button class="fan-mode-tab ${mode === 'auto' ? 'active auto' : ''}" 
                             onclick="setFanMode(${fan.id}, 'auto')">自动</button>
@@ -1459,7 +1458,7 @@ function updateFanInfo(data) {
                 <!-- 底部操作 -->
                 ${mode === 'curve' ? `
                 <button class="fan-curve-btn" onclick="showFanCurveModal(${fan.id})">
-                    ⚙️ 编辑温度曲线
+                    编辑温度曲线
                 </button>` : ''}
             </div>
         `;
@@ -1992,8 +1991,8 @@ function drawCurvePreview() {
         ctx.lineWidth = 2;
         ctx.stroke();
         
-        // 标签
-        ctx.fillStyle = '#fff';
+        // 标签（使用坐标轴文字颜色）
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
         ctx.font = 'bold 10px system-ui';
         ctx.textAlign = 'center';
         ctx.fillText(`${point.temp}°/${point.duty}%`, x, y - 12);
@@ -4649,7 +4648,6 @@ function generateLedDeviceCard(dev) {
         <div class="led-device-card ${isOn ? 'is-on' : ''}" data-device="${dev.name}">
             <!-- 设备头部 -->
             <div class="led-card-header">
-                <div class="led-device-icon">${icon}</div>
                 <div class="led-device-info">
                     <span class="led-device-name">${dev.name}</span>
                     <span class="led-device-desc">${description}</span>
@@ -4699,13 +4697,12 @@ function generateLedDeviceCard(dev) {
             
             <!-- 底部操作栏 -->
             <div class="led-card-footer">
-                <button class="led-power-btn ${isOn ? 'on' : ''}" id="toggle-${dev.name}" onclick="toggleLed('${dev.name}')">
-                    <span class="power-icon">${isOn ? '🔆' : '💡'}</span>
-                    <span class="power-text">${isOn ? '关闭' : '开启'}</span>
+                <button class="led-power-btn ${isOn ? 'on' : ''}" id="toggle-${dev.name}" onclick="toggleLed('${dev.name}')" title="${isOn ? '点击关闭' : '点击开启'}">
+                    <i class="power-icon ${isOn ? 'ri-lightbulb-fill' : 'ri-lightbulb-line'}"></i>
                 </button>
                 ${matrixButtons}
                 <button class="led-save-btn" onclick="saveLedConfig('${dev.name}')" title="保存配置">
-                    💾
+                    <i class="ri-save-line"></i>
                 </button>
             </div>
         </div>
@@ -4804,14 +4801,19 @@ function updateLedCardState(device, isOn, effect = undefined) {
     // 更新电源按钮
     const powerBtn = card.querySelector('.led-power-btn');
     if (powerBtn) {
+        const powerIcon = powerBtn.querySelector('.power-icon');
         if (isOn) {
             powerBtn.classList.add('on');
-            powerBtn.querySelector('.power-icon').textContent = '🔆';
-            powerBtn.querySelector('.power-text').textContent = '关闭';
+            powerBtn.title = '点击关闭';
+            if (powerIcon) {
+                powerIcon.className = 'power-icon ri-lightbulb-fill';
+            }
         } else {
             powerBtn.classList.remove('on');
-            powerBtn.querySelector('.power-icon').textContent = '💡';
-            powerBtn.querySelector('.power-text').textContent = '开启';
+            powerBtn.title = '点击开启';
+            if (powerIcon) {
+                powerIcon.className = 'power-icon ri-lightbulb-line';
+            }
         }
     }
     
@@ -14215,8 +14217,8 @@ async function loadOtaPage() {
                     <div class="server-input-group">
                         <input type="text" id="ota-server-input" class="form-input" 
                                placeholder="http://192.168.1.100:57807">
-                        <button class="btn btn-icon" onclick="saveOtaServer()" title="保存到设备">保存</button>
-                        <button class="btn btn-primary" onclick="checkForUpdates()" style="background-color: #f0f8ff; color: #333;">检查更新</button>
+                        <button class="btn btn-icon" onclick="saveOtaServer()" title="保存到设备" style="color:#666">保存</button>
+                        <button class="btn btn-service-style" onclick="checkForUpdates()">检查更新</button>
                     </div>
                 </div>
                 
@@ -14263,7 +14265,7 @@ async function loadOtaPage() {
                                 <label><input type="checkbox" id="ota-url-include-www" checked> 包含 WebUI</label>
                                 <label><input type="checkbox" id="ota-url-skip-verify"> 跳过验证</label>
                             </div>
-                            <button class="btn btn-primary btn-small" onclick="otaFromUrl()" style="background-color: #f0f8ff; color: #333;">升级</button>
+                            <button class="btn btn-service-style btn-small" onclick="otaFromUrl()">升级</button>
                         </div>
                     </div>
                     <div class="ota-method">
@@ -14274,7 +14276,7 @@ async function loadOtaPage() {
                             <div class="method-options">
                                 <label><input type="checkbox" id="ota-file-include-www" checked> 包含 WebUI</label>
                             </div>
-                            <button class="btn btn-primary btn-small" onclick="otaFromFile()" style="background-color: #f0f8ff; color: #333;">升级</button>
+                            <button class="btn btn-service-style btn-small" onclick="otaFromFile()">升级</button>
                         </div>
                     </div>
                 </div>

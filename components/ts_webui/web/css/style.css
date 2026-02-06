@@ -741,7 +741,7 @@ body {
 }
 
 .ws-status.connected {
-    background: #2ecc71;
+    background: #2e7d32;
 }
 
 /* 语言切换按钮 */
@@ -1102,7 +1102,7 @@ body {
 
 /* LED 设备卡片 */
 .led-device-card {
-    background: var(--card-bg);
+    background: #ffffff;
     border-radius: 16px;
     border: 2px solid var(--border-color);
     overflow: hidden;
@@ -1125,8 +1125,7 @@ body {
     align-items: center;
     gap: 12px;
     padding: 16px 20px;
-    background: linear-gradient(135deg, var(--bg-color) 0%, var(--card-bg) 100%);
-    border-bottom: 1px solid var(--border-color);
+    background: #ffffff;
 }
 
 .led-device-icon {
@@ -1188,6 +1187,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 14px;
+    background: #ffffff;
 }
 
 /* 亮度控制行 */
@@ -1299,9 +1299,10 @@ body {
 .led-quick-effect {
     width: 36px;
     height: 36px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--bg-color);
+    border: 1px solid #d0e8ff;
+    border-radius: 4px;
+    background: #f0f8ff;
+    color: #007bff;
     cursor: pointer;
     font-size: 1rem;
     display: flex;
@@ -1311,15 +1312,13 @@ body {
 }
 
 .led-quick-effect:hover {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
-    color: white;
-    transform: translateY(-2px);
+    background: #e0f0ff;
+    border-color: #b0d8ff;
 }
 
 .led-quick-effect.active {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
+    background: #007bff;
+    border-color: #007bff;
     color: white;
 }
 
@@ -1350,42 +1349,33 @@ body {
     display: flex;
     gap: 8px;
     padding: 12px 20px 16px;
-    background: var(--bg-color);
-    border-top: 1px solid var(--border-color);
+    background: #ffffff;
     flex-wrap: wrap;
 }
 
 .led-power-btn {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 8px 16px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--card-bg);
+    justify-content: center;
+    padding: 0;
+    border: none;
+    background: transparent;
     cursor: pointer;
     transition: all 0.2s ease;
-    font-size: 0.85rem;
+    font-size: 1.8rem;
+    color: #c62828;
 }
 
 .led-power-btn:hover {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
-    color: white;
+    opacity: 0.8;
 }
 
 .led-power-btn.on {
-    background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-    border-color: #38a169;
-    color: white;
+    color: #2e7d32;
 }
 
 .led-power-btn .power-icon {
-    font-size: 1rem;
-}
-
-.led-power-btn .power-text {
-    font-weight: 500;
+    font-size: 1.8rem;
 }
 
 .led-func-btn {
@@ -1414,21 +1404,19 @@ body {
 
 .led-save-btn {
     margin-left: auto;
-    width: 40px;
-    height: 40px;
-    border: 1px solid var(--secondary-color);
-    border-radius: 8px;
-    background: var(--secondary-color);
-    color: white;
+    border: none;
+    background: transparent;
+    color: #007bff;
     cursor: pointer;
-    font-size: 1rem;
+    font-size: 1.5rem;
     transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .led-save-btn:hover {
-    background: #27ae60;
-    border-color: #27ae60;
-    transform: translateY(-1px);
+    opacity: 0.8;
 }
 
 /* LED 空状态 */
@@ -2218,7 +2206,7 @@ body {
 
 /* 风扇卡片 - 简洁版 */
 .fan-card {
-    background: var(--bg-color);
+    background: #fff;
     padding: 20px;
     border-radius: 12px;
     border: 2px solid var(--border-color);
@@ -2316,11 +2304,6 @@ body {
     background: #6b7280;
 }
 
-.fan-mode-tab.manual {
-    border-radius: 4px;
-    border: 1px solid var(--border-color);
-}
-
 .fan-mode-tab.active.manual {
     background: #fff8e1;
     color: #f57c00;
@@ -2328,11 +2311,15 @@ body {
 }
 
 .fan-mode-tab.active.auto {
-    background: #10b981;
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
 }
 
 .fan-mode-tab.active.curve {
-    background: #3b82f6;
+    background: #f0f8ff;
+    color: #007bff;
+    border: 1px solid #d0e8ff;
 }
 
 /* 滑块区域 */
@@ -2402,10 +2389,10 @@ body {
 .fan-curve-btn {
     width: 100%;
     padding: 10px;
-    background: transparent;
-    border: 1px dashed var(--border-color);
+    background: #f0f8ff;
+    border: 1px solid #d0e8ff;
     border-radius: 8px;
-    color: var(--text-light);
+    color: #007bff;
     font-size: 0.9rem;
     cursor: pointer;
     transition: all 0.2s;
@@ -2413,9 +2400,9 @@ body {
 }
 
 .fan-curve-btn:hover {
-    border-color: var(--primary-color);
-    color: var(--primary-color);
-    background: rgba(79, 195, 247, 0.1);
+    border-color: #007bff;
+    color: #007bff;
+    background: #e0f0ff;
 }
 
 /* 温度信息 */
@@ -3943,8 +3930,7 @@ body {
     }
     
     .led-power-btn {
-        padding: 6px 12px;
-        font-size: 0.8rem;
+        font-size: 1.5rem;
     }
     
     .color-dot {

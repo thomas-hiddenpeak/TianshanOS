@@ -1,10 +1,10 @@
-# TianShanOS
+# TianshanOS
 
 [English](README_EN.md) | [中文](README.md)
 
-> TianShan Operating System - ESP32 Rack Management Operating System
+> Tianshan Operating System - ESP32 Rack Management Operating System
 > 
-> TianShan controls both the northern and southern basins — northward to AGX for AI computing power, southward to LPMU for general computing and storage services
+> Tianshan controls both the northern and southern basins — northward to AGX for AI computing power, southward to LPMU for general computing and storage services
 
 ```
 ╔══════════════════════════════════════════════════════════════════════╗
@@ -16,7 +16,7 @@
 ║      ██║   ██║██║  ██║██║ ╚████║███████║██║  ██║██║  ██║██║ ╚████║   ║
 ║      ╚═╝   ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝   ║
 ║                                                                      ║
-║                         TianShanOS v0.3.0                            ║
+║                           TianshanOS                                 ║
 ║                ESP32 Rack Management Operating System                ║
 ║                                                                      ║
 ╚══════════════════════════════════════════════════════════════════════╝
@@ -24,9 +24,9 @@
 
 ---
 
-## 🚀 Project Overview
+## Project Overview
 
-TianShanOS is a **configuration-oriented rather than code-oriented** embedded operating system framework, developed based on ESP-IDF v5.5+, designed for rack management of NVIDIA Jetson AGX + DFRobot LattePanda Mu carrier boards.
+TianshanOS is a **configuration-oriented rather than code-oriented** embedded operating system framework, developed based on ESP-IDF v5.5+, designed for rack management of NVIDIA Jetson AGX + DFRobot LattePanda Mu carrier boards.
 
 ### Core Features
 
@@ -38,7 +38,7 @@ TianShanOS is a **configuration-oriented rather than code-oriented** embedded op
 - **Cross-Platform Design** - Supports ESP32-S3 and ESP32-P4
 - **Security First** - HTTPS/mTLS, SSH public key authentication, PKI certificate management, tiered permissions
 - **Unified Interface** - CLI and WebUI share Core API with consistent behavior
-- **Multi-Language Support** - Chinese, English, Japanese, and Korean interface support
+- **Multi-Language Support** - Chinese and English interface support
 
 ### System Architecture
 
@@ -66,10 +66,10 @@ TianShanOS is a **configuration-oriented rather than code-oriented** embedded op
 
 ---
 
-## 📦 Project Structure
+## Project Structure
 
 ```
-TianShanOS/
+TianshanOS/
 ├── components/              # ESP-IDF Components (18 total)
 │   ├── ts_core/            # Core Framework (config/event/service/log)
 │   ├── ts_hal/             # Hardware Abstraction Layer (GPIO/PWM/I2C/SPI/UART/ADC)
@@ -97,7 +97,7 @@ TianShanOS/
 
 ---
 
-## 🛠️ Development Environment
+## Development Environment
 
 ### Dependencies
 - ESP-IDF v5.5.2+
@@ -109,7 +109,7 @@ TianShanOS/
 ```bash
 # Clone the repository
 git clone https://github.com/thomas-hiddenpeak/TianshanOS.git
-cd TianShanOS
+cd TianshanOS
 
 # Set up ESP-IDF environment
 . $HOME/esp/v5.5/esp-idf/export.sh
@@ -117,7 +117,7 @@ cd TianShanOS
 # Set target chip
 idf.py set-target esp32s3
 
-# Configure project (TianShanOS options are in the top-level menu)
+# Configure project (TianshanOS options are in the top-level menu)
 idf.py menuconfig
 
 # Build
@@ -135,7 +135,7 @@ For detailed instructions, please refer to the [Quick Start Guide](docs/QUICK_ST
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 | Document | Description |
 |----------|-------------|
@@ -156,7 +156,7 @@ For detailed instructions, please refer to the [Quick Start Guide](docs/QUICK_ST
 
 ---
 
-## 🎯 Current Status
+## Current Status
 
 **Version**: 0.3.0  
 **Phase**: Phase 20 Complete - Automation Engine, SSH Remote Execution, Variable System
@@ -198,7 +198,7 @@ See [Development Progress](docs/DEVELOPMENT_PROGRESS.md) for detailed status.
 
 ---
 
-## 👥 Contributors
+## Contributors
 
 - Thomas (Project Lead)
 - massif-01
