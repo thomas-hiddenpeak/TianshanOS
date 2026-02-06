@@ -792,9 +792,6 @@ const char *ts_device_state_to_str(ts_device_state_t state)
 /*                          LPMU Network Detection                            */
 /*===========================================================================*/
 
-// LPMU 默认 IP 地址
-#define LPMU_DEFAULT_IP "10.10.99.99"
-
 /**
  * @brief Ping an IP address using ICMP
  * @param ip IP address string

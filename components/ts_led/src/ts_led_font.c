@@ -228,7 +228,7 @@ ts_font_t *ts_font_load(const char *path, const ts_font_config_t *config)
         font->cache = TS_CALLOC_PSRAM(cfg.cache_size, sizeof(ts_font_glyph_cache_t));
         if (font->cache) {
             font->cache_size = cfg.cache_size;
-            ESP_LOGD(TAG, "Allocated cache for %u glyphs", (unsigned int)cfg.cache_size);
+            ESP_LOGD(TAG, "Allocated cache for %d glyphs");
         } else {
             ESP_LOGW(TAG, "Failed to allocate glyph cache");
         }

@@ -959,8 +959,8 @@ static esp_err_t execute_gpio_action(const ts_auto_action_t *action)
         return ESP_ERR_INVALID_ARG;
     }
 
-    ESP_LOGI(TAG, "GPIO action: pin=%u, level=%d, pulse=%ums",
-             (unsigned int)action->gpio.pin, action->gpio.level, (unsigned int)action->gpio.pulse_ms);
+    ESP_LOGI(TAG, "GPIO action: pin=%d, level=%d, pulse=%dms",
+             action->gpio.pin, action->gpio.level, action->gpio.pulse_ms);
 
     // 使用 raw GPIO 方式（直接操作物理引脚）
     ts_gpio_handle_t handle = ts_gpio_create_raw(action->gpio.pin, "automation");

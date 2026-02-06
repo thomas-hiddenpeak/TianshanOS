@@ -17,10 +17,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <unistd.h>
 #include <errno.h>
+#include <unistd.h>
 #include <fcntl.h>
-#include "esp_timer.h"
 #include "lwip/inet_chksum.h"
 #include "lwip/ip.h"
 #include "lwip/icmp.h"
@@ -582,7 +581,7 @@ static const ts_api_endpoint_t device_endpoints[] = {
     },
     {
         .name = "device.ping",
-        .description = "Test network connectivity (ICMP ping)",
+        .description = "Test network connectivity (TCP port check)",
         .category = TS_API_CAT_DEVICE,
         .handler = api_device_ping,
         .requires_auth = false,

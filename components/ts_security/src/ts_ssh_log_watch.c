@@ -242,7 +242,7 @@ static void log_watch_task(void *arg) {
         // 检查超时
         uint32_t elapsed = (xTaskGetTickCount() * portTICK_PERIOD_MS) / 1000 - task->start_time;
         if (elapsed >= task->config.timeout_sec) {
-            ESP_LOGW(TAG, "Log watch timeout for %s after %" PRIu32 " seconds", 
+            ESP_LOGW(TAG, "Log watch timeout for %s after %u seconds", 
                      task->config.var_name, elapsed);
             update_status_var(task->config.var_name, "timeout");
             break;
@@ -274,11 +274,11 @@ static void log_watch_task(void *arg) {
                     goto task_done;
                     
                 case -2:  // NOTFOUND
-                    ESP_LOGD(TAG, "Log file not found yet, waiting... (elapsed=%" PRIu32 "s)", elapsed);
+                    ESP_LOGD(TAG, "Log file not found yet, waiting... (elapsed=%us)", elapsed);
                     break;
                     
                 default:  // WAITING
-                    ESP_LOGI(TAG, "Waiting for pattern '%s' (elapsed=%" PRIu32 "s/%us)", 
+                    ESP_LOGI(TAG, "Waiting for pattern '%s' (elapsed=%us/%us)", 
                              task->config.ready_pattern, elapsed, task->config.timeout_sec);
                     break;
             }
@@ -532,7 +532,7 @@ void ts_ssh_log_watch_list(void) {
     while (task) {
         if (task->is_running) {
             uint32_t elapsed = (xTaskGetTickCount() * portTICK_PERIOD_MS) / 1000 - task->start_time;
-            ESP_LOGI(TAG, "  [%d] var=%s, pattern='%s', elapsed=%" PRIu32 "s/%us, log=%s",
+            ESP_LOGI(TAG, "  [%d] var=%s, pattern='%s', elapsed=%us/%us, log=%s",
                      ++count, task->config.var_name, task->config.ready_pattern,
                      elapsed, task->config.timeout_sec, task->config.log_file);
         }

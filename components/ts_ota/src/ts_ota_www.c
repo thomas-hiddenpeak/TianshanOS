@@ -296,10 +296,10 @@ static void www_ota_task(void *arg)
     size_t max_size = www_partition->size;
     
     if (chunked_mode) {
-        ESP_LOGW(TAG, "Content-Length not provided, using chunked mode (max %u bytes)", (unsigned int)max_size);
+        ESP_LOGW(TAG, "Content-Length not provided, using chunked mode (max %lu bytes)", max_size);
         content_length = 0;  // Will be updated as we download
     } else if (content_length > (int)max_size) {
-        ESP_LOGE(TAG, "File too large: %d > %u", content_length, (unsigned int)max_size);
+        ESP_LOGE(TAG, "File too large: %d > %lu", content_length, max_size);
         www_ota_update_progress(TS_OTA_STATE_ERROR, 0, 0, "文件太大，超出分区容量");
         goto cleanup;
     }
