@@ -167,7 +167,7 @@ esp_err_t ts_ota_save_update_time(void)
     ret = nvs_commit(handle);
     nvs_close(handle);
 
-    ESP_LOGI(TAG, "Update #%lu recorded at %ld", count, now);
+    ESP_LOGI(TAG, "Update #%u recorded at %lld", (unsigned int)count, (long long)now);
     return ret;
 }
 

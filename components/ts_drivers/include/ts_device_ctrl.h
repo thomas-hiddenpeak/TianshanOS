@@ -155,6 +155,19 @@ esp_err_t ts_device_reset(ts_device_id_t device);
  */
 esp_err_t ts_device_enter_recovery(ts_device_id_t device);
 
+/**
+ * @brief Toggle device power (LPMU only - pulse trigger)
+ * @param device Device ID
+ * @return ESP_OK on success, ESP_ERR_NOT_SUPPORTED for non-LPMU
+ */
+esp_err_t ts_device_power_toggle(ts_device_id_t device);
+
+/**
+ * @brief Start LPMU detection task (detect if LPMU is already running)
+ * @return ESP_OK on success
+ */
+esp_err_t ts_device_lpmu_start_detection(void);
+
 /*===========================================================================*/
 /*                          Status                                            */
 /*===========================================================================*/

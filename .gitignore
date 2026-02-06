@@ -28,6 +28,9 @@ venv/
 *.pyc
 sdkconfig.old
 
+# Local documentation (not for upstream)
+UI修改.md
+
 # ===================
 # PKI Server Sensitive Files
 # ===================
