@@ -79,3 +79,8 @@
 .ri-palette-line:before { content: "\efc5"; }
 .ri-hourglass-line:before { content: "\f339"; }
 .ri-alert-line:before { content: "\ea21"; }
+.ri-sun-line:before { content: "\f1bf"; }
+.ri-stop-circle-line:before { content: "\f19f"; }
+.ri-qr-code-line:before { content: "\f03d"; }
+.ri-text:before { content: "\f201"; }
+.ri-color-filter-line:before { content: "\f42e"; }

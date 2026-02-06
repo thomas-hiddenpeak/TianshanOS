@@ -4636,15 +4636,17 @@ function generateLedDeviceCard(dev) {
     
     // Matrix 设备额外按钮（色彩校正按钮已移至页面头部）
     const matrixButtons = isMatrix ? `
-        <button class="led-func-btn" onclick="openLedModal('${dev.name}', 'content')" title="图像/QR码">
-            <span class="func-icon">📷</span>
-        </button>
-        <button class="led-func-btn" onclick="openLedModal('${dev.name}', 'text')" title="文本显示">
-            <span class="func-icon">📝</span>
-        </button>
-        <button class="led-func-btn" onclick="openLedModal('${dev.name}', 'filter')" title="滤镜效果">
-            <span class="func-icon">🎨</span>
-        </button>
+        <div class="led-matrix-btns">
+            <button class="led-quick-effect" onclick="openLedModal('${dev.name}', 'content')" title="图像/QR码">
+                <i class="ri-qr-code-line"></i>
+            </button>
+            <button class="led-quick-effect" onclick="openLedModal('${dev.name}', 'text')" title="文本显示">
+                <i class="ri-text"></i>
+            </button>
+            <button class="led-quick-effect" onclick="openLedModal('${dev.name}', 'filter')" title="滤镜效果">
+                <i class="ri-color-filter-line"></i>
+            </button>
+        </div>
     ` : '';
     
     return `
@@ -4656,13 +4658,14 @@ function generateLedDeviceCard(dev) {
                     <span class="led-device-desc">${description}</span>
                 </div>
                 <div class="led-device-status ${statusClass}">${statusText}</div>
+                <button class="led-stop-btn" onclick="stopEffect('${dev.name}')" title="停止动画"><i class="ri-stop-circle-line"></i> 停止动画</button>
             </div>
             
             <!-- 控制区域 -->
             <div class="led-card-controls">
                 <!-- 亮度滑块 -->
                 <div class="led-brightness-row">
-                    <span class="brightness-label">☀️</span>
+                    <span class="brightness-label"><i class="ri-sun-line"></i></span>
                     <input type="range" min="0" max="255" value="${dev.brightness}" 
                            class="led-brightness-slider"
                            oninput="updateBrightnessDisplay('${dev.name}', this.value)"
@@ -4671,20 +4674,29 @@ function generateLedDeviceCard(dev) {
                     <span class="brightness-value" id="brightness-val-${dev.name}">${dev.brightness}</span>
                 </div>
                 
-                <!-- 颜色选择 -->
+                <!-- 颜色选择 (Modern) -->
                 <div class="led-color-row">
-                    <input type="color" value="${colorHex}" id="color-picker-${dev.name}" 
-                           onchange="fillColorFromPicker('${dev.name}', this.value)"
-                           class="led-color-picker">
-                    <div class="led-color-presets">
-                        <button class="color-dot" style="background:#ff0000" onclick="quickFillColor('${dev.name}', '#ff0000')"></button>
-                        <button class="color-dot" style="background:#ff6600" onclick="quickFillColor('${dev.name}', '#ff6600')"></button>
-                        <button class="color-dot" style="background:#ffff00" onclick="quickFillColor('${dev.name}', '#ffff00')"></button>
-                        <button class="color-dot" style="background:#00ff00" onclick="quickFillColor('${dev.name}', '#00ff00')"></button>
-                        <button class="color-dot" style="background:#00ffff" onclick="quickFillColor('${dev.name}', '#00ffff')"></button>
-                        <button class="color-dot" style="background:#0066ff" onclick="quickFillColor('${dev.name}', '#0066ff')"></button>
-                        <button class="color-dot" style="background:#ff00ff" onclick="quickFillColor('${dev.name}', '#ff00ff')"></button>
-                        <button class="color-dot" style="background:#ffffff" onclick="quickFillColor('${dev.name}', '#ffffff')"></button>
+                    <div class="modern-picker-wrapper" title="自定义颜色">
+                        <div class="modern-picker-visual"></div>
+                        <i class="ri-palette-line modern-picker-icon"></i>
+                        <input type="color" value="${colorHex}" id="color-picker-${dev.name}" 
+                               onchange="fillColorFromPicker('${dev.name}', this.value)"
+                               class="modern-picker-input">
+                    </div>
+                    
+                    <div class="modern-presets-container">
+                        <div class="modern-presets-list">
+                            <button class="modern-color-dot" style="background:#ff0000" onclick="quickFillColor('${dev.name}', '#ff0000')" title="红"></button>
+                            <button class="modern-color-dot" style="background:#ff6600" onclick="quickFillColor('${dev.name}', '#ff6600')" title="橙"></button>
+                            <button class="modern-color-dot" style="background:#ffd700" onclick="quickFillColor('${dev.name}', '#ffd700')" title="黄"></button>
+                            <button class="modern-color-dot" style="background:#00d26a" onclick="quickFillColor('${dev.name}', '#00d26a')" title="绿"></button>
+                            <button class="modern-color-dot" style="background:#00ffff" onclick="quickFillColor('${dev.name}', '#00ffff')" title="青"></button>
+                            <button class="modern-color-dot" style="background:#2d7dff" onclick="quickFillColor('${dev.name}', '#2d7dff')" title="蓝"></button>
+                            <button class="modern-color-dot" style="background:#d630ff" onclick="quickFillColor('${dev.name}', '#d630ff')" title="紫"></button>
+                            <button class="modern-color-dot" style="background:#ffffff" onclick="quickFillColor('${dev.name}', '#ffffff')" title="白"></button>
+                            <button class="modern-color-dot" style="background:#ffcccc" onclick="quickFillColor('${dev.name}', '#ffcccc')" title="粉红"></button>
+                            <button class="modern-color-dot" style="background:#e0e0e0" onclick="quickFillColor('${dev.name}', '#e0e0e0')" title="灰"></button>
+                        </div>
                     </div>
                 </div>
                 
@@ -4694,7 +4706,7 @@ function generateLedDeviceCard(dev) {
                         ${quickEffectsHtml}
                         ${deviceEffects.length > 4 ? `<button class="led-quick-effect more" onclick="openLedModal('${dev.name}', 'effect')" title="更多动画">+${deviceEffects.length - 4}</button>` : ''}
                     </div>
-                    <button class="led-stop-btn" onclick="stopEffect('${dev.name}')" title="停止动画">⏹</button>
+                    ${matrixButtons}
                 </div>
             </div>
             
@@ -4703,7 +4715,6 @@ function generateLedDeviceCard(dev) {
                 <button class="led-power-btn ${isOn ? 'on' : ''}" id="toggle-${dev.name}" onclick="toggleLed('${dev.name}')" title="${isOn ? '点击关闭' : '点击开启'}">
                     <i class="power-icon ${isOn ? 'ri-lightbulb-fill' : 'ri-lightbulb-line'}"></i>
                 </button>
-                ${matrixButtons}
                 <button class="led-save-btn" onclick="saveLedConfig('${dev.name}')" title="保存配置">
                     <i class="ri-save-line"></i>
                 </button>
@@ -4929,7 +4940,7 @@ function generateLedModalContent(device, type) {
     const deviceEffects = deviceData?.effects || [];
     
     if (type === 'effect') {
-        // 普通设备的动画模态框
+        // 普通设备的动画模态框 - 卡片式布局
         const effectsHtml = deviceEffects.length > 0 
             ? deviceEffects.map(eff => {
                 const isActive = eff === currentAnimation;
@@ -4938,26 +4949,46 @@ function generateLedModalContent(device, type) {
             }).join('')
             : '<span class="empty">暂无可用动画</span>';
         
+        const isOn = ledStates[device] || false;
+        
         return `
-            <div class="modal-section">
-                <h3>🎬 程序动画</h3>
-                <div class="effects-grid">${effectsHtml}</div>
-                <div class="effect-config-modal" id="modal-effect-config-${device}" style="display:${currentAnimation ? 'flex' : 'none'};">
-                    <span class="effect-name" id="modal-effect-name-${device}">${currentAnimation || '未选择'}</span>
+            <div class="modal-section cc-modal-section">
+                <!-- 启用开关 - 保持与色彩校正布局一致 -->
+                <div class="cc-enable-row">
+                    <label>
+                        <input type="checkbox" id="modal-device-enabled-${device}" ${isOn ? 'checked' : ''} 
+                               onchange="toggleLedFromModal('${device}', this.checked)"> 
+                        ${t('ledPage.deviceEnable')}
+                    </label>
+                </div>
+
+                <div class="cc-section">
+                    <h4>${t('ledPage.effects')}</h4>
+                    <p class="cc-help-text">${t('ledPage.selectAnimation')}</p>
+                    <div class="effects-grid">${effectsHtml}</div>
+                </div>
+                
+                <div class="cc-section" id="modal-effect-config-${device}" style="display:${currentAnimation ? 'block' : 'none'};">
+                    <h4>${t('ledPage.settings')}</h4>
+                    <p class="cc-help-text">${t('ledPage.current')}: <span id="modal-effect-name-${device}">${getEffectIcon(currentAnimation)} ${currentAnimation || t('ledPage.effectNotSelected')}</span></p>
+                    
                     <div class="config-row">
-                        <label>速度</label>
+                        <label>${t('ledPage.speed')}</label>
                         <input type="range" min="1" max="100" value="${currentSpeed}" id="modal-effect-speed-${device}" 
-                               oninput="document.getElementById('modal-speed-val-${device}').textContent=this.value">
+                               oninput="updateEffectSliderValue('${device}', this.value)">
                         <span id="modal-speed-val-${device}">${currentSpeed}</span>
                     </div>
+                    
                     <div class="config-row" id="modal-color-row-${device}" style="display:${colorSupportedEffects.includes(currentAnimation) ? 'flex' : 'none'};">
-                        <label>颜色</label>
-                        <input type="color" id="modal-effect-color-${device}" value="${colorHex}">
+                        <label>${t('ledPage.color')}</label>
+                        <input type="color" id="modal-effect-color-${device}" value="${colorHex}"
+                               oninput="previewEffectFromModal('${device}')">
                     </div>
-                    <div class="config-actions">
-                        <button class="btn btn-primary" onclick="applyEffectFromModal('${device}')">▶ 启动</button>
-                        <button class="btn btn-danger" onclick="stopEffectFromModal('${device}')">⏹ 停止</button>
-                    </div>
+                </div>
+
+                <div class="config-actions cc-actions">
+                    <button class="btn btn-sm" onclick="resetEffectFromModal('${device}')" style="color:#666">${t('ledPage.ccReset')}</button>
+                    <button class="btn btn-service-style btn-sm" onclick="applyEffectFromModal('${device}')">${t('ledPage.ccApply')}</button>
                 </div>
             </div>
         `;
@@ -5183,11 +5214,14 @@ let selectedModalFilter = null;
 function openLedModal(device, type) {
     currentLedModal = { device, type };
     
+    // 设备名首字母大写 (Touch/Board/Matrix)
+    const deviceName = device.charAt(0).toUpperCase() + device.slice(1);
+    
     const titleMap = {
-        'effect': `🎬 ${device} - ${t('ledPage.effectTitle')}`,
-        'content': `📷 ${device} - ${t('ledPage.contentTitle')}`,
-        'text': `📝 ${device} - ${t('ledPage.textTitle')}`,
-        'filter': `🎨 ${device} - ${t('ledPage.filterTitle')}`,
+        'effect': `${deviceName} ${t('ledPage.effectTitle')}`,
+        'content': `${deviceName} ${t('ledPage.contentTitle')}`,
+        'text': `${deviceName} ${t('ledPage.textTitle')}`,
+        'filter': `${deviceName} ${t('ledPage.filterTitle')}`,
         'colorcorrection': t('ledPage.ccGlobalTitle') || '全局色彩校正'
     };
     
@@ -5199,14 +5233,22 @@ function openLedModal(device, type) {
     title.textContent = titleMap[type] || `${device} - 设置`;
     body.innerHTML = generateLedModalContent(device, type);
     
-    // 色彩校正模态框：紧凑样式 + 头部导入/导出
-    if (type === 'colorcorrection') {
+    // 色彩校正和程序动画模态框：紧凑样式 + 淡色背景
+    if (type === 'colorcorrection' || type === 'effect') {
         modal.querySelector('.modal-content').classList.add('cc-compact');
         if (headerActions) {
-            headerActions.innerHTML = `
-                <button class="btn btn-sm btn-service-style" onclick="ccExport()" title="${t('ledPage.ccExportTip')}">${t('ledPage.ccExport')}</button>
-                <button class="btn btn-sm btn-service-style" onclick="ccImport()" title="${t('ledPage.ccImportTip')}">${t('ledPage.ccImport')}</button>
-            `;
+            if (type === 'colorcorrection') {
+                headerActions.innerHTML = `
+                    <button class="btn btn-sm btn-service-style" onclick="ccExport()" title="${t('ledPage.ccExportTip')}">${t('ledPage.ccExport')}</button>
+                    <button class="btn btn-sm btn-service-style" onclick="ccImport()" title="${t('ledPage.ccImportTip')}">${t('ledPage.ccImport')}</button>
+                `;
+            } else if (type === 'effect') {
+                headerActions.innerHTML = `
+                    <button class="btn btn-sm" onclick="stopEffectFromModal('${device}')" style="color:#666"><i class="ri-stop-circle-line"></i> ${t('ledPage.stop')}</button>
+                `;
+            } else {
+                headerActions.innerHTML = '';
+            }
         }
     } else {
         modal.querySelector('.modal-content').classList.remove('cc-compact');
@@ -5272,7 +5314,96 @@ function selectEffectInModal(device, effect, btn) {
     
     // 显示配置区
     const configEl = document.getElementById(`modal-effect-config-${device}`);
-    if (configEl) configEl.style.display = 'flex';
+    if (configEl) configEl.style.display = 'block';
+
+    // 自动触发实时预览
+    previewEffectFromModal(device);
+}
+
+// 模态框内开关 LED
+async function toggleLedFromModal(device, enabled) {
+    try {
+        if (enabled) {
+            // 如果有选中的特效，启动它；否则仅开启（常亮或恢复之前状态）
+            const effect = selectedEffects[device];
+            if (effect) {
+                await applyEffectFromModal(device);
+            } else {
+                await toggleLed(device); // 这会调用 api.ledClear(device) 如果 isOn，但这里我们传入了 enabled
+                // 实际上 toggleLed 不需要 enabled 参数，它基于 ledStates[device]
+                // 修正逻辑：如果当前关闭且 enabled 为 true，则开启
+                if (!ledStates[device]) await toggleLed(device);
+            }
+        } else {
+            // 关闭 LED
+            if (ledStates[device]) await toggleLed(device);
+        }
+        
+        // 更新卡片状态
+        updateLedCardState(device, ledStates[device], selectedEffects[device]);
+    } catch (e) {
+        showToast(`操作失败: ${e.message}`, 'error');
+        // 恢复 UI 状态
+        const cb = document.getElementById(`modal-device-enabled-${device}`);
+        if (cb) cb.checked = ledStates[device];
+    }
+}
+
+// 更新特效滑块值并预览
+function updateEffectSliderValue(device, value) {
+    const valEl = document.getElementById(`modal-speed-val-${device}`);
+    if (valEl) valEl.textContent = value;
+    
+    // 实时预览
+    previewEffectFromModal(device);
+}
+
+// 特效预览防抖
+let effectPreviewDebounce = null;
+
+// 实时预览特效
+function previewEffectFromModal(device) {
+    if (effectPreviewDebounce) clearTimeout(effectPreviewDebounce);
+    effectPreviewDebounce = setTimeout(async () => {
+        const effect = selectedEffects[device];
+        if (!effect || !ledStates[device]) return;
+        
+        const speed = parseInt(document.getElementById(`modal-effect-speed-${device}`)?.value || '50');
+        const color = document.getElementById(`modal-effect-color-${device}`)?.value || '#ff0000';
+        
+        try {
+            const params = { speed };
+            if (colorSupportedEffects.includes(effect)) {
+                params.color = color;
+            }
+            // 预览使用 start 接口，但不显示成功 toast 以免干扰
+            await api.ledEffectStart(device, effect, params);
+            
+            // 更新卡片状态（静默更新）
+            updateLedCardState(device, true, effect);
+        } catch (e) {
+            console.warn('Effect preview failed:', e);
+        }
+    }, 200);
+}
+
+// 重置特效设置
+function resetEffectFromModal(device) {
+    const deviceData = window.ledDevicesCache?.find(d => d.name === device);
+    const current = deviceData?.current || {};
+    const defaultSpeed = 50;
+    const defaultColor = '#ff0000';
+    
+    const speedSlider = document.getElementById(`modal-effect-speed-${device}`);
+    const colorPicker = document.getElementById(`modal-effect-color-${device}`);
+    const speedVal = document.getElementById(`modal-speed-val-${device}`);
+    
+    if (speedSlider) speedSlider.value = defaultSpeed;
+    if (speedVal) speedVal.textContent = defaultSpeed;
+    if (colorPicker) colorPicker.value = defaultColor;
+    
+    showToast(t('ledPage.ccResetSuccess'), 'success');
+    previewEffectFromModal(device);
 }
 
 // 模态框内应用动画

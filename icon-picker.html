@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>选择图标 - 启用全局色彩校正</title>
+    <style>
+        @font-face {
+            font-family: "remixicon";
+            src: url('/Users/massif/RemixIcon/fonts/remixicon.woff2') format('woff2');
+            font-display: swap;
+        }
+        
+        [class^="ri-"], [class*=" ri-"] {
+            font-family: 'remixicon' !important;
+            font-style: normal;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        /* Icons */
+        .ri-toggle-line:before { content: "\f219"; }
+        .ri-toggle-fill:before { content: "\f218"; }
+        .ri-contrast-line:before { content: "\ebda"; }
+        .ri-contrast-2-line:before { content: "\ebd4"; }
+        .ri-palette-line:before { content: "\efc5"; }
+        .ri-brush-line:before { content: "\eb01"; }
+        .ri-magic-line:before { content: "\eeea"; }
+        .ri-checkbox-line:before { content: "\eb85"; }
+        .ri-checkbox-fill:before { content: "\eb82"; }
+        .ri-checkbox-circle-line:before { content: "\eb81"; }
+        .ri-checkbox-circle-fill:before { content: "\eb80"; }
+        .ri-check-line:before { content: "\eb7b"; }
+        .ri-switch-line:before { content: "\f1cd"; }
+        .ri-contrast-drop-line:before { content: "\ebd8"; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .icon-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+        }
+        
+        .icon-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px 16px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: all 0.2s;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+        
+        .icon-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+            border-color: #007bff;
+        }
+        
+        .icon-card i {
+            font-size: 48px;
+            color: #333;
+            display: block;
+            margin-bottom: 16px;
+        }
+        
+        .icon-name {
+            font-size: 14px;
+            color: #666;
+            font-family: monospace;
+            background: #f0f0f0;
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-bottom: 8px;
+        }
+        
+        .icon-desc {
+            font-size: 13px;
+            color: #888;
+        }
+        
+        .preview-section {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-top: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        
+        .preview-section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        .preview-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-top: 16px;
+        }
+        
+        .preview-row i {
+            font-size: 20px;
+        }
+        
+        .preview-row input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+        }
+        
+        .recommend {
+            background: linear-gradient(135deg, #e3f2fd, #f3e5f5);
+            border: 2px solid #2196f3;
+        }
+        
+        .recommend .icon-name {
+            background: #2196f3;
+            color: white;
+        }
+        
+        .badge {
+            background: #2196f3;
+            color: white;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>选择图标</h1>
+    <p class="subtitle">为「启用全局色彩校正」选择合适的 RemixIcon</p>
+    
+    <div class="icon-grid">
+        <div class="icon-card recommend">
+            <i class="ri-contrast-line"></i>
+            <span class="icon-name">ri-contrast-line</span><span class="badge">推荐</span>
+            <div class="icon-desc">对比度 - 最符合色彩校正含义</div>
+        </div>
+        
+        <div class="icon-card recommend">
+            <i class="ri-palette-line"></i>
+            <span class="icon-name">ri-palette-line</span><span class="badge">推荐</span>
+            <div class="icon-desc">调色板 - 色彩相关</div>
+        </div>
+        
+        <div class="icon-card">
+            <i class="ri-toggle-line"></i>
+            <span class="icon-name">ri-toggle-line</span>
+            <div class="icon-desc">开关（线条）- 已在项目中</div>
+        </div>
+        
+        <div class="icon-card">
+            <i class="ri-toggle-fill"></i>
+            <span class="icon-name">ri-toggle-fill</span>
+            <div class="icon-desc">开关（填充）- 已在项目中</div>
+        </div>
+        
+        <div class="icon-card">
+            <i class="ri-contrast-2-line"></i>
+            <span class="icon-name">ri-contrast-2-line</span>
+            <div class="icon-desc">对比度2</div>
+        </div>
+        
+        <div class="icon-card">
+            <i class="ri-contrast-drop-line"></i>
+            <span class="icon-name">ri-contrast-drop-line</span>
+            <div class="icon-desc">对比度水滴</div>
+        </div>
+        
+        <div class="icon-card">
+            <i class="ri-brush-line"></i>
+            <span class="icon-name">ri-brush-line</span>
+            <div class="icon-desc">画笔</div>
+        </div>
+        
+        <div class="icon-card">
+            <i class="ri-magic-line"></i>
+            <span class="icon-name">ri-magic-line</span>
+            <div class="icon-desc">魔法棒</div>
+        </div>
+        
+        <div class="icon-card">
+            <i class="ri-checkbox-line"></i>
+            <span class="icon-name">ri-checkbox-line</span>
+            <div class="icon-desc">复选框（空）</div>
+        </div>
+        
+        <div class="icon-card">
+            <i class="ri-checkbox-fill"></i>
+            <span class="icon-name">ri-checkbox-fill</span>
+            <div class="icon-desc">复选框（勾选）</div>
+        </div>
+        
+        <div class="icon-card">
+            <i class="ri-checkbox-circle-line"></i>
+            <span class="icon-name">ri-checkbox-circle-line</span>
+            <div class="icon-desc">圆形复选框（空）</div>
+        </div>
+        
+        <div class="icon-card">
+            <i class="ri-checkbox-circle-fill"></i>
+            <span class="icon-name">ri-checkbox-circle-fill</span>
+            <div class="icon-desc">圆形复选框（勾选）</div>
+        </div>
+        
+        <div class="icon-card">
+            <i class="ri-switch-line"></i>
+            <span class="icon-name">ri-switch-line</span>
+            <div class="icon-desc">开关2</div>
+        </div>
+    </div>
+    
+    <div class="preview-section">
+        <h3>预览效果</h3>
+        <p style="color:#666;font-size:14px;">以下是图标在实际使用场景中的预览：</p>
+        
+        <div class="preview-row">
+            <i class="ri-contrast-line"></i>
+            <input type="checkbox" id="p1">
+            <label for="p1">启用全局色彩校正</label>
+        </div>
+        
+        <div class="preview-row">
+            <i class="ri-palette-line"></i>
+            <input type="checkbox" id="p2">
+            <label for="p2">启用全局色彩校正</label>
+        </div>
+        
+        <div class="preview-row">
+            <i class="ri-toggle-line"></i>
+            <input type="checkbox" id="p3">
+            <label for="p3">启用全局色彩校正</label>
+        </div>
+        
+        <div class="preview-row">
+            <i class="ri-magic-line"></i>
+            <input type="checkbox" id="p4">
+            <label for="p4">启用全局色彩校正</label>
+        </div>
+    </div>
+    
+    <p style="text-align:center;margin-top:30px;color:#888;">选好后告诉我图标名称，例如：<code>ri-contrast-line</code></p>
+</body>
+</html>

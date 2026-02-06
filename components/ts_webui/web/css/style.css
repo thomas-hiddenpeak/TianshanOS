@@ -97,7 +97,7 @@ body {
 
 /* Footer */
 .footer {
-    height: calc(var(--footer-height) - 5px);
+    height: var(--footer-height);
     background: transparent;
     border-top: none;
     display: flex;
@@ -105,6 +105,11 @@ body {
     justify-content: center;
     color: var(--text-light);
     font-size: 0.9rem;
+}
+
+.footer p {
+    margin: 0;
+    line-height: 1;
 }
 
 /* Cards */
@@ -1350,12 +1355,11 @@ body {
 .led-brightness-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 18px;
-    height: 18px;
-    background: linear-gradient(135deg, var(--primary-color) 0%, #4361ee 100%);
+    width: 16px;
+    height: 16px;
+    background: var(--primary-color);
     border-radius: 50%;
     cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
 }
 
 .led-brightness-row .brightness-value {
@@ -1366,53 +1370,102 @@ body {
     color: var(--text-secondary);
 }
 
-/* 颜色控制行 */
+/* 颜色控制行 - Modern Redesign */
 .led-color-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 16px;
+    padding: 8px 0;
 }
 
-.led-color-picker {
-    width: 44px;
-    height: 44px;
-    border: none;
-    border-radius: 10px;
+/* Modern Picker */
+.modern-picker-wrapper {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+}
+
+.modern-picker-input {
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    position: absolute;
+    top: 0;
+    left: 0;
     cursor: pointer;
-    padding: 0;
-    background: transparent;
+    z-index: 2;
 }
 
-.led-color-picker::-webkit-color-swatch-wrapper {
-    padding: 0;
-}
-
-.led-color-picker::-webkit-color-swatch {
-    border: 2px solid var(--border-color);
-    border-radius: 10px;
-}
-
-.led-color-presets {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    flex: 1;
-}
-
-.color-dot {
-    width: 28px;
-    height: 28px;
-    border: 2px solid var(--border-color);
+.modern-picker-visual {
+    width: 100%;
+    height: 100%;
     border-radius: 50%;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    padding: 0;
+    background: conic-gradient(from 180deg at 50% 50%, #FF0000 0deg, #FFFF00 60deg, #00FF00 120deg, #00FFFF 180deg, #0000FF 240deg, #FF00FF 300deg, #FF0000 360deg);
+    border: 2px solid white;
+    box-shadow: 0 0 0 2px var(--border-color), 0 1px 3px rgba(0,0,0,0.1);
+    position: relative;
+    transition: transform 0.2s ease;
 }
 
-.color-dot:hover {
-    transform: scale(1.15);
-    border-color: white;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+.modern-picker-wrapper:hover .modern-picker-visual {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 2px var(--primary-color), 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.modern-picker-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 1.2rem;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    pointer-events: none;
+}
+
+/* Modern Presets */
+.modern-presets-container {
+    flex: 1;
+    overflow-x: auto;
+    padding: 4px;
+    scrollbar-width: none; 
+    -ms-overflow-style: none;
+    display: flex;
+    align-items: center;
+}
+.modern-presets-container::-webkit-scrollbar { display: none; }
+
+.modern-presets-list {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.modern-color-dot {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 2px solid rgba(0,0,0,0.05);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    position: relative;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.modern-color-dot:hover {
+    transform: scale(1.15) translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    z-index: 10;
+}
+
+.modern-color-dot:active {
+    transform: scale(0.95);
+}
+
+/* White color needs a border */
+.modern-color-dot[style*="#ffffff"] {
+    border: 1px solid var(--border-color);
 }
 
 /* 特效控制行 */
@@ -1460,20 +1513,31 @@ body {
     font-weight: 600;
 }
 
+.led-matrix-btns {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
 .led-stop-btn {
-    width: 36px;
-    height: 36px;
-    border: 1px solid #e74c3c;
-    border-radius: 8px;
-    background: rgba(231, 76, 60, 0.1);
-    color: #e74c3c;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: 1px solid #ef9a9a;
+    border-radius: 6px;
+    background: #ffebee;
+    color: #c62828;
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
     transition: all 0.15s ease;
 }
 
 .led-stop-btn:hover {
-    background: #e74c3c;
+    background: #c62828;
+    border-color: #c62828;
     color: white;
 }
 

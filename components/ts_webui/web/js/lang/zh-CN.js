@@ -2264,6 +2264,7 @@ i18n.registerLanguage('zh-CN', {
         colorCorrectionTitle: '色彩校正',
         ccGlobalTitle: '全局色彩校正',
         ccEnable: '启用全局色彩校正',
+        deviceEnable: '启用 LED 设备',
         ccWhitePoint: '白平衡 (RGB 缩放)',
         ccWhitePointHelp: '独立调整 RGB 通道修正色温。默认 1.0，<1.0 减少该通道，>1.0 增强该通道',
         ccGamma: 'Gamma 校正',
