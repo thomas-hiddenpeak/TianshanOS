@@ -97,3 +97,25 @@
 
 /* Host card icon */
 .ri-server-line:before { content: "\f0e0"; }
+
+/* Automation page icons */
+.ri-bar-chart-box-line:before { content: "\ea98"; }
+.ri-upload-2-line:before { content: "\f24a"; }
+.ri-pause-line:before { content: "\efd8"; }
+.ri-play-circle-line:before { content: "\f009"; }
+.ri-notification-line:before { content: "\ef9a"; }
+.ri-plug-line:before { content: "\f019"; }
+.ri-file-text-line:before { content: "\ed0f"; }
+.ri-database-2-line:before { content: "\ec16"; }
+.ri-global-line:before { content: "\edcf"; }
+.ri-movie-line:before { content: "\ef81"; }
+.ri-music-line:before { content: "\ef85"; }
+.ri-smartphone-line:before { content: "\f15a"; }
+.ri-computer-line:before { content: "\ebca"; }
+.ri-shield-line:before { content: "\f108"; }
+.ri-focus-line:before { content: "\ed4e"; }
+.ri-timer-line:before { content: "\f215"; }
+.ri-shield-keyhole-line:before { content: "\f107"; }
+.ri-terminal-box-line:before { content: "\f1f6"; }
+.ri-folder-open-line:before { content: "\ed70"; }
+.ri-image-line:before { content: "\ee4b"; }

@@ -144,16 +144,16 @@
     
     <!-- 数据源变量模态框 -->
     <div id="source-variables-modal" class="modal hidden">
-        <div class="modal-content" style="max-width:700px">
+        <div class="modal-content cc-compact" style="max-width:700px">
             <div class="modal-header">
-                <h2>📊 <span data-i18n="automation.viewVariables">数据源变量</span></h2>
-                <button class="modal-close" onclick="closeSourceVariablesModal()">&times;</button>
+                <h2><i class="ri-bar-chart-box-line"></i> <span data-i18n="automation.viewVariables">数据源变量</span></h2>
+                <button class="modal-close" onclick="closeSourceVariablesModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body" id="source-variables-body">
                 <div class="loading" data-i18n="common.loading">加载中...</div>
             </div>
-            <div class="modal-footer" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-color);display:flex;justify-content:flex-end">
-                <button class="btn" onclick="closeSourceVariablesModal()" data-i18n="common.close">关闭</button>
+            <div class="modal-footer cc-compact-footer">
+                <button class="btn" onclick="closeSourceVariablesModal()" style="color:#666" data-i18n="common.close">关闭</button>
             </div>
         </div>
     </div>

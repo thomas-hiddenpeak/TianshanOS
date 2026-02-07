@@ -185,6 +185,17 @@ body {
     color: #c62828;
 }
 
+/* MD 规范：运行中、添加 */
+.btn-success {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
+}
+.btn-success:hover {
+    background: #c8e6c9;
+    border-color: #81c784;
+}
+
 /* Modal */
 .modal {
     position: fixed;
@@ -372,6 +383,50 @@ body {
     max-height: 75vh;
 }
 
+.cc-compact .modal-footer {
+    padding: 12px 20px;
+    background: #f5f6fa;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.cc-compact .modal-tabs,
+.cc-compact .automation-modal-tabs {
+    display: flex;
+    border-bottom: 2px solid var(--border-color);
+    margin-bottom: 16px;
+}
+
+.cc-compact .modal-tabs .modal-tab,
+.cc-compact .automation-modal-tabs .modal-tab {
+    flex: 1;
+    padding: 10px 16px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 0.95em;
+    color: var(--text-light);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+}
+
+.cc-compact .modal-tabs .modal-tab:hover,
+.cc-compact .automation-modal-tabs .modal-tab:hover {
+    color: var(--text-color);
+    background: var(--bg-color);
+}
+
+.cc-compact .modal-tabs .modal-tab.active,
+.cc-compact .automation-modal-tabs .modal-tab.active {
+    background: #f0f8ff;
+    color: #007bff;
+    border-bottom-color: #007bff;
+    font-weight: 500;
+}
+
 .led-modal .modal-tabs {
     display: flex;
     border-bottom: 2px solid var(--border-color);
@@ -545,6 +600,18 @@ body {
     border-radius: 6px;
     color: var(--text-color);
     font-size: 0.85rem;
+}
+
+/* Matrix 文本显示：字体下拉足够大、易点击 */
+#modal-text-font,
+.led-modal .cc-section select#modal-text-font {
+    min-width: 160px;
+    min-height: 38px;
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    appearance: auto;
+    -webkit-appearance: menulist;
 }
 
 .config-actions {
@@ -1100,8 +1167,13 @@ body {
 }
 
 .btn-success {
-    background: var(--secondary-color);
-    color: white;
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
+}
+.btn-success:hover {
+    background: #c8e6c9;
+    border-color: #81c784;
 }
 
 .btn-warning {
@@ -2296,13 +2368,13 @@ body {
 }
 
 .btn-success {
-    background: #28a745;
-    border-color: #28a745;
-    color: white;
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
 }
-
 .btn-success:hover {
-    background: #218838;
+    background: #c8e6c9;
+    border-color: #81c784;
 }
 
 /* 空状态提示 */
@@ -4571,7 +4643,16 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: space-between;
+    min-height: 72px;
     gap: 4px;
+}
+
+.status-card .status-card-value-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
 }
 
 .status-card.primary {
@@ -4634,6 +4715,10 @@ body {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
+}
+
+.status-card .status-card-value-row .status-icon {
+    flex-shrink: 0;
 }
 
 /* Section 通用样式 */
@@ -4928,9 +5013,11 @@ body {
     background: var(--bg-color);
 }
 
+/* 与 OTA/btn-service-style 一致：浅蓝底、蓝色字、蓝边框 */
 .automation-modal .modal-tab.active {
-    color: var(--primary-color);
-    border-bottom-color: var(--primary-color);
+    background: #f0f8ff;
+    color: #007bff;
+    border-bottom-color: #007bff;
     font-weight: 500;
 }
 
@@ -4999,6 +5086,63 @@ body {
     padding: 16px;
     margin: 0;
     font-size: 0.9rem;
+}
+
+/* 添加规则模态框：表单项左对齐 */
+#add-rule-modal .form-group label,
+#add-rule-modal .config-section,
+#add-rule-modal .icon-type-tabs,
+#add-rule-modal .icon-picker {
+    text-align: left;
+}
+
+/* 规则图标选择器：左对齐、布局整齐 */
+#add-rule-modal .icon-type-tabs {
+    justify-content: flex-start;
+    margin-bottom: 10px;
+}
+
+#add-rule-modal .icon-picker {
+    justify-content: flex-start;
+    align-items: flex-start;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#add-rule-modal .icon-picker .emoji-custom-input {
+    flex-basis: 100%;
+    width: 100%;
+    margin-bottom: 8px;
+}
+
+#add-rule-modal .icon-picker .icon-btn {
+    flex-shrink: 0;
+}
+
+#add-rule-modal .actions-hint-block {
+    text-align: center;
+}
+
+#add-rule-modal .form-row.three-col {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+/* 条件逻辑缩短，避免与冷却时间、立即启用挤在一起 */
+#add-rule-modal .form-row.three-col .form-group-logic {
+    flex: 0 0 90px;
+    min-width: 0;
+}
+
+#add-rule-modal .form-row.three-col .form-group:nth-of-type(2) {
+    flex: 0 0 120px;
+    min-width: 0;
+}
+
+#add-rule-modal .form-row.three-col .checkbox-label {
+    flex: 0 0 auto;
 }
 
 /* 条件行 */

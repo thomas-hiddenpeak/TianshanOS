@@ -850,7 +850,7 @@ let usbMuxConfigured = false;
 
 const USB_MUX_TARGETS = ['esp32', 'agx', 'lpmu'];
 const USB_MUX_DISPLAY = { 'esp32': 'ESP', 'agx': 'AGX', 'lpmu': 'LPMU' };
-const USB_MUX_COLORS = { 'esp32': '', 'agx': 'btn-primary', 'lpmu': 'btn-success' };
+const USB_MUX_COLORS = { 'esp32': '', 'agx': 'btn-service-style', 'lpmu': 'btn-success' };
 
 async function refreshUsbMuxStatus() {
     try {
@@ -4618,7 +4618,7 @@ function generateLedDeviceCard(dev) {
     let statusClass = 'off';
     if (isOn) {
         if (currentAnimation) {
-            statusText = `▶ ${currentAnimation}`;
+            statusText = `▶ ${effectDisplayName(currentAnimation)}`;
             statusClass = 'effect';
         } else {
             statusText = '常亮';
@@ -4789,7 +4789,7 @@ function updateLedCardState(device, isOn, effect = undefined) {
             statusEl.textContent = '已关闭';
             statusEl.className = 'led-device-status off';
         } else if (effect) {
-            statusEl.textContent = `▶ ${effect}`;
+            statusEl.textContent = `▶ ${effectDisplayName(effect)}`;
             statusEl.className = 'led-device-status effect';
         } else {
             statusEl.textContent = '常亮';
@@ -4978,144 +4978,146 @@ function generateLedModalContent(device, type) {
             </div>
         `;
     } else if (type === 'content') {
-        // Matrix 内容模态框 (动画 + 图像 + QR码)
-        const effectsHtml = deviceEffects.length > 0 
-            ? deviceEffects.map(eff => {
-                const isActive = eff === currentAnimation;
-                const activeClass = isActive ? ' active' : '';
-                return `<button class="btn effect-btn${activeClass}" onclick="selectEffectInModal('${device}', '${eff}', this)">${getEffectIcon(eff)} ${eff}</button>`;
-            }).join('')
-            : '<span class="empty">暂无可用动画</span>';
-        
+        // Matrix 图像/QR码 - 复刻全局色彩校正卡片风格与布局，按钮配色按 MD 规范，无 emoji
         return `
-            <div class="modal-tabs">
-                <button class="modal-tab active" onclick="switchModalTab(this, 'modal-tab-image')">📷 图像</button>
-                <button class="modal-tab" onclick="switchModalTab(this, 'modal-tab-qr')">📱 QR码</button>
-            </div>
-            
-            <!-- 图像 Tab -->
-            <div class="modal-tab-content active" id="modal-tab-image">
-                <div class="modal-section">
-                    <div class="config-row">
-                        <input type="text" id="modal-image-path" placeholder="/sdcard/images/..." class="input-flex" value="/sdcard/images/">
-                        <button class="btn btn-sm" onclick="browseImages()">📁 浏览</button>
-                    </div>
-                    <div class="config-row">
-                        <label><input type="checkbox" id="modal-image-center" checked> 居中显示</label>
-                        <button class="btn btn-primary" onclick="displayImageFromModal()">显示图像</button>
+            <div class="modal-section cc-modal-section">
+                <div class="modal-tabs">
+                    <button class="modal-tab active" onclick="switchModalTab(this, 'modal-tab-image')">图像</button>
+                    <button class="modal-tab" onclick="switchModalTab(this, 'modal-tab-qr')">QR码</button>
+                </div>
+                <div class="modal-tab-content active" id="modal-tab-image">
+                    <div class="cc-section">
+                        <h4>图像</h4>
+                        <div class="config-row">
+                            <input type="text" id="modal-image-path" placeholder="/sdcard/images/..." class="input-flex" value="/sdcard/images/">
+                            <button class="btn btn-sm" onclick="browseImages()" style="color:#666"><i class="ri-folder-open-line"></i> 浏览</button>
+                        </div>
+                        <div class="config-row">
+                            <label><input type="checkbox" id="modal-image-center" checked> 居中显示</label>
+                            <button class="btn btn-service-style btn-sm" onclick="displayImageFromModal()">显示图像</button>
+                        </div>
                     </div>
                 </div>
-            </div>
-            
-            <!-- QR码 Tab -->
-            <div class="modal-tab-content" id="modal-tab-qr" style="display:none;">
-                <div class="modal-section">
-                    <div class="config-row">
-                        <input type="text" id="modal-qr-text" placeholder="输入文本或URL" class="input-flex">
-                    </div>
-                    <div class="config-row">
-                        <label>纠错</label>
-                        <select id="modal-qr-ecc">
-                            <option value="L">L - 7%</option>
-                            <option value="M" selected>M - 15%</option>
-                            <option value="Q">Q - 25%</option>
-                            <option value="H">H - 30%</option>
-                        </select>
-                        <label>前景色</label>
-                        <input type="color" id="modal-qr-fg" value="#ffffff">
-                    </div>
-                    <div class="config-row">
-                        <label>背景图</label>
-                        <input type="text" id="modal-qr-bg-image" placeholder="无" readonly style="flex:1;cursor:pointer" onclick="openFilePickerFor('modal-qr-bg-image', '/sdcard/images')">
-                        <button class="btn btn-sm" onclick="document.getElementById('modal-qr-bg-image').value=''" title="清除">✕</button>
-                    </div>
-                    <div class="config-row">
-                        <button class="btn btn-primary" onclick="generateQrCodeFromModal()">生成 QR 码</button>
+                <div class="modal-tab-content" id="modal-tab-qr" style="display:none;">
+                    <div class="cc-section">
+                        <h4>QR码</h4>
+                        <div class="config-row">
+                            <input type="text" id="modal-qr-text" placeholder="输入文本或URL" class="input-flex">
+                        </div>
+                        <div class="config-row">
+                            <label>纠错</label>
+                            <select id="modal-qr-ecc">
+                                <option value="L">L - 7%</option>
+                                <option value="M" selected>M - 15%</option>
+                                <option value="Q">Q - 25%</option>
+                                <option value="H">H - 30%</option>
+                            </select>
+                            <label>前景色</label>
+                            <input type="color" id="modal-qr-fg" value="#ffffff">
+                        </div>
+                        <div class="config-row">
+                            <label>背景图</label>
+                            <input type="text" id="modal-qr-bg-image" placeholder="无" readonly style="flex:1;cursor:pointer" onclick="openFilePickerFor('modal-qr-bg-image', '/sdcard/images')">
+                            <button class="btn btn-sm" onclick="document.getElementById('modal-qr-bg-image').value=''" title="清除" style="color:#666"><i class="ri-close-line"></i></button>
+                        </div>
+                        <div class="config-row">
+                            <button class="btn btn-service-style btn-sm" onclick="generateQrCodeFromModal()">生成 QR 码</button>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
     } else if (type === 'text') {
-        // Matrix 文本模态框
+        // Matrix 文本显示 - 复刻全局色彩校正卡片风格与布局，无 emoji，刷新字体用 RemixIcon，布局分块清晰
         return `
-            <div class="modal-section">
-                <h3>📝 文本显示</h3>
-                <div class="config-row">
-                    <input type="text" id="modal-text-content" placeholder="输入要显示的文本" class="input-flex">
+            <div class="modal-section cc-modal-section">
+                <div class="cc-section">
+                    <h4>文本显示</h4>
+                    <div class="config-row">
+                        <input type="text" id="modal-text-content" placeholder="输入要显示的文本" class="input-flex">
+                    </div>
                 </div>
-                <div class="config-row">
-                    <label>字体</label>
-                    <select id="modal-text-font">
-                        <option value="default">默认</option>
-                    </select>
-                    <button class="btn btn-sm" onclick="loadFontListForModal()" title="刷新字体">🔄</button>
+                <div class="cc-section">
+                    <h4>字体与样式</h4>
+                    <div class="config-row">
+                        <label>字体</label>
+                        <select id="modal-text-font">
+                            <option value="default">默认</option>
+                        </select>
+                        <button class="btn btn-sm" onclick="loadFontListForModal()" title="刷新字体" style="color:#666"><i class="ri-refresh-line"></i> 刷新字体</button>
+                    </div>
+                    <div class="config-row">
+                        <label>对齐</label>
+                        <select id="modal-text-align">
+                            <option value="left">左对齐</option>
+                            <option value="center" selected>居中</option>
+                            <option value="right">右对齐</option>
+                        </select>
+                        <label>颜色</label>
+                        <input type="color" id="modal-text-color" value="#00ff00">
+                    </div>
                 </div>
-                <div class="config-row">
-                    <label>对齐</label>
-                    <select id="modal-text-align">
-                        <option value="left">左对齐</option>
-                        <option value="center" selected>居中</option>
-                        <option value="right">右对齐</option>
-                    </select>
-                    <label>颜色</label>
-                    <input type="color" id="modal-text-color" value="#00ff00">
+                <div class="cc-section">
+                    <h4>位置</h4>
+                    <div class="config-row">
+                        <label>X</label>
+                        <input type="number" id="modal-text-x" value="0" min="0" max="255" style="width:56px">
+                        <label>Y</label>
+                        <input type="number" id="modal-text-y" value="0" min="0" max="255" style="width:56px">
+                        <label><input type="checkbox" id="modal-text-auto-pos" checked> 自动位置</label>
+                    </div>
                 </div>
-                <div class="config-row">
-                    <label>X</label>
-                    <input type="number" id="modal-text-x" value="0" min="0" max="255" style="width:50px">
-                    <label>Y</label>
-                    <input type="number" id="modal-text-y" value="0" min="0" max="255" style="width:50px">
-                    <label><input type="checkbox" id="modal-text-auto-pos" checked> 自动位置</label>
+                <div class="cc-section">
+                    <h4>滚动</h4>
+                    <div class="config-row">
+                        <label>方向</label>
+                        <select id="modal-text-scroll">
+                            <option value="none">无滚动</option>
+                            <option value="left" selected>向左</option>
+                            <option value="right">向右</option>
+                            <option value="up">向上</option>
+                            <option value="down">向下</option>
+                        </select>
+                        <label>速度</label>
+                        <input type="number" id="modal-text-speed" value="50" min="1" max="100" style="width:56px">
+                        <label><input type="checkbox" id="modal-text-loop" checked> 循环滚动</label>
+                    </div>
                 </div>
-                <div class="config-row">
-                    <label>滚动</label>
-                    <select id="modal-text-scroll">
-                        <option value="none">无滚动</option>
-                        <option value="left" selected>← 向左</option>
-                        <option value="right">→ 向右</option>
-                        <option value="up">↑ 向上</option>
-                        <option value="down">↓ 向下</option>
-                    </select>
-                    <label>速度</label>
-                    <input type="number" id="modal-text-speed" value="50" min="1" max="100" style="width:55px">
-                </div>
-                <div class="config-row">
-                    <label><input type="checkbox" id="modal-text-loop" checked> 循环滚动</label>
-                </div>
-                <div class="config-actions">
-                    <button class="btn btn-primary" onclick="displayTextFromModal()">▶ 显示</button>
-                    <button class="btn btn-danger" onclick="stopTextFromModal()">⏹ 停止</button>
+                <div class="config-actions cc-actions">
+                    <button class="btn btn-service-style btn-sm" onclick="displayTextFromModal()">显示</button>
+                    <button class="btn btn-danger btn-sm" onclick="stopTextFromModal()">停止</button>
                 </div>
             </div>
         `;
     } else if (type === 'filter') {
-        // Matrix 滤镜模态框
+        // Matrix 滤镜模态框 - 复刻全局色彩校正卡片风格与按钮配色，无小标题与效果名 emoji
         return `
-            <div class="modal-section">
-                <h3>🎨 后处理滤镜</h3>
-                <div class="filters-grid">
-                    <button class="btn filter-btn" data-filter="pulse" onclick="selectFilterInModal('pulse', this)">💓 脉冲</button>
-                    <button class="btn filter-btn" data-filter="breathing" onclick="selectFilterInModal('breathing', this)">💨 呼吸</button>
-                    <button class="btn filter-btn" data-filter="blink" onclick="selectFilterInModal('blink', this)">💡 闪烁</button>
-                    <button class="btn filter-btn" data-filter="wave" onclick="selectFilterInModal('wave', this)">🌊 波浪</button>
-                    <button class="btn filter-btn" data-filter="scanline" onclick="selectFilterInModal('scanline', this)">📺 扫描线</button>
-                    <button class="btn filter-btn" data-filter="glitch" onclick="selectFilterInModal('glitch', this)">⚡ 故障艺术</button>
-                    <button class="btn filter-btn" data-filter="rainbow" onclick="selectFilterInModal('rainbow', this)">🌈 彩虹</button>
-                    <button class="btn filter-btn" data-filter="sparkle" onclick="selectFilterInModal('sparkle', this)">✨ 闪耀</button>
-                    <button class="btn filter-btn" data-filter="plasma" onclick="selectFilterInModal('plasma', this)">🎆 等离子体</button>
-                    <button class="btn filter-btn" data-filter="sepia" onclick="selectFilterInModal('sepia', this)">🖼️ 怀旧</button>
-                    <button class="btn filter-btn" data-filter="posterize" onclick="selectFilterInModal('posterize', this)">🎨 色阶分离</button>
-                    <button class="btn filter-btn" data-filter="contrast" onclick="selectFilterInModal('contrast', this)">🔆 对比度</button>
-                    <button class="btn filter-btn" data-filter="invert" onclick="selectFilterInModal('invert', this)">🔄 反色</button>
-                    <button class="btn filter-btn" data-filter="grayscale" onclick="selectFilterInModal('grayscale', this)">⬜ 灰度</button>
+            <div class="modal-section cc-modal-section">
+                <div class="cc-section">
+                    <div class="filters-grid">
+                        <button class="btn filter-btn" data-filter="pulse" onclick="selectFilterInModal('pulse', this)">脉冲</button>
+                        <button class="btn filter-btn" data-filter="breathing" onclick="selectFilterInModal('breathing', this)">呼吸</button>
+                        <button class="btn filter-btn" data-filter="blink" onclick="selectFilterInModal('blink', this)">闪烁</button>
+                        <button class="btn filter-btn" data-filter="wave" onclick="selectFilterInModal('wave', this)">波浪</button>
+                        <button class="btn filter-btn" data-filter="scanline" onclick="selectFilterInModal('scanline', this)">扫描线</button>
+                        <button class="btn filter-btn" data-filter="glitch" onclick="selectFilterInModal('glitch', this)">故障艺术</button>
+                        <button class="btn filter-btn" data-filter="rainbow" onclick="selectFilterInModal('rainbow', this)">彩虹</button>
+                        <button class="btn filter-btn" data-filter="sparkle" onclick="selectFilterInModal('sparkle', this)">闪耀</button>
+                        <button class="btn filter-btn" data-filter="plasma" onclick="selectFilterInModal('plasma', this)">等离子体</button>
+                        <button class="btn filter-btn" data-filter="sepia" onclick="selectFilterInModal('sepia', this)">怀旧</button>
+                        <button class="btn filter-btn" data-filter="posterize" onclick="selectFilterInModal('posterize', this)">色阶分离</button>
+                        <button class="btn filter-btn" data-filter="contrast" onclick="selectFilterInModal('contrast', this)">对比度</button>
+                        <button class="btn filter-btn" data-filter="invert" onclick="selectFilterInModal('invert', this)">反色</button>
+                        <button class="btn filter-btn" data-filter="grayscale" onclick="selectFilterInModal('grayscale', this)">灰度</button>
+                    </div>
+                    <div class="filter-config-modal" id="modal-filter-config" style="display:none;">
+                        <span class="filter-name" id="modal-filter-name">未选择</span>
+                        <div id="modal-filter-params"></div>
+                    </div>
                 </div>
-                <div class="filter-config-modal" id="modal-filter-config" style="display:none;">
-                    <span class="filter-name" id="modal-filter-name">未选择</span>
-                    <div id="modal-filter-params"></div>
-                </div>
-                <div class="config-actions">
-                    <button class="btn btn-primary" id="modal-apply-filter-btn" onclick="applyFilterFromModal()" disabled>▶ 应用</button>
-                    <button class="btn btn-danger" onclick="stopFilterFromModal()">⏹ 停止</button>
+                <div class="config-actions cc-actions">
+                    <button class="btn btn-service-style btn-sm" id="modal-apply-filter-btn" onclick="applyFilterFromModal()" disabled>应用</button>
+                    <button class="btn btn-danger btn-sm" onclick="stopFilterFromModal()">停止</button>
                 </div>
             </div>
         `;
@@ -5218,8 +5220,8 @@ function openLedModal(device, type) {
     title.textContent = titleMap[type] || `${device} - 设置`;
     body.innerHTML = generateLedModalContent(device, type);
     
-    // 色彩校正和程序动画模态框：紧凑样式 + 淡色背景
-    if (type === 'colorcorrection' || type === 'effect') {
+    // 色彩校正、程序动画、Matrix 图像/QR/文本/滤镜：紧凑样式 + 淡色背景，复刻全局色彩校正风格
+    if (type === 'colorcorrection' || type === 'effect' || type === 'content' || type === 'text' || type === 'filter') {
         modal.querySelector('.modal-content').classList.add('cc-compact');
         if (headerActions) {
             if (type === 'colorcorrection') {
@@ -5979,7 +5981,7 @@ async function applyEffect(device) {
         
         // 更新顶部当前动画显示
         const currentAnim = document.getElementById(`current-anim-${device}`);
-        if (currentAnim) currentAnim.textContent = `▶ ${effect}`;
+        if (currentAnim) currentAnim.textContent = `▶ ${effectDisplayName(effect)}`;
         
         showToast(`${device}: ${effect} 已启动`, 'success');
     } catch (e) {
@@ -8600,8 +8602,8 @@ function addCommandsPageStyles() {
             transform: translateY(-2px);
         }
         .host-card.selected {
-            border-color: var(--primary);
-            background: rgba(var(--primary-rgb), 0.1);
+            border-color: #a5d6a7;
+            background: #e8f5e9;
         }
         .host-card .host-name {
             font-weight: bold;
@@ -16492,10 +16494,10 @@ async function loadAutomationPage() {
         <div class="page-automation">
             <div class="page-header-row">
                 <div class="header-actions">
-                    <button class="btn btn-primary" onclick="automationControl('start')">▶️ 启动</button>
-                    <button class="btn btn-danger" onclick="automationControl('stop')">⏹️ 停止</button>
-                    <button class="btn" onclick="automationControl('pause')">⏸️ 暂停</button>
-                    <button class="btn" onclick="automationControl('reload')">🔄 重载</button>
+                    <button class="btn btn-success btn-file-action" onclick="automationControl('start')"><i class="ri-play-line"></i> 启动</button>
+                    <button class="btn btn-danger btn-file-action" onclick="automationControl('stop')"><i class="ri-stop-line"></i> 停止</button>
+                    <button class="btn btn-service-style btn-file-action" onclick="automationControl('pause')"><i class="ri-pause-line"></i> 暂停</button>
+                    <button class="btn btn-service-style btn-file-action" onclick="automationControl('reload')"><i class="ri-refresh-line"></i> 重载</button>
                 </div>
             </div>
             
@@ -16507,11 +16509,11 @@ async function loadAutomationPage() {
             <!-- 数据源列表 -->
             <div class="section">
                 <div class="section-header">
-                    <h2>📡 数据源</h2>
+                    <h2>数据源</h2>
                     <div class="section-actions">
-                        <button class="btn btn-primary btn-sm" onclick="showAddSourceModal()">➕ 添加</button>
-                        <button class="btn btn-sm" onclick="showImportSourceModal()" title="导入配置包">📥 导入</button>
-                        <button class="btn btn-sm" onclick="refreshSources()">🔄</button>
+                        <button class="btn btn-success btn-sm" onclick="showAddSourceModal()"><i class="ri-add-line"></i> 添加</button>
+                        <button class="btn btn-sm" onclick="showImportSourceModal()" title="导入配置包" style="color:#666"><i class="ri-download-line"></i> 导入</button>
+                        <button class="btn btn-sm" onclick="refreshSources()" style="color:#666"><i class="ri-refresh-line"></i></button>
                     </div>
                 </div>
                 <div class="card compact">
@@ -16524,11 +16526,11 @@ async function loadAutomationPage() {
             <!-- 规则列表 -->
             <div class="section">
                 <div class="section-header">
-                    <h2>📋 规则列表</h2>
+                    <h2>规则列表</h2>
                     <div class="section-actions">
-                        <button class="btn btn-primary btn-sm" onclick="showAddRuleModal()">➕ 添加</button>
-                        <button class="btn btn-sm" onclick="showImportRuleModal()" title="导入配置包">📥 导入</button>
-                        <button class="btn btn-sm" onclick="refreshRules()">🔄</button>
+                        <button class="btn btn-success btn-sm" onclick="showAddRuleModal()"><i class="ri-add-line"></i> 添加</button>
+                        <button class="btn btn-sm" onclick="showImportRuleModal()" title="导入配置包" style="color:#666"><i class="ri-download-line"></i> 导入</button>
+                        <button class="btn btn-sm" onclick="refreshRules()" style="color:#666"><i class="ri-refresh-line"></i></button>
                     </div>
                 </div>
                 <div class="card compact">
@@ -16541,11 +16543,11 @@ async function loadAutomationPage() {
             <!-- 动作模板管理 -->
             <div class="section">
                 <div class="section-header">
-                    <h2>⚡ 动作模板</h2>
+                    <h2>动作模板</h2>
                     <div class="section-actions">
-                        <button class="btn btn-primary btn-sm" onclick="showAddActionModal()">➕ 添加</button>
-                        <button class="btn btn-sm" onclick="showImportActionModal()" title="导入配置包">📥 导入</button>
-                        <button class="btn btn-sm" onclick="refreshActions()">🔄</button>
+                        <button class="btn btn-success btn-sm" onclick="showAddActionModal()"><i class="ri-add-line"></i> 添加</button>
+                        <button class="btn btn-sm" onclick="showImportActionModal()" title="导入配置包" style="color:#666"><i class="ri-download-line"></i> 导入</button>
+                        <button class="btn btn-sm" onclick="refreshActions()" style="color:#666"><i class="ri-refresh-line"></i></button>
                     </div>
                 </div>
                 <div class="card compact">
@@ -16584,40 +16586,50 @@ async function refreshAutomationStatus() {
             const uptimeSec = Math.floor((d.uptime_ms || 0) / 1000);
             
             container.innerHTML = `
-                <div class="status-card primary">
-                    <div class="status-icon state-${stateClass}">●</div>
-                    <div class="status-info">
+                <div class="status-card">
+                    <div class="status-card-value-row">
+                        <span class="status-icon state-${stateClass}">●</span>
                         <span class="status-value">${stateText}</span>
-                        <span class="status-label">引擎状态</span>
                     </div>
+                    <div class="status-label">引擎状态</div>
                 </div>
                 <div class="status-card">
-                    <div class="status-value">${d.rules_count || 0}</div>
+                    <div class="status-card-value-row">
+                        <span class="status-value">${d.rules_count || 0}</span>
+                    </div>
                     <div class="status-label">规则</div>
                 </div>
                 <div class="status-card">
-                    <div class="status-value">${d.variables_count || 0}</div>
+                    <div class="status-card-value-row">
+                        <span class="status-value">${d.variables_count || 0}</span>
+                    </div>
                     <div class="status-label">变量</div>
                 </div>
                 <div class="status-card">
-                    <div class="status-value">${d.sources_count || 0}</div>
+                    <div class="status-card-value-row">
+                        <span class="status-value">${d.sources_count || 0}</span>
+                    </div>
                     <div class="status-label">数据源</div>
                 </div>
                 <div class="status-card">
-                    <div class="status-value">${d.rule_triggers || 0}</div>
+                    <div class="status-card-value-row">
+                        <span class="status-value">${d.rule_triggers || 0}</span>
+                    </div>
                     <div class="status-label">触发次数</div>
                 </div>
                 <div class="status-card">
-                    <div class="status-value">${formatUptimeSec(uptimeSec)}</div>
+                    <div class="status-card-value-row">
+                        <span class="status-value">${formatUptimeSec(uptimeSec)}</span>
+                    </div>
                     <div class="status-label">运行时长</div>
                 </div>
             `;
         } else {
-            container.innerHTML = `<div class="status-card error"><span>⚠️ ${result.message || '获取状态失败'}</span></div>`;
+            container.innerHTML = `<div class="status-card error"><span>${result.message || '获取状态失败'}</span></div>`;
         }
     } catch (error) {
         const isNetworkError = error.message.includes('fetch') || error.message.includes('network');
-        container.innerHTML = `<div class="status-card error"><span>${isNetworkError ? '🔌 网络连接失败' : '❌ ' + error.message}</span></div>`;
+        container.innerHTML = `<div class="status-card error"><span>${isNetworkError ? '网络连接失败' : error.message}</span></div>`;
     }
 }
 
@@ -16681,8 +16693,8 @@ async function refreshRules() {
                         ${rules.map(r => {
                             const iconValue = r.icon || '⚡';
                             const iconHtml = iconValue.startsWith('/sdcard/') 
-                                ? `<img src="/api/v1/file/download?path=${encodeURIComponent(iconValue)}" style="width:24px;height:24px;object-fit:contain" onerror="this.textContent='⚡'">`
-                                : iconValue;
+                                ? `<img src="/api/v1/file/download?path=${encodeURIComponent(iconValue)}" style="width:24px;height:24px;object-fit:contain" onerror="this.outerHTML='<i class=\\'ri-thunderstorms-line\\' style=\\'font-size:1.2em\\'></i>'">`
+                                : `<i class="${getRuleIconRi(iconValue)}" style="font-size:1.2em"></i>`;
                             const manualBadge = r.manual_trigger ? '<span class="badge" style="background:#27ae60;font-size:0.7em">手动</span>' : '';
                             
                             return `
@@ -16695,11 +16707,11 @@ async function refreshRules() {
                                 <td>${r.actions_count || 0}</td>
                                 <td>${r.trigger_count || 0}</td>
                                 <td style="white-space:nowrap">
-                                    <button class="btn btn-sm" onclick="toggleRule('${r.id}', ${!r.enabled})" title="${r.enabled ? '禁用' : '启用'}">${r.enabled ? '🔴' : '🟢'}</button>
-                                    <button class="btn btn-sm" onclick="triggerRule('${r.id}')" title="手动触发">▶️</button>
-                                    <button class="btn btn-sm" onclick="editRule('${r.id}')" title="编辑">✏️</button>
-                                    <button class="btn btn-sm" onclick="showExportRuleModal('${r.id}')" title="导出配置包">📤</button>
-                                    <button class="btn btn-sm btn-danger" onclick="deleteRule('${r.id}')" title="删除">🗑️</button>
+                                    <button class="btn btn-sm" onclick="toggleRule('${r.id}', ${!r.enabled})" title="${r.enabled ? '禁用' : '启用'}" style="color:#666"><i class="${r.enabled ? 'ri-stop-circle-line' : 'ri-play-circle-line'}"></i></button>
+                                    <button class="btn btn-sm" onclick="triggerRule('${r.id}')" title="手动触发" style="color:#666"><i class="ri-play-line"></i></button>
+                                    <button class="btn btn-sm" onclick="editRule('${r.id}')" title="编辑" style="color:#666"><i class="ri-edit-line"></i></button>
+                                    <button class="btn btn-sm" onclick="showExportRuleModal('${r.id}')" title="导出配置包" style="color:#666"><i class="ri-download-line"></i></button>
+                                    <button class="btn btn-sm btn-danger" onclick="deleteRule('${r.id}')" title="删除"><i class="ri-delete-bin-line"></i></button>
                                 </td>
                             </tr>
                         `}).join('')}
@@ -16707,11 +16719,11 @@ async function refreshRules() {
                 </table>
             `;
         } else {
-            container.innerHTML = `<p style="text-align:center;color:var(--text-light)">⚠️ ${result.message || '获取规则失败'}</p>`;
+            container.innerHTML = `<p style="text-align:center;color:var(--text-light)">${result.message || '获取规则失败'}</p>`;
         }
     } catch (error) {
         const isNetworkError = error.message.includes('fetch') || error.message.includes('network');
-        container.innerHTML = `<p style="text-align:center;color:var(--danger-color)">${isNetworkError ? '🔌 网络连接失败' : '❌ ' + error.message}</p>`;
+        container.innerHTML = `<p style="text-align:center;color:var(--danger-color)">${isNetworkError ? '网络连接失败' : error.message}</p>`;
     }
 }
 
@@ -16776,14 +16788,14 @@ async function refreshSources() {
                             <tr>
                                 <td><code>${s.id}</code></td>
                                 <td>${s.label || s.id}</td>
-                                <td><span style="padding:2px 8px;background:var(--primary-color);color:white;border-radius:4px;font-size:0.85em">${s.type || 'unknown'}</span></td>
+                                <td><span class="btn-service-style" style="display:inline-block;font-size:0.85em">${s.type || 'unknown'}</span></td>
                                 <td><span class="status-badge ${s.enabled ? 'status-running' : 'status-stopped'}">${s.enabled ? '启用' : '禁用'}</span></td>
                                 <td>${s.poll_interval_ms ? (s.poll_interval_ms / 1000) + '秒' : '-'}</td>
                                 <td style="white-space:nowrap">
-                                    <button class="btn btn-sm" onclick="showSourceVariables('${s.id}')" title="查看变量">📊</button>
-                                    <button class="btn btn-sm" onclick="toggleSource('${s.id}', ${!s.enabled})" title="${s.enabled ? '禁用' : '启用'}">${s.enabled ? '🔴' : '🟢'}</button>
-                                    <button class="btn btn-sm" onclick="showExportSourceModal('${s.id}')" title="导出配置包">📤</button>
-                                    <button class="btn btn-sm btn-danger" onclick="deleteSource('${s.id}')" title="删除">🗑️</button>
+                                    <button class="btn btn-sm" onclick="showSourceVariables('${s.id}')" title="查看变量" style="color:#666"><i class="ri-bar-chart-box-line"></i></button>
+                                    <button class="btn btn-sm" onclick="toggleSource('${s.id}', ${!s.enabled})" title="${s.enabled ? '禁用' : '启用'}" style="color:#666"><i class="${s.enabled ? 'ri-stop-circle-line' : 'ri-play-circle-line'}"></i></button>
+                                    <button class="btn btn-sm" onclick="showExportSourceModal('${s.id}')" title="导出配置包" style="color:#666"><i class="ri-download-line"></i></button>
+                                    <button class="btn btn-sm btn-danger" onclick="deleteSource('${s.id}')" title="删除"><i class="ri-delete-bin-line"></i></button>
                                 </td>
                             </tr>
                         `).join('')}
@@ -16791,11 +16803,11 @@ async function refreshSources() {
                 </table>
             `;
         } else {
-            container.innerHTML = `<p style="text-align:center;color:var(--text-light)">⚠️ ${result.message || '获取数据源失败'}</p>`;
+            container.innerHTML = `<p style="text-align:center;color:var(--text-light)">${result.message || '获取数据源失败'}</p>`;
         }
     } catch (error) {
         const isNetworkError = error.message.includes('fetch') || error.message.includes('network');
-        container.innerHTML = `<p style="text-align:center;color:var(--danger-color)">${isNetworkError ? '🔌 网络连接失败' : '❌ ' + error.message}</p>`;
+        container.innerHTML = `<p style="text-align:center;color:var(--danger-color)">${isNetworkError ? '网络连接失败' : error.message}</p>`;
     }
 }
 
@@ -16819,10 +16831,10 @@ async function refreshVariables() {
             if (countBadge) countBadge.textContent = allVariables.length;
             renderVariables(allVariables);
         } else {
-            container.innerHTML = `<p style="text-align:center;color:var(--text-light)">⚠️ ${result.message || '获取变量失败'}</p>`;
+            container.innerHTML = `<p style="text-align:center;color:var(--text-light)">${result.message || '获取变量失败'}</p>`;
         }
     } catch (error) {
-        container.innerHTML = `<p style="text-align:center;color:var(--danger-color)">❌ ${error.message}</p>`;
+        container.innerHTML = `<p style="text-align:center;color:var(--danger-color)">${error.message}</p>`;
     }
 }
 
@@ -16988,10 +17000,10 @@ async function refreshActions() {
                                 <td>${a.async ? '<span class="badge badge-warning">异步</span>' : '<span class="badge badge-light">同步</span>'}</td>
                                 <td class="text-muted">${a.description || '-'}</td>
                                 <td>
-                                    <button class="btn btn-xs" onclick="testAction('${a.id}')" title="测试">▶️</button>
-                                    <button class="btn btn-xs" onclick="editAction('${a.id}')" title="编辑">✏️</button>
-                                    <button class="btn btn-xs" onclick="showExportActionModal('${a.id}')" title="导出配置包">📤</button>
-                                    <button class="btn btn-danger btn-xs" onclick="deleteAction('${a.id}')" title="删除">🗑️</button>
+                                    <button class="btn btn-xs" onclick="testAction('${a.id}')" title="测试" style="color:#666"><i class="ri-play-line"></i></button>
+                                    <button class="btn btn-xs" onclick="editAction('${a.id}')" title="编辑" style="color:#666"><i class="ri-edit-line"></i></button>
+                                    <button class="btn btn-xs" onclick="showExportActionModal('${a.id}')" title="导出配置包" style="color:#666"><i class="ri-download-line"></i></button>
+                                    <button class="btn btn-danger btn-xs" onclick="deleteAction('${a.id}')" title="删除"><i class="ri-delete-bin-line"></i></button>
                                 </td>
                             </tr>
                         `).join('')}
@@ -17044,66 +17056,60 @@ function showAddActionModal() {
     modal.className = 'modal active';
     modal.id = 'action-modal';
     modal.innerHTML = `
-        <div class="modal-content modal-lg">
+        <div class="modal-content cc-compact modal-lg" style="max-width:720px">
             <div class="modal-header">
-                <h3>⚡ 新建动作模板</h3>
-                <button class="modal-close" onclick="closeModal('action-modal')">&times;</button>
+                <h2>新建动作模板</h2>
+                <button class="modal-close" onclick="closeModal('action-modal')"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
-                <!-- 第一步：选择动作类型 -->
                 <div class="action-section">
-                    <div class="section-title">1️⃣ 选择动作类型</div>
+                    <div class="section-title">1. 选择动作类型</div>
                     <div class="action-type-grid">
                         <label class="action-type-card" data-type="cli">
                             <input type="radio" name="action-type" value="cli" checked>
-                            <div class="card-icon">⚡</div>
+                            <div class="card-icon"><i class="ri-terminal-box-line"></i></div>
                             <div class="card-title">CLI 命令</div>
                             <div class="card-desc">执行本地控制台命令</div>
                         </label>
                         <label class="action-type-card" data-type="ssh_cmd_ref">
                             <input type="radio" name="action-type" value="ssh_cmd_ref">
-                            <div class="card-icon">🔐</div>
+                            <div class="card-icon"><i class="ri-shield-keyhole-line"></i></div>
                             <div class="card-title">SSH 命令</div>
                             <div class="card-desc">执行已配置的SSH命令</div>
                         </label>
                         <label class="action-type-card" data-type="led">
                             <input type="radio" name="action-type" value="led">
-                            <div class="card-icon">💡</div>
+                            <div class="card-icon"><i class="ri-lightbulb-line"></i></div>
                             <div class="card-title">LED 控制</div>
                             <div class="card-desc">控制 LED 颜色和效果</div>
                         </label>
                         <label class="action-type-card" data-type="log">
                             <input type="radio" name="action-type" value="log">
-                            <div class="card-icon">📝</div>
+                            <div class="card-icon"><i class="ri-file-text-line"></i></div>
                             <div class="card-title">日志记录</div>
                             <div class="card-desc">输出日志消息</div>
                         </label>
                         <label class="action-type-card" data-type="set_var">
                             <input type="radio" name="action-type" value="set_var">
-                            <div class="card-icon">📊</div>
+                            <div class="card-icon"><i class="ri-database-2-line"></i></div>
                             <div class="card-title">设置变量</div>
                             <div class="card-desc">修改系统变量值</div>
                         </label>
                         <label class="action-type-card" data-type="webhook">
                             <input type="radio" name="action-type" value="webhook">
-                            <div class="card-icon">🌐</div>
+                            <div class="card-icon"><i class="ri-global-line"></i></div>
                             <div class="card-title">Webhook</div>
                             <div class="card-desc">发送 HTTP 请求</div>
                         </label>
                     </div>
                 </div>
-                
-                <!-- 第二步：配置参数 -->
                 <div class="action-section">
-                    <div class="section-title">2️⃣ 配置参数</div>
+                    <div class="section-title">2. 配置参数</div>
                     <div id="action-type-fields" class="action-params-container">
-                        <!-- 动态生成的类型特定字段 -->
                     </div>
                 </div>
-                
-                <!-- 第三步：基本信息 -->
                 <div class="action-section">
-                    <div class="section-title">3️⃣ 基本信息</div>
+                    <div class="section-title">3. 基本信息</div>
                     <div class="form-row">
                         <div class="form-group" style="flex:1">
                             <label>动作 ID <span class="required">*</span></label>
@@ -17143,9 +17149,9 @@ function showAddActionModal() {
                     </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="btn" onclick="closeModal('action-modal')">取消</button>
-                <button class="btn btn-primary" onclick="submitAction()">💾 保存动作</button>
+            <div class="modal-footer cc-compact-footer">
+                <button class="btn" onclick="closeModal('action-modal')" style="color:#666">取消</button>
+                <button class="btn btn-service-style" onclick="submitAction()"><i class="ri-save-line"></i> 保存动作</button>
             </div>
         </div>
     `;
@@ -17176,7 +17182,7 @@ function updateActionTypeFields() {
         cli: `
             <div class="params-card">
                 <div class="params-header">
-                    <span class="params-icon">⚡</span>
+                    <span class="params-icon"><i class="ri-terminal-box-line"></i></span>
                     <span>CLI 命令配置</span>
                 </div>
                 <div class="form-group">
@@ -17214,7 +17220,7 @@ function updateActionTypeFields() {
         ssh_cmd_ref: `
             <div class="params-card">
                 <div class="params-header">
-                    <span class="params-icon">🔐</span>
+                    <span class="params-icon"><i class="ri-shield-keyhole-line"></i></span>
                     <span>SSH 命令配置</span>
                 </div>
                 <div class="form-group">
@@ -17225,7 +17231,7 @@ function updateActionTypeFields() {
                     <small class="form-hint">选择已在 SSH 管理页面配置的命令</small>
                 </div>
                 <div id="ssh-cmd-preview" class="ssh-cmd-preview" style="display:none;">
-                    <div class="preview-title">📋 命令详情</div>
+                    <div class="preview-title">命令详情</div>
                     <div class="preview-content">
                         <div class="preview-row"><span class="preview-label">主机:</span> <span id="preview-host">-</span></div>
                         <div class="preview-row"><span class="preview-label">命令:</span> <code id="preview-cmd">-</code></div>
@@ -17237,7 +17243,7 @@ function updateActionTypeFields() {
         led: `
             <div class="params-card">
                 <div class="params-header">
-                    <span class="params-icon">💡</span>
+                    <span class="params-icon"><i class="ri-lightbulb-line"></i></span>
                     <span>LED 控制配置</span>
                 </div>
                 <div class="form-group">
@@ -17252,10 +17258,10 @@ function updateActionTypeFields() {
                 <div class="form-group" id="action-led-type-group" style="display:none;">
                     <label>控制类型 <span class="required">*</span></label>
                     <select id="action-led-type" class="input" onchange="updateActionLedTypeFields()">
-                        <option value="fill">🎨 纯色填充</option>
-                        <option value="effect">🎬 程序动画</option>
-                        <option value="brightness">☀️ 仅调节亮度</option>
-                        <option value="off">⏹ 关闭</option>
+                        <option value="fill">纯色填充</option>
+                        <option value="effect">程序动画</option>
+                        <option value="brightness">仅调节亮度</option>
+                        <option value="off">关闭</option>
                     </select>
                 </div>
                 
@@ -17263,16 +17269,16 @@ function updateActionTypeFields() {
                 <div class="form-group" id="action-led-matrix-type-group" style="display:none;">
                     <label>控制类型 <span class="required">*</span></label>
                     <select id="action-led-matrix-type" class="input" onchange="updateActionLedTypeFields()">
-                        <option value="fill">🎨 纯色填充</option>
-                        <option value="effect">🎬 程序动画</option>
-                        <option value="text">📝 文本显示</option>
-                        <option value="image">📷 显示图像</option>
-                        <option value="qrcode">📱 显示QR码</option>
-                        <option value="filter">🎨 后处理滤镜</option>
-                        <option value="filter_stop">⏹ 停止滤镜</option>
-                        <option value="text_stop">⏹ 停止文本</option>
-                        <option value="brightness">☀️ 仅调节亮度</option>
-                        <option value="off">⏹ 关闭设备</option>
+                        <option value="fill">纯色填充</option>
+                        <option value="effect">程序动画</option>
+                        <option value="text">文本显示</option>
+                        <option value="image">显示图像</option>
+                        <option value="qrcode">显示QR码</option>
+                        <option value="filter">后处理滤镜</option>
+                        <option value="filter_stop">停止滤镜</option>
+                        <option value="text_stop">停止文本</option>
+                        <option value="brightness">仅调节亮度</option>
+                        <option value="off">关闭设备</option>
                     </select>
                 </div>
                 
@@ -17283,17 +17289,17 @@ function updateActionTypeFields() {
         log: `
             <div class="params-card">
                 <div class="params-header">
-                    <span class="params-icon">📝</span>
+                    <span class="params-icon"><i class="ri-file-text-line"></i></span>
                     <span>日志配置</span>
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
                         <label>级别</label>
                         <select id="action-log-level" class="input">
-                            <option value="3">ℹ️ INFO</option>
-                            <option value="2">⚠️ WARN</option>
-                            <option value="1">❌ ERROR</option>
-                            <option value="4">🔍 DEBUG</option>
+                            <option value="3">INFO</option>
+                            <option value="2">WARN</option>
+                            <option value="1">ERROR</option>
+                            <option value="4">DEBUG</option>
                         </select>
                     </div>
                 </div>
@@ -17307,7 +17313,7 @@ function updateActionTypeFields() {
         set_var: `
             <div class="params-card">
                 <div class="params-header">
-                    <span class="params-icon">📊</span>
+                    <span class="params-icon"><i class="ri-database-2-line"></i></span>
                     <span>变量配置</span>
                 </div>
                 <div class="form-group">
@@ -17324,7 +17330,7 @@ function updateActionTypeFields() {
         webhook: `
             <div class="params-card">
                 <div class="params-header">
-                    <span class="params-icon">🌐</span>
+                    <span class="params-icon"><i class="ri-global-line"></i></span>
                     <span>Webhook 配置</span>
                 </div>
                 <div class="form-group">
@@ -17958,20 +17964,20 @@ function updateActionLedTypeFields() {
                 <div class="form-group">
                     <label>滤镜 <span class="required">*</span></label>
                     <select id="action-led-filter" class="input" onchange="updateActionFilterParams()">
-                        <option value="pulse">💓 脉冲</option>
-                        <option value="breathing">💨 呼吸</option>
-                        <option value="blink">💡 闪烁</option>
-                        <option value="wave">🌊 波浪</option>
-                        <option value="scanline">📺 扫描线</option>
-                        <option value="glitch">⚡ 故障艺术</option>
-                        <option value="rainbow">🌈 彩虹</option>
-                        <option value="sparkle">✨ 闪耀</option>
-                        <option value="plasma">🎆 等离子体</option>
-                        <option value="sepia">🖼️ 怀旧</option>
-                        <option value="posterize">🎨 色阶分离</option>
-                        <option value="contrast">🔆 对比度</option>
-                        <option value="invert">🔄 反色</option>
-                        <option value="grayscale">⬜ 灰度</option>
+                        <option value="pulse">脉冲</option>
+                        <option value="breathing">呼吸</option>
+                        <option value="blink">闪烁</option>
+                        <option value="wave">波浪</option>
+                        <option value="scanline">扫描线</option>
+                        <option value="glitch">故障艺术</option>
+                        <option value="rainbow">彩虹</option>
+                        <option value="sparkle">闪耀</option>
+                        <option value="plasma">等离子体</option>
+                        <option value="sepia">怀旧</option>
+                        <option value="posterize">色阶分离</option>
+                        <option value="contrast">对比度</option>
+                        <option value="invert">反色</option>
+                        <option value="grayscale">灰度</option>
                     </select>
                 </div>
                 <div id="action-filter-params"></div>
@@ -19024,25 +19030,25 @@ function showAddSourceModal() {
     modal.id = 'add-source-modal';
     modal.className = 'modal';
     modal.innerHTML = `
-        <div class="modal-content automation-modal wide">
+        <div class="modal-content cc-compact automation-modal" style="max-width:750px">
             <div class="modal-header">
-                <h3>➕ 添加外部数据源</h3>
-                <button class="modal-close" onclick="closeModal('add-source-modal')">&times;</button>
+                <h2>添加外部数据源</h2>
+                <button class="modal-close" onclick="closeModal('add-source-modal')"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
                 <!-- 数据源类型选择（标签页样式） -->
-                <div class="modal-tabs">
+                <div class="modal-tabs automation-modal-tabs">
                     <button type="button" class="modal-tab active" data-type="rest" onclick="switchSourceType('rest')">
-                        🌐 REST API
+                        REST API
                     </button>
                     <button type="button" class="modal-tab" data-type="websocket" onclick="switchSourceType('websocket')">
-                        🔌 WebSocket
+                        WebSocket
                     </button>
                     <button type="button" class="modal-tab" data-type="socketio" onclick="switchSourceType('socketio')">
-                        ⚡ Socket.IO
+                        Socket.IO
                     </button>
                     <button type="button" class="modal-tab" data-type="variable" onclick="switchSourceType('variable')">
-                        📦 指令变量
+                        指令变量
                     </button>
                 </div>
                 <input type="hidden" id="source-type" value="rest">
@@ -19061,12 +19067,12 @@ function showAddSourceModal() {
                 
                 <!-- REST API 配置 -->
                 <div id="source-rest-config" class="config-section">
-                    <div class="config-title">🌐 REST API 配置</div>
+                    <div class="config-title">REST API 配置</div>
                     <div class="form-group">
                         <label>请求地址 <span class="required">*</span></label>
                         <div class="input-with-btn">
                             <input type="text" id="source-rest-url" class="input" placeholder="http://192.168.1.100/api/status">
-                            <button class="btn btn-sm" onclick="testRestConnection()" id="btn-test-rest">🔍 测试</button>
+                            <button class="btn btn-sm btn-warning" onclick="testRestConnection()" id="btn-test-rest">测试</button>
                         </div>
                     </div>
                     <div class="form-row">
@@ -19091,11 +19097,11 @@ function showAddSourceModal() {
                     <div id="rest-test-result" class="test-result-panel" style="display:none">
                         <div class="test-result-header">
                             <span class="test-status"></span>
-                            <button class="btn btn-sm" onclick="toggleJsonPreview()">📄 原始数据</button>
+                            <button class="btn btn-sm" onclick="toggleJsonPreview()" style="color:#666"><i class="ri-file-text-line"></i> 原始数据</button>
                         </div>
                         <div id="rest-json-preview" class="json-preview" style="display:none"></div>
                         <div id="rest-var-selector" class="var-selector">
-                            <div class="var-selector-title">📊 选择要提取的字段：</div>
+                            <div class="var-selector-title">选择要提取的字段：</div>
                             <div class="var-list"></div>
                         </div>
                     </div>
@@ -19108,12 +19114,12 @@ function showAddSourceModal() {
                 
                 <!-- WebSocket 配置 -->
                 <div id="source-websocket-config" class="config-section" style="display:none">
-                    <div class="config-title">🔌 WebSocket 配置</div>
+                    <div class="config-title">WebSocket 配置</div>
                     <div class="form-group">
                         <label>WebSocket 地址 <span class="required">*</span></label>
                         <div class="input-with-btn">
                             <input type="text" id="source-ws-uri" class="input" placeholder="ws://192.168.1.100:8080/ws">
-                            <button class="btn btn-sm" onclick="testWsConnection()" id="btn-test-ws">🔍 测试</button>
+                            <button class="btn btn-sm btn-warning" onclick="testWsConnection()" id="btn-test-ws">测试</button>
                         </div>
                     </div>
                     
@@ -19121,11 +19127,11 @@ function showAddSourceModal() {
                     <div id="ws-test-result" class="test-result-panel" style="display:none">
                         <div class="test-result-header">
                             <span class="test-status"></span>
-                            <button class="btn btn-sm" onclick="toggleWsJsonPreview()">📄 原始数据</button>
+                            <button class="btn btn-sm" onclick="toggleWsJsonPreview()" style="color:#666"><i class="ri-file-text-line"></i> 原始数据</button>
                         </div>
                         <div id="ws-json-preview" class="json-preview" style="display:none"></div>
                         <div id="ws-var-selector" class="var-selector">
-                            <div class="var-selector-title">📊 选择要提取的字段：</div>
+                            <div class="var-selector-title">选择要提取的字段：</div>
                             <div class="var-list"></div>
                         </div>
                     </div>
@@ -19142,12 +19148,12 @@ function showAddSourceModal() {
                 
                 <!-- Socket.IO 配置 -->
                 <div id="source-socketio-config" class="config-section" style="display:none">
-                    <div class="config-title">⚡ Socket.IO 配置</div>
+                    <div class="config-title">Socket.IO 配置</div>
                     <div class="form-group">
                         <label>服务器地址 <span class="required">*</span></label>
                         <div class="input-with-btn">
                             <input type="text" id="source-sio-url" class="input" placeholder="http://10.10.99.99:59090">
-                            <button class="btn btn-sm" onclick="testSioConnection()" id="btn-test-sio">🔍 测试</button>
+                            <button class="btn btn-sm btn-warning" onclick="testSioConnection()" id="btn-test-sio">测试</button>
                         </div>
                         <small style="color:var(--text-light)">Socket.IO v4 协议，使用 HTTP/HTTPS 地址</small>
                     </div>
@@ -19166,11 +19172,11 @@ function showAddSourceModal() {
                     <div id="sio-test-result" class="test-result-panel" style="display:none">
                         <div class="test-result-header">
                             <span class="test-status"></span>
-                            <button class="btn btn-sm" onclick="toggleSioJsonPreview()">📄 原始数据</button>
+                            <button class="btn btn-sm" onclick="toggleSioJsonPreview()" style="color:#666"><i class="ri-file-text-line"></i> 原始数据</button>
                         </div>
                         <div id="sio-json-preview" class="json-preview" style="display:none"></div>
                         <div id="sio-var-selector" class="var-selector">
-                            <div class="var-selector-title">📊 选择要提取的字段：</div>
+                            <div class="var-selector-title">选择要提取的字段：</div>
                             <div class="var-list"></div>
                         </div>
                     </div>
@@ -19192,7 +19198,7 @@ function showAddSourceModal() {
                 
                 <!-- 指令变量数据源配置 -->
                 <div id="source-variable-config" class="config-section" style="display:none">
-                    <div class="config-title">🔌 SSH 指令变量</div>
+                    <div class="config-title">SSH 指令变量</div>
                     
                     <!-- SSH 主机选择 -->
                     <div class="form-group">
@@ -19214,7 +19220,7 @@ function showAddSourceModal() {
                     
                     <!-- 选中命令的详情预览 -->
                     <div id="source-ssh-cmd-preview" class="ssh-cmd-preview" style="display:none">
-                        <div class="preview-title">📋 指令详情</div>
+                        <div class="preview-title">指令详情</div>
                         <div class="preview-content">
                             <div class="preview-row"><span class="preview-label">命令:</span> <code id="preview-command">-</code></div>
                             <div class="preview-row"><span class="preview-label">描述:</span> <span id="preview-desc">-</span></div>
@@ -19225,7 +19231,7 @@ function showAddSourceModal() {
                     <!-- 变量预览 -->
                     <div class="form-group">
                         <div class="ssh-vars-preview">
-                            <div class="preview-title">📦 将监视以下变量（需先执行指令）：</div>
+                            <div class="preview-title">将监视以下变量（需先执行指令）：</div>
                             <div id="ssh-vars-list" class="ssh-vars-list">
                                 <span class="text-muted">请先选择 SSH 主机和指令</span>
                             </div>
@@ -19246,9 +19252,9 @@ function showAddSourceModal() {
                     <span>创建后立即启用</span>
                 </label>
             </div>
-            <div class="modal-footer">
-                <button class="btn" onclick="closeModal('add-source-modal')">取消</button>
-                <button class="btn btn-primary" onclick="submitAddSource()">添加数据源</button>
+            <div class="modal-footer cc-compact-footer">
+                <button class="btn" onclick="closeModal('add-source-modal')" style="color:#666">取消</button>
+                <button class="btn btn-service-style" onclick="submitAddSource()"><i class="ri-database-2-line"></i> 添加数据源</button>
             </div>
         </div>
     `;
@@ -19279,7 +19285,7 @@ async function testRestConnection() {
     const statusSpan = resultPanel.querySelector('.test-status');
     
     btn.disabled = true;
-    btn.textContent = '⏳ 测试中...';
+    btn.innerHTML = '<i class="ri-hourglass-line"></i> 测试中...';
     resultPanel.style.display = 'block';
     statusSpan.innerHTML = '<span style="color:var(--warning-color)">🔄 正在请求...</span>';
     
@@ -19316,7 +19322,7 @@ async function testRestConnection() {
     }
     
     btn.disabled = false;
-    btn.textContent = '🔍 测试';
+    btn.innerHTML = '<i class="ri-search-line"></i> 测试';
 }
 
 /**
@@ -19341,9 +19347,9 @@ async function testWsConnection() {
     }
     
     btn.disabled = true;
-    btn.textContent = '⏳ 连接中...';
+    btn.innerHTML = '<i class="ri-hourglass-line"></i> 连接中...';
     resultPanel.style.display = 'block';
-    statusSpan.innerHTML = '<span style="color:var(--warning-color)">🔄 正在连接...</span>';
+    statusSpan.innerHTML = '<span style="color:var(--warning-color)">正在连接...</span>';
     
     try {
         // 通过 ESP32 测试 WebSocket（获取第一条消息）
@@ -19372,7 +19378,7 @@ async function testWsConnection() {
     }
     
     btn.disabled = false;
-    btn.textContent = '🔍 测试';
+    btn.innerHTML = '<i class="ri-search-line"></i> 测试';
 }
 
 /**
@@ -19394,9 +19400,9 @@ async function testSioConnection() {
     const eventInput = document.getElementById('source-sio-event');
     
     btn.disabled = true;
-    btn.textContent = '⏳ 连接中...';
+    btn.innerHTML = '<i class="ri-hourglass-line"></i> 连接中...';
     resultPanel.style.display = 'block';
-    
+
     // 显示连接阶段状态
     const statusText = event ? `正在连接并等待事件: ${event}` : '正在连接并自动发现事件...';
     statusSpan.innerHTML = `<span style="color:var(--warning-color)">🔄 ${statusText}</span>`;
@@ -19462,7 +19468,7 @@ async function testSioConnection() {
     }
     
     btn.disabled = false;
-    btn.textContent = '🔍 测试';
+    btn.innerHTML = '<i class="ri-search-line"></i> 测试';
 }
 
 /**
@@ -19898,6 +19904,21 @@ async function submitAddSource() {
     }
 }
 
+// 规则图标：后端仍存 emoji，前端显示用 RemixIcon
+const RULE_ICON_LIST = [
+    { emoji: '⚡', ri: 'ri-thunderstorms-line' }, { emoji: '🔔', ri: 'ri-notification-line' }, { emoji: '💡', ri: 'ri-lightbulb-line' },
+    { emoji: '🔌', ri: 'ri-plug-line' }, { emoji: '🌡️', ri: 'ri-temp-hot-line' }, { emoji: '⏰', ri: 'ri-timer-line' },
+    { emoji: '📊', ri: 'ri-bar-chart-line' }, { emoji: '🎯', ri: 'ri-focus-line' }, { emoji: '🚀', ri: 'ri-rocket-line' },
+    { emoji: '⚙️', ri: 'ri-settings-line' }, { emoji: '🔧', ri: 'ri-tools-line' }, { emoji: '🎵', ri: 'ri-music-line' },
+    { emoji: '📱', ri: 'ri-smartphone-line' }, { emoji: '🖥️', ri: 'ri-computer-line' }, { emoji: '🌐', ri: 'ri-global-line' },
+    { emoji: '🔒', ri: 'ri-lock-line' }, { emoji: '🛡️', ri: 'ri-shield-line' }, { emoji: '📝', ri: 'ri-file-text-line' },
+    { emoji: '🎬', ri: 'ri-movie-line' }, { emoji: '🔄', ri: 'ri-refresh-line' }
+];
+function getRuleIconRi(emoji) {
+    const o = RULE_ICON_LIST.find(x => x.emoji === emoji);
+    return o ? o.ri : 'ri-thunderstorms-line';
+}
+
 /**
  * 显示添加/编辑规则模态框
  * @param {object} ruleData - 编辑时传入现有规则数据，添加时为 null
@@ -19916,11 +19937,14 @@ function showAddRuleModal(ruleData = null) {
     const modal = document.createElement('div');
     modal.id = 'add-rule-modal';
     modal.className = 'modal';
+    const iconPickerHtml = RULE_ICON_LIST.map((x, i) =>
+        `<button type="button" class="icon-btn${i === 0 ? ' selected' : ''}" data-emoji="${x.emoji.replace(/"/g, '&quot;')}" onclick="selectRuleIcon(this.getAttribute('data-emoji'))"><i class="${x.ri}"></i></button>`
+    ).join('');
     modal.innerHTML = `
-        <div class="modal-content automation-modal wide">
+        <div class="modal-content cc-compact automation-modal wide" style="max-width:750px">
             <div class="modal-header">
-                <h3>${isEdit ? '✏️ 编辑规则' : '➕ 添加规则'}</h3>
-                <button class="modal-close" onclick="closeModal('add-rule-modal')">&times;</button>
+                <h2>${isEdit ? '编辑规则' : '添加规则'}</h2>
+                <button class="modal-close" onclick="closeModal('add-rule-modal')"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
                 <!-- 基本信息 -->
@@ -19939,16 +19963,14 @@ function showAddRuleModal(ruleData = null) {
                 <div class="form-group">
                     <label>图标</label>
                     <div class="icon-type-tabs">
-                        <button type="button" class="icon-tab active" onclick="switchRuleIconType('emoji')">😀 Emoji</button>
-                        <button type="button" class="icon-tab" onclick="switchRuleIconType('image')">🖼️ 图片</button>
+                        <button type="button" class="icon-tab active" onclick="switchRuleIconType('emoji')">图标</button>
+                        <button type="button" class="icon-tab" onclick="switchRuleIconType('image')">图片</button>
                     </div>
                     <div id="rule-icon-emoji-picker" class="icon-picker">
                         <div class="emoji-custom-input">
-                            <input type="text" id="rule-emoji-input" class="input" placeholder="输入或粘贴 emoji" maxlength="8" onchange="selectRuleIconFromInput()" style="width:100px;text-align:center;font-size:1.2em">
+                            <input type="text" id="rule-emoji-input" class="input" placeholder="自定义" maxlength="8" onchange="selectRuleIconFromInput()" style="width:100px;text-align:center;font-size:1.2em">
                         </div>
-                        ${['⚡','🔔','💡','🔌','🌡️','⏰','📊','🎯','🚀','⚙️','🔧','🎵','📱','🖥️','🌐','🔒','🛡️','📝','🎬','🔄'].map(e => 
-                            `<button type="button" class="icon-btn${e === '⚡' ? ' selected' : ''}" onclick="selectRuleIcon('${e}')">${e}</button>`
-                        ).join('')}
+                        ${iconPickerHtml}
                     </div>
                     <div id="rule-icon-image-picker" class="icon-image-picker hidden">
                         <div class="icon-preview-row">
@@ -19957,8 +19979,8 @@ function showAddRuleModal(ruleData = null) {
                             </div>
                             <div class="icon-path-input">
                                 <input type="text" id="rule-icon-path" readonly placeholder="选择图片...">
-                                <button type="button" class="btn btn-sm" onclick="browseRuleIconImage()">📂 浏览</button>
-                                <button type="button" class="btn btn-sm" onclick="clearRuleIconImage()">✕</button>
+                                <button type="button" class="btn btn-sm" onclick="browseRuleIconImage()" style="color:#666"><i class="ri-folder-open-line"></i> 浏览</button>
+                                <button type="button" class="btn btn-sm" onclick="clearRuleIconImage()" style="color:#666"><i class="ri-close-line"></i></button>
                             </div>
                         </div>
                     </div>
@@ -19967,11 +19989,11 @@ function showAddRuleModal(ruleData = null) {
                 </div>
                 
                 <div class="form-row three-col">
-                    <div class="form-group">
+                    <div class="form-group form-group-logic">
                         <label>条件逻辑</label>
                         <select id="rule-logic" class="input">
-                            <option value="and">全部满足 (AND)</option>
-                            <option value="or">任一满足 (OR)</option>
+                            <option value="and">AND</option>
+                            <option value="or">OR</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -19987,13 +20009,13 @@ function showAddRuleModal(ruleData = null) {
                 <!-- 条件配置 -->
                 <div class="config-section">
                     <div class="config-header">
-                        <span class="config-title">📋 触发条件</span>
+                        <span class="config-title">触发条件</span>
                         <div style="display:flex;gap:8px;align-items:center">
                             <label class="checkbox-label" style="margin:0;padding:0">
                                 <input type="checkbox" id="rule-manual-only" onchange="toggleManualOnly()">
                                 <span>仅手动触发</span>
                             </label>
-                            <button class="btn btn-sm btn-primary" id="add-condition-btn" onclick="addConditionRow()">➕ 添加</button>
+                            <button class="btn btn-sm btn-success" id="add-condition-btn" onclick="addConditionRow()"><i class="ri-add-line"></i> 添加</button>
                         </div>
                     </div>
                     <div id="conditions-container">
@@ -20004,20 +20026,22 @@ function showAddRuleModal(ruleData = null) {
                 <!-- 动作配置 -->
                 <div class="config-section">
                     <div class="config-header">
-                        <span class="config-title">⚡ 执行动作</span>
-                        <button class="btn btn-sm btn-primary" onclick="addActionTemplateRow()">➕ 添加</button>
+                        <span class="config-title">执行动作</span>
+                        <button class="btn btn-sm btn-success" onclick="addActionTemplateRow()"><i class="ri-add-line"></i> 添加</button>
                     </div>
-                    <div id="actions-container">
-                        <p class="empty-hint">从已创建的动作模板中选择要执行的动作</p>
+                    <div class="actions-hint-block">
+                        <div id="actions-container">
+                            <p class="empty-hint">从已创建的动作模板中选择要执行的动作</p>
+                        </div>
+                        <small class="form-hint" style="display:block;margin-top:8px;">
+                            <i class="ri-information-line"></i> 请先在"动作模板"区域创建动作，然后在这里选择使用
+                        </small>
                     </div>
-                    <small class="form-hint" style="display:block;margin-top:8px;">
-                        💡 请先在"动作模板"区域创建动作，然后在这里选择使用
-                    </small>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="btn" onclick="closeModal('add-rule-modal')">取消</button>
-                <button class="btn btn-primary" onclick="submitAddRule(${isEdit ? "'" + ruleData.id + "'" : ''})">${isEdit ? '保存修改' : '添加规则'}</button>
+            <div class="modal-footer cc-compact-footer">
+                <button class="btn" onclick="closeModal('add-rule-modal')" style="color:#666">取消</button>
+                <button class="btn btn-service-style" onclick="submitAddRule(${isEdit ? "'" + ruleData.id + "'" : ''})">${isEdit ? '<i class="ri-save-line"></i> 保存修改' : '<i class="ri-add-line"></i> 添加规则'}</button>
             </div>
         </div>
     `;
@@ -20090,7 +20114,7 @@ function toggleManualOnly() {
         // 禁用添加条件按钮，清空现有条件
         addBtn.disabled = true;
         addBtn.style.opacity = '0.5';
-        container.innerHTML = '<p class="empty-hint" style="color:var(--secondary-color)">👆 此规则仅可通过手动触发按钮执行</p>';
+        container.innerHTML = '<p class="empty-hint" style="color:var(--secondary-color)">此规则仅可通过手动触发按钮执行</p>';
     } else {
         // 启用添加条件按钮
         addBtn.disabled = false;
@@ -20124,9 +20148,10 @@ function switchRuleIconType(type) {
 function selectRuleIcon(icon) {
     document.getElementById('rule-icon').value = icon;
     document.getElementById('rule-icon-type').value = 'emoji';
-    document.getElementById('rule-emoji-input').value = icon;
+    const input = document.getElementById('rule-emoji-input');
+    if (input) input.value = icon;
     document.querySelectorAll('#add-rule-modal .icon-btn').forEach(btn => {
-        btn.classList.toggle('selected', btn.textContent === icon);
+        btn.classList.toggle('selected', btn.getAttribute('data-emoji') === icon);
     });
 }
 
@@ -21030,21 +21055,23 @@ function showExportSourceModal(sourceId) {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:600px">
-            <h2>📤 导出数据源配置</h2>
-            <p style="color:#666;font-size:0.9rem">导出数据源 <strong>${escapeHtml(sourceId)}</strong> 的配置为加密配置包</p>
-            
-            <div class="form-group">
-                <label>目标设备证书 (PEM)</label>
-                <textarea id="export-source-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
-                <div style="font-size:0.85em;color:#666;margin-top:4px">💡 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+        <div class="modal-content cc-compact" style="max-width:600px">
+            <div class="modal-header">
+                <h2>导出数据源配置</h2>
+                <button class="modal-close" onclick="hideExportSourceModal()"><i class="ri-close-line"></i></button>
             </div>
-            
-            <div id="export-source-result" class="result-box hidden" style="margin-top:10px"></div>
-            
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideExportSourceModal()">取消</button>
-                <button class="btn btn-primary" id="export-source-btn" onclick="doExportSource('${escapeHtml(sourceId)}')">📤 导出</button>
+            <div class="modal-body">
+                <p style="color:#666;font-size:0.9rem;margin-top:0">导出数据源 <strong>${escapeHtml(sourceId)}</strong> 的配置为加密配置包</p>
+                <div class="form-group">
+                    <label>目标设备证书 (PEM)</label>
+                    <textarea id="export-source-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
+                    <div style="font-size:0.85em;color:#666;margin-top:4px"><i class="ri-information-line"></i> 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+                </div>
+                <div id="export-source-result" class="result-box hidden" style="margin-top:10px"></div>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="hideExportSourceModal()" style="color:#666">取消</button>
+                    <button class="btn btn-service-style" id="export-source-btn" onclick="doExportSource('${escapeHtml(sourceId)}')"><i class="ri-download-line"></i> 导出</button>
+                </div>
             </div>
         </div>
     `;
@@ -21063,7 +21090,7 @@ async function doExportSource(sourceId) {
     const exportBtn = document.getElementById('export-source-btn');
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在生成配置包...';
+    resultBox.textContent = '正在生成配置包...';
     exportBtn.disabled = true;
     
     try {
@@ -21088,12 +21115,12 @@ async function doExportSource(sourceId) {
         URL.revokeObjectURL(url);
         
         resultBox.className = 'result-box success';
-        resultBox.textContent = '✅ 导出成功！';
+        resultBox.textContent = '导出成功';
         showToast(`已导出数据源配置: ${data.filename}`, 'success');
         setTimeout(() => hideExportSourceModal(), 1000);
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
     } finally {
         exportBtn.disabled = false;
     }
@@ -21112,34 +21139,35 @@ function showImportSourceModal() {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:600px">
-            <h2>📥 导入数据源配置</h2>
-            <p style="color:#666;font-size:0.9rem">选择 .tscfg 配置包文件以导入数据源</p>
-            
-            <div id="import-source-step1">
-                <div class="form-group" style="margin-top:15px">
-                    <label>选择文件</label>
-                    <input type="file" id="import-source-file" class="form-control" accept=".tscfg" onchange="previewSourceImport()">
-                </div>
+        <div class="modal-content cc-compact" style="max-width:600px">
+            <div class="modal-header">
+                <h2>导入数据源配置</h2>
+                <button class="modal-close" onclick="hideImportSourceModal()"><i class="ri-close-line"></i></button>
             </div>
-            
-            <div id="import-source-step2" style="display:none">
-                <div class="info-card" style="background:#f8f9fa;padding:15px;border-radius:8px;margin-top:15px">
-                    <h4 style="margin:0 0 10px 0">📋 配置包内容</h4>
-                    <div id="import-source-preview"></div>
+            <div class="modal-body">
+                <p style="color:#666;font-size:0.9rem;margin-top:0">选择 .tscfg 配置包文件以导入数据源</p>
+                <div id="import-source-step1">
+                    <div class="form-group" style="margin-top:15px">
+                        <label>选择文件</label>
+                        <input type="file" id="import-source-file" class="form-control" accept=".tscfg" onchange="previewSourceImport()">
+                    </div>
                 </div>
-                <div class="form-group" style="margin-top:15px">
-                    <label>
-                        <input type="checkbox" id="import-source-overwrite"> 覆盖已存在的配置
-                    </label>
+                <div id="import-source-step2" style="display:none">
+                    <div class="info-card" style="background:#fff;padding:15px;border-radius:8px;margin-top:15px;border:1px solid #eee">
+                        <h4 style="margin:0 0 10px 0;font-size:0.95rem">配置包内容</h4>
+                        <div id="import-source-preview"></div>
+                    </div>
+                    <div class="form-group" style="margin-top:15px">
+                        <label>
+                            <input type="checkbox" id="import-source-overwrite"> 覆盖已存在的配置
+                        </label>
+                    </div>
                 </div>
-            </div>
-            
-            <div id="import-source-result" class="result-box hidden" style="margin-top:10px"></div>
-            
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideImportSourceModal()">取消</button>
-                <button class="btn btn-primary" id="import-source-btn" onclick="confirmSourceImport()" disabled>📥 确认导入</button>
+                <div id="import-source-result" class="result-box hidden" style="margin-top:10px"></div>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="hideImportSourceModal()" style="color:#666">取消</button>
+                    <button class="btn btn-service-style" id="import-source-btn" onclick="confirmSourceImport()" disabled><i class="ri-download-line"></i> 确认导入</button>
+                </div>
             </div>
         </div>
     `;
@@ -21166,7 +21194,7 @@ async function previewSourceImport() {
     const file = fileInput.files[0];
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在验证配置包...';
+    resultBox.textContent = '正在验证配置包...';
     importBtn.disabled = true;
     step2.style.display = 'none';
     
@@ -21186,26 +21214,26 @@ async function previewSourceImport() {
             let html = `
                 <table style="width:100%;font-size:0.9em">
                     <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#666">类型:</td><td>📡 数据源</td></tr>
-                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '✅ 官方' : ''}</td></tr>
+                    <tr><td style="color:#666">类型:</td><td>数据源</td></tr>
+                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
                     <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
                 </table>
             `;
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">⚠️ 该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">该配置已存在，导入将覆盖现有文件</div>`;
             }
             previewDiv.innerHTML = html;
             step2.style.display = 'block';
             resultBox.className = 'result-box success';
-            resultBox.textContent = '✅ 签名验证通过';
+            resultBox.textContent = '签名验证通过';
             importBtn.disabled = false;
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '❌ ' + (result.message || '无法验证配置包');
+            resultBox.textContent = (result.message || '无法验证配置包');
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
     }
 }
 
@@ -21220,7 +21248,7 @@ async function confirmSourceImport() {
     }
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在保存配置...';
+    resultBox.textContent = '正在保存配置...';
     importBtn.disabled = true;
     
     try {
@@ -21236,22 +21264,22 @@ async function confirmSourceImport() {
             const data = result.data;
             if (data?.exists && !data?.imported) {
                 resultBox.className = 'result-box warning';
-                resultBox.textContent = `⚠️ 配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                resultBox.textContent = `配置 ${data.id} 已存在，请勾选「覆盖」选项`;
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
-                resultBox.innerHTML = `✅ 已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
+                resultBox.innerHTML = `已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
                 showToast(`已导入配置，重启后生效`, 'success');
                 setTimeout(() => hideImportSourceModal(), 2000);
             }
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '❌ ' + (result.message || '导入失败');
+            resultBox.textContent = (result.message || '导入失败');
             importBtn.disabled = false;
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
         importBtn.disabled = false;
     }
 }
@@ -21269,21 +21297,23 @@ function showExportRuleModal(ruleId) {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:600px">
-            <h2>📤 导出规则配置</h2>
-            <p style="color:#666;font-size:0.9rem">导出规则 <strong>${escapeHtml(ruleId)}</strong> 的配置为加密配置包</p>
-            
-            <div class="form-group">
-                <label>目标设备证书 (PEM)</label>
-                <textarea id="export-rule-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
-                <div style="font-size:0.85em;color:#666;margin-top:4px">💡 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+        <div class="modal-content cc-compact" style="max-width:600px">
+            <div class="modal-header">
+                <h2>导出规则配置</h2>
+                <button class="modal-close" onclick="hideExportRuleModal()"><i class="ri-close-line"></i></button>
             </div>
-            
-            <div id="export-rule-result" class="result-box hidden" style="margin-top:10px"></div>
-            
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideExportRuleModal()">取消</button>
-                <button class="btn btn-primary" id="export-rule-btn" onclick="doExportRule('${escapeHtml(ruleId)}')">📤 导出</button>
+            <div class="modal-body">
+                <p style="color:#666;font-size:0.9rem;margin-top:0">导出规则 <strong>${escapeHtml(ruleId)}</strong> 的配置为加密配置包</p>
+                <div class="form-group">
+                    <label>目标设备证书 (PEM)</label>
+                    <textarea id="export-rule-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
+                    <div style="font-size:0.85em;color:#666;margin-top:4px"><i class="ri-information-line"></i> 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+                </div>
+                <div id="export-rule-result" class="result-box hidden" style="margin-top:10px"></div>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="hideExportRuleModal()" style="color:#666">取消</button>
+                    <button class="btn btn-service-style" id="export-rule-btn" onclick="doExportRule('${escapeHtml(ruleId)}')"><i class="ri-download-line"></i> 导出</button>
+                </div>
             </div>
         </div>
     `;
@@ -21302,7 +21332,7 @@ async function doExportRule(ruleId) {
     const exportBtn = document.getElementById('export-rule-btn');
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在生成配置包...';
+    resultBox.textContent = '正在生成配置包...';
     exportBtn.disabled = true;
     
     try {
@@ -21327,12 +21357,12 @@ async function doExportRule(ruleId) {
         URL.revokeObjectURL(url);
         
         resultBox.className = 'result-box success';
-        resultBox.textContent = '✅ 导出成功！';
+        resultBox.textContent = '导出成功';
         showToast(`已导出规则配置: ${data.filename}`, 'success');
         setTimeout(() => hideExportRuleModal(), 1000);
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
     } finally {
         exportBtn.disabled = false;
     }
@@ -21351,34 +21381,35 @@ function showImportRuleModal() {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:600px">
-            <h2>📥 导入规则配置</h2>
-            <p style="color:#666;font-size:0.9rem">选择 .tscfg 配置包文件以导入规则</p>
-            
-            <div id="import-rule-step1">
-                <div class="form-group" style="margin-top:15px">
-                    <label>选择文件</label>
-                    <input type="file" id="import-rule-file" class="form-control" accept=".tscfg" onchange="previewRuleImport()">
-                </div>
+        <div class="modal-content cc-compact" style="max-width:600px">
+            <div class="modal-header">
+                <h2>导入规则配置</h2>
+                <button class="modal-close" onclick="hideImportRuleModal()"><i class="ri-close-line"></i></button>
             </div>
-            
-            <div id="import-rule-step2" style="display:none">
-                <div class="info-card" style="background:#f8f9fa;padding:15px;border-radius:8px;margin-top:15px">
-                    <h4 style="margin:0 0 10px 0">📋 配置包内容</h4>
-                    <div id="import-rule-preview"></div>
+            <div class="modal-body">
+                <p style="color:#666;font-size:0.9rem;margin-top:0">选择 .tscfg 配置包文件以导入规则</p>
+                <div id="import-rule-step1">
+                    <div class="form-group" style="margin-top:15px">
+                        <label>选择文件</label>
+                        <input type="file" id="import-rule-file" class="form-control" accept=".tscfg" onchange="previewRuleImport()">
+                    </div>
                 </div>
-                <div class="form-group" style="margin-top:15px">
-                    <label>
-                        <input type="checkbox" id="import-rule-overwrite"> 覆盖已存在的配置
-                    </label>
+                <div id="import-rule-step2" style="display:none">
+                    <div class="info-card" style="background:#fff;padding:15px;border-radius:8px;margin-top:15px;border:1px solid #eee">
+                        <h4 style="margin:0 0 10px 0;font-size:0.95rem">配置包内容</h4>
+                        <div id="import-rule-preview"></div>
+                    </div>
+                    <div class="form-group" style="margin-top:15px">
+                        <label>
+                            <input type="checkbox" id="import-rule-overwrite"> 覆盖已存在的配置
+                        </label>
+                    </div>
                 </div>
-            </div>
-            
-            <div id="import-rule-result" class="result-box hidden" style="margin-top:10px"></div>
-            
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideImportRuleModal()">取消</button>
-                <button class="btn btn-primary" id="import-rule-btn" onclick="confirmRuleImport()" disabled>📥 确认导入</button>
+                <div id="import-rule-result" class="result-box hidden" style="margin-top:10px"></div>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="hideImportRuleModal()" style="color:#666">取消</button>
+                    <button class="btn btn-service-style" id="import-rule-btn" onclick="confirmRuleImport()" disabled><i class="ri-download-line"></i> 确认导入</button>
+                </div>
             </div>
         </div>
     `;
@@ -21405,7 +21436,7 @@ async function previewRuleImport() {
     const file = fileInput.files[0];
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在验证配置包...';
+    resultBox.textContent = '正在验证配置包...';
     importBtn.disabled = true;
     step2.style.display = 'none';
     
@@ -21425,26 +21456,26 @@ async function previewRuleImport() {
             let html = `
                 <table style="width:100%;font-size:0.9em">
                     <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#666">类型:</td><td>📋 自动化规则</td></tr>
-                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '✅ 官方' : ''}</td></tr>
+                    <tr><td style="color:#666">类型:</td><td>自动化规则</td></tr>
+                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
                     <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
                 </table>
             `;
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">⚠️ 该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">该配置已存在，导入将覆盖现有文件</div>`;
             }
             previewDiv.innerHTML = html;
             step2.style.display = 'block';
             resultBox.className = 'result-box success';
-            resultBox.textContent = '✅ 签名验证通过';
+            resultBox.textContent = '签名验证通过';
             importBtn.disabled = false;
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '❌ ' + (result.message || '无法验证配置包');
+            resultBox.textContent = (result.message || '无法验证配置包');
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
     }
 }
 
@@ -21459,7 +21490,7 @@ async function confirmRuleImport() {
     }
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在保存配置...';
+    resultBox.textContent = '正在保存配置...';
     importBtn.disabled = true;
     
     try {
@@ -21475,22 +21506,22 @@ async function confirmRuleImport() {
             const data = result.data;
             if (data?.exists && !data?.imported) {
                 resultBox.className = 'result-box warning';
-                resultBox.textContent = `⚠️ 配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                resultBox.textContent = `配置 ${data.id} 已存在，请勾选「覆盖」选项`;
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
-                resultBox.innerHTML = `✅ 已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
+                resultBox.innerHTML = `已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
                 showToast(`已导入配置，重启后生效`, 'success');
                 setTimeout(() => hideImportRuleModal(), 2000);
             }
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '❌ ' + (result.message || '导入失败');
+            resultBox.textContent = (result.message || '导入失败');
             importBtn.disabled = false;
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
         importBtn.disabled = false;
     }
 }
@@ -21508,21 +21539,23 @@ function showExportActionModal(actionId) {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:600px">
-            <h2>📤 导出动作模板</h2>
-            <p style="color:#666;font-size:0.9rem">导出动作模板 <strong>${escapeHtml(actionId)}</strong> 的配置为加密配置包</p>
-            
-            <div class="form-group">
-                <label>目标设备证书 (PEM)</label>
-                <textarea id="export-action-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
-                <div style="font-size:0.85em;color:#666;margin-top:4px">💡 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+        <div class="modal-content cc-compact" style="max-width:600px">
+            <div class="modal-header">
+                <h2>导出动作模板</h2>
+                <button class="modal-close" onclick="hideExportActionModal()"><i class="ri-close-line"></i></button>
             </div>
-            
-            <div id="export-action-result" class="result-box hidden" style="margin-top:10px"></div>
-            
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideExportActionModal()">取消</button>
-                <button class="btn btn-primary" id="export-action-btn" onclick="doExportAction('${escapeHtml(actionId)}')">📤 导出</button>
+            <div class="modal-body">
+                <p style="color:#666;font-size:0.9rem;margin-top:0">导出动作模板 <strong>${escapeHtml(actionId)}</strong> 的配置为加密配置包</p>
+                <div class="form-group">
+                    <label>目标设备证书 (PEM)</label>
+                    <textarea id="export-action-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
+                    <div style="font-size:0.85em;color:#666;margin-top:4px"><i class="ri-information-line"></i> 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+                </div>
+                <div id="export-action-result" class="result-box hidden" style="margin-top:10px"></div>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="hideExportActionModal()" style="color:#666">取消</button>
+                    <button class="btn btn-service-style" id="export-action-btn" onclick="doExportAction('${escapeHtml(actionId)}')"><i class="ri-download-line"></i> 导出</button>
+                </div>
             </div>
         </div>
     `;
@@ -21541,7 +21574,7 @@ async function doExportAction(actionId) {
     const exportBtn = document.getElementById('export-action-btn');
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在生成配置包...';
+    resultBox.textContent = '正在生成配置包...';
     exportBtn.disabled = true;
     
     try {
@@ -21566,12 +21599,12 @@ async function doExportAction(actionId) {
         URL.revokeObjectURL(url);
         
         resultBox.className = 'result-box success';
-        resultBox.textContent = '✅ 导出成功！';
+        resultBox.textContent = '导出成功';
         showToast(`已导出动作模板: ${data.filename}`, 'success');
         setTimeout(() => hideExportActionModal(), 1000);
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
     } finally {
         exportBtn.disabled = false;
     }
@@ -21590,34 +21623,35 @@ function showImportActionModal() {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:600px">
-            <h2>📥 导入动作模板</h2>
-            <p style="color:#666;font-size:0.9rem">选择 .tscfg 配置包文件以导入动作模板</p>
-            
-            <div id="import-action-step1">
-                <div class="form-group" style="margin-top:15px">
-                    <label>选择文件</label>
-                    <input type="file" id="import-action-file" class="form-control" accept=".tscfg" onchange="previewActionImport()">
-                </div>
+        <div class="modal-content cc-compact" style="max-width:600px">
+            <div class="modal-header">
+                <h2>导入动作模板</h2>
+                <button class="modal-close" onclick="hideImportActionModal()"><i class="ri-close-line"></i></button>
             </div>
-            
-            <div id="import-action-step2" style="display:none">
-                <div class="info-card" style="background:#f8f9fa;padding:15px;border-radius:8px;margin-top:15px">
-                    <h4 style="margin:0 0 10px 0">📋 配置包内容</h4>
-                    <div id="import-action-preview"></div>
+            <div class="modal-body">
+                <p style="color:#666;font-size:0.9rem;margin-top:0">选择 .tscfg 配置包文件以导入动作模板</p>
+                <div id="import-action-step1">
+                    <div class="form-group" style="margin-top:15px">
+                        <label>选择文件</label>
+                        <input type="file" id="import-action-file" class="form-control" accept=".tscfg" onchange="previewActionImport()">
+                    </div>
                 </div>
-                <div class="form-group" style="margin-top:15px">
-                    <label>
-                        <input type="checkbox" id="import-action-overwrite"> 覆盖已存在的配置
-                    </label>
+                <div id="import-action-step2" style="display:none">
+                    <div class="info-card" style="background:#fff;padding:15px;border-radius:8px;margin-top:15px;border:1px solid #eee">
+                        <h4 style="margin:0 0 10px 0;font-size:0.95rem">配置包内容</h4>
+                        <div id="import-action-preview"></div>
+                    </div>
+                    <div class="form-group" style="margin-top:15px">
+                        <label>
+                            <input type="checkbox" id="import-action-overwrite"> 覆盖已存在的配置
+                        </label>
+                    </div>
                 </div>
-            </div>
-            
-            <div id="import-action-result" class="result-box hidden" style="margin-top:10px"></div>
-            
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideImportActionModal()">取消</button>
-                <button class="btn btn-primary" id="import-action-btn" onclick="confirmActionImport()" disabled>📥 确认导入</button>
+                <div id="import-action-result" class="result-box hidden" style="margin-top:10px"></div>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="hideImportActionModal()" style="color:#666">取消</button>
+                    <button class="btn btn-service-style" id="import-action-btn" onclick="confirmActionImport()" disabled><i class="ri-download-line"></i> 确认导入</button>
+                </div>
             </div>
         </div>
     `;
@@ -21644,7 +21678,7 @@ async function previewActionImport() {
     const file = fileInput.files[0];
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在验证配置包...';
+    resultBox.textContent = '正在验证配置包...';
     importBtn.disabled = true;
     step2.style.display = 'none';
     
@@ -21664,26 +21698,26 @@ async function previewActionImport() {
             let html = `
                 <table style="width:100%;font-size:0.9em">
                     <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#666">类型:</td><td>⚡ 动作模板</td></tr>
-                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '✅ 官方' : ''}</td></tr>
+                    <tr><td style="color:#666">类型:</td><td>动作模板</td></tr>
+                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
                     <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
                 </table>
             `;
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">⚠️ 该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">该配置已存在，导入将覆盖现有文件</div>`;
             }
             previewDiv.innerHTML = html;
             step2.style.display = 'block';
             resultBox.className = 'result-box success';
-            resultBox.textContent = '✅ 签名验证通过';
+            resultBox.textContent = '签名验证通过';
             importBtn.disabled = false;
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '❌ ' + (result.message || '无法验证配置包');
+            resultBox.textContent = (result.message || '无法验证配置包');
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
     }
 }
 
@@ -21698,7 +21732,7 @@ async function confirmActionImport() {
     }
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在保存配置...';
+    resultBox.textContent = '正在保存配置...';
     importBtn.disabled = true;
     
     try {
@@ -21714,22 +21748,22 @@ async function confirmActionImport() {
             const data = result.data;
             if (data?.exists && !data?.imported) {
                 resultBox.className = 'result-box warning';
-                resultBox.textContent = `⚠️ 配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                resultBox.textContent = `配置 ${data.id} 已存在，请勾选「覆盖」选项`;
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
-                resultBox.innerHTML = `✅ 已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
+                resultBox.innerHTML = `已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
                 showToast(`已导入配置，重启后生效`, 'success');
                 setTimeout(() => hideImportActionModal(), 2000);
             }
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '❌ ' + (result.message || '导入失败');
+            resultBox.textContent = (result.message || '导入失败');
             importBtn.disabled = false;
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
         importBtn.disabled = false;
     }
 }
