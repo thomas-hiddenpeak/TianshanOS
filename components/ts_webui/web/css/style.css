@@ -327,7 +327,8 @@ body {
     line-height: 1.2; /* 确保标题紧贴顶部 */
 }
 
-.cc-compact #led-modal-header-actions {
+.cc-compact #led-modal-header-actions,
+.cc-compact #command-modal-header-actions {
     display: flex;
     gap: 8px;
     margin-right: 35px; /* 为关闭按钮留位 */
@@ -642,16 +643,12 @@ body {
 }
 
 .cc-actions {
-    position: sticky;
-    bottom: -20px;
-    margin: 20px -20px -20px -20px;
-    padding: 16px 24px;
-    background: #fff;
-    border-top: 1px solid #eee;
+    margin-top: 20px;
+    padding: 0;
+    background: transparent;
     display: flex;
     justify-content: flex-end;
     gap: 12px;
-    z-index: 100;
 }
 
 .cc-actions .btn {
@@ -2314,6 +2311,19 @@ body {
     padding: 30px;
     border-radius: 12px;
     text-align: center;
+}
+
+.commands-list .empty-state {
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.commands-list .empty-state p {
+    margin: 0 0 6px 0;
 }
 
 .empty-state p {

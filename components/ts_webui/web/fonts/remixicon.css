@@ -84,3 +84,16 @@
 .ri-qr-code-line:before { content: "\f03d"; }
 .ri-text:before { content: "\f201"; }
 .ri-color-filter-line:before { content: "\f42e"; }
+
+/* Icons for Commands page icon picker */
+.ri-rocket-line:before { content: "\f096"; }
+.ri-thunderstorms-line:before { content: "\f209"; }
+.ri-tools-line:before { content: "\f21b"; }
+.ri-bar-chart-line:before { content: "\ea9e"; }
+.ri-search-line:before { content: "\f0d1"; }
+.ri-stop-line:before { content: "\f1a1"; }
+.ri-play-line:before { content: "\f00b"; }
+.ri-settings-line:before { content: "\f0ee"; }
+
+/* Host card icon */
+.ri-server-line:before { content: "\f0e0"; }

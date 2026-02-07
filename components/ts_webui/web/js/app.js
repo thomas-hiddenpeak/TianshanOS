@@ -8166,7 +8166,7 @@ async function loadSshCommands() {
                         name: cmd.name,
                         command: cmd.command,
                         desc: cmd.desc || '',
-                        icon: cmd.icon || '🚀',
+                        icon: cmd.icon || 'ri-rocket-line',
                         nohup: cmd.nohup || false,
                         expectPattern: cmd.expectPattern || '',
                         failPattern: cmd.failPattern || '',
@@ -8194,7 +8194,7 @@ async function loadSshCommands() {
                     name: cmd.name,
                     command: cmd.command,
                     desc: cmd.desc || '',
-                    icon: cmd.icon || '🚀',
+                    icon: cmd.icon || 'ri-rocket-line',
                     nohup: cmd.nohup || false,
                     expectPattern: cmd.expectPattern || '',
                     failPattern: cmd.failPattern || '',
@@ -8310,10 +8310,10 @@ async function loadCommandsPage() {
             <!-- 主机选择和指令列表 -->
             <div class="section">
                 <div class="section-header">
-                    <h2>🖥️ 选择主机</h2>
+                    <h2>选择主机</h2>
                     <div class="section-actions">
-                        <button class="btn" onclick="showImportSshCommandModal()" style="background:#17a2b8;color:white">📥 导入指令</button>
-                        <button class="btn btn-primary" onclick="showAddCommandModal()">➕ 新建指令</button>
+                        <button class="btn btn-small btn-service-style" onclick="showImportSshCommandModal()" style="font-size:0.85em"><i class="ri-download-line"></i> 导入指令</button>
+                        <button class="btn btn-small btn-service-style" onclick="showAddCommandModal()" style="font-size:0.85em"><i class="ri-add-line"></i> 新建指令</button>
                     </div>
                 </div>
                 <div id="host-selector" class="host-selector">
@@ -8323,7 +8323,7 @@ async function loadCommandsPage() {
             
             <!-- 指令列表 -->
             <div class="section">
-                <h2>📋 指令列表</h2>
+                <h2>指令列表</h2>
                 <div id="commands-list" class="commands-list">
                     <div class="empty-state">请先选择一个主机</div>
                 </div>
@@ -8385,9 +8385,10 @@ async function loadCommandsPage() {
         
         <!-- 新建/编辑指令模态框 -->
         <div id="command-modal" class="modal hidden">
-            <div class="modal-content" style="max-width:500px">
+            <div class="modal-content cc-compact" style="max-width:560px">
                 <div class="modal-header">
-                    <h2 id="command-modal-title">➕ 新建指令</h2>
+                    <h2 id="command-modal-title">新建指令</h2>
+                    <div id="command-modal-header-actions"></div>
                     <button class="modal-close" onclick="closeCommandModal()">&times;</button>
                 </div>
                 <div class="modal-body">
@@ -8416,12 +8417,12 @@ async function loadCommandsPage() {
                         <div class="form-group">
                             <label>图标</label>
                             <div class="icon-type-tabs">
-                                <button type="button" class="icon-tab active" onclick="switchCmdIconType('emoji')">😀 Emoji</button>
-                                <button type="button" class="icon-tab" onclick="switchCmdIconType('image')">🖼️ 图片</button>
+                                <button type="button" class="icon-tab active" onclick="switchCmdIconType('emoji')"><i class="ri-emotion-line"></i> 图标</button>
+                                <button type="button" class="icon-tab" onclick="switchCmdIconType('image')"><i class="ri-image-line"></i> 图片</button>
                             </div>
                             <div id="icon-emoji-picker" class="icon-picker">
-                                ${['🚀', '🔄', '⚡', '🛠️', '📊', '🔍', '💾', '🗑️', '⏹️', '▶️', '📦', '🔧'].map(icon => 
-                                    `<button type="button" class="icon-btn" onclick="selectCmdIcon('${icon}')">${icon}</button>`
+                                ${['ri-rocket-line', 'ri-refresh-line', 'ri-thunderstorms-line', 'ri-tools-line', 'ri-bar-chart-line', 'ri-search-line', 'ri-save-line', 'ri-delete-bin-line', 'ri-stop-line', 'ri-play-line', 'ri-box-3-line', 'ri-settings-line'].map(icon => 
+                                    `<button type="button" class="icon-btn" data-icon="${icon}" onclick="selectCmdIcon('${icon}')"><i class="${icon}"></i></button>`
                                 ).join('')}
                             </div>
                             <div id="icon-image-picker" class="icon-image-picker hidden">
@@ -8431,23 +8432,23 @@ async function loadCommandsPage() {
                                     </div>
                                     <div class="icon-path-input">
                                         <input type="text" id="cmd-icon-path" class="input" placeholder="/sdcard/images/..." readonly>
-                                        <button type="button" class="btn btn-sm" onclick="browseCmdIconImage()">📂 浏览</button>
-                                        <button type="button" class="btn btn-sm btn-danger" onclick="clearCmdIconImage()" title="清除">✕</button>
+                                        <button type="button" class="btn btn-sm" onclick="browseCmdIconImage()"><i class="ri-folder-open-line"></i> 浏览</button>
+                                        <button type="button" class="btn btn-sm btn-danger" onclick="clearCmdIconImage()" title="清除"><i class="ri-close-line"></i></button>
                                     </div>
                                 </div>
                             </div>
-                            <input type="hidden" id="cmd-icon" value="🚀">
+                            <input type="hidden" id="cmd-icon" value="ri-rocket-line">
                             <input type="hidden" id="cmd-icon-type" value="emoji">
                         </div>
                         
                         <!-- 高级选项 -->
                         <details class="advanced-options">
-                            <summary>⚙️ 高级选项（模式匹配）</summary>
+                            <summary><i class="ri-settings-3-line"></i> 高级选项（模式匹配）</summary>
                             <div class="advanced-content">
                                 <div class="form-group">
                                     <label class="checkbox-label">
                                         <input type="checkbox" id="cmd-nohup" onchange="updateNohupState()">
-                                        <span>🚀 后台执行（nohup）</span>
+                                        <span><i class="ri-rocket-line"></i> 后台执行（nohup）</span>
                                     </label>
                                     <small>命令将在服务器后台运行，SSH 断开后不受影响。适合重启、长时间任务等场景</small>
                                 </div>
@@ -8463,27 +8464,27 @@ async function loadCommandsPage() {
                                     </div>
                                     <div id="cmd-service-mode-fields" class="service-mode-fields hidden">
                                         <div class="form-group">
-                                            <label>✅ 就绪匹配模式 *</label>
+                                            <label><i class="ri-check-line"></i> 就绪匹配模式 *</label>
                                             <input type="text" id="cmd-ready-pattern" placeholder="例如：Running on|Server started">
                                             <small>日志中出现此字符串时标记为就绪（支持 | 分隔多个模式）</small>
                                         </div>
                                         <div class="form-group">
-                                            <label>❌ 失败匹配模式</label>
+                                            <label><i class="ri-close-line"></i> 失败匹配模式</label>
                                             <input type="text" id="cmd-service-fail-pattern" placeholder="例如：error|failed|Exception">
                                             <small>日志中出现此字符串时标记为失败（可选，支持 | 分隔多个模式）</small>
                                         </div>
                                         <div class="form-group">
-                                            <label>⏱️ 超时（秒）</label>
+                                            <label><i class="ri-time-line"></i> 超时（秒）</label>
                                             <input type="number" id="cmd-ready-timeout" value="120" min="10" max="600" step="10">
                                             <small>超过此时间未匹配到就绪模式则标记为 timeout</small>
                                         </div>
                                         <div class="form-group">
-                                            <label>🔄 检测间隔（毫秒）</label>
+                                            <label><i class="ri-refresh-line"></i> 检测间隔（毫秒）</label>
                                             <input type="number" id="cmd-ready-interval" value="5000" min="1000" max="30000" step="1000">
                                             <small>每隔多久检测一次日志文件</small>
                                         </div>
                                         <div class="service-mode-hint">
-                                            <small>💡 服务启动后，系统将监测日志文件：<code>/tmp/ts_nohup_[命令名].log</code></small><br>
+                                            <small>服务启动后，系统将监测日志文件：<code>/tmp/ts_nohup_[命令名].log</code></small><br>
                                             <small>变量 <code>[变量名].status</code> 会根据日志匹配自动更新状态</small>
                                         </div>
                                     </div>
@@ -8491,36 +8492,36 @@ async function loadCommandsPage() {
                                 
                                 <!-- 存储变量名（独立字段，nohup 模式下也可用） -->
                                 <div class="form-group" id="cmd-var-name-group">
-                                    <label>📝 存储变量名</label>
+                                    <label><i class="ri-file-text-line"></i> 存储变量名</label>
                                     <input type="text" id="cmd-var-name" placeholder="例如：ping_test">
                                     <small id="cmd-var-name-hint">执行结果将存储为 \${变量名.status}、\${变量名.extracted} 等，可在后续命令中引用</small>
                                 </div>
                                 
                                 <div id="cmd-pattern-options">
                                     <div class="form-group">
-                                        <label>✅ 成功匹配模式</label>
+                                        <label><i class="ri-check-line"></i> 成功匹配模式</label>
                                         <input type="text" id="cmd-expect-pattern" placeholder="例如：active (running)" oninput="updateTimeoutState()">
                                         <small>输出中包含此文本时标记为成功</small>
                                     </div>
                                     <div class="form-group">
-                                        <label>❌ 失败匹配模式</label>
+                                        <label><i class="ri-close-line"></i> 失败匹配模式</label>
                                         <input type="text" id="cmd-fail-pattern" placeholder="例如：failed|error" oninput="updateTimeoutState()">
                                         <small>输出中包含此文本时标记为失败</small>
                                     </div>
                                     <div class="form-group">
-                                        <label>📋 提取模式</label>
+                                        <label><i class="ri-file-list-3-line"></i> 提取模式</label>
                                         <input type="text" id="cmd-extract-pattern" placeholder="例如：version: (.*)">
                                         <small>从输出中提取匹配内容，使用 (.*) 捕获组</small>
                                     </div>
                                     <div class="form-group">
                                         <label class="checkbox-label">
                                             <input type="checkbox" id="cmd-stop-on-match" onchange="updateTimeoutState()">
-                                            <span>⏹️ 匹配后自动停止</span>
+                                            <span><i class="ri-stop-line"></i> 匹配后自动停止</span>
                                         </label>
                                         <small>适用于 ping 等持续运行的命令，匹配成功后自动终止</small>
                                     </div>
                                     <div class="form-group" id="cmd-timeout-group">
-                                        <label>⏱️ 超时（秒）</label>
+                                        <label><i class="ri-time-line"></i> 超时（秒）</label>
                                         <input type="number" id="cmd-timeout" value="30" min="5" max="300" step="5">
                                         <small id="cmd-timeout-hint">超时仅在设置了成功/失败模式或勾选了"匹配后停止"时有效</small>
                                     </div>
@@ -8529,8 +8530,8 @@ async function loadCommandsPage() {
                         </details>
                         
                         <div class="form-actions">
-                            <button type="button" class="btn" onclick="closeCommandModal()">取消</button>
-                            <button type="submit" class="btn btn-primary" onclick="saveCommand()">保存</button>
+                            <button type="button" class="btn" onclick="closeCommandModal()" style="color:#666">取消</button>
+                            <button type="submit" class="btn btn-service-style" onclick="saveCommand()">保存</button>
                         </div>
                     </form>
                 </div>
@@ -8556,6 +8557,19 @@ function addCommandsPageStyles() {
     const style = document.createElement('style');
     style.id = 'commands-page-styles';
     style.textContent = `
+        .page-commands .section h2, .page-commands .section-header h2 { font-size: 1rem; }
+        .page-commands .commands-list .empty-state {
+            text-align: center;
+            min-height: 200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            grid-column: 1 / -1;
+        }
+        .page-commands .section { margin-top: 20px; }
+        .page-commands .section:first-child { margin-top: 0; }
         .host-selector {
             display: flex;
             flex-wrap: wrap;
@@ -8569,6 +8583,15 @@ function addCommandsPageStyles() {
             cursor: pointer;
             transition: all 0.2s;
             min-width: 180px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .host-card .host-icon {
+            font-size: 2.5em;
+            color: var(--primary);
+            line-height: 1;
+            align-self: center;
         }
         .host-card:hover {
             border-color: var(--primary);
@@ -8591,6 +8614,7 @@ function addCommandsPageStyles() {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
             gap: 12px;
+            min-height: 220px;
         }
         .command-card {
             background: var(--bg-secondary);
@@ -8896,8 +8920,11 @@ async function loadHostSelector() {
             <div class="host-card ${selectedHostId === h.id ? 'selected' : ''}" 
                  onclick="selectHost('${escapeHtml(h.id)}')" 
                  data-host-id="${escapeHtml(h.id)}">
-                <div class="host-name">🖥️ ${escapeHtml(h.id)}</div>
-                <div class="host-info">${escapeHtml(h.username)}@${escapeHtml(h.host)}:${h.port}</div>
+                <i class="ri-server-line host-icon"></i>
+                <div class="host-card-content">
+                    <div class="host-name">${escapeHtml(h.id)}</div>
+                    <div class="host-info">${escapeHtml(h.username)}@${escapeHtml(h.host)}:${h.port}</div>
+                </div>
             </div>
         `).join('');
         
@@ -8916,10 +8943,8 @@ async function loadHostSelector() {
         
         container.innerHTML = html;
         
-        // 如果之前有选中的主机，刷新指令列表
-        if (selectedHostId) {
-            refreshCommandsList();
-        }
+        // 刷新指令列表（始终刷新以显示"创建第一个指令"按钮）
+        refreshCommandsList();
         
     } catch (e) {
         container.innerHTML = `<div class="error">加载失败: ${e.message}</div>`;
@@ -8940,21 +8965,19 @@ function selectHost(hostId) {
 
 function refreshCommandsList() {
     const container = document.getElementById('commands-list');
+    var createFirstBtn = '<button type="button" class="btn btn-small btn-service-style" onclick="showAddCommandModal()" style="font-size:0.85em;display:inline-block">';
+    createFirstBtn += '<i class="ri-add-line"></i> 创建第一个指令';
+    createFirstBtn += '</button>';
     
     if (!selectedHostId) {
-        container.innerHTML = '<div class="empty-state">请先选择一个主机</div>';
+        container.innerHTML = '<div class="empty-state"><p>请先选择一个主机</p>' + createFirstBtn + '</div>';
         return;
     }
     
     const hostCommands = sshCommands[selectedHostId] || [];
     
     if (hostCommands.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <p>该主机暂无指令</p>
-                <button class="btn btn-primary" onclick="showAddCommandModal()">➕ 创建第一个指令</button>
-            </div>
-        `;
+        container.innerHTML = '<div class="empty-state"><p>该主机暂无指令</p>' + createFirstBtn + '</div>';
         return;
     }
     
@@ -9000,11 +9023,16 @@ function refreshCommandsList() {
             <button class="btn btn-sm" onclick="stopServiceProcess(${idx}, '${escapeHtml(safeName)}')" title="停止服务" style="background:#dc3545;color:white">⏹️</button>
         ` : '';
         
-        // 图标显示：支持 Emoji 或图片路径
-        const iconValue = cmd.icon || '🚀';
-        const iconHtml = iconValue.startsWith('/sdcard/') 
-            ? `<span class="cmd-icon"><img src="/api/v1/file/download?path=${encodeURIComponent(iconValue)}" alt="icon" onerror="this.parentElement.textContent='🚀'"></span>`
-            : `<span class="cmd-icon">${iconValue}</span>`;
+        // 图标显示：支持 RemixIcon 类名、图片路径或旧版 Emoji
+        const iconValue = cmd.icon || 'ri-rocket-line';
+        let iconHtml;
+        if (iconValue.startsWith('/sdcard/')) {
+            iconHtml = `<span class="cmd-icon"><img src="/api/v1/file/download?path=${encodeURIComponent(iconValue)}" alt="icon" onerror="this.parentElement.innerHTML='<i class=\\'ri-rocket-line\\'></i>'"></span>`;
+        } else if (iconValue.startsWith('ri-')) {
+            iconHtml = `<span class="cmd-icon"><i class="${iconValue}"></i></span>`;
+        } else {
+            iconHtml = `<span class="cmd-icon">${iconValue}</span>`;
+        }
         
         // 孤儿命令禁用执行按钮
         const execBtnDisabled = isOrphan ? 'disabled style="opacity:0.5;cursor:not-allowed"' : '';
@@ -9098,7 +9126,7 @@ function showAddCommandModal() {
         return;
     }
     
-    document.getElementById('command-modal-title').textContent = '➕ 新建指令';
+    document.getElementById('command-modal-title').textContent = '新建指令';
     
     /* 新建模式：ID 可编辑 */
     const idInput = document.getElementById('cmd-edit-id');
@@ -9114,7 +9142,7 @@ function showAddCommandModal() {
     document.getElementById('cmd-name').value = '';
     document.getElementById('cmd-command').value = '';
     document.getElementById('cmd-desc').value = '';
-    document.getElementById('cmd-icon').value = '🚀';
+    document.getElementById('cmd-icon').value = 'ri-rocket-line';
     document.getElementById('cmd-icon-type').value = 'emoji';
     document.getElementById('cmd-icon-path').value = '';
     
@@ -9325,19 +9353,19 @@ function switchCmdIconType(type) {
     
     // 更新 Tab 状态
     document.querySelectorAll('.icon-type-tabs .icon-tab').forEach(tab => {
-        tab.classList.toggle('active', tab.textContent.includes(type === 'emoji' ? 'Emoji' : '图片'));
+        tab.classList.toggle('active', (type === 'emoji' && tab.textContent.includes('图标')) || (type === 'image' && tab.textContent.includes('图片')));
     });
     
     // 切换面板显示
     document.getElementById('icon-emoji-picker').classList.toggle('hidden', type !== 'emoji');
     document.getElementById('icon-image-picker').classList.toggle('hidden', type !== 'image');
     
-    // 如果切换到 Emoji 且当前是图片，恢复默认
+    // 如果切换到图标且当前是图片，恢复默认
     if (type === 'emoji') {
         const currentIcon = document.getElementById('cmd-icon').value;
         if (currentIcon.startsWith('/sdcard/')) {
-            document.getElementById('cmd-icon').value = '🚀';
-            selectCmdIcon('🚀');
+            document.getElementById('cmd-icon').value = 'ri-rocket-line';
+            selectCmdIcon('ri-rocket-line');
         }
     }
 }
@@ -9373,7 +9401,7 @@ function updateCmdIconPreview(path) {
  * 清除图标图片
  */
 function clearCmdIconImage() {
-    document.getElementById('cmd-icon').value = '🚀';
+    document.getElementById('cmd-icon').value = 'ri-rocket-line';
     document.getElementById('cmd-icon-path').value = '';
     document.getElementById('cmd-icon-type').value = 'emoji';
     updateCmdIconPreview(null);
@@ -9384,7 +9412,7 @@ function selectCmdIcon(icon) {
     document.getElementById('cmd-icon').value = icon;
     document.getElementById('cmd-icon-type').value = 'emoji';
     document.querySelectorAll('.icon-btn').forEach(btn => {
-        btn.classList.toggle('selected', btn.textContent === icon);
+        btn.classList.toggle('selected', btn.getAttribute('data-icon') === icon);
     });
 }
 
@@ -9421,7 +9449,7 @@ function validateCommandId(input) {
     
     if (errorMsg) {
         input.style.borderColor = 'var(--danger-color)';
-        errorSpan.textContent = '⚠️ ' + errorMsg;
+        errorSpan.innerHTML = '<i class="ri-error-warning-line"></i> ' + errorMsg;
         errorSpan.style.display = 'block';
         return false;
     }
@@ -9537,7 +9565,7 @@ function editCommand(idx) {
     const cmd = sshCommands[selectedHostId]?.[idx];
     if (!cmd) return;
     
-    document.getElementById('command-modal-title').textContent = '✏️ 编辑指令';
+    document.getElementById('command-modal-title').textContent = '编辑指令';
     
     /* 编辑模式：设置 ID 并标记为只读 */
     const idInput = document.getElementById('cmd-edit-id');
@@ -9552,8 +9580,8 @@ function editCommand(idx) {
     document.getElementById('cmd-command').value = cmd.command;
     document.getElementById('cmd-desc').value = cmd.desc || '';
     
-    // 处理图标：判断是 Emoji 还是图片路径
-    const icon = cmd.icon || '🚀';
+    // 处理图标：判断是 RemixIcon/Emoji 还是图片路径
+    const icon = cmd.icon || 'ri-rocket-line';
     document.getElementById('cmd-icon').value = icon;
     
     if (icon.startsWith('/sdcard/')) {
@@ -9563,7 +9591,7 @@ function editCommand(idx) {
         switchCmdIconType('image');
         updateCmdIconPreview(icon);
     } else {
-        // Emoji
+        // 图标（RemixIcon）或旧版 Emoji
         document.getElementById('cmd-icon-type').value = 'emoji';
         document.getElementById('cmd-icon-path').value = '';
         switchCmdIconType('emoji');
@@ -9601,8 +9629,9 @@ function editCommand(idx) {
     }
     
     // 更新图标选中状态
+    const currentIconVal = cmd.icon || 'ri-rocket-line';
     document.querySelectorAll('.icon-btn').forEach(btn => {
-        btn.classList.toggle('selected', btn.textContent === (cmd.icon || '🚀'));
+        btn.classList.toggle('selected', btn.getAttribute('data-icon') === currentIconVal);
     });
     
     document.getElementById('command-modal').classList.remove('hidden');
@@ -9783,13 +9812,12 @@ async function showImportSshCommandModal() {
     
     modal.innerHTML = `
         <div class="modal-content" style="max-width:600px">
-            <h2>📥 导入 SSH 指令配置</h2>
+            <h2 style="font-size:1.25rem">导入 SSH 指令配置</h2>
             <p style="color:#666;font-size:0.9rem">选择 .tscfg 配置包文件以导入 SSH 指令</p>
             
             <!-- 步骤 1: 选择文件 -->
             <div id="import-ssh-cmd-step1">
                 <div class="form-group" style="margin-top:15px">
-                    <label>选择文件</label>
                     <input type="file" id="import-ssh-cmd-file" class="form-control" accept=".tscfg" onchange="previewSshCommandImport()">
                 </div>
             </div>
@@ -9822,8 +9850,8 @@ async function showImportSshCommandModal() {
             <div id="import-ssh-cmd-result" class="result-box hidden" style="margin-top:10px"></div>
             
             <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideImportSshCommandModal()">取消</button>
-                <button class="btn btn-primary" id="import-ssh-cmd-btn" onclick="confirmSshCommandImport()" disabled>📥 确认导入</button>
+                <button class="btn" onclick="hideImportSshCommandModal()" style="color:#666">取消</button>
+                <button class="btn btn-service-style" id="import-ssh-cmd-btn" onclick="confirmSshCommandImport()" disabled>确认导入</button>
             </div>
         </div>
     `;
@@ -19686,9 +19714,9 @@ async function onSshHostChangeForSource() {
     
     let html = '<option value="">-- 请选择指令 --</option>';
     commands.forEach((cmd, idx) => {
-        const icon = cmd.icon || '🚀';
-        const label = `${icon} ${cmd.name}`;
-        html += `<option value="${idx}">${label}</option>`;
+        const icon = cmd.icon || 'ri-rocket-line';
+        const label = (icon && icon.startsWith && icon.startsWith('ri-')) ? cmd.name : `${icon} ${cmd.name}`;
+        html += `<option value="${idx}">${escapeHtml(label)}</option>`;
     });
     cmdSelect.innerHTML = html;
 }
@@ -21719,4 +21747,3 @@ window.showImportActionModal = showImportActionModal;
 window.hideImportActionModal = hideImportActionModal;
 window.previewActionImport = previewActionImport;
 window.confirmActionImport = confirmActionImport;
-
