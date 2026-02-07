@@ -699,12 +699,12 @@ async function loadSystemPage() {
             </div>
         </div>
         
-        <!-- 服务详情模态框 -->
+        <!-- 服务详情模态框 - 复刻全局色彩校正，关闭按钮右上角 -->
         <div id="services-modal" class="modal hidden">
-            <div class="modal-content" style="max-width:900px">
+            <div class="modal-content cc-compact" style="max-width:900px">
                 <div class="modal-header">
                     <h2>服务状态</h2>
-                    <button class="modal-close" onclick="hideServicesModal()">&times;</button>
+                    <button class="modal-close" onclick="hideServicesModal()"><i class="ri-close-line"></i></button>
                 </div>
                 <div class="modal-body">
                     <table class="data-table" id="services-table">
@@ -1663,10 +1663,10 @@ async function showFanCurveModal(fanId = 0) {
     modal.onclick = (e) => { if (e.target === modal) closeFanCurveModal(); };
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:650px;">
+        <div class="modal-content cc-compact" style="max-width:650px;">
             <div class="modal-header">
-                <h3>风扇曲线管理</h3>
-                <button class="modal-close" onclick="closeFanCurveModal()">&times;</button>
+                <h2>风扇曲线管理</h2>
+                <button class="modal-close" onclick="closeFanCurveModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
                 <!-- 风扇选择 -->
@@ -3334,10 +3334,10 @@ function showWidgetManager(editWidgetId = null) {
     modal.onclick = (e) => { if (e.target === modal) closeModal('widget-manager-modal'); };
     
     modal.innerHTML = `
-        <div class="modal-content dw-manager-modal">
+        <div class="modal-content dw-manager-modal cc-compact">
             <div class="modal-header">
-                <h3>数据监控管理</h3>
-                <button class="modal-close" onclick="closeModal('widget-manager-modal')">&times;</button>
+                <h2>数据监控管理</h2>
+                <button class="modal-close" onclick="closeModal('widget-manager-modal')"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body dw-manager-body">
                 <div class="dw-manager-sidebar">
@@ -4626,27 +4626,17 @@ function generateLedDeviceCard(dev) {
         }
     }
     
-    // 快捷特效按钮（显示前4个）
-    const quickEffects = deviceEffects.slice(0, 4);
-    const quickEffectsHtml = quickEffects.map(eff => 
-        `<button class="led-quick-effect ${eff === currentAnimation ? 'active' : ''}" 
-                 onclick="quickStartEffect('${dev.name}', '${eff}')" 
-                 title="${eff}">${getEffectIcon(eff)}</button>`
-    ).join('');
-    
-    // Matrix 设备额外按钮（色彩校正按钮已移至页面头部）
-    const matrixButtons = isMatrix ? `
-        <div class="led-matrix-btns">
-            <button class="led-quick-effect" onclick="openLedModal('${dev.name}', 'content')" title="图像/QR码">
-                <i class="ri-qr-code-line"></i>
-            </button>
-            <button class="led-quick-effect" onclick="openLedModal('${dev.name}', 'text')" title="文本显示">
-                <i class="ri-text"></i>
-            </button>
-            <button class="led-quick-effect" onclick="openLedModal('${dev.name}', 'filter')" title="滤镜效果">
-                <i class="ri-color-filter-line"></i>
-            </button>
-        </div>
+    // Matrix 设备底部栏额外按钮（QR/文本/滤镜）放在保存左侧
+    const matrixFooterBtns = isMatrix ? `
+        <button class="led-quick-effect" onclick="openLedModal('${dev.name}', 'content')" title="图像/QR码">
+            <i class="ri-qr-code-line"></i>
+        </button>
+        <button class="led-quick-effect" onclick="openLedModal('${dev.name}', 'text')" title="文本显示">
+            <i class="ri-text"></i>
+        </button>
+        <button class="led-quick-effect" onclick="openLedModal('${dev.name}', 'filter')" title="滤镜效果">
+            <i class="ri-color-filter-line"></i>
+        </button>
     ` : '';
     
     return `
@@ -4699,22 +4689,17 @@ function generateLedDeviceCard(dev) {
                         </div>
                     </div>
                 </div>
-                
-                <!-- 快捷动画 -->
-                <div class="led-effects-row">
-                    <div class="led-quick-effects">
-                        ${quickEffectsHtml}
-                        ${deviceEffects.length > 4 ? `<button class="led-quick-effect more" onclick="openLedModal('${dev.name}', 'effect')" title="更多动画">+${deviceEffects.length - 4}</button>` : ''}
-                    </div>
-                    ${matrixButtons}
-                </div>
             </div>
             
-            <!-- 底部操作栏 -->
+            <!-- 底部操作栏：电源 | 更多动画 | [Matrix: QR/文本/滤镜] | 保存 -->
             <div class="led-card-footer">
                 <button class="led-power-btn ${isOn ? 'on' : ''}" id="toggle-${dev.name}" onclick="toggleLed('${dev.name}')" title="${isOn ? '点击关闭' : '点击开启'}">
                     <i class="power-icon ${isOn ? 'ri-lightbulb-fill' : 'ri-lightbulb-line'}"></i>
                 </button>
+                <button class="led-quick-effect" onclick="openLedModal('${dev.name}', 'effect')" title="更多动画">
+                    <i class="ri-play-line"></i>
+                </button>
+                ${matrixFooterBtns}
                 <button class="led-save-btn" onclick="saveLedConfig('${dev.name}')" title="保存配置">
                     <i class="ri-save-line"></i>
                 </button>
@@ -4940,12 +4925,12 @@ function generateLedModalContent(device, type) {
     const deviceEffects = deviceData?.effects || [];
     
     if (type === 'effect') {
-        // 普通设备的动画模态框 - 卡片式布局
+        // 普通设备的动画模态框 - 卡片式布局，无 emoji，RemixIcon + 复刻全局色彩校正风格
         const effectsHtml = deviceEffects.length > 0 
             ? deviceEffects.map(eff => {
                 const isActive = eff === currentAnimation;
                 const activeClass = isActive ? ' active' : '';
-                return `<button class="btn effect-btn${activeClass}" onclick="selectEffectInModal('${device}', '${eff}', this)">${getEffectIcon(eff)} ${eff}</button>`;
+                return `<button class="btn effect-btn${activeClass}" onclick="selectEffectInModal('${device}', '${eff}', this)">${getEffectIconRemix(eff)}${effectDisplayName(eff)}</button>`;
             }).join('')
             : '<span class="empty">暂无可用动画</span>';
         
@@ -4970,7 +4955,7 @@ function generateLedModalContent(device, type) {
                 
                 <div class="cc-section" id="modal-effect-config-${device}" style="display:${currentAnimation ? 'block' : 'none'};">
                     <h4>${t('ledPage.settings')}</h4>
-                    <p class="cc-help-text">${t('ledPage.current')}: <span id="modal-effect-name-${device}">${getEffectIcon(currentAnimation)} ${currentAnimation || t('ledPage.effectNotSelected')}</span></p>
+                    <p class="cc-help-text">${t('ledPage.current')}: <span id="modal-effect-name-${device}">${getEffectIconRemix(currentAnimation)}${currentAnimation ? effectDisplayName(currentAnimation) : t('ledPage.effectNotSelected')}</span></p>
                     
                     <div class="config-row">
                         <label>${t('ledPage.speed')}</label>
@@ -5302,9 +5287,9 @@ function selectEffectInModal(device, effect, btn) {
     btn.closest('.effects-grid, .modal-tab-content').querySelectorAll('.effect-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     
-    // 显示特效名
+    // 显示特效名（RemixIcon，无 emoji，首字母大写）
     const effectName = document.getElementById(`modal-effect-name-${device}`);
-    if (effectName) effectName.textContent = `${getEffectIcon(effect)} ${effect}`;
+    if (effectName) effectName.innerHTML = getEffectIconRemix(effect) + effectDisplayName(effect);
     
     // 显示/隐藏颜色选择器
     const colorRow = document.getElementById(`modal-color-row-${device}`);
@@ -5930,6 +5915,18 @@ function getEffectIcon(name) {
         'twinkle': '⭐'
     };
     return icons[name.toLowerCase()] || '🎯';
+}
+
+/** 程序动画模态框内使用的 RemixIcon（无 emoji，用已纳入 minimal 字体的 ri-play-line） */
+function getEffectIconRemix(name) {
+    if (!name) return '';
+    return '<i class="ri-play-line"></i> ';
+}
+
+/** 动画名称首字母大写（用于更多动画弹窗展示） */
+function effectDisplayName(name) {
+    if (!name) return '';
+    return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 // 当前选中的动画
@@ -7410,18 +7407,23 @@ async function loadFilesPage() {
             </div>
         </div>
         
-        <!-- 上传对话框 -->
+        <!-- 上传对话框 - 复刻全局色彩校正风格 -->
         <div id="upload-modal" class="modal hidden">
-            <div class="modal-content">
-                <h2>上传文件</h2>
-                <div class="upload-area" id="upload-area">
-                    <p>点击选择文件或拖拽文件到此处</p>
-                    <input type="file" id="file-input" multiple style="display:none" onchange="handleFileSelect(event)">
+            <div class="modal-content cc-compact" style="max-width:560px">
+                <div class="modal-header">
+                    <h2>上传文件</h2>
+                    <button class="modal-close" onclick="closeUploadDialog()"><i class="ri-close-line"></i></button>
                 </div>
-                <div id="upload-list"></div>
-                <div class="form-actions">
-                    <button class="btn" onclick="closeUploadDialog()">取消</button>
-                    <button class="btn btn-primary" onclick="uploadFiles()">上传</button>
+                <div class="modal-body">
+                    <div class="upload-area" id="upload-area">
+                        <p>点击选择文件或拖拽文件到此处</p>
+                        <input type="file" id="file-input" multiple style="display:none" onchange="handleFileSelect(event)">
+                    </div>
+                    <div id="upload-list"></div>
+                    <div class="config-actions cc-actions">
+                        <button class="btn btn-sm" onclick="closeUploadDialog()" style="color:#666">取消</button>
+                        <button class="btn btn-service-style btn-sm" onclick="uploadFiles()">上传</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -8448,7 +8450,7 @@ async function loadCommandsPage() {
                                 <div class="form-group">
                                     <label class="checkbox-label">
                                         <input type="checkbox" id="cmd-nohup" onchange="updateNohupState()">
-                                        <span><i class="ri-rocket-line"></i> 后台执行（nohup）</span>
+                                        <span>后台执行（nohup）</span>
                                     </label>
                                     <small>命令将在服务器后台运行，SSH 断开后不受影响。适合重启、长时间任务等场景</small>
                                 </div>
@@ -9009,7 +9011,7 @@ function refreshCommandsList() {
                 const statusId = `service-status-${cmd.id || idx}`;
                 nohupHtml = `<span class="service-mode-status" title="服务模式: ${escapeHtml(cmd.readyPattern)}" data-var="${escapeHtml(cmd.varName)}" data-status-id="${statusId}"><span id="${statusId}" class="service-status">...</span></span>`;
             } else {
-                nohupHtml = '<span class="pattern-tag nohup" title="后台执行（nohup）">🚀</span>';
+                nohupHtml = '<span class="pattern-tag nohup" title="后台执行（nohup）"><i class="ri-rocket-line"></i></span>';
             }
         }
         
@@ -14539,16 +14541,23 @@ async function loadOtaPage() {
             border-color: #4CAF50;
         }
         
-        .btn-icon {
-            padding: 8px 10px;
-            border: 1px solid #ddd;
-            background: #f9f9f9;
+        .server-input-group .btn,
+        .server-input-group .btn-icon {
+            min-height: 40px;
+            padding: 10px 14px;
+            box-sizing: border-box;
+            font-size: 0.95em;
+            line-height: 1.2;
             border-radius: 6px;
-            cursor: pointer;
-            font-size: 1em;
         }
         
-        .btn-icon:hover {
+        .server-input-group .btn-icon {
+            border: 1px solid #ddd;
+            background: #f9f9f9;
+            cursor: pointer;
+        }
+        
+        .server-input-group .btn-icon:hover {
             background: #eee;
         }
         

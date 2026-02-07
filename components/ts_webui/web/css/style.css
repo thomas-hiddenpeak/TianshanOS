@@ -1367,19 +1367,19 @@ body {
     color: var(--text-secondary);
 }
 
-/* 颜色控制行 - Modern Redesign */
+/* 颜色控制行 - Modern Redesign (缩小约 1/3) */
 .led-color-row {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 8px 0;
+    gap: 10px;
+    padding: 5px 0;
 }
 
 /* Modern Picker */
 .modern-picker-wrapper {
     position: relative;
-    width: 48px;
-    height: 48px;
+    width: 32px;
+    height: 32px;
     flex-shrink: 0;
 }
 
@@ -1416,7 +1416,7 @@ body {
     left: 50%;
     transform: translate(-50%, -50%);
     color: white;
-    font-size: 1.2rem;
+    font-size: 0.85rem;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
     pointer-events: none;
 }
@@ -1435,13 +1435,13 @@ body {
 
 .modern-presets-list {
     display: flex;
-    gap: 12px;
+    gap: 8px;
     align-items: center;
 }
 
 .modern-color-dot {
-    width: 36px;
-    height: 36px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     border: 2px solid rgba(0,0,0,0.05);
     cursor: pointer;

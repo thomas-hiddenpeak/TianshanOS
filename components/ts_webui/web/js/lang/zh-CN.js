@@ -2170,6 +2170,8 @@ i18n.registerLanguage('zh-CN', {
         moreEffects: '更多动画',
         stopEffect: '停止',
         noEffects: '暂无可用动画',
+        effects: '程序动画',
+        selectAnimation: '请先选择一个动画',
         // Modal - Effect
         effectTitle: '程序动画',
         effectNotSelected: '未选择',

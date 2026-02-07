@@ -2169,6 +2169,8 @@ i18n.registerLanguage('en-US', {
         moreEffects: 'More',
         stopEffect: 'Stop',
         noEffects: 'No effects available',
+        effects: 'Effects',
+        selectAnimation: 'Please select an animation first',
         // Modal - Effect
         effectTitle: 'Programmatic Animation',
         effectNotSelected: 'None',
