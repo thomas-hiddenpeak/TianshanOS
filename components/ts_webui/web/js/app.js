@@ -298,7 +298,7 @@ function showPasswordChangeReminder() {
             </div>
             <div class="modal-footer">
                 <button class="btn" onclick="closePasswordChangeModal()">稍后修改</button>
-                <button class="btn btn-primary" onclick="submitPasswordChange()">立即修改</button>
+                <button class="btn btn-service-style" onclick="submitPasswordChange()">立即修改</button>
             </div>
         </div>
     `;
@@ -2837,7 +2837,7 @@ function renderWidgetHtml(widget) {
                             title="${isCollapsed ? '展开日志' : '折叠日志'}">
                         <i class="ri-arrow-${isCollapsed ? 'down' : 'up'}-s-line"></i>
                     </button>
-                    <button class="btn btn-sm ${isReading ? 'btn-danger' : 'btn-primary'}" 
+                    <button class="btn btn-sm ${isReading ? 'btn-danger' : 'btn-service-style'}" 
                             id="dw-${id}-toggle" onclick="event.stopPropagation();toggleLogReading('${id}')">
                         <i class="ri-${isReading ? 'stop' : 'play'}-line"></i> ${isReading ? '停止' : '读取'}
                     </button>
@@ -3215,7 +3215,7 @@ function updateLogToggleButton(widgetId, isReading) {
     const status = document.getElementById(`dw-${widgetId}-status`);
     
     if (btn) {
-        btn.className = `btn btn-sm ${isReading ? 'btn-danger' : 'btn-primary'}`;
+        btn.className = `btn btn-sm ${isReading ? 'btn-danger' : 'btn-service-style'}`;
         btn.innerHTML = `<i class="ri-${isReading ? 'stop' : 'play'}-line"></i> ${isReading ? '停止' : '读取'}`;
     }
     if (status) {
@@ -3699,7 +3699,7 @@ function showWidgetEditPanel(widgetId) {
             
             <div class="dw-edit-actions">
                 <button class="btn btn-danger" onclick="deleteDataWidget('${widget.id}')"><i class="ri-delete-bin-line"></i> 删除</button>
-                <button class="btn btn-primary" onclick="saveWidgetEdit('${widget.id}')"><i class="ri-save-line"></i> 保存</button>
+                <button class="btn btn-service-style" onclick="saveWidgetEdit('${widget.id}')"><i class="ri-save-line"></i> 保存</button>
             </div>
         </div>
     `;
@@ -4291,7 +4291,7 @@ function startQuickLogTail(logFile, hostId, intervalMs = 5000) {
     
     if (btn) {
         btn.textContent = '⏹️ 停止跟踪';
-        btn.classList.remove('btn-primary');
+        btn.classList.remove('btn-service-style');
         btn.classList.add('btn-danger');
     }
     if (status) status.innerHTML = '<span style="color:#27ae60">● 实时更新中</span>';
@@ -4349,7 +4349,7 @@ function stopQuickLogTail() {
     if (btn) {
         btn.textContent = '▶️ 开始跟踪';
         btn.classList.remove('btn-danger');
-        btn.classList.add('btn-primary');
+        btn.classList.add('btn-service-style');
     }
     if (status) status.textContent = '已暂停';
 }
@@ -4486,7 +4486,7 @@ function showTimezoneModal() {
             </div>
             <div class="form-actions">
                 <button class="btn" onclick="hideTimezoneModal()">取消</button>
-                <button class="btn btn-primary" onclick="applyTimezone()">应用</button>
+                <button class="btn btn-service-style" onclick="applyTimezone()">应用</button>
             </div>
         </div>
     `;
@@ -4847,7 +4847,7 @@ function openColorModal(device) {
             <h3>颜色选择</h3>
             <div class="config-row">
                 <input type="color" id="modal-color-picker-${device}" value="${colorHex}" style="width:60px;height:40px;">
-                <button class="btn btn-primary" onclick="applyColorFromModal('${device}')">填充颜色</button>
+                <button class="btn btn-service-style" onclick="applyColorFromModal('${device}')">填充颜色</button>
             </div>
             <h3 style="margin-top:16px;">快捷颜色</h3>
             <div class="preset-colors-grid">
@@ -6193,7 +6193,7 @@ async function loadFilePickerDirectory(path) {
                 listContainer.innerHTML = `
                     <div class="empty-state">
                         <div>📂 目录不存在</div>
-                        <button class="btn btn-sm btn-primary" onclick="createAndOpenDir('${path}')">创建目录</button>
+                        <button class="btn btn-sm btn-service-style" onclick="createAndOpenDir('${path}')">创建目录</button>
                     </div>`;
                 return;
             }
@@ -6913,7 +6913,7 @@ async function loadNetworkPage() {
                     </div>
                     <div class="form-actions">
                         <button class="btn" onclick="hideApConfig()">取消</button>
-                        <button class="btn btn-primary" onclick="applyApConfig()">应用</button>
+                        <button class="btn btn-service-style" onclick="applyApConfig()">应用</button>
                     </div>
                 </div>
             </div>
@@ -7168,7 +7168,7 @@ async function showWifiScan() {
                             <span>${net.auth || 'OPEN'}</span>
                         </div>
                     </div>
-                    <button class="btn btn-sm btn-primary">连接</button>
+                    <button class="btn btn-sm btn-service-style">连接</button>
                 </div>
             `).join('');
         }
@@ -7440,7 +7440,7 @@ async function loadFilesPage() {
                 </div>
                 <div class="form-actions">
                     <button class="btn" onclick="closeNewFolderDialog()">取消</button>
-                    <button class="btn btn-primary" onclick="createNewFolder()">创建</button>
+                    <button class="btn btn-service-style" onclick="createNewFolder()">创建</button>
                 </div>
             </div>
         </div>
@@ -7456,7 +7456,7 @@ async function loadFilesPage() {
                 <input type="hidden" id="rename-original-path">
                 <div class="form-actions">
                     <button class="btn" onclick="closeRenameDialog()">取消</button>
-                    <button class="btn btn-primary" onclick="doRename()">确定</button>
+                    <button class="btn btn-service-style" onclick="doRename()">确定</button>
                 </div>
             </div>
         </div>
@@ -9056,7 +9056,7 @@ function refreshCommandsList() {
                 <button class="btn btn-sm btn-exec" onclick="executeCommand(${idx})" title="${isOrphan ? '主机不存在，无法执行' : '执行'}" ${execBtnDisabled}>▶️</button>
                 ${serviceActionsHtml}
                 ${varBtnHtml}
-                <button class="btn btn-sm" onclick="exportSshCommand('${escapeHtml(cmd.id)}')" title="导出配置" style="background:#17a2b8;color:white">📤</button>
+                <button class="btn btn-sm btn-service-style" onclick="exportSshCommand('${escapeHtml(cmd.id)}')" title="导出配置">📤</button>
                 <button class="btn btn-sm" onclick="editCommand(${idx})" title="编辑">✏️</button>
                 <button class="btn btn-sm" onclick="deleteCommand(${idx})" title="删除" style="background:#dc3545;color:white">🗑️</button>
             </div>
@@ -9711,7 +9711,7 @@ function showExportSshCommandModal(cmdId) {
             
             <div class="form-actions" style="margin-top:15px">
                 <button class="btn" onclick="hideExportSshCommandModal()">取消</button>
-                <button class="btn btn-primary" id="export-ssh-cmd-btn" onclick="doExportSshCommandFromModal('${escapeHtml(cmdId)}')">📤 导出</button>
+                <button class="btn btn-service-style" id="export-ssh-cmd-btn" onclick="doExportSshCommandFromModal('${escapeHtml(cmdId)}')">📤 导出</button>
             </div>
         </div>
     `;
@@ -10772,7 +10772,7 @@ async function loadSecurityPage() {
             <div class="section">
                 <h2>密钥管理</h2>
                 <div class="button-group" style="margin-bottom:15px">
-                    <button class="btn btn-primary" onclick="showGenerateKeyModal()"><i class="ri-add-line"></i> 生成新密钥</button>
+                    <button class="btn btn-service-style" onclick="showGenerateKeyModal()"><i class="ri-add-line"></i> 生成新密钥</button>
                 </div>
                 <table class="data-table">
                     <thead>
@@ -10832,7 +10832,7 @@ async function loadSecurityPage() {
                     </div>
                 </div>
                 <div class="button-group" style="display:flex;flex-wrap:wrap;gap:8px">
-                    <button class="btn btn-primary" id="btn-cert-gen-key" onclick="showCertGenKeyModal()"><i class="ri-key-line"></i> 生成密钥对</button>
+                    <button class="btn btn-service-style" id="btn-cert-gen-key" onclick="showCertGenKeyModal()"><i class="ri-key-line"></i> 生成密钥对</button>
                     <button class="btn btn-service-style" id="btn-cert-gen-csr" onclick="showCertCSRModal()" disabled><i class="ri-file-text-line"></i> 生成 CSR</button>
                     <button class="btn btn-service-style" id="btn-cert-install" onclick="showCertInstallModal()" disabled><i class="ri-upload-line"></i> 安装证书</button>
                     <button class="btn btn-service-style" id="btn-cert-install-ca" onclick="showCertInstallCAModal()" disabled><i class="ri-shield-keyhole-line"></i> 安装 CA</button>
@@ -10919,7 +10919,7 @@ async function loadSecurityPage() {
                     <div class="form-actions" style="margin-top:15px">
                         <button class="btn" onclick="hideConfigPackImportModal()">取消</button>
                         <button class="btn" onclick="verifyConfigPack()" style="color:#666"><i class="ri-search-line"></i> 仅验证</button>
-                        <button class="btn btn-primary" onclick="importConfigPack()"><i class="ri-upload-line"></i> 导入</button>
+                        <button class="btn btn-service-style" onclick="importConfigPack()"><i class="ri-upload-line"></i> 导入</button>
                     </div>
                 </div>
             </div>
@@ -10970,13 +10970,13 @@ async function loadSecurityPage() {
                         <textarea id="pack-export-tscfg" readonly style="width:100%;height:100px;font-family:monospace;font-size:10px" placeholder="配置包将在此显示..."></textarea>
                         <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
                             <button class="btn btn-small btn-service-style" onclick="copyPackTscfgToClipboard()" id="btn-pack-copy" style="display:none"><i class="ri-file-text-line"></i> 复制到剪贴板</button>
-                            <button class="btn btn-small btn-primary" onclick="downloadPackTscfg()" id="btn-pack-download" style="display:none"><i class="ri-download-line"></i> 下载到本地</button>
+                            <button class="btn btn-small btn-service-style" onclick="downloadPackTscfg()" id="btn-pack-download" style="display:none"><i class="ri-download-line"></i> 下载到本地</button>
                             <span id="pack-export-saved-path" style="color:#4caf50;font-size:0.9em;display:none"></span>
                         </div>
                     </div>
                     <div class="form-actions" style="margin-top:15px">
                         <button class="btn" onclick="hideConfigPackExportModal()">取消</button>
-                        <button class="btn btn-primary" id="btn-pack-export-generate" onclick="exportConfigPack()" disabled><i class="ri-download-line"></i> 生成配置包</button>
+                        <button class="btn btn-service-style" id="btn-pack-export-generate" onclick="exportConfigPack()" disabled><i class="ri-download-line"></i> 生成配置包</button>
                     </div>
                 </div>
             </div>
@@ -11041,7 +11041,7 @@ async function loadSecurityPage() {
                     </div>
                     <div class="form-actions">
                         <button class="btn" onclick="hideGenerateKeyModal()">取消</button>
-                        <button class="btn btn-primary" onclick="generateKey()">生成</button>
+                        <button class="btn btn-service-style" onclick="generateKey()">生成</button>
                     </div>
                 </div>
             </div>
@@ -11079,7 +11079,7 @@ async function loadSecurityPage() {
                         <div id="deploy-result" class="result-box hidden" style="margin-bottom:15px"></div>
                         <div class="form-actions">
                             <button class="btn" onclick="hideDeployKeyModal()" style="color:#666">取消</button>
-                            <button class="btn btn-primary" id="deploy-btn" onclick="deployKey()"><i class="ri-rocket-line"></i> 开始部署</button>
+                            <button class="btn btn-service-style" id="deploy-btn" onclick="deployKey()"><i class="ri-rocket-line"></i> 开始部署</button>
                         </div>
                     </div>
                 </div>
@@ -11169,7 +11169,7 @@ async function loadSecurityPage() {
                     <div id="cert-genkey-result" class="result-box hidden" style="margin-bottom:15px"></div>
                     <div class="form-actions">
                         <button class="btn" onclick="hideCertGenKeyModal()" style="color:#666">取消</button>
-                        <button class="btn btn-primary" id="cert-genkey-btn" onclick="generateCertKeypair()"><i class="ri-key-line"></i> 生成</button>
+                        <button class="btn btn-service-style" id="cert-genkey-btn" onclick="generateCertKeypair()"><i class="ri-key-line"></i> 生成</button>
                     </div>
                 </div>
             </div>
@@ -11199,7 +11199,7 @@ async function loadSecurityPage() {
                     <div id="csr-gen-result" class="result-box hidden" style="margin-top:10px"></div>
                     <div class="form-actions" style="margin-top:15px">
                         <button class="btn" onclick="hideCertCSRModal()">关闭</button>
-                        <button class="btn btn-primary" id="csr-gen-btn" onclick="generateCSR()">📋 生成 CSR</button>
+                        <button class="btn btn-service-style" id="csr-gen-btn" onclick="generateCSR()">📋 生成 CSR</button>
                     </div>
                 </div>
             </div>
@@ -11216,7 +11216,7 @@ async function loadSecurityPage() {
                     <div id="cert-install-result" class="result-box hidden" style="margin-top:10px"></div>
                     <div class="form-actions" style="margin-top:15px">
                         <button class="btn" onclick="hideCertInstallModal()">取消</button>
-                        <button class="btn btn-primary" onclick="installCertificate()">📥 安装</button>
+                        <button class="btn btn-service-style" onclick="installCertificate()">📥 安装</button>
                     </div>
                 </div>
             </div>
@@ -11233,7 +11233,7 @@ async function loadSecurityPage() {
                     <div id="ca-install-result" class="result-box hidden" style="margin-top:10px"></div>
                     <div class="form-actions" style="margin-top:15px">
                         <button class="btn" onclick="hideCertInstallCAModal()">取消</button>
-                        <button class="btn btn-primary" onclick="installCAChain()">🏛️ 安装</button>
+                        <button class="btn btn-service-style" onclick="installCAChain()">🏛️ 安装</button>
                     </div>
                 </div>
             </div>
@@ -11303,8 +11303,8 @@ async function refreshSecurityPage() {
                     <td>${key.exportable ? '是' : '否'}</td>
                     <td>
                         <button class="btn btn-small btn-service-style" onclick="exportKey('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'}><i class="ri-download-line"></i> 公钥</button>
-                        <button class="btn btn-small" onclick="exportPrivateKey('${escapeHtml(key.id)}')" ${key.exportable ? '' : 'disabled'} title="${key.exportable ? '导出私钥' : '此密钥不可导出私钥'}" style="color:#666"><i class="ri-key-line"></i> 私钥</button>
-                        <button class="btn btn-small btn-primary" onclick="showDeployKeyModal('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'} title="部署公钥到远程服务器"><i class="ri-rocket-line"></i> 部署</button>
+                        <button class="btn btn-small btn-service-style" onclick="exportPrivateKey('${escapeHtml(key.id)}')" ${key.exportable === false ? 'disabled' : ''} title="${key.exportable === false ? '此密钥不可导出私钥' : '导出私钥'}" style="${key.exportable === false ? 'color:#999' : ''}"><i class="ri-key-line"></i> 私钥</button>
+                        <button class="btn btn-small btn-service-style" onclick="showDeployKeyModal('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'} title="部署公钥到远程服务器"><i class="ri-rocket-line"></i> 部署</button>
                         <button class="btn btn-small btn-warning" onclick="showRevokeKeyModal('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'} title="从远程服务器撤销公钥"><i class="ri-alert-line"></i> 撤销</button>
                         <button class="btn btn-small btn-danger" onclick="deleteKey('${escapeHtml(key.id)}')"><i class="ri-delete-bin-line"></i> 删除</button>
                     </td>
@@ -11361,7 +11361,7 @@ async function refreshSecurityPage() {
                     <td>-</td>
                     <td>-</td>
                     <td>
-                        <button class="btn btn-small btn-primary" onclick="showCertGenKeyModal()" title="生成 HTTPS 密钥对"><i class="ri-key-line"></i> 生成密钥</button>
+                        <button class="btn btn-small btn-service-style" onclick="showCertGenKeyModal()" title="生成 HTTPS 密钥对"><i class="ri-key-line"></i> 生成密钥</button>
                     </td>
                 </tr>
                 `;
@@ -11765,7 +11765,7 @@ function showImportSshHostModal() {
             
             <div class="form-actions" style="margin-top:15px">
                 <button class="btn" onclick="hideImportSshHostModal()">取消</button>
-                <button class="btn btn-primary" id="import-ssh-host-btn" onclick="confirmSshHostImport()" disabled><i class="ri-upload-line"></i> 确认导入</button>
+                <button class="btn btn-service-style" id="import-ssh-host-btn" onclick="confirmSshHostImport()" disabled><i class="ri-upload-line"></i> 确认导入</button>
             </div>
         </div>
     `;
@@ -12113,7 +12113,7 @@ function showPubkeyModal(id, pubkey, type, comment) {
                 <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
                     <button class="btn" onclick="closePubkeyModal()" style="color:#666">关闭</button>
                     <button class="btn btn-service-style" onclick="copyPubkey()"><i class="ri-file-text-line"></i> 复制到剪贴板</button>
-                    <button class="btn btn-primary" onclick="downloadPubkey('${escapeHtml(id)}')"><i class="ri-download-line"></i> 下载文件</button>
+                    <button class="btn btn-service-style" onclick="downloadPubkey('${escapeHtml(id)}')"><i class="ri-download-line"></i> 下载文件</button>
                 </div>
             </div>
         </div>
@@ -12151,7 +12151,7 @@ function showPrivkeyModal(id, privkey, type, comment) {
             <div class="form-actions" style="margin-top:15px">
                 <button class="btn" onclick="closePrivkeyModal()" style="color:#666">关闭</button>
                 <button class="btn btn-service-style" onclick="copyPrivkey()"><i class="ri-file-text-line"></i> 复制到剪贴板</button>
-                <button class="btn btn-primary" onclick="downloadPrivkey('${escapeHtml(id)}')"><i class="ri-download-line"></i> 下载文件</button>
+                <button class="btn btn-service-style" onclick="downloadPrivkey('${escapeHtml(id)}')"><i class="ri-download-line"></i> 下载文件</button>
             </div>
         </div>
     `;
@@ -12671,7 +12671,7 @@ function showConfigPackApplyConfirm(path, packInfo) {
             </div>
             <div class="modal-footer">
                 <button class="btn" onclick="closeConfigPackApplyConfirm()">稍后应用</button>
-                <button class="btn btn-primary" onclick="applyConfigPackFromPath('${path}')">🚀 立即应用</button>
+                <button class="btn btn-service-style" onclick="applyConfigPackFromPath('${path}')">🚀 立即应用</button>
             </div>
         </div>
     `;
@@ -15220,7 +15220,7 @@ function startRebootDetection() {
                     countdownEl.innerHTML = `
                         <span style="color:#e74c3c">⚠️ 等待超时</span>
                         <br><span style="font-size:0.9em">请手动检查设备状态并刷新页面</span>
-                        <br><button class="btn btn-primary btn-small" onclick="window.location.reload()" 
+                        <br><button class="btn btn-service-style btn-small" onclick="window.location.reload()" 
                             style="margin-top:10px">刷新页面</button>
                     `;
                 }
