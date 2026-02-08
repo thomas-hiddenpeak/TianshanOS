@@ -45,3 +45,7 @@ tools/pki-server/*.crt
 *_key
 secrets/
 password*.txt
+
+# Documentation
+frontend_modification.md
+frontend_emoji_list.md

@@ -55,7 +55,7 @@
         </main>
         
         <footer class="footer">
-            <p>&copy; 2026 TianshanOS, RMinte AI Technology Co., Ltd.</p>
+            <p>&copy; 2026 TianshanOS ｜ RMinte® AI Technology Co., Ltd. ｜ www.RMinte.com</p>
         </footer>
     </div>
     
@@ -92,7 +92,8 @@
         <div class="modal-content led-modal">
             <div class="modal-header">
                 <h2 id="led-modal-title" data-i18n="led.title">LED 设置</h2>
-                <button class="modal-close" onclick="closeLedModal()">&times;</button>
+                <div id="led-modal-header-actions"></div>
+                <button class="modal-close" onclick="closeLedModal()"><i class="ri-close-line"></i></button>
             </div>
             <div id="led-modal-body" class="modal-body">
                 <!-- 动态内容 -->
@@ -119,84 +120,86 @@
             </div>
             <div class="form-actions">
                 <button class="btn" onclick="closeFilePicker()" data-i18n="common.cancel">取消</button>
-                <button class="btn btn-primary" id="file-picker-confirm" onclick="confirmFilePicker()" disabled data-i18n="common.confirm">确定</button>
+                <button class="btn btn-service-style" id="file-picker-confirm" onclick="confirmFilePicker()" disabled data-i18n="common.confirm">确定</button>
             </div>
         </div>
     </div>
     
-    <!-- 内存详情模态框 -->
+    <!-- 内存详情模态框 - 复刻全局色彩校正，关闭按钮右上角 -->
     <div id="memory-detail-modal" class="modal hidden">
-        <div class="modal-content memory-detail-modal">
+        <div class="modal-content memory-detail-modal cc-compact">
             <div class="modal-header">
                 <h2><span data-i18n="system.memoryDetail">内存详细分析</span></h2>
-                <button class="modal-close" onclick="hideMemoryDetailModal()">&times;</button>
+                <button class="modal-close" onclick="hideMemoryDetailModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body" id="memory-detail-body">
                 <div class="loading" data-i18n="common.loading">加载中...</div>
             </div>
             <div class="modal-footer" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center">
                 <span id="memory-detail-timestamp" style="font-size:0.8em;color:#888">-</span>
-                <button class="btn btn-primary" onclick="refreshMemoryDetail()"><i class="ri-refresh-line"></i> <span data-i18n="common.refresh">刷新</span></button>
+                <button class="btn btn-service-style" onclick="refreshMemoryDetail()"><i class="ri-refresh-line"></i> <span data-i18n="common.refresh">刷新</span></button>
             </div>
         </div>
     </div>
     
     <!-- 数据源变量模态框 -->
     <div id="source-variables-modal" class="modal hidden">
-        <div class="modal-content" style="max-width:700px">
+        <div class="modal-content cc-compact" style="max-width:700px">
             <div class="modal-header">
-                <h2>📊 <span data-i18n="automation.viewVariables">数据源变量</span></h2>
-                <button class="modal-close" onclick="closeSourceVariablesModal()">&times;</button>
+                <h2><i class="ri-bar-chart-box-line"></i> <span data-i18n="automation.viewVariables">数据源变量</span></h2>
+                <button class="modal-close" onclick="closeSourceVariablesModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body" id="source-variables-body">
                 <div class="loading" data-i18n="common.loading">加载中...</div>
             </div>
-            <div class="modal-footer" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-color);display:flex;justify-content:flex-end">
-                <button class="btn" onclick="closeSourceVariablesModal()" data-i18n="common.close">关闭</button>
+            <div class="modal-footer cc-compact-footer">
+                <button class="btn" onclick="closeSourceVariablesModal()" style="color:#666" data-i18n="common.close">关闭</button>
             </div>
         </div>
     </div>
     
-    <!-- 关机设置模态框 -->
+    <!-- 关机设置模态框 - 复刻全局色彩校正风格，无 emoji -->
     <div id="shutdown-settings-modal" class="modal hidden">
-        <div class="modal-content" style="max-width:500px">
+        <div class="modal-content cc-compact" style="max-width:500px">
             <div class="modal-header">
-                <h2>⚡ <span data-i18n="system.shutdownSettings">电压保护设置</span></h2>
-                <button class="modal-close" onclick="closeShutdownSettingsModal()">&times;</button>
+                <h2><span data-i18n="system.shutdownSettings">电压保护设置</span></h2>
+                <button class="modal-close" onclick="closeShutdownSettingsModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body" id="shutdown-settings-body">
-                <div class="form-group">
-                    <label data-i18n="system.lowVoltageThreshold">低电压阈值 (V)</label>
-                    <input type="number" id="ss-low-voltage" class="input" step="0.1" min="10" max="24" placeholder="12.6">
-                    <small class="form-hint" data-i18n="system.lowVoltageThresholdHint">电压低于此值开始关机倒计时（默认 12.6V）</small>
+                <div class="cc-section">
+                    <div class="form-group">
+                        <label data-i18n="system.lowVoltageThreshold">低电压阈值 (V)</label>
+                        <input type="number" id="ss-low-voltage" class="input" step="0.1" min="10" max="24" placeholder="12.6">
+                        <small class="form-hint" data-i18n="system.lowVoltageThresholdHint">电压低于此值开始关机倒计时（默认 12.6V）</small>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="system.recoveryVoltageThreshold">恢复电压阈值 (V)</label>
+                        <input type="number" id="ss-recovery-voltage" class="input" step="0.1" min="10" max="30" placeholder="18.0">
+                        <small class="form-hint" data-i18n="system.recoveryVoltageThresholdHint">电压高于此值开始恢复流程（默认 18.0V）</small>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="system.shutdownDelay">关机倒计时 (秒)</label>
+                        <input type="number" id="ss-shutdown-delay" class="input" step="1" min="10" max="600" placeholder="60">
+                        <small class="form-hint" data-i18n="system.shutdownDelayHint">低电压后等待多久执行关机（默认 60秒）</small>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="system.recoveryHold">恢复稳定等待 (秒)</label>
+                        <input type="number" id="ss-recovery-hold" class="input" step="1" min="1" max="300" placeholder="5">
+                        <small class="form-hint" data-i18n="system.recoveryHoldHint">电压恢复后等待确认稳定（默认 5秒）</small>
+                    </div>
+                    <div class="form-group">
+                        <label data-i18n="system.fanStopDelay">风扇关闭延迟 (秒)</label>
+                        <input type="number" id="ss-fan-stop-delay" class="input" step="1" min="10" max="600" placeholder="60">
+                        <small class="form-hint" data-i18n="system.fanStopDelayHint">关机后多久关闭风扇（默认 60秒）</small>
+                    </div>
+                    <div id="shutdown-settings-error" class="form-error hidden"></div>
                 </div>
-                <div class="form-group">
-                    <label data-i18n="system.recoveryVoltageThreshold">恢复电压阈值 (V)</label>
-                    <input type="number" id="ss-recovery-voltage" class="input" step="0.1" min="10" max="30" placeholder="18.0">
-                    <small class="form-hint" data-i18n="system.recoveryVoltageThresholdHint">电压高于此值开始恢复流程（默认 18.0V）</small>
-                </div>
-                <div class="form-group">
-                    <label data-i18n="system.shutdownDelay">关机倒计时 (秒)</label>
-                    <input type="number" id="ss-shutdown-delay" class="input" step="1" min="10" max="600" placeholder="60">
-                    <small class="form-hint" data-i18n="system.shutdownDelayHint">低电压后等待多久执行关机（默认 60秒）</small>
-                </div>
-                <div class="form-group">
-                    <label data-i18n="system.recoveryHold">恢复稳定等待 (秒)</label>
-                    <input type="number" id="ss-recovery-hold" class="input" step="1" min="1" max="300" placeholder="5">
-                    <small class="form-hint" data-i18n="system.recoveryHoldHint">电压恢复后等待确认稳定（默认 5秒）</small>
-                </div>
-                <div class="form-group">
-                    <label data-i18n="system.fanStopDelay">风扇关闭延迟 (秒)</label>
-                    <input type="number" id="ss-fan-stop-delay" class="input" step="1" min="10" max="600" placeholder="60">
-                    <small class="form-hint" data-i18n="system.fanStopDelayHint">关机后多久关闭风扇（默认 60秒）</small>
-                </div>
-                <div id="shutdown-settings-error" class="form-error hidden"></div>
-            </div>
-            <div class="modal-footer" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-color);display:flex;justify-content:space-between">
-                <button class="btn" onclick="resetShutdownSettings()" data-i18n="common.reset">恢复默认</button>
-                <div style="display:flex;gap:8px">
-                    <button class="btn" onclick="closeShutdownSettingsModal()" data-i18n="common.cancel">取消</button>
-                    <button class="btn btn-primary" onclick="saveShutdownSettings()" data-i18n="common.save">保存</button>
+                <div class="config-actions cc-actions">
+                    <button class="btn btn-sm" onclick="resetShutdownSettings()" data-i18n="common.reset" style="color:#666">恢复默认</button>
+                    <div style="display:flex;gap:8px">
+                        <button class="btn btn-sm" onclick="closeShutdownSettingsModal()" data-i18n="common.cancel" style="color:#666">取消</button>
+                        <button class="btn btn-service-style btn-sm" onclick="saveShutdownSettings()" data-i18n="common.save">保存</button>
+                    </div>
                 </div>
             </div>
         </div>

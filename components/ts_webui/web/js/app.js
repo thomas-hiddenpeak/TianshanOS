@@ -298,7 +298,7 @@ function showPasswordChangeReminder() {
             </div>
             <div class="modal-footer">
                 <button class="btn" onclick="closePasswordChangeModal()">稍后修改</button>
-                <button class="btn btn-primary" onclick="submitPasswordChange()">立即修改</button>
+                <button class="btn btn-service-style" onclick="submitPasswordChange()">立即修改</button>
             </div>
         </div>
     `;
@@ -534,7 +534,7 @@ async function loadSystemPage() {
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
                         <h3 style="margin:0">资源监控</h3>
                         <button class="btn btn-sm btn-service-style" onclick="showServicesModal()" style="cursor:pointer">
-                            <i class="ri-service-line"></i> 服务 <span id="services-running" style="font-weight:bold">-</span>/<span id="services-total">-</span>
+                            <i class="ri-service-line"></i> 服务 <span id="services-running">-</span>/<span id="services-total">-</span>
                         </button>
                     </div>
                     <div class="card-content" style="display:flex;gap:20px">
@@ -611,7 +611,7 @@ async function loadSystemPage() {
                             <p><strong>状态:</strong> <span id="sys-time-status">-</span> <span style="font-size:0.85em;color:#888">(<span id="sys-time-source">-</span>)</span></p>
                             <p><strong>时区:</strong> <span id="sys-timezone">-</span></p>
                             <div style="margin-top:8px;display:flex;gap:5px">
-                                <button class="btn btn-small" onclick="syncTimeFromBrowser()" style="font-size:0.85em;padding:4px 8px;color:#666"><i class="ri-refresh-line"></i> 同步</button>
+                                <button type="button" class="btn btn-small time-sync-btn" onclick="syncTimeFromBrowser()" style="font-size:0.85em;padding:4px 8px;color:#666"><i class="ri-refresh-line"></i> 同步</button>
                                 <button class="btn btn-small" onclick="showTimezoneModal()" style="font-size:0.85em;padding:4px 8px;color:#666"><i class="ri-time-line"></i> 时区</button>
                             </div>
                         </div>
@@ -627,7 +627,7 @@ async function loadSystemPage() {
                         <h2>设备面板</h2>
                         <div class="section-actions">
                             <button id="agx-power-btn" class="btn btn-sm btn-danger" onclick="toggleAgxPower()">🔴 AGX 已关闭</button>
-                            <button id="lpmu-power-btn" class="btn btn-sm btn-warning" onclick="toggleLpmuPower()">⚠️ LPMU 检测中</button>
+                            <button id="lpmu-power-btn" class="btn btn-sm btn-warning" onclick="toggleLpmuPower()"><i class="ri-alert-line"></i> LPMU 检测中</button>
                             <button class="btn btn-sm btn-service-style" onclick="showWidgetManager()"><i class="ri-apps-line"></i> 组件管理</button>
                         </div>
                     </div>
@@ -644,7 +644,6 @@ async function loadSystemPage() {
                     <div id="data-widgets-empty" class="data-widgets-empty" style="display:none;">
                         <div class="empty-icon"><i class="ri-box-3-line"></i></div>
                         <p>还没有添加数据组件</p>
-                        <button class="btn btn-small btn-service-style" onclick="showWidgetManager()" style="font-size:0.85em">打开管理面板</button>
                     </div>
                 </div>
                 
@@ -652,9 +651,9 @@ async function loadSystemPage() {
                 <div class="section fan-control-section">
                     <div class="section-header">
                         <h2>风扇控制</h2>
-                        <div class="section-actions">
-                            <button class="btn btn-sm" onclick="refreshFans()" style="color:#666"><i class="ri-refresh-line"></i></button>
-                            <button class="btn btn-sm" onclick="showFanCurveModal()" style="color:#666"><i class="ri-line-chart-line"></i> 曲线</button>
+                        <div class="section-actions fan-section-actions">
+                            <button type="button" class="btn btn-sm fan-refresh-btn" onclick="refreshFans()" title="刷新" style="color:#666"><i class="ri-refresh-line"></i></button>
+                            <button type="button" class="btn btn-sm btn-service-style" onclick="showFanCurveModal()"><i class="ri-line-chart-line"></i> 曲线</button>
                         </div>
                     </div>
                     <!-- 温度状态栏 -->
@@ -688,7 +687,8 @@ async function loadSystemPage() {
                 <div class="led-page-header">
                     <h2>LED 控制</h2>
                     <div class="led-quick-actions">
-                        <button class="btn btn-sm" onclick="refreshSystemLeds()" style="color:#666"><i class="ri-refresh-line"></i></button>
+                        <button type="button" class="btn btn-sm led-refresh-btn" onclick="refreshSystemLeds()" title="刷新" style="color:#666"><i class="ri-refresh-line"></i></button>
+                        <button class="btn btn-sm system-led-cc-btn" id="system-led-cc-btn" onclick="openLedModal('matrix', 'colorcorrection')" style="display:none;color:#666"><i class="ri-contrast-line"></i> 色彩校正</button>
                         <button class="btn btn-sm" onclick="allLedsOff()" style="color:#666">全部关闭</button>
                     </div>
                 </div>
@@ -698,12 +698,12 @@ async function loadSystemPage() {
             </div>
         </div>
         
-        <!-- 服务详情模态框 -->
+        <!-- 服务详情模态框 - 复刻全局色彩校正，关闭按钮右上角 -->
         <div id="services-modal" class="modal hidden">
-            <div class="modal-content" style="max-width:900px">
+            <div class="modal-content cc-compact" style="max-width:900px">
                 <div class="modal-header">
                     <h2>服务状态</h2>
-                    <button class="modal-close" onclick="hideServicesModal()">&times;</button>
+                    <button class="modal-close" onclick="hideServicesModal()"><i class="ri-close-line"></i></button>
                 </div>
                 <div class="modal-body">
                     <table class="data-table" id="services-table">
@@ -849,7 +849,7 @@ let usbMuxConfigured = false;
 
 const USB_MUX_TARGETS = ['esp32', 'agx', 'lpmu'];
 const USB_MUX_DISPLAY = { 'esp32': 'ESP', 'agx': 'AGX', 'lpmu': 'LPMU' };
-const USB_MUX_COLORS = { 'esp32': '', 'agx': 'btn-primary', 'lpmu': 'btn-success' };
+const USB_MUX_COLORS = { 'esp32': '', 'agx': 'btn-service-style', 'lpmu': 'btn-success' };
 
 async function refreshUsbMuxStatus() {
     try {
@@ -996,11 +996,11 @@ function updateAgxPowerButton() {
     if (!btn) return;
 
     if (agxPowerState) {
-        btn.innerHTML = '🟢 AGX 运行中';
+        btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#2e7d32"></i> AGX 运行中';
         btn.className = 'btn btn-sm btn-success';
         btn.title = '点击关闭 AGX 电源';
     } else {
-        btn.innerHTML = '🔴 AGX 已关闭';
+        btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#c62828"></i> AGX 已关闭';
         btn.className = 'btn btn-sm btn-danger';
         btn.title = '点击开启 AGX 电源';
     }
@@ -1173,23 +1173,23 @@ function updateLpmuPowerButton(remainingSec = 0) {
 
     switch (lpmuState) {
         case 'online':
-            btn.innerHTML = '🟢 LPMU 运行中';
+            btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#2e7d32"></i> LPMU 运行中';
             btn.className = 'btn btn-sm btn-success';
             btn.title = 'LPMU 在线 (ping 10.10.99.99 可达)\n点击触发电源按钮';
             break;
         case 'offline':
-            btn.innerHTML = '🔴 LPMU 已关闭';
+            btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#c62828"></i> LPMU 已关闭';
             btn.className = 'btn btn-sm btn-danger';
             btn.title = 'LPMU 离线 (ping 10.10.99.99 不可达)\n点击触发电源按钮';
             break;
         case 'detecting':
             const timeText = remainingSec > 0 ? ` (${remainingSec}s)` : '';
-            btn.innerHTML = `⏳ 状态获取中${timeText}`;
+            btn.innerHTML = `<i class="ri-hourglass-line"></i> 状态获取中${timeText}`;
             btn.className = 'btn btn-sm btn-warning';
             btn.title = '正在检测 LPMU 状态...\n最多等待 80 秒';
             break;
         default:
-            btn.innerHTML = '⚠️ LPMU 检测中';
+            btn.innerHTML = '<i class="ri-alert-line"></i> LPMU 检测中';
             btn.className = 'btn btn-sm btn-warning';
             btn.title = 'LPMU 状态未知\n点击触发电源按钮';
     }
@@ -1406,20 +1406,20 @@ function updateFanInfo(data) {
             const isOff = mode === 'off';
             
             const modeInfo = {
-                'off':    { label: '关闭', color: '#6b7280', icon: '⏹' },
-                'manual': { label: '手动', color: '#f59e0b', icon: '' },
-                'auto':   { label: '自动', color: '#10b981', icon: '⚙️' },
-                'curve':  { label: '曲线', color: '#3b82f6', icon: '📈' }
+                'off':    { label: '关闭', color: '#6b7280', iconRi: 'ri-stop-line' },
+                'manual': { label: '手动', color: '#f59e0b', iconRi: 'ri-settings-3-line' },
+                'auto':   { label: '自动', color: '#10b981', iconRi: 'ri-run-line' },
+                'curve':  { label: '曲线', color: '#3b82f6', iconRi: 'ri-line-chart-line' }
             };
             const currentMode = modeInfo[mode] || modeInfo['auto'];
             
             return `
             <div class="fan-card ${isOff ? 'is-off' : ''}">
-                <!-- 顶部：风扇名 + 状态 -->
+                <!-- 顶部：风扇名 + 状态（仅图标） -->
                 <div class="fan-header">
                     <span class="fan-title">风扇 ${fan.id}</span>
-                    <span class="fan-status-badge" style="background:${currentMode.color}20;color:${currentMode.color}">
-                        ${currentMode.icon} ${currentMode.label}
+                    <span class="fan-status-badge" style="background:${currentMode.color}20;color:${currentMode.color}" title="${currentMode.label}">
+                        <i class="${currentMode.iconRi}"></i>
                     </span>
                 </div>
                 
@@ -1427,7 +1427,6 @@ function updateFanInfo(data) {
                 <div class="fan-speed-display">
                     <span class="fan-speed-num">${displayDuty}</span>
                     <span class="fan-speed-percent">%</span>
-                    ${isCurveOrAuto && duty !== displayDuty ? `<div class="fan-rpm-small">当前: ${duty}%</div>` : ''}
                     ${rpm > 0 ? `<div class="fan-rpm-small">${rpm} RPM</div>` : ''}
                 </div>
                 
@@ -1435,7 +1434,7 @@ function updateFanInfo(data) {
                 <div class="fan-mode-tabs">
                     <button class="fan-mode-tab ${mode === 'off' ? 'active off' : ''}" 
                             onclick="setFanMode(${fan.id}, 'off')">关闭</button>
-                    <button class="fan-mode-tab manual ${mode === 'manual' ? 'active' : ''}" 
+                    <button class="fan-mode-tab ${mode === 'manual' ? 'active manual' : ''}" 
                             onclick="setFanMode(${fan.id}, 'manual')">手动</button>
                     <button class="fan-mode-tab ${mode === 'auto' ? 'active auto' : ''}" 
                             onclick="setFanMode(${fan.id}, 'auto')">自动</button>
@@ -1455,12 +1454,6 @@ function updateFanInfo(data) {
                            oninput="updateFanSliderUI(${fan.id}, this.value)"
                            ${!isManual ? 'disabled title="切换到手动模式后可调节"' : ''}>
                 </div>
-                
-                <!-- 底部操作 -->
-                ${mode === 'curve' ? `
-                <button class="fan-curve-btn" onclick="showFanCurveModal(${fan.id})">
-                    ⚙️ 编辑温度曲线
-                </button>` : ''}
             </div>
         `;
         }).join('');
@@ -1663,10 +1656,10 @@ async function showFanCurveModal(fanId = 0) {
     modal.onclick = (e) => { if (e.target === modal) closeFanCurveModal(); };
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:650px;">
+        <div class="modal-content cc-compact" style="max-width:650px;">
             <div class="modal-header">
-                <h3>风扇曲线管理</h3>
-                <button class="modal-close" onclick="closeFanCurveModal()">&times;</button>
+                <h2>风扇曲线管理</h2>
+                <button class="modal-close" onclick="closeFanCurveModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
                 <!-- 风扇选择 -->
@@ -1759,7 +1752,9 @@ async function showFanCurveModal(fanId = 0) {
             </div>
             <div class="modal-footer">
                 <button class="btn" onclick="closeFanCurveModal()">取消</button>
-                <button class="btn btn-service-style" onclick="applyFanCurve()">应用曲线</button>
+                <button class="btn btn-service-style" onclick="importFanCurveConfig()"><i class="ri-upload-line"></i> 导入配置</button>
+                <button class="btn btn-service-style" onclick="exportFanCurveConfig()"><i class="ri-download-line"></i> 导出配置</button>
+                <button class="btn btn-service-style" onclick="applyFanCurve()"><i class="ri-check-line"></i> 应用曲线</button>
             </div>
         </div>
     `;
@@ -1992,8 +1987,8 @@ function drawCurvePreview() {
         ctx.lineWidth = 2;
         ctx.stroke();
         
-        // 标签
-        ctx.fillStyle = '#fff';
+        // 标签（使用坐标轴文字颜色）
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
         ctx.font = 'bold 10px system-ui';
         ctx.textAlign = 'center';
         ctx.fillText(`${point.temp}°/${point.duty}%`, x, y - 12);
@@ -2229,6 +2224,17 @@ async function applyFanCurve() {
         return;
     }
     
+    // 验证温度迟滞和最小间隔（防止 NaN 导致保存失败）
+    if (isNaN(hysteresis) || hysteresis < 0 || hysteresis > 20) {
+        showToast('温度迟滞必须在 0-20°C 范围内', 'error');
+        return;
+    }
+    
+    if (isNaN(minInterval) || minInterval < 500 || minInterval > 30000) {
+        showToast('最小间隔必须在 500-30000ms 范围内', 'error');
+        return;
+    }
+    
     // 排序曲线点
     const sortedCurve = [...fanCurveConfig.curve].sort((a, b) => a.temp - b.temp);
     
@@ -2276,6 +2282,121 @@ async function applyFanCurve() {
         console.error('应用曲线失败:', e);
         showToast('应用曲线失败: ' + e.message, 'error');
     }
+}
+
+/**
+ * 导出风扇曲线配置到本地 JSON 文件，并同时保存到 SD 卡 /sdcard/config
+ */
+async function exportFanCurveConfig() {
+    const fanId = parseInt(document.getElementById('fan-curve-fan-select').value);
+    const hysteresis = parseFloat(document.getElementById('fan-curve-hysteresis').value);
+    const minInterval = parseInt(document.getElementById('fan-curve-interval').value);
+    const minDuty = parseInt(document.getElementById('fan-curve-min-duty').value);
+    const maxDuty = parseInt(document.getElementById('fan-curve-max-duty').value);
+    
+    // 构建导出配置
+    const config = {
+        version: 1,
+        type: 'fan_curve_config',
+        fan_id: fanId,
+        curve: [...fanCurveConfig.curve].sort((a, b) => a.temp - b.temp),
+        hysteresis: hysteresis,
+        min_interval: minInterval,
+        min_duty: minDuty,
+        max_duty: maxDuty,
+        exported_at: new Date().toISOString()
+    };
+    
+    const json = JSON.stringify(config, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    
+    // 1. 保存到本地（触发浏览器下载）
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fan_curve_config_${fanId}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    // 2. 同时保存到 SD 卡 /sdcard/config
+    const sdcardPath = `/sdcard/config/fan_curve_config_${fanId}.json`;
+    try {
+        await api.fileUpload(sdcardPath, blob);
+        showToast(`风扇 ${fanId} 曲线配置已导出（本地 + SD 卡 ${sdcardPath}）`, 'success');
+    } catch (e) {
+        showToast(`风扇 ${fanId} 曲线已保存到本地，SD 卡保存失败: ${e.message}`, 'warning');
+    }
+}
+
+/**
+ * 导入风扇曲线配置（从本地 JSON 文件）
+ */
+function importFanCurveConfig() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        try {
+            const text = await file.text();
+            const config = JSON.parse(text);
+            
+            // 验证配置格式
+            if (config.type !== 'fan_curve_config') {
+                showToast('无效的配置文件格式', 'error');
+                return;
+            }
+            
+            if (!config.curve || !Array.isArray(config.curve) || config.curve.length < 2) {
+                showToast('配置文件中曲线点无效', 'error');
+                return;
+            }
+            
+            // 验证曲线点格式
+            for (const point of config.curve) {
+                if (typeof point.temp !== 'number' || typeof point.duty !== 'number') {
+                    showToast('曲线点格式错误', 'error');
+                    return;
+                }
+            }
+            
+            // 应用配置到当前界面
+            fanCurveConfig.curve = config.curve.sort((a, b) => a.temp - b.temp);
+            
+            if (typeof config.hysteresis === 'number') {
+                fanCurveConfig.hysteresis = config.hysteresis;
+                document.getElementById('fan-curve-hysteresis').value = config.hysteresis;
+            }
+            if (typeof config.min_interval === 'number') {
+                fanCurveConfig.minInterval = config.min_interval;
+                document.getElementById('fan-curve-interval').value = config.min_interval;
+            }
+            if (typeof config.min_duty === 'number') {
+                fanCurveConfig.minDuty = config.min_duty;
+                document.getElementById('fan-curve-min-duty').value = config.min_duty;
+            }
+            if (typeof config.max_duty === 'number') {
+                fanCurveConfig.maxDuty = config.max_duty;
+                document.getElementById('fan-curve-max-duty').value = config.max_duty;
+            }
+            
+            // 刷新曲线编辑器和预览
+            refreshCurveEditor();
+            drawCurvePreview();
+            
+            showToast(`已导入配置文件: ${file.name}`, 'success');
+        } catch (err) {
+            console.error('导入配置失败:', err);
+            showToast('导入配置失败: ' + err.message, 'error');
+        }
+    };
+    
+    input.click();
 }
 
 /**
@@ -2376,9 +2497,11 @@ async function refreshSystemLeds() {
             // 渲染设备卡片
             container.innerHTML = result.data.devices.map(dev => generateLedDeviceCard(dev)).join('');
             
-            // 加载字体列表
+            // 加载字体列表 & 显示色彩校正按钮
             if (result.data.devices.some(d => d.name === 'matrix' || d.layout === 'matrix')) {
                 loadFontList();
+                const ccBtn = document.getElementById('system-led-cc-btn');
+                if (ccBtn) ccBtn.style.display = '';
             }
         } else {
             container.innerHTML = `
@@ -2403,67 +2526,67 @@ async function refreshSystemLeds() {
 const WIDGET_TYPES = {
     ring: {
         name: '环形进度',
-        icon: '⭕',
+        icon: '<i class="ri-progress-6-line"></i>',
         description: '圆环百分比，适合 CPU/内存/磁盘使用率',
         defaultConfig: { min: 0, max: 100, unit: '%', color: '#4dabf7', decimals: 0 }
     },
     gauge: {
         name: '仪表盘',
-        icon: '🎯',
+        icon: '<i class="ri-focus-line"></i>',
         description: '半圆仪表，适合带刻度的数值',
         defaultConfig: { min: 0, max: 100, unit: '', color: '#69db7c', decimals: 1 }
     },
     temp: {
         name: '温度计',
-        icon: '🌡️',
+        icon: '<i class="ri-temp-hot-line"></i>',
         description: '垂直温度条，颜色随温度变化',
         defaultConfig: { min: 0, max: 100, unit: '°C', color: '#ff8787', decimals: 0 }
     },
     number: {
         name: '数字',
-        icon: '🔢',
+        icon: '<i class="ri-numbers-line"></i>',
         description: '大号数字显示，适合功率/电压/电流',
-        defaultConfig: { unit: 'W', color: '#74c0fc', icon: '⚡', decimals: 1 }
+        defaultConfig: { unit: 'W', color: '#74c0fc', icon: '<i class="ri-thunderstorms-line"></i>', decimals: 1 }
     },
     bar: {
         name: '进度条',
-        icon: '📊',
+        icon: '<i class="ri-bar-chart-line"></i>',
         description: '水平进度条',
         defaultConfig: { min: 0, max: 100, unit: '%', color: '#ffd43b', decimals: 1 }
     },
     text: {
         name: '文本',
-        icon: '📝',
+        icon: '<i class="ri-file-text-line"></i>',
         description: '显示文本或格式化字符串',
         defaultConfig: { unit: '', color: '#868e96' }
     },
     status: {
         name: '状态灯',
-        icon: '🔴',
+        icon: '<i class="ri-record-circle-fill"></i>',
         description: '根据值显示不同颜色状态',
         defaultConfig: { thresholds: [0, 50, 80], colors: ['#40c057', '#fab005', '#fa5252'] }
     },
     icon: {
         name: '图标状态',
-        icon: '🎭',
+        icon: '<i class="ri-emotion-line"></i>',
         description: '根据值显示不同图标',
         defaultConfig: { icons: { '0': '❌', '1': '✅', 'default': '❓' } }
     },
     dual: {
         name: '双数值',
-        icon: '📈',
+        icon: '<i class="ri-line-chart-line"></i>',
         description: '主值+副值，适合显示当前/最大等',
         defaultConfig: { unit: '', color: '#74c0fc', decimals: 1 }
     },
     percent: {
         name: '百分比',
-        icon: '💯',
+        icon: '<i class="ri-percent-line"></i>',
         description: '大号百分比数字',
         defaultConfig: { min: 0, max: 100, color: '#4dabf7', decimals: 0 }
     },
     log: {
         name: '日志流',
-        icon: '📜',
+        icon: '<i class="ri-file-list-line"></i>',
         description: '从变量读取日志文本流，支持手动刷新',
         defaultConfig: { maxLines: 15, color: '#495057', fullWidth: true }
     }
@@ -2486,18 +2609,18 @@ const LAYOUT_OPTIONS = {
  * 预设组件模板
  */
 const WIDGET_PRESETS = [
-    { id: 'cpu', label: 'CPU', type: 'ring', icon: '💻', color: '#4dabf7', unit: '%' },
-    { id: 'mem', label: '内存', type: 'ring', icon: '🧠', color: '#69db7c', unit: '%' },
-    { id: 'disk', label: '硬盘', type: 'ring', icon: '💾', color: '#ffd43b', unit: '%' },
-    { id: 'temp', label: '温度', type: 'temp', icon: '🌡️', color: '#ff8787', unit: '°C' },
-    { id: 'gpu', label: 'GPU', type: 'ring', icon: '🎮', color: '#da77f2', unit: '%' },
-    { id: 'power', label: '功耗', type: 'number', icon: '⚡', color: '#74c0fc', unit: 'W' },
-    { id: 'voltage', label: '电压', type: 'number', icon: '🔌', color: '#ffa94d', unit: 'V' },
-    { id: 'current', label: '电流', type: 'number', icon: '💡', color: '#ff6b6b', unit: 'A' },
-    { id: 'network', label: '网速', type: 'bar', icon: '🌐', color: '#38d9a9', unit: 'Mbps' },
-    { id: 'status', label: '状态', type: 'status', icon: '🔴', color: '#40c057', unit: '' },
-    { id: 'uptime', label: '运行时间', type: 'text', icon: '⏱️', color: '#868e96', unit: '' },
-    { id: 'log', label: '日志流', type: 'log', icon: '📜', color: '#495057', maxLines: 15, layout: 'full' },
+    { id: 'cpu', label: 'CPU', type: 'ring', icon: '<i class="ri-cpu-line"></i>', color: '#4dabf7', unit: '%' },
+    { id: 'mem', label: '内存', type: 'ring', icon: '<i class="ri-brain-line"></i>', color: '#69db7c', unit: '%' },
+    { id: 'disk', label: '硬盘', type: 'ring', icon: '<i class="ri-hard-drive-line"></i>', color: '#ffd43b', unit: '%' },
+    { id: 'temp', label: '温度', type: 'temp', icon: '<i class="ri-temp-hot-line"></i>', color: '#ff8787', unit: '°C' },
+    { id: 'gpu', label: 'GPU', type: 'ring', icon: '<i class="ri-gamepad-line"></i>', color: '#da77f2', unit: '%' },
+    { id: 'power', label: '功耗', type: 'number', icon: '<i class="ri-thunderstorms-line"></i>', color: '#74c0fc', unit: 'W' },
+    { id: 'voltage', label: '电压', type: 'number', icon: '<i class="ri-plug-line"></i>', color: '#ffa94d', unit: 'V' },
+    { id: 'current', label: '电流', type: 'number', icon: '<i class="ri-lightbulb-line"></i>', color: '#ff6b6b', unit: 'A' },
+    { id: 'network', label: '网速', type: 'bar', icon: '<i class="ri-global-line"></i>', color: '#38d9a9', unit: 'Mbps' },
+    { id: 'status', label: '状态', type: 'status', icon: '<i class="ri-record-circle-fill"></i>', color: '#40c057', unit: '' },
+    { id: 'uptime', label: '运行时间', type: 'text', icon: '<i class="ri-timer-line"></i>', color: '#868e96', unit: '' },
+    { id: 'log', label: '日志流', type: 'log', icon: '<i class="ri-file-list-line"></i>', color: '#495057', maxLines: 15, layout: 'full' },
 ];
 
 // 当前配置的组件列表
@@ -2835,7 +2958,7 @@ function renderWidgetHtml(widget) {
                             title="${isCollapsed ? '展开日志' : '折叠日志'}">
                         <i class="ri-arrow-${isCollapsed ? 'down' : 'up'}-s-line"></i>
                     </button>
-                    <button class="btn btn-sm ${isReading ? 'btn-danger' : 'btn-primary'}" 
+                    <button class="btn btn-sm ${isReading ? 'btn-danger' : 'btn-service-style'}" 
                             id="dw-${id}-toggle" onclick="event.stopPropagation();toggleLogReading('${id}')">
                         <i class="ri-${isReading ? 'stop' : 'play'}-line"></i> ${isReading ? '停止' : '读取'}
                     </button>
@@ -3213,7 +3336,7 @@ function updateLogToggleButton(widgetId, isReading) {
     const status = document.getElementById(`dw-${widgetId}-status`);
     
     if (btn) {
-        btn.className = `btn btn-sm ${isReading ? 'btn-danger' : 'btn-primary'}`;
+        btn.className = `btn btn-sm ${isReading ? 'btn-danger' : 'btn-service-style'}`;
         btn.innerHTML = `<i class="ri-${isReading ? 'stop' : 'play'}-line"></i> ${isReading ? '停止' : '读取'}`;
     }
     if (status) {
@@ -3332,10 +3455,10 @@ function showWidgetManager(editWidgetId = null) {
     modal.onclick = (e) => { if (e.target === modal) closeModal('widget-manager-modal'); };
     
     modal.innerHTML = `
-        <div class="modal-content dw-manager-modal">
+        <div class="modal-content dw-manager-modal cc-compact">
             <div class="modal-header">
-                <h3>数据监控管理</h3>
-                <button class="modal-close" onclick="closeModal('widget-manager-modal')">&times;</button>
+                <h2>数据组件管理</h2>
+                <button class="modal-close" onclick="closeModal('widget-manager-modal')"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body dw-manager-body">
                 <div class="dw-manager-sidebar">
@@ -3366,7 +3489,7 @@ function showWidgetManager(editWidgetId = null) {
                 </div>
                 <div class="dw-manager-main" id="dw-manager-main">
                     <div class="dw-manager-empty">
-                        <i class="ri-dashboard-line" style="font-size:48px;opacity:0.3;"></i>
+                        <i class="ri-box-3-line" style="font-size:48px;opacity:0.3;"></i>
                         <p>选择左侧组件进行编辑<br>或添加新组件</p>
                     </div>
                 </div>
@@ -3611,7 +3734,7 @@ function showWidgetEditPanel(widgetId) {
     main.innerHTML = `
         <div class="dw-edit-panel">
             <div class="dw-edit-header">
-                <span class="dw-edit-type-badge">${typeConfig.icon || '📊'} ${typeConfig.name || widget.type}</span>
+                <span class="dw-edit-type-badge">${typeConfig.icon || '<i class="ri-dashboard-line"></i>'} ${typeConfig.name || widget.type}</span>
             </div>
             
             <div class="form-group">
@@ -3632,7 +3755,7 @@ function showWidgetEditPanel(widgetId) {
             
             <!-- 布局选项 -->
             <div class="form-group">
-                <label>📐 布局宽度</label>
+                <label><i class="ri-ruler-line"></i> 布局宽度</label>
                 <div class="dw-layout-options">
                     ${LAYOUT_OPTIONS.width.map(opt => `
                         <label class="dw-layout-option ${widget.layout === opt.value || (!widget.layout && opt.value === 'auto') ? 'active' : ''}">
@@ -3697,7 +3820,7 @@ function showWidgetEditPanel(widgetId) {
             
             <div class="dw-edit-actions">
                 <button class="btn btn-danger" onclick="deleteDataWidget('${widget.id}')"><i class="ri-delete-bin-line"></i> 删除</button>
-                <button class="btn btn-primary" onclick="saveWidgetEdit('${widget.id}')"><i class="ri-save-line"></i> 保存</button>
+                <button class="btn btn-service-style" onclick="saveWidgetEdit('${widget.id}')"><i class="ri-save-line"></i> 保存</button>
             </div>
         </div>
     `;
@@ -3792,7 +3915,7 @@ function deleteDataWidget(widgetId) {
     if (main) {
         main.innerHTML = `
             <div class="dw-manager-empty">
-                <div style="font-size:48px;opacity:0.3;">📊</div>
+                <i class="ri-box-3-line" style="font-size:48px;opacity:0.3;"></i>
                 <p>选择左侧组件进行编辑<br>或添加新组件</p>
             </div>
         `;
@@ -4289,7 +4412,7 @@ function startQuickLogTail(logFile, hostId, intervalMs = 5000) {
     
     if (btn) {
         btn.textContent = '⏹️ 停止跟踪';
-        btn.classList.remove('btn-primary');
+        btn.classList.remove('btn-service-style');
         btn.classList.add('btn-danger');
     }
     if (status) status.innerHTML = '<span style="color:#27ae60">● 实时更新中</span>';
@@ -4347,7 +4470,7 @@ function stopQuickLogTail() {
     if (btn) {
         btn.textContent = '▶️ 开始跟踪';
         btn.classList.remove('btn-danger');
-        btn.classList.add('btn-primary');
+        btn.classList.add('btn-service-style');
     }
     if (status) status.textContent = '已暂停';
 }
@@ -4484,7 +4607,7 @@ function showTimezoneModal() {
             </div>
             <div class="form-actions">
                 <button class="btn" onclick="hideTimezoneModal()">取消</button>
-                <button class="btn btn-primary" onclick="applyTimezone()">应用</button>
+                <button class="btn btn-service-style" onclick="applyTimezone()">应用</button>
             </div>
         </div>
     `;
@@ -4536,8 +4659,9 @@ async function loadLedPage() {
             <div class="led-page-header">
                 <h1>💡 LED 控制</h1>
                 <div class="led-quick-actions">
-                    <button class="btn btn-sm" onclick="refreshLedPage()">🔄 刷新</button>
-                    <button class="btn btn-sm" onclick="allLedsOff()">⏹ 全部关闭</button>
+                    <button type="button" class="btn btn-sm led-refresh-btn" onclick="refreshLedPage()" title="刷新" style="color:#666"><i class="ri-refresh-line"></i></button>
+                    <button class="btn btn-sm led-color-correction-btn" id="led-page-cc-btn" onclick="openLedModal('matrix', 'colorcorrection')" style="display:none;color:#666"><i class="ri-contrast-line"></i> 色彩校正</button>
+                    <button class="btn btn-sm" onclick="allLedsOff()" style="color:#666">全部关闭</button>
                 </div>
             </div>
             <div id="led-devices-grid" class="led-devices-grid">
@@ -4573,9 +4697,11 @@ async function refreshLedPage() {
             // 渲染设备卡片
             container.innerHTML = result.data.devices.map(dev => generateLedDeviceCard(dev)).join('');
             
-            // 加载字体列表
+            // 加载字体列表 & 显示色彩校正按钮
             if (result.data.devices.some(d => d.name === 'matrix' || d.layout === 'matrix')) {
                 loadFontList();
+                const ccBtn = document.getElementById('led-page-cc-btn');
+                if (ccBtn) ccBtn.style.display = '';
             }
         } else {
             container.innerHTML = `
@@ -4613,7 +4739,7 @@ function generateLedDeviceCard(dev) {
     let statusClass = 'off';
     if (isOn) {
         if (currentAnimation) {
-            statusText = `▶ ${currentAnimation}`;
+            statusText = `▶ ${effectDisplayName(currentAnimation)}`;
             statusClass = 'effect';
         } else {
             statusText = '常亮';
@@ -4621,27 +4747,16 @@ function generateLedDeviceCard(dev) {
         }
     }
     
-    // 快捷特效按钮（显示前4个）
-    const quickEffects = deviceEffects.slice(0, 4);
-    const quickEffectsHtml = quickEffects.map(eff => 
-        `<button class="led-quick-effect ${eff === currentAnimation ? 'active' : ''}" 
-                 onclick="quickStartEffect('${dev.name}', '${eff}')" 
-                 title="${eff}">${getEffectIcon(eff)}</button>`
-    ).join('');
-    
-    // Matrix 设备额外按钮
-    const matrixButtons = isMatrix ? `
-        <button class="led-func-btn" onclick="openLedModal('${dev.name}', 'content')" title="图像/QR码">
-            <span class="func-icon">📷</span>
+    // Matrix 设备底部栏额外按钮（QR/文本/滤镜）放在保存左侧
+    const matrixFooterBtns = isMatrix ? `
+        <button class="led-quick-effect" onclick="openLedModal('${dev.name}', 'content')" title="图像/QR码">
+            <i class="ri-qr-code-line"></i>
         </button>
-        <button class="led-func-btn" onclick="openLedModal('${dev.name}', 'text')" title="文本显示">
-            <span class="func-icon">📝</span>
+        <button class="led-quick-effect" onclick="openLedModal('${dev.name}', 'text')" title="文本显示">
+            <i class="ri-text"></i>
         </button>
-        <button class="led-func-btn" onclick="openLedModal('${dev.name}', 'filter')" title="滤镜效果">
-            <span class="func-icon">🎨</span>
-        </button>
-        <button class="led-func-btn" onclick="openLedModal('${dev.name}', 'colorcorrection')" title="${t('ledPage.colorCorrectionTitle')}">
-            <span class="func-icon">⚙️</span>
+        <button class="led-quick-effect" onclick="openLedModal('${dev.name}', 'filter')" title="滤镜效果">
+            <i class="ri-color-filter-line"></i>
         </button>
     ` : '';
     
@@ -4649,19 +4764,19 @@ function generateLedDeviceCard(dev) {
         <div class="led-device-card ${isOn ? 'is-on' : ''}" data-device="${dev.name}">
             <!-- 设备头部 -->
             <div class="led-card-header">
-                <div class="led-device-icon">${icon}</div>
                 <div class="led-device-info">
                     <span class="led-device-name">${dev.name}</span>
                     <span class="led-device-desc">${description}</span>
                 </div>
                 <div class="led-device-status ${statusClass}">${statusText}</div>
+                <button class="led-stop-btn" onclick="stopEffect('${dev.name}')" title="停止动画"><i class="ri-stop-circle-line"></i> 停止动画</button>
             </div>
             
             <!-- 控制区域 -->
             <div class="led-card-controls">
                 <!-- 亮度滑块 -->
                 <div class="led-brightness-row">
-                    <span class="brightness-label">☀️</span>
+                    <span class="brightness-label"><i class="ri-sun-line"></i></span>
                     <input type="range" min="0" max="255" value="${dev.brightness}" 
                            class="led-brightness-slider"
                            oninput="updateBrightnessDisplay('${dev.name}', this.value)"
@@ -4670,42 +4785,44 @@ function generateLedDeviceCard(dev) {
                     <span class="brightness-value" id="brightness-val-${dev.name}">${dev.brightness}</span>
                 </div>
                 
-                <!-- 颜色选择 -->
+                <!-- 颜色选择 (Modern) -->
                 <div class="led-color-row">
-                    <input type="color" value="${colorHex}" id="color-picker-${dev.name}" 
-                           onchange="fillColorFromPicker('${dev.name}', this.value)"
-                           class="led-color-picker">
-                    <div class="led-color-presets">
-                        <button class="color-dot" style="background:#ff0000" onclick="quickFillColor('${dev.name}', '#ff0000')"></button>
-                        <button class="color-dot" style="background:#ff6600" onclick="quickFillColor('${dev.name}', '#ff6600')"></button>
-                        <button class="color-dot" style="background:#ffff00" onclick="quickFillColor('${dev.name}', '#ffff00')"></button>
-                        <button class="color-dot" style="background:#00ff00" onclick="quickFillColor('${dev.name}', '#00ff00')"></button>
-                        <button class="color-dot" style="background:#00ffff" onclick="quickFillColor('${dev.name}', '#00ffff')"></button>
-                        <button class="color-dot" style="background:#0066ff" onclick="quickFillColor('${dev.name}', '#0066ff')"></button>
-                        <button class="color-dot" style="background:#ff00ff" onclick="quickFillColor('${dev.name}', '#ff00ff')"></button>
-                        <button class="color-dot" style="background:#ffffff" onclick="quickFillColor('${dev.name}', '#ffffff')"></button>
+                    <div class="modern-picker-wrapper" title="自定义颜色">
+                        <div class="modern-picker-visual"></div>
+                        <i class="ri-palette-line modern-picker-icon"></i>
+                        <input type="color" value="${colorHex}" id="color-picker-${dev.name}" 
+                               onchange="fillColorFromPicker('${dev.name}', this.value)"
+                               class="modern-picker-input">
                     </div>
-                </div>
-                
-                <!-- 快捷动画 -->
-                <div class="led-effects-row">
-                    <div class="led-quick-effects">
-                        ${quickEffectsHtml}
-                        ${deviceEffects.length > 4 ? `<button class="led-quick-effect more" onclick="openLedModal('${dev.name}', 'effect')" title="更多动画">+${deviceEffects.length - 4}</button>` : ''}
+                    
+                    <div class="modern-presets-container">
+                        <div class="modern-presets-list">
+                            <button class="modern-color-dot" style="background:#ff0000" onclick="quickFillColor('${dev.name}', '#ff0000')" title="红"></button>
+                            <button class="modern-color-dot" style="background:#ff6600" onclick="quickFillColor('${dev.name}', '#ff6600')" title="橙"></button>
+                            <button class="modern-color-dot" style="background:#ffd700" onclick="quickFillColor('${dev.name}', '#ffd700')" title="黄"></button>
+                            <button class="modern-color-dot" style="background:#00d26a" onclick="quickFillColor('${dev.name}', '#00d26a')" title="绿"></button>
+                            <button class="modern-color-dot" style="background:#00ffff" onclick="quickFillColor('${dev.name}', '#00ffff')" title="青"></button>
+                            <button class="modern-color-dot" style="background:#2d7dff" onclick="quickFillColor('${dev.name}', '#2d7dff')" title="蓝"></button>
+                            <button class="modern-color-dot" style="background:#d630ff" onclick="quickFillColor('${dev.name}', '#d630ff')" title="紫"></button>
+                            <button class="modern-color-dot" style="background:#ffffff" onclick="quickFillColor('${dev.name}', '#ffffff')" title="白"></button>
+                            <button class="modern-color-dot" style="background:#ffcccc" onclick="quickFillColor('${dev.name}', '#ffcccc')" title="粉红"></button>
+                            <button class="modern-color-dot" style="background:#e0e0e0" onclick="quickFillColor('${dev.name}', '#e0e0e0')" title="灰"></button>
+                        </div>
                     </div>
-                    <button class="led-stop-btn" onclick="stopEffect('${dev.name}')" title="停止动画">⏹</button>
                 </div>
             </div>
             
-            <!-- 底部操作栏 -->
+            <!-- 底部操作栏：电源 | 更多动画 | [Matrix: QR/文本/滤镜] | 保存 -->
             <div class="led-card-footer">
-                <button class="led-power-btn ${isOn ? 'on' : ''}" id="toggle-${dev.name}" onclick="toggleLed('${dev.name}')">
-                    <span class="power-icon">${isOn ? '🔆' : '💡'}</span>
-                    <span class="power-text">${isOn ? '关闭' : '开启'}</span>
+                <button class="led-power-btn ${isOn ? 'on' : ''}" id="toggle-${dev.name}" onclick="toggleLed('${dev.name}')" title="${isOn ? '点击关闭' : '点击开启'}">
+                    <i class="power-icon ${isOn ? 'ri-lightbulb-fill' : 'ri-lightbulb-line'}"></i>
                 </button>
-                ${matrixButtons}
+                <button class="led-quick-effect" onclick="openLedModal('${dev.name}', 'effect')" title="更多动画">
+                    <i class="ri-play-line"></i>
+                </button>
+                ${matrixFooterBtns}
                 <button class="led-save-btn" onclick="saveLedConfig('${dev.name}')" title="保存配置">
-                    💾
+                    <i class="ri-save-line"></i>
                 </button>
             </div>
         </div>
@@ -4793,7 +4910,7 @@ function updateLedCardState(device, isOn, effect = undefined) {
             statusEl.textContent = '已关闭';
             statusEl.className = 'led-device-status off';
         } else if (effect) {
-            statusEl.textContent = `▶ ${effect}`;
+            statusEl.textContent = `▶ ${effectDisplayName(effect)}`;
             statusEl.className = 'led-device-status effect';
         } else {
             statusEl.textContent = '常亮';
@@ -4804,14 +4921,19 @@ function updateLedCardState(device, isOn, effect = undefined) {
     // 更新电源按钮
     const powerBtn = card.querySelector('.led-power-btn');
     if (powerBtn) {
+        const powerIcon = powerBtn.querySelector('.power-icon');
         if (isOn) {
             powerBtn.classList.add('on');
-            powerBtn.querySelector('.power-icon').textContent = '🔆';
-            powerBtn.querySelector('.power-text').textContent = '关闭';
+            powerBtn.title = '点击关闭';
+            if (powerIcon) {
+                powerIcon.className = 'power-icon ri-lightbulb-fill';
+            }
         } else {
             powerBtn.classList.remove('on');
-            powerBtn.querySelector('.power-icon').textContent = '💡';
-            powerBtn.querySelector('.power-text').textContent = '开启';
+            powerBtn.title = '点击开启';
+            if (powerIcon) {
+                powerIcon.className = 'power-icon ri-lightbulb-line';
+            }
         }
     }
     
@@ -4846,7 +4968,7 @@ function openColorModal(device) {
             <h3>颜色选择</h3>
             <div class="config-row">
                 <input type="color" id="modal-color-picker-${device}" value="${colorHex}" style="width:60px;height:40px;">
-                <button class="btn btn-primary" onclick="applyColorFromModal('${device}')">填充颜色</button>
+                <button class="btn btn-service-style" onclick="applyColorFromModal('${device}')">填充颜色</button>
             </div>
             <h3 style="margin-top:16px;">快捷颜色</h3>
             <div class="preset-colors-grid">
@@ -4924,185 +5046,206 @@ function generateLedModalContent(device, type) {
     const deviceEffects = deviceData?.effects || [];
     
     if (type === 'effect') {
-        // 普通设备的动画模态框
+        // 普通设备的动画模态框 - 卡片式布局，无 emoji，RemixIcon + 复刻全局色彩校正风格
         const effectsHtml = deviceEffects.length > 0 
             ? deviceEffects.map(eff => {
                 const isActive = eff === currentAnimation;
                 const activeClass = isActive ? ' active' : '';
-                return `<button class="btn effect-btn${activeClass}" onclick="selectEffectInModal('${device}', '${eff}', this)">${getEffectIcon(eff)} ${eff}</button>`;
+                return `<button class="btn effect-btn${activeClass}" onclick="selectEffectInModal('${device}', '${eff}', this)">${getEffectIconRemix(eff)}${effectDisplayName(eff)}</button>`;
             }).join('')
             : '<span class="empty">暂无可用动画</span>';
         
+        const isOn = ledStates[device] || false;
+        
         return `
-            <div class="modal-section">
-                <h3>🎬 程序动画</h3>
-                <div class="effects-grid">${effectsHtml}</div>
-                <div class="effect-config-modal" id="modal-effect-config-${device}" style="display:${currentAnimation ? 'flex' : 'none'};">
-                    <span class="effect-name" id="modal-effect-name-${device}">${currentAnimation || '未选择'}</span>
+            <div class="modal-section cc-modal-section">
+                <!-- 启用开关 - 保持与色彩校正布局一致 -->
+                <div class="cc-enable-row">
+                    <label>
+                        <input type="checkbox" id="modal-device-enabled-${device}" ${isOn ? 'checked' : ''} 
+                               onchange="toggleLedFromModal('${device}', this.checked)"> 
+                        ${t('ledPage.deviceEnable')}
+                    </label>
+                </div>
+
+                <div class="cc-section">
+                    <h4>${t('ledPage.effects')}</h4>
+                    <p class="cc-help-text">${t('ledPage.selectAnimation')}</p>
+                    <div class="effects-grid">${effectsHtml}</div>
+                </div>
+                
+                <div class="cc-section" id="modal-effect-config-${device}" style="display:${currentAnimation ? 'block' : 'none'};">
+                    <h4>${t('ledPage.settings')}</h4>
+                    <p class="cc-help-text">${t('ledPage.current')}: <span id="modal-effect-name-${device}">${getEffectIconRemix(currentAnimation)}${currentAnimation ? effectDisplayName(currentAnimation) : t('ledPage.effectNotSelected')}</span></p>
+                    
                     <div class="config-row">
-                        <label>速度</label>
+                        <label>${t('ledPage.speed')}</label>
                         <input type="range" min="1" max="100" value="${currentSpeed}" id="modal-effect-speed-${device}" 
-                               oninput="document.getElementById('modal-speed-val-${device}').textContent=this.value">
+                               oninput="updateEffectSliderValue('${device}', this.value)">
                         <span id="modal-speed-val-${device}">${currentSpeed}</span>
                     </div>
+                    
                     <div class="config-row" id="modal-color-row-${device}" style="display:${colorSupportedEffects.includes(currentAnimation) ? 'flex' : 'none'};">
-                        <label>颜色</label>
-                        <input type="color" id="modal-effect-color-${device}" value="${colorHex}">
+                        <label>${t('ledPage.color')}</label>
+                        <input type="color" id="modal-effect-color-${device}" value="${colorHex}"
+                               oninput="previewEffectFromModal('${device}')">
                     </div>
-                    <div class="config-actions">
-                        <button class="btn btn-primary" onclick="applyEffectFromModal('${device}')">▶ 启动</button>
-                        <button class="btn btn-danger" onclick="stopEffectFromModal('${device}')">⏹ 停止</button>
-                    </div>
+                </div>
+
+                <div class="config-actions cc-actions">
+                    <button class="btn btn-sm" onclick="resetEffectFromModal('${device}')" style="color:#666">${t('ledPage.ccReset')}</button>
+                    <button class="btn btn-service-style btn-sm" onclick="applyEffectFromModal('${device}')"><i class="ri-save-line"></i> ${t('ledPage.ccApply')}</button>
                 </div>
             </div>
         `;
     } else if (type === 'content') {
-        // Matrix 内容模态框 (动画 + 图像 + QR码)
-        const effectsHtml = deviceEffects.length > 0 
-            ? deviceEffects.map(eff => {
-                const isActive = eff === currentAnimation;
-                const activeClass = isActive ? ' active' : '';
-                return `<button class="btn effect-btn${activeClass}" onclick="selectEffectInModal('${device}', '${eff}', this)">${getEffectIcon(eff)} ${eff}</button>`;
-            }).join('')
-            : '<span class="empty">暂无可用动画</span>';
-        
+        // Matrix 图像/QR码 - 复刻全局色彩校正卡片风格与布局，按钮配色按 MD 规范，无 emoji
         return `
-            <div class="modal-tabs">
-                <button class="modal-tab active" onclick="switchModalTab(this, 'modal-tab-image')">📷 图像</button>
-                <button class="modal-tab" onclick="switchModalTab(this, 'modal-tab-qr')">📱 QR码</button>
-            </div>
-            
-            <!-- 图像 Tab -->
-            <div class="modal-tab-content active" id="modal-tab-image">
-                <div class="modal-section">
-                    <div class="config-row">
-                        <input type="text" id="modal-image-path" placeholder="/sdcard/images/..." class="input-flex" value="/sdcard/images/">
-                        <button class="btn btn-sm" onclick="browseImages()">📁 浏览</button>
-                    </div>
-                    <div class="config-row">
-                        <label><input type="checkbox" id="modal-image-center" checked> 居中显示</label>
-                        <button class="btn btn-primary" onclick="displayImageFromModal()">显示图像</button>
+            <div class="modal-section cc-modal-section">
+                <div class="modal-tabs">
+                    <button class="modal-tab active" onclick="switchModalTab(this, 'modal-tab-image')">图像</button>
+                    <button class="modal-tab" onclick="switchModalTab(this, 'modal-tab-qr')">QR码</button>
+                </div>
+                <div class="modal-tab-content active" id="modal-tab-image">
+                    <div class="cc-section">
+                        <h4>图像</h4>
+                        <div class="config-row">
+                            <input type="text" id="modal-image-path" placeholder="/sdcard/images/..." class="input-flex" value="/sdcard/images/">
+                            <button class="btn btn-sm" onclick="browseImages()" style="color:#666"><i class="ri-folder-open-line"></i> 浏览</button>
+                        </div>
+                        <div class="config-row">
+                            <label><input type="checkbox" id="modal-image-center" checked> 居中显示</label>
+                            <button class="btn btn-service-style btn-sm" onclick="displayImageFromModal()">显示图像</button>
+                        </div>
                     </div>
                 </div>
-            </div>
-            
-            <!-- QR码 Tab -->
-            <div class="modal-tab-content" id="modal-tab-qr" style="display:none;">
-                <div class="modal-section">
-                    <div class="config-row">
-                        <input type="text" id="modal-qr-text" placeholder="输入文本或URL" class="input-flex">
-                    </div>
-                    <div class="config-row">
-                        <label>纠错</label>
-                        <select id="modal-qr-ecc">
-                            <option value="L">L - 7%</option>
-                            <option value="M" selected>M - 15%</option>
-                            <option value="Q">Q - 25%</option>
-                            <option value="H">H - 30%</option>
-                        </select>
-                        <label>前景色</label>
-                        <input type="color" id="modal-qr-fg" value="#ffffff">
-                    </div>
-                    <div class="config-row">
-                        <label>背景图</label>
-                        <input type="text" id="modal-qr-bg-image" placeholder="无" readonly style="flex:1;cursor:pointer" onclick="openFilePickerFor('modal-qr-bg-image', '/sdcard/images')">
-                        <button class="btn btn-sm" onclick="document.getElementById('modal-qr-bg-image').value=''" title="清除">✕</button>
-                    </div>
-                    <div class="config-row">
-                        <button class="btn btn-primary" onclick="generateQrCodeFromModal()">生成 QR 码</button>
+                <div class="modal-tab-content" id="modal-tab-qr" style="display:none;">
+                    <div class="cc-section">
+                        <h4>QR码</h4>
+                        <div class="config-row">
+                            <input type="text" id="modal-qr-text" placeholder="输入文本或URL" class="input-flex">
+                        </div>
+                        <div class="config-row">
+                            <label>纠错</label>
+                            <select id="modal-qr-ecc">
+                                <option value="L">L - 7%</option>
+                                <option value="M" selected>M - 15%</option>
+                                <option value="Q">Q - 25%</option>
+                                <option value="H">H - 30%</option>
+                            </select>
+                            <label>前景色</label>
+                            <input type="color" id="modal-qr-fg" value="#ffffff">
+                        </div>
+                        <div class="config-row">
+                            <label>背景图</label>
+                            <input type="text" id="modal-qr-bg-image" placeholder="无" readonly style="flex:1;cursor:pointer" onclick="openFilePickerFor('modal-qr-bg-image', '/sdcard/images')">
+                            <button class="btn btn-sm" onclick="document.getElementById('modal-qr-bg-image').value=''" title="清除" style="color:#666"><i class="ri-close-line"></i></button>
+                        </div>
+                        <div class="config-row">
+                            <button class="btn btn-service-style btn-sm" onclick="generateQrCodeFromModal()">生成 QR 码</button>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
     } else if (type === 'text') {
-        // Matrix 文本模态框
+        // Matrix 文本显示 - 复刻全局色彩校正卡片风格与布局，无 emoji，刷新字体用 RemixIcon，布局分块清晰
         return `
-            <div class="modal-section">
-                <h3>📝 文本显示</h3>
-                <div class="config-row">
-                    <input type="text" id="modal-text-content" placeholder="输入要显示的文本" class="input-flex">
+            <div class="modal-section cc-modal-section">
+                <div class="cc-section">
+                    <h4>文本显示</h4>
+                    <div class="config-row">
+                        <input type="text" id="modal-text-content" placeholder="输入要显示的文本" class="input-flex">
+                    </div>
                 </div>
-                <div class="config-row">
-                    <label>字体</label>
-                    <select id="modal-text-font">
-                        <option value="default">默认</option>
-                    </select>
-                    <button class="btn btn-sm" onclick="loadFontListForModal()" title="刷新字体">🔄</button>
+                <div class="cc-section">
+                    <h4>字体与样式</h4>
+                    <div class="config-row">
+                        <label>字体</label>
+                        <select id="modal-text-font">
+                            <option value="default">默认</option>
+                        </select>
+                        <button class="btn btn-sm" onclick="loadFontListForModal()" title="刷新字体" style="color:#666"><i class="ri-refresh-line"></i> 刷新字体</button>
+                    </div>
+                    <div class="config-row">
+                        <label>对齐</label>
+                        <select id="modal-text-align">
+                            <option value="left">左对齐</option>
+                            <option value="center" selected>居中</option>
+                            <option value="right">右对齐</option>
+                        </select>
+                        <label>颜色</label>
+                        <input type="color" id="modal-text-color" value="#00ff00">
+                    </div>
                 </div>
-                <div class="config-row">
-                    <label>对齐</label>
-                    <select id="modal-text-align">
-                        <option value="left">左对齐</option>
-                        <option value="center" selected>居中</option>
-                        <option value="right">右对齐</option>
-                    </select>
-                    <label>颜色</label>
-                    <input type="color" id="modal-text-color" value="#00ff00">
+                <div class="cc-section">
+                    <h4>位置</h4>
+                    <div class="config-row">
+                        <label>X</label>
+                        <input type="number" id="modal-text-x" value="0" min="0" max="255" style="width:56px">
+                        <label>Y</label>
+                        <input type="number" id="modal-text-y" value="0" min="0" max="255" style="width:56px">
+                        <label><input type="checkbox" id="modal-text-auto-pos" checked> 自动位置</label>
+                    </div>
                 </div>
-                <div class="config-row">
-                    <label>X</label>
-                    <input type="number" id="modal-text-x" value="0" min="0" max="255" style="width:50px">
-                    <label>Y</label>
-                    <input type="number" id="modal-text-y" value="0" min="0" max="255" style="width:50px">
-                    <label><input type="checkbox" id="modal-text-auto-pos" checked> 自动位置</label>
+                <div class="cc-section">
+                    <h4>滚动</h4>
+                    <div class="config-row">
+                        <label>方向</label>
+                        <select id="modal-text-scroll">
+                            <option value="none">无滚动</option>
+                            <option value="left" selected>向左</option>
+                            <option value="right">向右</option>
+                            <option value="up">向上</option>
+                            <option value="down">向下</option>
+                        </select>
+                        <label>速度</label>
+                        <input type="number" id="modal-text-speed" value="50" min="1" max="100" style="width:56px">
+                        <label><input type="checkbox" id="modal-text-loop" checked> 循环滚动</label>
+                    </div>
                 </div>
-                <div class="config-row">
-                    <label>滚动</label>
-                    <select id="modal-text-scroll">
-                        <option value="none">无滚动</option>
-                        <option value="left" selected>← 向左</option>
-                        <option value="right">→ 向右</option>
-                        <option value="up">↑ 向上</option>
-                        <option value="down">↓ 向下</option>
-                    </select>
-                    <label>速度</label>
-                    <input type="number" id="modal-text-speed" value="50" min="1" max="100" style="width:55px">
-                </div>
-                <div class="config-row">
-                    <label><input type="checkbox" id="modal-text-loop" checked> 循环滚动</label>
-                </div>
-                <div class="config-actions">
-                    <button class="btn btn-primary" onclick="displayTextFromModal()">▶ 显示</button>
-                    <button class="btn btn-danger" onclick="stopTextFromModal()">⏹ 停止</button>
+                <div class="config-actions cc-actions">
+                    <button class="btn btn-service-style btn-sm" onclick="displayTextFromModal()">显示</button>
+                    <button class="btn btn-danger btn-sm" onclick="stopTextFromModal()">停止</button>
                 </div>
             </div>
         `;
     } else if (type === 'filter') {
-        // Matrix 滤镜模态框
+        // Matrix 滤镜模态框 - 复刻全局色彩校正卡片风格与按钮配色，无小标题与效果名 emoji
         return `
-            <div class="modal-section">
-                <h3>🎨 后处理滤镜</h3>
-                <div class="filters-grid">
-                    <button class="btn filter-btn" data-filter="pulse" onclick="selectFilterInModal('pulse', this)">💓 脉冲</button>
-                    <button class="btn filter-btn" data-filter="breathing" onclick="selectFilterInModal('breathing', this)">💨 呼吸</button>
-                    <button class="btn filter-btn" data-filter="blink" onclick="selectFilterInModal('blink', this)">💡 闪烁</button>
-                    <button class="btn filter-btn" data-filter="wave" onclick="selectFilterInModal('wave', this)">🌊 波浪</button>
-                    <button class="btn filter-btn" data-filter="scanline" onclick="selectFilterInModal('scanline', this)">📺 扫描线</button>
-                    <button class="btn filter-btn" data-filter="glitch" onclick="selectFilterInModal('glitch', this)">⚡ 故障艺术</button>
-                    <button class="btn filter-btn" data-filter="rainbow" onclick="selectFilterInModal('rainbow', this)">🌈 彩虹</button>
-                    <button class="btn filter-btn" data-filter="sparkle" onclick="selectFilterInModal('sparkle', this)">✨ 闪耀</button>
-                    <button class="btn filter-btn" data-filter="plasma" onclick="selectFilterInModal('plasma', this)">🎆 等离子体</button>
-                    <button class="btn filter-btn" data-filter="sepia" onclick="selectFilterInModal('sepia', this)">🖼️ 怀旧</button>
-                    <button class="btn filter-btn" data-filter="posterize" onclick="selectFilterInModal('posterize', this)">🎨 色阶分离</button>
-                    <button class="btn filter-btn" data-filter="contrast" onclick="selectFilterInModal('contrast', this)">🔆 对比度</button>
-                    <button class="btn filter-btn" data-filter="invert" onclick="selectFilterInModal('invert', this)">🔄 反色</button>
-                    <button class="btn filter-btn" data-filter="grayscale" onclick="selectFilterInModal('grayscale', this)">⬜ 灰度</button>
+            <div class="modal-section cc-modal-section">
+                <div class="cc-section">
+                    <div class="filters-grid">
+                        <button class="btn filter-btn" data-filter="pulse" onclick="selectFilterInModal('pulse', this)">脉冲</button>
+                        <button class="btn filter-btn" data-filter="breathing" onclick="selectFilterInModal('breathing', this)">呼吸</button>
+                        <button class="btn filter-btn" data-filter="blink" onclick="selectFilterInModal('blink', this)">闪烁</button>
+                        <button class="btn filter-btn" data-filter="wave" onclick="selectFilterInModal('wave', this)">波浪</button>
+                        <button class="btn filter-btn" data-filter="scanline" onclick="selectFilterInModal('scanline', this)">扫描线</button>
+                        <button class="btn filter-btn" data-filter="glitch" onclick="selectFilterInModal('glitch', this)">故障艺术</button>
+                        <button class="btn filter-btn" data-filter="rainbow" onclick="selectFilterInModal('rainbow', this)">彩虹</button>
+                        <button class="btn filter-btn" data-filter="sparkle" onclick="selectFilterInModal('sparkle', this)">闪耀</button>
+                        <button class="btn filter-btn" data-filter="plasma" onclick="selectFilterInModal('plasma', this)">等离子体</button>
+                        <button class="btn filter-btn" data-filter="sepia" onclick="selectFilterInModal('sepia', this)">怀旧</button>
+                        <button class="btn filter-btn" data-filter="posterize" onclick="selectFilterInModal('posterize', this)">色阶分离</button>
+                        <button class="btn filter-btn" data-filter="contrast" onclick="selectFilterInModal('contrast', this)">对比度</button>
+                        <button class="btn filter-btn" data-filter="invert" onclick="selectFilterInModal('invert', this)">反色</button>
+                        <button class="btn filter-btn" data-filter="grayscale" onclick="selectFilterInModal('grayscale', this)">灰度</button>
+                    </div>
+                    <div class="filter-config-modal" id="modal-filter-config" style="display:none;">
+                        <span class="filter-name" id="modal-filter-name">未选择</span>
+                        <div id="modal-filter-params"></div>
+                    </div>
                 </div>
-                <div class="filter-config-modal" id="modal-filter-config" style="display:none;">
-                    <span class="filter-name" id="modal-filter-name">未选择</span>
-                    <div id="modal-filter-params"></div>
-                </div>
-                <div class="config-actions">
-                    <button class="btn btn-primary" id="modal-apply-filter-btn" onclick="applyFilterFromModal()" disabled>▶ 应用</button>
-                    <button class="btn btn-danger" onclick="stopFilterFromModal()">⏹ 停止</button>
+                <div class="config-actions cc-actions">
+                    <button class="btn btn-service-style btn-sm" id="modal-apply-filter-btn" onclick="applyFilterFromModal()" disabled>应用</button>
+                    <button class="btn btn-danger btn-sm" onclick="stopFilterFromModal()">停止</button>
                 </div>
             </div>
         `;
     } else if (type === 'colorcorrection') {
         // 色彩校正模态框
         return `
-            <div class="modal-section">
-                <h3>⚙️ ${t('ledPage.colorCorrectionTitle')}</h3>
+            <div class="modal-section cc-modal-section">
                 <div class="cc-enable-row">
                     <label>
                         <input type="checkbox" id="cc-enabled" onchange="previewColorCorrection()"> 
@@ -5110,7 +5253,7 @@ function generateLedModalContent(device, type) {
                     </label>
                 </div>
                 <div class="cc-section">
-                    <h4>🎯 ${t('ledPage.ccWhitePoint')}</h4>
+                    <h4>${t('ledPage.ccWhitePoint')}</h4>
                     <p class="cc-help-text">${t('ledPage.ccWhitePointHelp')}</p>
                     <div class="config-row">
                         <label>R</label>
@@ -5132,7 +5275,7 @@ function generateLedModalContent(device, type) {
                     </div>
                 </div>
                 <div class="cc-section">
-                    <h4>🌈 ${t('ledPage.ccGamma')}</h4>
+                    <h4>${t('ledPage.ccGamma')}</h4>
                     <p class="cc-help-text">${t('ledPage.ccGammaHelp')}</p>
                     <div class="config-row">
                         <label>${t('ledPage.ccGammaValue')}</label>
@@ -5142,7 +5285,7 @@ function generateLedModalContent(device, type) {
                     </div>
                 </div>
                 <div class="cc-section">
-                    <h4>☀️ ${t('ledPage.ccBrightness')}</h4>
+                    <h4>${t('ledPage.ccBrightness')}</h4>
                     <p class="cc-help-text">${t('ledPage.ccBrightnessHelp')}</p>
                     <div class="config-row">
                         <label>${t('ledPage.ccFactor')}</label>
@@ -5152,7 +5295,7 @@ function generateLedModalContent(device, type) {
                     </div>
                 </div>
                 <div class="cc-section">
-                    <h4>🎨 ${t('ledPage.ccSaturation')}</h4>
+                    <h4>${t('ledPage.ccSaturation')}</h4>
                     <p class="cc-help-text">${t('ledPage.ccSaturationHelp')}</p>
                     <div class="config-row">
                         <label>${t('ledPage.ccFactor')}</label>
@@ -5161,13 +5304,11 @@ function generateLedModalContent(device, type) {
                         <span id="cc-saturation-val">1.00</span>
                     </div>
                 </div>
-                <div class="cc-storage-row">
-                    <button class="btn btn-sm" onclick="ccExport()" title="${t('ledPage.ccExportTip')}">📤 ${t('ledPage.ccExport')}</button>
-                    <button class="btn btn-sm" onclick="ccImport()" title="${t('ledPage.ccImportTip')}">📥 ${t('ledPage.ccImport')}</button>
-                </div>
-                <div class="config-actions">
-                    <button class="btn btn-primary" onclick="applyColorCorrection()">💾 ${t('ledPage.ccApply')}</button>
-                    <button class="btn btn-warning" onclick="resetColorCorrection()">↩️ ${t('ledPage.ccReset')}</button>
+                <div class="config-actions cc-actions">
+                    <button class="btn btn-sm" onclick="resetColorCorrection()" style="color:#666">${t('ledPage.ccReset')}</button>
+                    <button class="btn btn-sm btn-service-style" onclick="ccExport()" title="${t('ledPage.ccExportTip')}"><i class="ri-download-line"></i> ${t('ledPage.ccExport')}</button>
+                    <button class="btn btn-sm btn-service-style" onclick="ccImport()" title="${t('ledPage.ccImportTip')}"><i class="ri-upload-line"></i> ${t('ledPage.ccImport')}</button>
+                    <button class="btn btn-sm btn-service-style" onclick="applyColorCorrection()"><i class="ri-save-line"></i> ${t('ledPage.ccApply')}</button>
                 </div>
             </div>
         `;
@@ -5183,20 +5324,43 @@ let selectedModalFilter = null;
 function openLedModal(device, type) {
     currentLedModal = { device, type };
     
+    // 设备名首字母大写 (Touch/Board/Matrix)
+    const deviceName = device.charAt(0).toUpperCase() + device.slice(1);
+    
     const titleMap = {
-        'effect': `🎬 ${device} - ${t('ledPage.effectTitle')}`,
-        'content': `📷 ${device} - ${t('ledPage.contentTitle')}`,
-        'text': `📝 ${device} - ${t('ledPage.textTitle')}`,
-        'filter': `🎨 ${device} - ${t('ledPage.filterTitle')}`,
-        'colorcorrection': `⚙️ ${device} - ${t('ledPage.colorCorrectionTitle')}`
+        'effect': `${deviceName} ${t('ledPage.effectTitle')}`,
+        'content': `${deviceName} ${t('ledPage.contentTitle')}`,
+        'text': `${deviceName} ${t('ledPage.textTitle')}`,
+        'filter': `${deviceName} ${t('ledPage.filterTitle')}`,
+        'colorcorrection': t('ledPage.ccGlobalTitle') || '全局色彩校正'
     };
     
     const modal = document.getElementById('led-modal');
     const title = document.getElementById('led-modal-title');
     const body = document.getElementById('led-modal-body');
+    const headerActions = document.getElementById('led-modal-header-actions');
     
     title.textContent = titleMap[type] || `${device} - 设置`;
     body.innerHTML = generateLedModalContent(device, type);
+    
+    // 色彩校正、程序动画、Matrix 图像/QR/文本/滤镜：紧凑样式 + 淡色背景，复刻全局色彩校正风格
+    if (type === 'colorcorrection' || type === 'effect' || type === 'content' || type === 'text' || type === 'filter') {
+        modal.querySelector('.modal-content').classList.add('cc-compact');
+        if (headerActions) {
+            if (type === 'colorcorrection') {
+                headerActions.innerHTML = '';
+            } else if (type === 'effect') {
+                headerActions.innerHTML = `
+                    <button class="btn btn-sm" onclick="stopEffectFromModal('${device}')" style="color:#666"><i class="ri-stop-circle-line"></i> ${t('ledPage.stop')}</button>
+                `;
+            } else {
+                headerActions.innerHTML = '';
+            }
+        }
+    } else {
+        modal.querySelector('.modal-content').classList.remove('cc-compact');
+        if (headerActions) headerActions.innerHTML = '';
+    }
     
     modal.classList.remove('hidden');
     
@@ -5245,9 +5409,9 @@ function selectEffectInModal(device, effect, btn) {
     btn.closest('.effects-grid, .modal-tab-content').querySelectorAll('.effect-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     
-    // 显示特效名
+    // 显示特效名（RemixIcon，无 emoji，首字母大写）
     const effectName = document.getElementById(`modal-effect-name-${device}`);
-    if (effectName) effectName.textContent = `${getEffectIcon(effect)} ${effect}`;
+    if (effectName) effectName.innerHTML = getEffectIconRemix(effect) + effectDisplayName(effect);
     
     // 显示/隐藏颜色选择器
     const colorRow = document.getElementById(`modal-color-row-${device}`);
@@ -5257,7 +5421,96 @@ function selectEffectInModal(device, effect, btn) {
     
     // 显示配置区
     const configEl = document.getElementById(`modal-effect-config-${device}`);
-    if (configEl) configEl.style.display = 'flex';
+    if (configEl) configEl.style.display = 'block';
+
+    // 自动触发实时预览
+    previewEffectFromModal(device);
+}
+
+// 模态框内开关 LED
+async function toggleLedFromModal(device, enabled) {
+    try {
+        if (enabled) {
+            // 如果有选中的特效，启动它；否则仅开启（常亮或恢复之前状态）
+            const effect = selectedEffects[device];
+            if (effect) {
+                await applyEffectFromModal(device);
+            } else {
+                await toggleLed(device); // 这会调用 api.ledClear(device) 如果 isOn，但这里我们传入了 enabled
+                // 实际上 toggleLed 不需要 enabled 参数，它基于 ledStates[device]
+                // 修正逻辑：如果当前关闭且 enabled 为 true，则开启
+                if (!ledStates[device]) await toggleLed(device);
+            }
+        } else {
+            // 关闭 LED
+            if (ledStates[device]) await toggleLed(device);
+        }
+        
+        // 更新卡片状态
+        updateLedCardState(device, ledStates[device], selectedEffects[device]);
+    } catch (e) {
+        showToast(`操作失败: ${e.message}`, 'error');
+        // 恢复 UI 状态
+        const cb = document.getElementById(`modal-device-enabled-${device}`);
+        if (cb) cb.checked = ledStates[device];
+    }
+}
+
+// 更新特效滑块值并预览
+function updateEffectSliderValue(device, value) {
+    const valEl = document.getElementById(`modal-speed-val-${device}`);
+    if (valEl) valEl.textContent = value;
+    
+    // 实时预览
+    previewEffectFromModal(device);
+}
+
+// 特效预览防抖
+let effectPreviewDebounce = null;
+
+// 实时预览特效
+function previewEffectFromModal(device) {
+    if (effectPreviewDebounce) clearTimeout(effectPreviewDebounce);
+    effectPreviewDebounce = setTimeout(async () => {
+        const effect = selectedEffects[device];
+        if (!effect || !ledStates[device]) return;
+        
+        const speed = parseInt(document.getElementById(`modal-effect-speed-${device}`)?.value || '50');
+        const color = document.getElementById(`modal-effect-color-${device}`)?.value || '#ff0000';
+        
+        try {
+            const params = { speed };
+            if (colorSupportedEffects.includes(effect)) {
+                params.color = color;
+            }
+            // 预览使用 start 接口，但不显示成功 toast 以免干扰
+            await api.ledEffectStart(device, effect, params);
+            
+            // 更新卡片状态（静默更新）
+            updateLedCardState(device, true, effect);
+        } catch (e) {
+            console.warn('Effect preview failed:', e);
+        }
+    }, 200);
+}
+
+// 重置特效设置
+function resetEffectFromModal(device) {
+    const deviceData = window.ledDevicesCache?.find(d => d.name === device);
+    const current = deviceData?.current || {};
+    const defaultSpeed = 50;
+    const defaultColor = '#ff0000';
+    
+    const speedSlider = document.getElementById(`modal-effect-speed-${device}`);
+    const colorPicker = document.getElementById(`modal-effect-color-${device}`);
+    const speedVal = document.getElementById(`modal-speed-val-${device}`);
+    
+    if (speedSlider) speedSlider.value = defaultSpeed;
+    if (speedVal) speedVal.textContent = defaultSpeed;
+    if (colorPicker) colorPicker.value = defaultColor;
+    
+    showToast(t('ledPage.ccResetSuccess'), 'success');
+    previewEffectFromModal(device);
 }
 
 // 模态框内应用动画
@@ -5756,34 +6009,16 @@ function getDeviceDescription(name) {
     return descriptions[name.toLowerCase()] || 'LED 设备';
 }
 
-function getEffectIcon(name) {
-    const icons = {
-        // 通用
-        'rainbow': '🌈',
-        'breathing': '💨',
-        'solid': '⬛',
-        'sparkle': '✨',
-        // Touch 专属
-        'pulse': '💓',
-        'color_cycle': '🔄',
-        'heartbeat': '❤️',
-        // Board 专属
-        'chase': '🏃',
-        'comet': '☄️',
-        'spin': '🔄',
-        'breathe_wave': '🌊',
-        // Matrix 专属
-        'fire': '🔥',
-        'rain': '🌧️',
-        'coderain': '💻',
-        'plasma': '🎆',
-        'ripple': '💧',
-        // 其他
-        'wave': '🌊',
-        'gradient': '🎨',
-        'twinkle': '⭐'
-    };
-    return icons[name.toLowerCase()] || '🎯';
+/** 程序动画模态框内使用的 RemixIcon（无 emoji，用已纳入 minimal 字体的 ri-play-line） */
+function getEffectIconRemix(name) {
+    if (!name) return '';
+    return '<i class="ri-play-line"></i> ';
+}
+
+/** 动画名称首字母大写（用于更多动画弹窗展示） */
+function effectDisplayName(name) {
+    if (!name) return '';
+    return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 // 当前选中的动画
@@ -5836,7 +6071,7 @@ async function applyEffect(device) {
         
         // 更新顶部当前动画显示
         const currentAnim = document.getElementById(`current-anim-${device}`);
-        if (currentAnim) currentAnim.textContent = `▶ ${effect}`;
+        if (currentAnim) currentAnim.textContent = `▶ ${effectDisplayName(effect)}`;
         
         showToast(`${device}: ${effect} 已启动`, 'success');
     } catch (e) {
@@ -6048,7 +6283,7 @@ async function loadFilePickerDirectory(path) {
                 listContainer.innerHTML = `
                     <div class="empty-state">
                         <div>📂 目录不存在</div>
-                        <button class="btn btn-sm btn-primary" onclick="createAndOpenDir('${path}')">创建目录</button>
+                        <button class="btn btn-sm btn-service-style" onclick="createAndOpenDir('${path}')">创建目录</button>
                     </div>`;
                 return;
             }
@@ -6768,7 +7003,7 @@ async function loadNetworkPage() {
                     </div>
                     <div class="form-actions">
                         <button class="btn" onclick="hideApConfig()">取消</button>
-                        <button class="btn btn-primary" onclick="applyApConfig()">应用</button>
+                        <button class="btn btn-service-style" onclick="applyApConfig()">应用</button>
                     </div>
                 </div>
             </div>
@@ -7023,7 +7258,7 @@ async function showWifiScan() {
                             <span>${net.auth || 'OPEN'}</span>
                         </div>
                     </div>
-                    <button class="btn btn-sm btn-primary">连接</button>
+                    <button class="btn btn-sm btn-service-style">连接</button>
                 </div>
             `).join('');
         }
@@ -7235,7 +7470,7 @@ async function loadFilesPage() {
                     <div class="file-actions">
                         <button class="btn btn-service-style btn-file-action" onclick="showUploadDialog()"><i class="ri-upload-line"></i> 上传文件</button>
                         <button class="btn btn-service-style btn-file-action" onclick="showNewFolderDialog()"><i class="ri-folder-add-line"></i> 新建文件夹</button>
-                        <button class="btn btn-service-style btn-file-action" onclick="refreshFilesPage()"><i class="ri-refresh-line"></i></button>
+                        <button type="button" class="btn btn-file-action files-refresh-btn" onclick="refreshFilesPage()" title="刷新" style="color:#666"><i class="ri-refresh-line"></i></button>
                     </div>
                 </div>
                 
@@ -7264,18 +7499,23 @@ async function loadFilesPage() {
             </div>
         </div>
         
-        <!-- 上传对话框 -->
+        <!-- 上传对话框 - 复刻全局色彩校正风格 -->
         <div id="upload-modal" class="modal hidden">
-            <div class="modal-content">
-                <h2>上传文件</h2>
-                <div class="upload-area" id="upload-area">
-                    <p>点击选择文件或拖拽文件到此处</p>
-                    <input type="file" id="file-input" multiple style="display:none" onchange="handleFileSelect(event)">
+            <div class="modal-content cc-compact" style="max-width:560px">
+                <div class="modal-header">
+                    <h2>上传文件</h2>
+                    <button class="modal-close" onclick="closeUploadDialog()"><i class="ri-close-line"></i></button>
                 </div>
-                <div id="upload-list"></div>
-                <div class="form-actions">
-                    <button class="btn" onclick="closeUploadDialog()">取消</button>
-                    <button class="btn btn-primary" onclick="uploadFiles()">上传</button>
+                <div class="modal-body">
+                    <div class="upload-area" id="upload-area">
+                        <p>点击选择文件或拖拽文件到此处</p>
+                        <input type="file" id="file-input" multiple style="display:none" onchange="handleFileSelect(event)">
+                    </div>
+                    <div id="upload-list"></div>
+                    <div class="config-actions cc-actions">
+                        <button class="btn btn-sm" onclick="closeUploadDialog()" style="color:#666">取消</button>
+                        <button class="btn btn-service-style btn-sm" onclick="uploadFiles()">上传</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -7290,7 +7530,7 @@ async function loadFilesPage() {
                 </div>
                 <div class="form-actions">
                     <button class="btn" onclick="closeNewFolderDialog()">取消</button>
-                    <button class="btn btn-primary" onclick="createNewFolder()">创建</button>
+                    <button class="btn btn-service-style" onclick="createNewFolder()">创建</button>
                 </div>
             </div>
         </div>
@@ -7306,7 +7546,7 @@ async function loadFilesPage() {
                 <input type="hidden" id="rename-original-path">
                 <div class="form-actions">
                     <button class="btn" onclick="closeRenameDialog()">取消</button>
-                    <button class="btn btn-primary" onclick="doRename()">确定</button>
+                    <button class="btn btn-service-style" onclick="doRename()">确定</button>
                 </div>
             </div>
         </div>
@@ -8020,7 +8260,7 @@ async function loadSshCommands() {
                         name: cmd.name,
                         command: cmd.command,
                         desc: cmd.desc || '',
-                        icon: cmd.icon || '🚀',
+                        icon: cmd.icon || 'ri-rocket-line',
                         nohup: cmd.nohup || false,
                         expectPattern: cmd.expectPattern || '',
                         failPattern: cmd.failPattern || '',
@@ -8048,7 +8288,7 @@ async function loadSshCommands() {
                     name: cmd.name,
                     command: cmd.command,
                     desc: cmd.desc || '',
-                    icon: cmd.icon || '🚀',
+                    icon: cmd.icon || 'ri-rocket-line',
                     nohup: cmd.nohup || false,
                     expectPattern: cmd.expectPattern || '',
                     failPattern: cmd.failPattern || '',
@@ -8164,10 +8404,10 @@ async function loadCommandsPage() {
             <!-- 主机选择和指令列表 -->
             <div class="section">
                 <div class="section-header">
-                    <h2>🖥️ 选择主机</h2>
+                    <h2>选择主机</h2>
                     <div class="section-actions">
-                        <button class="btn" onclick="showImportSshCommandModal()" style="background:#17a2b8;color:white">📥 导入指令</button>
-                        <button class="btn btn-primary" onclick="showAddCommandModal()">➕ 新建指令</button>
+                        <button class="btn btn-small btn-service-style" onclick="showImportSshCommandModal()" style="font-size:0.85em"><i class="ri-download-line"></i> 导入指令</button>
+                        <button class="btn btn-small btn-service-style" onclick="showAddCommandModal()" style="font-size:0.85em"><i class="ri-add-line"></i> 新建指令</button>
                     </div>
                 </div>
                 <div id="host-selector" class="host-selector">
@@ -8177,7 +8417,7 @@ async function loadCommandsPage() {
             
             <!-- 指令列表 -->
             <div class="section">
-                <h2>📋 指令列表</h2>
+                <h2>指令列表</h2>
                 <div id="commands-list" class="commands-list">
                     <div class="empty-state">请先选择一个主机</div>
                 </div>
@@ -8239,9 +8479,10 @@ async function loadCommandsPage() {
         
         <!-- 新建/编辑指令模态框 -->
         <div id="command-modal" class="modal hidden">
-            <div class="modal-content" style="max-width:500px">
+            <div class="modal-content cc-compact" style="max-width:560px">
                 <div class="modal-header">
-                    <h2 id="command-modal-title">➕ 新建指令</h2>
+                    <h2 id="command-modal-title">新建指令</h2>
+                    <div id="command-modal-header-actions"></div>
                     <button class="modal-close" onclick="closeCommandModal()">&times;</button>
                 </div>
                 <div class="modal-body">
@@ -8270,12 +8511,12 @@ async function loadCommandsPage() {
                         <div class="form-group">
                             <label>图标</label>
                             <div class="icon-type-tabs">
-                                <button type="button" class="icon-tab active" onclick="switchCmdIconType('emoji')">😀 Emoji</button>
-                                <button type="button" class="icon-tab" onclick="switchCmdIconType('image')">🖼️ 图片</button>
+                                <button type="button" class="icon-tab active" onclick="switchCmdIconType('emoji')"><i class="ri-emotion-line"></i> 图标</button>
+                                <button type="button" class="icon-tab" onclick="switchCmdIconType('image')"><i class="ri-image-line"></i> 图片</button>
                             </div>
                             <div id="icon-emoji-picker" class="icon-picker">
-                                ${['🚀', '🔄', '⚡', '🛠️', '📊', '🔍', '💾', '🗑️', '⏹️', '▶️', '📦', '🔧'].map(icon => 
-                                    `<button type="button" class="icon-btn" onclick="selectCmdIcon('${icon}')">${icon}</button>`
+                                ${['ri-rocket-line', 'ri-refresh-line', 'ri-thunderstorms-line', 'ri-tools-line', 'ri-bar-chart-line', 'ri-search-line', 'ri-save-line', 'ri-delete-bin-line', 'ri-stop-line', 'ri-play-line', 'ri-box-3-line', 'ri-settings-line'].map(icon => 
+                                    `<button type="button" class="icon-btn" data-icon="${icon}" onclick="selectCmdIcon('${icon}')"><i class="${icon}"></i></button>`
                                 ).join('')}
                             </div>
                             <div id="icon-image-picker" class="icon-image-picker hidden">
@@ -8285,23 +8526,23 @@ async function loadCommandsPage() {
                                     </div>
                                     <div class="icon-path-input">
                                         <input type="text" id="cmd-icon-path" class="input" placeholder="/sdcard/images/..." readonly>
-                                        <button type="button" class="btn btn-sm" onclick="browseCmdIconImage()">📂 浏览</button>
-                                        <button type="button" class="btn btn-sm btn-danger" onclick="clearCmdIconImage()" title="清除">✕</button>
+                                        <button type="button" class="btn btn-sm" onclick="browseCmdIconImage()"><i class="ri-folder-open-line"></i> 浏览</button>
+                                        <button type="button" class="btn btn-sm btn-danger" onclick="clearCmdIconImage()" title="清除"><i class="ri-close-line"></i></button>
                                     </div>
                                 </div>
                             </div>
-                            <input type="hidden" id="cmd-icon" value="🚀">
+                            <input type="hidden" id="cmd-icon" value="ri-rocket-line">
                             <input type="hidden" id="cmd-icon-type" value="emoji">
                         </div>
                         
                         <!-- 高级选项 -->
                         <details class="advanced-options">
-                            <summary>⚙️ 高级选项（模式匹配）</summary>
+                            <summary><i class="ri-settings-3-line"></i> 高级选项（模式匹配）</summary>
                             <div class="advanced-content">
                                 <div class="form-group">
                                     <label class="checkbox-label">
                                         <input type="checkbox" id="cmd-nohup" onchange="updateNohupState()">
-                                        <span>🚀 后台执行（nohup）</span>
+                                        <span>后台执行（nohup）</span>
                                     </label>
                                     <small>命令将在服务器后台运行，SSH 断开后不受影响。适合重启、长时间任务等场景</small>
                                 </div>
@@ -8317,27 +8558,27 @@ async function loadCommandsPage() {
                                     </div>
                                     <div id="cmd-service-mode-fields" class="service-mode-fields hidden">
                                         <div class="form-group">
-                                            <label>✅ 就绪匹配模式 *</label>
+                                            <label><i class="ri-check-line"></i> 就绪匹配模式 *</label>
                                             <input type="text" id="cmd-ready-pattern" placeholder="例如：Running on|Server started">
                                             <small>日志中出现此字符串时标记为就绪（支持 | 分隔多个模式）</small>
                                         </div>
                                         <div class="form-group">
-                                            <label>❌ 失败匹配模式</label>
+                                            <label><i class="ri-close-line"></i> 失败匹配模式</label>
                                             <input type="text" id="cmd-service-fail-pattern" placeholder="例如：error|failed|Exception">
                                             <small>日志中出现此字符串时标记为失败（可选，支持 | 分隔多个模式）</small>
                                         </div>
                                         <div class="form-group">
-                                            <label>⏱️ 超时（秒）</label>
+                                            <label><i class="ri-time-line"></i> 超时（秒）</label>
                                             <input type="number" id="cmd-ready-timeout" value="120" min="10" max="600" step="10">
                                             <small>超过此时间未匹配到就绪模式则标记为 timeout</small>
                                         </div>
                                         <div class="form-group">
-                                            <label>🔄 检测间隔（毫秒）</label>
+                                            <label><i class="ri-refresh-line"></i> 检测间隔（毫秒）</label>
                                             <input type="number" id="cmd-ready-interval" value="5000" min="1000" max="30000" step="1000">
                                             <small>每隔多久检测一次日志文件</small>
                                         </div>
                                         <div class="service-mode-hint">
-                                            <small>💡 服务启动后，系统将监测日志文件：<code>/tmp/ts_nohup_[命令名].log</code></small><br>
+                                            <small>服务启动后，系统将监测日志文件：<code>/tmp/ts_nohup_[命令名].log</code></small><br>
                                             <small>变量 <code>[变量名].status</code> 会根据日志匹配自动更新状态</small>
                                         </div>
                                     </div>
@@ -8345,36 +8586,36 @@ async function loadCommandsPage() {
                                 
                                 <!-- 存储变量名（独立字段，nohup 模式下也可用） -->
                                 <div class="form-group" id="cmd-var-name-group">
-                                    <label>📝 存储变量名</label>
+                                    <label><i class="ri-file-text-line"></i> 存储变量名</label>
                                     <input type="text" id="cmd-var-name" placeholder="例如：ping_test">
                                     <small id="cmd-var-name-hint">执行结果将存储为 \${变量名.status}、\${变量名.extracted} 等，可在后续命令中引用</small>
                                 </div>
                                 
                                 <div id="cmd-pattern-options">
                                     <div class="form-group">
-                                        <label>✅ 成功匹配模式</label>
+                                        <label><i class="ri-check-line"></i> 成功匹配模式</label>
                                         <input type="text" id="cmd-expect-pattern" placeholder="例如：active (running)" oninput="updateTimeoutState()">
                                         <small>输出中包含此文本时标记为成功</small>
                                     </div>
                                     <div class="form-group">
-                                        <label>❌ 失败匹配模式</label>
+                                        <label><i class="ri-close-line"></i> 失败匹配模式</label>
                                         <input type="text" id="cmd-fail-pattern" placeholder="例如：failed|error" oninput="updateTimeoutState()">
                                         <small>输出中包含此文本时标记为失败</small>
                                     </div>
                                     <div class="form-group">
-                                        <label>📋 提取模式</label>
+                                        <label><i class="ri-file-list-3-line"></i> 提取模式</label>
                                         <input type="text" id="cmd-extract-pattern" placeholder="例如：version: (.*)">
                                         <small>从输出中提取匹配内容，使用 (.*) 捕获组</small>
                                     </div>
                                     <div class="form-group">
                                         <label class="checkbox-label">
                                             <input type="checkbox" id="cmd-stop-on-match" onchange="updateTimeoutState()">
-                                            <span>⏹️ 匹配后自动停止</span>
+                                            <span><i class="ri-stop-line"></i> 匹配后自动停止</span>
                                         </label>
                                         <small>适用于 ping 等持续运行的命令，匹配成功后自动终止</small>
                                     </div>
                                     <div class="form-group" id="cmd-timeout-group">
-                                        <label>⏱️ 超时（秒）</label>
+                                        <label><i class="ri-time-line"></i> 超时（秒）</label>
                                         <input type="number" id="cmd-timeout" value="30" min="5" max="300" step="5">
                                         <small id="cmd-timeout-hint">超时仅在设置了成功/失败模式或勾选了"匹配后停止"时有效</small>
                                     </div>
@@ -8383,8 +8624,8 @@ async function loadCommandsPage() {
                         </details>
                         
                         <div class="form-actions">
-                            <button type="button" class="btn" onclick="closeCommandModal()">取消</button>
-                            <button type="submit" class="btn btn-primary" onclick="saveCommand()">保存</button>
+                            <button type="button" class="btn" onclick="closeCommandModal()" style="color:#666">取消</button>
+                            <button type="submit" class="btn btn-service-style" onclick="saveCommand()">保存</button>
                         </div>
                     </form>
                 </div>
@@ -8410,6 +8651,19 @@ function addCommandsPageStyles() {
     const style = document.createElement('style');
     style.id = 'commands-page-styles';
     style.textContent = `
+        .page-commands .section h2, .page-commands .section-header h2 { font-size: 1rem; }
+        .page-commands .commands-list .empty-state {
+            text-align: center;
+            min-height: 200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            grid-column: 1 / -1;
+        }
+        .page-commands .section { margin-top: 20px; }
+        .page-commands .section:first-child { margin-top: 0; }
         .host-selector {
             display: flex;
             flex-wrap: wrap;
@@ -8423,14 +8677,23 @@ function addCommandsPageStyles() {
             cursor: pointer;
             transition: all 0.2s;
             min-width: 180px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .host-card .host-icon {
+            font-size: 2.5em;
+            color: var(--primary);
+            line-height: 1;
+            align-self: center;
         }
         .host-card:hover {
             border-color: var(--primary);
             transform: translateY(-2px);
         }
         .host-card.selected {
-            border-color: var(--primary);
-            background: rgba(var(--primary-rgb), 0.1);
+            border-color: #a5d6a7;
+            background: #e8f5e9;
         }
         .host-card .host-name {
             font-weight: bold;
@@ -8445,6 +8708,7 @@ function addCommandsPageStyles() {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
             gap: 12px;
+            min-height: 220px;
         }
         .command-card {
             background: var(--bg-secondary);
@@ -8750,8 +9014,11 @@ async function loadHostSelector() {
             <div class="host-card ${selectedHostId === h.id ? 'selected' : ''}" 
                  onclick="selectHost('${escapeHtml(h.id)}')" 
                  data-host-id="${escapeHtml(h.id)}">
-                <div class="host-name">🖥️ ${escapeHtml(h.id)}</div>
-                <div class="host-info">${escapeHtml(h.username)}@${escapeHtml(h.host)}:${h.port}</div>
+                <i class="ri-server-line host-icon"></i>
+                <div class="host-card-content">
+                    <div class="host-name">${escapeHtml(h.id)}</div>
+                    <div class="host-info">${escapeHtml(h.username)}@${escapeHtml(h.host)}:${h.port}</div>
+                </div>
             </div>
         `).join('');
         
@@ -8770,10 +9037,8 @@ async function loadHostSelector() {
         
         container.innerHTML = html;
         
-        // 如果之前有选中的主机，刷新指令列表
-        if (selectedHostId) {
-            refreshCommandsList();
-        }
+        // 刷新指令列表（始终刷新以显示"创建第一个指令"按钮）
+        refreshCommandsList();
         
     } catch (e) {
         container.innerHTML = `<div class="error">加载失败: ${e.message}</div>`;
@@ -8794,21 +9059,19 @@ function selectHost(hostId) {
 
 function refreshCommandsList() {
     const container = document.getElementById('commands-list');
+    var createFirstBtn = '<button type="button" class="btn btn-small btn-service-style" onclick="showAddCommandModal()" style="font-size:0.85em;display:inline-block">';
+    createFirstBtn += '<i class="ri-add-line"></i> 创建第一个指令';
+    createFirstBtn += '</button>';
     
     if (!selectedHostId) {
-        container.innerHTML = '<div class="empty-state">请先选择一个主机</div>';
+        container.innerHTML = '<div class="empty-state"><p>请先选择一个主机</p>' + createFirstBtn + '</div>';
         return;
     }
     
     const hostCommands = sshCommands[selectedHostId] || [];
     
     if (hostCommands.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <p>该主机暂无指令</p>
-                <button class="btn btn-primary" onclick="showAddCommandModal()">➕ 创建第一个指令</button>
-            </div>
-        `;
+        container.innerHTML = '<div class="empty-state"><p>该主机暂无指令</p>' + createFirstBtn + '</div>';
         return;
     }
     
@@ -8840,7 +9103,7 @@ function refreshCommandsList() {
                 const statusId = `service-status-${cmd.id || idx}`;
                 nohupHtml = `<span class="service-mode-status" title="服务模式: ${escapeHtml(cmd.readyPattern)}" data-var="${escapeHtml(cmd.varName)}" data-status-id="${statusId}"><span id="${statusId}" class="service-status">...</span></span>`;
             } else {
-                nohupHtml = '<span class="pattern-tag nohup" title="后台执行（nohup）">🚀</span>';
+                nohupHtml = '<span class="pattern-tag nohup" title="后台执行（nohup）"><i class="ri-rocket-line"></i></span>';
             }
         }
         
@@ -8854,11 +9117,16 @@ function refreshCommandsList() {
             <button class="btn btn-sm" onclick="stopServiceProcess(${idx}, '${escapeHtml(safeName)}')" title="停止服务" style="background:#dc3545;color:white">⏹️</button>
         ` : '';
         
-        // 图标显示：支持 Emoji 或图片路径
-        const iconValue = cmd.icon || '🚀';
-        const iconHtml = iconValue.startsWith('/sdcard/') 
-            ? `<span class="cmd-icon"><img src="/api/v1/file/download?path=${encodeURIComponent(iconValue)}" alt="icon" onerror="this.parentElement.textContent='🚀'"></span>`
-            : `<span class="cmd-icon">${iconValue}</span>`;
+        // 图标显示：支持 RemixIcon 类名、图片路径或旧版 Emoji
+        const iconValue = cmd.icon || 'ri-rocket-line';
+        let iconHtml;
+        if (iconValue.startsWith('/sdcard/')) {
+            iconHtml = `<span class="cmd-icon"><img src="/api/v1/file/download?path=${encodeURIComponent(iconValue)}" alt="icon" onerror="this.parentElement.innerHTML='<i class=\\'ri-rocket-line\\'></i>'"></span>`;
+        } else if (iconValue.startsWith('ri-')) {
+            iconHtml = `<span class="cmd-icon"><i class="${iconValue}"></i></span>`;
+        } else {
+            iconHtml = `<span class="cmd-icon">${iconValue}</span>`;
+        }
         
         // 孤儿命令禁用执行按钮
         const execBtnDisabled = isOrphan ? 'disabled style="opacity:0.5;cursor:not-allowed"' : '';
@@ -8878,7 +9146,7 @@ function refreshCommandsList() {
                 <button class="btn btn-sm btn-exec" onclick="executeCommand(${idx})" title="${isOrphan ? '主机不存在，无法执行' : '执行'}" ${execBtnDisabled}>▶️</button>
                 ${serviceActionsHtml}
                 ${varBtnHtml}
-                <button class="btn btn-sm" onclick="exportSshCommand('${escapeHtml(cmd.id)}')" title="导出配置" style="background:#17a2b8;color:white">📤</button>
+                <button class="btn btn-sm btn-service-style" onclick="exportSshCommand('${escapeHtml(cmd.id)}')" title="导出配置">📤</button>
                 <button class="btn btn-sm" onclick="editCommand(${idx})" title="编辑">✏️</button>
                 <button class="btn btn-sm" onclick="deleteCommand(${idx})" title="删除" style="background:#dc3545;color:white">🗑️</button>
             </div>
@@ -8952,7 +9220,7 @@ function showAddCommandModal() {
         return;
     }
     
-    document.getElementById('command-modal-title').textContent = '➕ 新建指令';
+    document.getElementById('command-modal-title').textContent = '新建指令';
     
     /* 新建模式：ID 可编辑 */
     const idInput = document.getElementById('cmd-edit-id');
@@ -8968,7 +9236,7 @@ function showAddCommandModal() {
     document.getElementById('cmd-name').value = '';
     document.getElementById('cmd-command').value = '';
     document.getElementById('cmd-desc').value = '';
-    document.getElementById('cmd-icon').value = '🚀';
+    document.getElementById('cmd-icon').value = 'ri-rocket-line';
     document.getElementById('cmd-icon-type').value = 'emoji';
     document.getElementById('cmd-icon-path').value = '';
     
@@ -9179,19 +9447,19 @@ function switchCmdIconType(type) {
     
     // 更新 Tab 状态
     document.querySelectorAll('.icon-type-tabs .icon-tab').forEach(tab => {
-        tab.classList.toggle('active', tab.textContent.includes(type === 'emoji' ? 'Emoji' : '图片'));
+        tab.classList.toggle('active', (type === 'emoji' && tab.textContent.includes('图标')) || (type === 'image' && tab.textContent.includes('图片')));
     });
     
     // 切换面板显示
     document.getElementById('icon-emoji-picker').classList.toggle('hidden', type !== 'emoji');
     document.getElementById('icon-image-picker').classList.toggle('hidden', type !== 'image');
     
-    // 如果切换到 Emoji 且当前是图片，恢复默认
+    // 如果切换到图标且当前是图片，恢复默认
     if (type === 'emoji') {
         const currentIcon = document.getElementById('cmd-icon').value;
         if (currentIcon.startsWith('/sdcard/')) {
-            document.getElementById('cmd-icon').value = '🚀';
-            selectCmdIcon('🚀');
+            document.getElementById('cmd-icon').value = 'ri-rocket-line';
+            selectCmdIcon('ri-rocket-line');
         }
     }
 }
@@ -9227,7 +9495,7 @@ function updateCmdIconPreview(path) {
  * 清除图标图片
  */
 function clearCmdIconImage() {
-    document.getElementById('cmd-icon').value = '🚀';
+    document.getElementById('cmd-icon').value = 'ri-rocket-line';
     document.getElementById('cmd-icon-path').value = '';
     document.getElementById('cmd-icon-type').value = 'emoji';
     updateCmdIconPreview(null);
@@ -9238,7 +9506,7 @@ function selectCmdIcon(icon) {
     document.getElementById('cmd-icon').value = icon;
     document.getElementById('cmd-icon-type').value = 'emoji';
     document.querySelectorAll('.icon-btn').forEach(btn => {
-        btn.classList.toggle('selected', btn.textContent === icon);
+        btn.classList.toggle('selected', btn.getAttribute('data-icon') === icon);
     });
 }
 
@@ -9275,7 +9543,7 @@ function validateCommandId(input) {
     
     if (errorMsg) {
         input.style.borderColor = 'var(--danger-color)';
-        errorSpan.textContent = '⚠️ ' + errorMsg;
+        errorSpan.innerHTML = '<i class="ri-error-warning-line"></i> ' + errorMsg;
         errorSpan.style.display = 'block';
         return false;
     }
@@ -9391,7 +9659,7 @@ function editCommand(idx) {
     const cmd = sshCommands[selectedHostId]?.[idx];
     if (!cmd) return;
     
-    document.getElementById('command-modal-title').textContent = '✏️ 编辑指令';
+    document.getElementById('command-modal-title').textContent = '编辑指令';
     
     /* 编辑模式：设置 ID 并标记为只读 */
     const idInput = document.getElementById('cmd-edit-id');
@@ -9406,8 +9674,8 @@ function editCommand(idx) {
     document.getElementById('cmd-command').value = cmd.command;
     document.getElementById('cmd-desc').value = cmd.desc || '';
     
-    // 处理图标：判断是 Emoji 还是图片路径
-    const icon = cmd.icon || '🚀';
+    // 处理图标：判断是 RemixIcon/Emoji 还是图片路径
+    const icon = cmd.icon || 'ri-rocket-line';
     document.getElementById('cmd-icon').value = icon;
     
     if (icon.startsWith('/sdcard/')) {
@@ -9417,7 +9685,7 @@ function editCommand(idx) {
         switchCmdIconType('image');
         updateCmdIconPreview(icon);
     } else {
-        // Emoji
+        // 图标（RemixIcon）或旧版 Emoji
         document.getElementById('cmd-icon-type').value = 'emoji';
         document.getElementById('cmd-icon-path').value = '';
         switchCmdIconType('emoji');
@@ -9455,8 +9723,9 @@ function editCommand(idx) {
     }
     
     // 更新图标选中状态
+    const currentIconVal = cmd.icon || 'ri-rocket-line';
     document.querySelectorAll('.icon-btn').forEach(btn => {
-        btn.classList.toggle('selected', btn.textContent === (cmd.icon || '🚀'));
+        btn.classList.toggle('selected', btn.getAttribute('data-icon') === currentIconVal);
     });
     
     document.getElementById('command-modal').classList.remove('hidden');
@@ -9532,7 +9801,7 @@ function showExportSshCommandModal(cmdId) {
             
             <div class="form-actions" style="margin-top:15px">
                 <button class="btn" onclick="hideExportSshCommandModal()">取消</button>
-                <button class="btn btn-primary" id="export-ssh-cmd-btn" onclick="doExportSshCommandFromModal('${escapeHtml(cmdId)}')">📤 导出</button>
+                <button class="btn btn-service-style" id="export-ssh-cmd-btn" onclick="doExportSshCommandFromModal('${escapeHtml(cmdId)}')">📤 导出</button>
             </div>
         </div>
     `;
@@ -9637,13 +9906,12 @@ async function showImportSshCommandModal() {
     
     modal.innerHTML = `
         <div class="modal-content" style="max-width:600px">
-            <h2>📥 导入 SSH 指令配置</h2>
+            <h2 style="font-size:1.25rem">导入 SSH 指令配置</h2>
             <p style="color:#666;font-size:0.9rem">选择 .tscfg 配置包文件以导入 SSH 指令</p>
             
             <!-- 步骤 1: 选择文件 -->
             <div id="import-ssh-cmd-step1">
                 <div class="form-group" style="margin-top:15px">
-                    <label>选择文件</label>
                     <input type="file" id="import-ssh-cmd-file" class="form-control" accept=".tscfg" onchange="previewSshCommandImport()">
                 </div>
             </div>
@@ -9676,8 +9944,8 @@ async function showImportSshCommandModal() {
             <div id="import-ssh-cmd-result" class="result-box hidden" style="margin-top:10px"></div>
             
             <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideImportSshCommandModal()">取消</button>
-                <button class="btn btn-primary" id="import-ssh-cmd-btn" onclick="confirmSshCommandImport()" disabled>📥 确认导入</button>
+                <button class="btn" onclick="hideImportSshCommandModal()" style="color:#666">取消</button>
+                <button class="btn btn-service-style" id="import-ssh-cmd-btn" onclick="confirmSshCommandImport()" disabled>确认导入</button>
             </div>
         </div>
     `;
@@ -10592,9 +10860,9 @@ async function loadSecurityPage() {
     content.innerHTML = `
         <div class="page-security">
             <div class="section">
-                <h2>� 密钥管理</h2>
+                <h2>密钥管理</h2>
                 <div class="button-group" style="margin-bottom:15px">
-                    <button class="btn btn-primary" onclick="showGenerateKeyModal()">➕ 生成新密钥</button>
+                    <button class="btn btn-sm btn-service-style" onclick="showGenerateKeyModal()"><i class="ri-add-line"></i> 生成新密钥</button>
                 </div>
                 <table class="data-table">
                     <thead>
@@ -10605,10 +10873,10 @@ async function loadSecurityPage() {
             </div>
             
             <div class="section">
-                <h2>🖥️ 已部署主机</h2>
+                <h2>已部署主机</h2>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px">
-                    <p style="color:#666;font-size:0.9em;margin:0">💡 通过上方密钥的「部署」按钮将公钥部署到远程服务器后，主机将自动出现在此列表</p>
-                    <button class="btn btn-sm" onclick="showImportSshHostModal()" style="background:#17a2b8;color:white">📥 导入主机</button>
+                    <p style="color:#666;font-size:0.9em;margin:0"><i class="ri-information-line"></i> 通过上方密钥的「部署」按钮将公钥部署到远程服务器后，主机将自动出现在此列表</p>
+                    <button class="btn btn-sm btn-service-style" onclick="showImportSshHostModal()"><i class="ri-upload-line"></i> 导入主机</button>
                 </div>
                 <table class="data-table">
                     <thead>
@@ -10619,8 +10887,8 @@ async function loadSecurityPage() {
             </div>
             
             <div class="section">
-                <h2>� 已知主机指纹</h2>
-                <p style="color:#666;margin-bottom:15px;font-size:0.9em">💡 SSH 连接时自动记录的服务器指纹，用于防止中间人攻击。如果服务器重装需要更新指纹。</p>
+                <h2>已知主机指纹</h2>
+                <p style="color:#666;margin-bottom:15px;font-size:0.9em"><i class="ri-information-line"></i> SSH 连接时自动记录的服务器指纹，用于防止中间人攻击。如果服务器重装需要更新指纹。</p>
                 <table class="data-table">
                     <thead>
                         <tr><th>主机</th><th>端口</th><th>密钥类型</th><th>指纹 (SHA256)</th><th>添加时间</th><th>操作</th></tr>
@@ -10630,11 +10898,11 @@ async function loadSecurityPage() {
             </div>
             
             <div class="section">
-                <h2>�🔒 HTTPS 证书</h2>
+                <h2>HTTPS 证书</h2>
                 <div id="cert-status-card" class="info-card" style="margin-bottom:15px">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
                         <span style="font-size:1.1em;font-weight:bold">
-                            <span id="cert-status-icon">🔄</span>
+                            <span id="cert-status-icon"><i class="ri-refresh-line"></i></span>
                             <span id="cert-status-text">加载中...</span>
                         </span>
                         <span id="cert-expiry-badge" class="badge" style="display:none"></span>
@@ -10654,21 +10922,21 @@ async function loadSecurityPage() {
                     </div>
                 </div>
                 <div class="button-group" style="display:flex;flex-wrap:wrap;gap:8px">
-                    <button class="btn" id="btn-cert-gen-key" onclick="showCertGenKeyModal()">🔑 生成密钥对</button>
-                    <button class="btn" id="btn-cert-gen-csr" onclick="showCertCSRModal()" disabled>📋 生成 CSR</button>
-                    <button class="btn" id="btn-cert-install" onclick="showCertInstallModal()" disabled>📥 安装证书</button>
-                    <button class="btn" id="btn-cert-install-ca" onclick="showCertInstallCAModal()" disabled>🏛️ 安装 CA</button>
-                    <button class="btn" id="btn-cert-view" onclick="showCertViewModal()" disabled>👁️ 查看证书</button>
-                    <button class="btn btn-danger" id="btn-cert-delete" onclick="deleteCertCredentials()" disabled>🗑️ 删除凭证</button>
+                    <button class="btn btn-sm btn-service-style" id="btn-cert-gen-key" onclick="showCertGenKeyModal()"><i class="ri-key-line"></i> 生成密钥对</button>
+                    <button class="btn btn-sm btn-service-style" id="btn-cert-gen-csr" onclick="showCertCSRModal()" disabled><i class="ri-file-text-line"></i> 生成 CSR</button>
+                    <button class="btn btn-sm btn-service-style" id="btn-cert-install" onclick="showCertInstallModal()" disabled><i class="ri-upload-line"></i> 安装证书</button>
+                    <button class="btn btn-sm btn-service-style" id="btn-cert-install-ca" onclick="showCertInstallCAModal()" disabled><i class="ri-shield-keyhole-line"></i> 安装 CA</button>
+                    <button class="btn btn-sm" id="btn-cert-view" onclick="showCertViewModal()" disabled style="color:#666"><i class="ri-eye-line"></i> 查看证书</button>
+                    <button class="btn btn-sm btn-danger" id="btn-cert-delete" onclick="deleteCertCredentials()" disabled><i class="ri-delete-bin-line"></i> 删除凭证</button>
                 </div>
             </div>
             
             <div class="section">
-                <h2>📦 配置包 (Config Pack)</h2>
+                <h2>配置包 (Config Pack)</h2>
                 <div id="config-pack-status-card" class="info-card" style="margin-bottom:15px">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
                         <span style="font-size:1.1em;font-weight:bold">
-                            <span id="pack-status-icon">🔄</span>
+                            <span id="pack-status-icon"><i class="ri-refresh-line"></i></span>
                             <span id="pack-status-text">加载中...</span>
                         </span>
                         <span id="pack-device-type-badge" class="badge" style="display:none"></span>
@@ -10682,23 +10950,23 @@ async function loadSecurityPage() {
                         </div>
                     </div>
                     <p style="color:#666;margin-top:10px;font-size:0.9em">
-                        💡 配置包系统允许安全地加密和签名配置文件，用于设备间配置分发
+                        <i class="ri-information-line"></i> 配置包系统允许安全地加密和签名配置文件，用于设备间配置分发
                     </p>
                 </div>
                 <div class="button-group" style="display:flex;flex-wrap:wrap;gap:8px">
-                    <button class="btn" onclick="showConfigPackExportCertModal()">📤 导出设备证书</button>
-                    <button class="btn" onclick="showConfigPackImportModal()">📥 导入配置包</button>
-                    <button class="btn" id="btn-pack-export" onclick="showConfigPackExportModal()" disabled>📦 导出配置包</button>
-                    <button class="btn" onclick="showConfigPackListModal()">📋 查看配置包列表</button>
+                    <button class="btn btn-sm btn-service-style" onclick="showConfigPackExportCertModal()"><i class="ri-download-line"></i> 导出设备证书</button>
+                    <button class="btn btn-sm btn-service-style" onclick="showConfigPackImportModal()"><i class="ri-upload-line"></i> 导入配置包</button>
+                    <button class="btn btn-sm btn-service-style" id="btn-pack-export" onclick="showConfigPackExportModal()" disabled><i class="ri-download-line"></i> 导出配置包</button>
+                    <button class="btn btn-sm" onclick="showConfigPackListModal()" style="color:#666"><i class="ri-file-text-line"></i> 查看配置包列表</button>
                 </div>
             </div>
             
             <!-- 配置包：导出设备证书弹窗 -->
             <div class="modal hidden" id="pack-export-cert-modal">
                 <div class="modal-content" style="max-width:600px">
-                    <h2>📤 导出设备证书</h2>
+                    <h2>导出设备证书</h2>
                     <p style="color:#666;margin-bottom:15px">将此证书发送给需要向您发送加密配置的开发者</p>
-                    <div id="pack-export-cert-loading" style="text-align:center;padding:20px">🔄 加载中...</div>
+                    <div id="pack-export-cert-loading" style="text-align:center;padding:20px"><i class="ri-refresh-line"></i> 加载中...</div>
                     <div id="pack-export-cert-content" class="hidden">
                         <div class="form-group">
                             <label>证书指纹 (SHA256)</label>
@@ -10712,10 +10980,10 @@ async function loadSecurityPage() {
                             <label>证书 PEM</label>
                             <textarea id="pack-cert-pem" readonly style="width:100%;height:200px;font-family:monospace;font-size:11px"></textarea>
                         </div>
-                        <button class="btn btn-small" onclick="copyPackCertToClipboard()" style="margin-top:8px">📋 复制到剪贴板</button>
+                        <button class="btn btn-sm btn-service-style" onclick="copyPackCertToClipboard()" style="margin-top:8px"><i class="ri-file-text-line"></i> 复制到剪贴板</button>
                     </div>
                     <div class="form-actions" style="margin-top:15px">
-                        <button class="btn" onclick="hideConfigPackExportCertModal()">关闭</button>
+                        <button class="btn btn-sm" onclick="hideConfigPackExportCertModal()">关闭</button>
                     </div>
                 </div>
             </div>
@@ -10723,7 +10991,7 @@ async function loadSecurityPage() {
             <!-- 配置包：导入弹窗 -->
             <div class="modal hidden" id="pack-import-modal">
                 <div class="modal-content" style="max-width:700px">
-                    <h2>📥 导入配置包</h2>
+                    <h2>导入配置包</h2>
                     <p style="color:#666;margin-bottom:15px">上传或粘贴 .tscfg 配置包，验证后保存到设备（加密存储）</p>
                     <div class="form-group">
                         <label>选择文件</label>
@@ -10735,13 +11003,13 @@ async function loadSecurityPage() {
                     </div>
                     <div id="pack-import-result" class="result-box hidden" style="margin-top:10px"></div>
                     <div id="pack-import-preview" class="hidden" style="margin-top:15px;padding:10px;background:#f8f9fa;border-radius:4px">
-                        <h4 style="margin:0 0 10px">📋 配置包信息</h4>
+                        <h4 style="margin:0 0 10px">配置包信息</h4>
                         <div id="pack-preview-content"></div>
                     </div>
                     <div class="form-actions" style="margin-top:15px">
-                        <button class="btn" onclick="hideConfigPackImportModal()">取消</button>
-                        <button class="btn" onclick="verifyConfigPack()">🔍 仅验证</button>
-                        <button class="btn btn-primary" onclick="importConfigPack()">📥 导入</button>
+                        <button class="btn btn-sm" onclick="hideConfigPackImportModal()">取消</button>
+                        <button class="btn btn-sm" onclick="verifyConfigPack()" style="color:#666"><i class="ri-search-line"></i> 仅验证</button>
+                        <button class="btn btn-sm btn-service-style" onclick="importConfigPack()"><i class="ri-upload-line"></i> 导入</button>
                     </div>
                 </div>
             </div>
@@ -10749,7 +11017,7 @@ async function loadSecurityPage() {
             <!-- 配置包：导出弹窗（仅 Developer 可用） -->
             <div class="modal hidden" id="pack-export-modal">
                 <div class="modal-content" style="width:800px;max-width:90vw;height:auto;min-height:600px;max-height:90vh;overflow-y:auto">
-                    <h2>📦 导出加密配置包</h2>
+                    <h2>导出加密配置包</h2>
                     <p style="color:#666;margin-bottom:15px">选择配置文件并加密发送给目标设备（支持多选）</p>
                     
                     <!-- 文件浏览器 -->
@@ -10757,16 +11025,16 @@ async function loadSecurityPage() {
                         <label>选择配置文件 <span style="color:#999;font-size:0.9em">(可多选)</span></label>
                         <div style="display:flex;gap:8px;margin-bottom:8px">
                             <input type="text" id="pack-export-browse-path" value="/sdcard/config" style="flex:1" readonly>
-                            <button class="btn btn-small" onclick="packExportBrowseUp()">⬆️ 上级</button>
-                            <button class="btn btn-small" onclick="packExportBrowseRefresh()">🔄 刷新</button>
+                            <button class="btn btn-sm" onclick="packExportBrowseUp()" style="color:#666"><i class="ri-arrow-up-s-line"></i> 上级</button>
+                            <button class="btn btn-sm" onclick="packExportBrowseRefresh()" style="color:#666"><i class="ri-refresh-line"></i> 刷新</button>
                         </div>
                         <div style="display:flex;gap:8px;margin-bottom:8px">
-                            <button class="btn btn-small" onclick="packExportSelectAll()">☑️ 全选</button>
-                            <button class="btn btn-small" onclick="packExportDeselectAll()">☐ 取消全选</button>
-                            <button class="btn btn-small" onclick="packExportSelectDir()">📁 选择整个目录</button>
+                            <button class="btn btn-sm" onclick="packExportSelectAll()" style="color:#666">全选</button>
+                            <button class="btn btn-sm" onclick="packExportDeselectAll()" style="color:#666">取消全选</button>
+                            <button class="btn btn-sm" onclick="packExportSelectDir()" style="color:#666"><i class="ri-folder-open-line"></i> 选择整个目录</button>
                         </div>
                         <div id="pack-export-file-list" style="border:1px solid #ddd;border-radius:4px;height:180px;overflow-y:auto;background:#f9f9f9">
-                            <div style="padding:20px;text-align:center;color:#666">🔄 加载中...</div>
+                            <div style="padding:20px;text-align:center;color:#666"><i class="ri-refresh-line"></i> 加载中...</div>
                         </div>
                         <div id="pack-export-selected" style="margin-top:8px;padding:8px;background:#e8f5e9;border-radius:4px;min-height:36px;display:none">
                             <strong>已选择:</strong> <span id="pack-export-selected-file"></span>
@@ -10784,21 +11052,21 @@ async function loadSecurityPage() {
                     <div class="form-group">
                         <label>目标设备证书 (PEM)</label>
                         <textarea id="pack-export-recipient-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:100px;font-family:monospace;font-size:11px" required></textarea>
-                        <div style="font-size:0.85em;color:#666;margin-top:4px">💡 粘贴目标设备导出的证书</div>
+                        <div style="font-size:0.85em;color:#666;margin-top:4px"><i class="ri-information-line"></i> 粘贴目标设备导出的证书</div>
                     </div>
                     <div id="pack-export-result" class="result-box" style="margin-top:10px;min-height:24px;visibility:hidden"></div>
                     <div id="pack-export-output" style="margin-top:15px">
                         <label>生成的配置包 (.tscfg)</label>
                         <textarea id="pack-export-tscfg" readonly style="width:100%;height:100px;font-family:monospace;font-size:10px" placeholder="配置包将在此显示..."></textarea>
                         <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                            <button class="btn btn-small" onclick="copyPackTscfgToClipboard()" id="btn-pack-copy" style="display:none">📋 复制到剪贴板</button>
-                            <button class="btn btn-small btn-primary" onclick="downloadPackTscfg()" id="btn-pack-download" style="display:none">💾 下载到本地</button>
+                            <button class="btn btn-sm btn-service-style" onclick="copyPackTscfgToClipboard()" id="btn-pack-copy" style="display:none"><i class="ri-file-text-line"></i> 复制到剪贴板</button>
+                            <button class="btn btn-sm btn-service-style" onclick="downloadPackTscfg()" id="btn-pack-download" style="display:none"><i class="ri-download-line"></i> 下载到本地</button>
                             <span id="pack-export-saved-path" style="color:#4caf50;font-size:0.9em;display:none"></span>
                         </div>
                     </div>
                     <div class="form-actions" style="margin-top:15px">
-                        <button class="btn" onclick="hideConfigPackExportModal()">取消</button>
-                        <button class="btn btn-primary" id="btn-pack-export-generate" onclick="exportConfigPack()" disabled>📦 生成配置包</button>
+                        <button class="btn btn-sm" onclick="hideConfigPackExportModal()">取消</button>
+                        <button class="btn btn-sm btn-service-style" id="btn-pack-export-generate" onclick="exportConfigPack()" disabled><i class="ri-download-line"></i> 生成配置包</button>
                     </div>
                 </div>
             </div>
@@ -10806,15 +11074,15 @@ async function loadSecurityPage() {
             <!-- 配置包：列表弹窗 -->
             <div class="modal hidden" id="pack-list-modal">
                 <div class="modal-content" style="max-width:800px">
-                    <h2>📋 配置包列表</h2>
+                    <h2>配置包列表</h2>
                     <div class="form-group">
                         <label>目录路径</label>
                         <div style="display:flex;gap:8px">
                             <input type="text" id="pack-list-path" value="/sdcard/config" style="flex:1">
-                            <button class="btn" onclick="refreshConfigPackList()">🔄 刷新</button>
+                            <button class="btn btn-sm btn-service-style" onclick="refreshConfigPackList()"><i class="ri-refresh-line"></i> 刷新</button>
                         </div>
                     </div>
-                    <div id="pack-list-loading" style="text-align:center;padding:20px">🔄 加载中...</div>
+                    <div id="pack-list-loading" style="text-align:center;padding:20px"><i class="ri-refresh-line"></i> 加载中...</div>
                     <table class="data-table hidden" id="pack-list-table">
                         <thead>
                             <tr><th>文件名</th><th>大小</th><th>签名者</th><th>官方</th><th>状态</th><th>操作</th></tr>
@@ -10822,7 +11090,7 @@ async function loadSecurityPage() {
                         <tbody id="pack-list-tbody"></tbody>
                     </table>
                     <div class="form-actions" style="margin-top:15px">
-                        <button class="btn" onclick="hideConfigPackListModal()">关闭</button>
+                        <button class="btn btn-sm" onclick="hideConfigPackListModal()">关闭</button>
                     </div>
                 </div>
             </div>
@@ -10830,7 +11098,7 @@ async function loadSecurityPage() {
             <!-- 生成密钥弹窗 -->
             <div class="modal hidden" id="keygen-modal">
                 <div class="modal-content">
-                    <h2>🔑 生成新密钥</h2>
+                    <h2>生成新密钥</h2>
                     <div class="form-group">
                         <label>密钥 ID</label>
                         <input type="text" id="keygen-id" placeholder="如: default, mykey" required>
@@ -10840,10 +11108,10 @@ async function loadSecurityPage() {
                         <select id="keygen-type">
                             <option value="rsa2048" selected>RSA 2048-bit (推荐)</option>
                             <option value="rsa4096">RSA 4096-bit</option>
-                            <option value="ec256">ECDSA P-256 ⚠️</option>
-                            <option value="ec384">ECDSA P-384 ⚠️</option>
+                            <option value="ec256">ECDSA P-256</option>
+                            <option value="ec384">ECDSA P-384</option>
                         </select>
-                        <div style="font-size:0.85em;color:#e67e22;margin-top:4px">⚠️ ECDSA 密钥暂不支持 SSH 公钥认证，请使用 RSA</div>
+                        <div class="form-group-hint form-group-hint-warning"><i class="ri-alert-line"></i><span>ECDSA 密钥暂不支持 SSH 公钥认证，请使用 RSA</span></div>
                     </div>
                     <div class="form-group">
                         <label>备注 (可选)</label>
@@ -10852,86 +11120,96 @@ async function loadSecurityPage() {
                     <div class="form-group">
                         <label>别名 (可选)</label>
                         <input type="text" id="keygen-alias" placeholder="用于替代密钥 ID 显示">
-                        <div style="font-size:0.85em;color:#666;margin-top:4px">💡 启用「隐藏密钥」时建议填写，用于显示</div>
+                        <div class="form-group-hint"><i class="ri-information-line"></i><span>启用「隐藏密钥」时建议填写，用于显示</span></div>
                     </div>
-                    <div class="form-group">
-                        <label><input type="checkbox" id="keygen-exportable"> 允许导出私钥</label>
+                    <div class="form-group form-group-checkbox-row">
+                        <label class="form-group-checkbox-label"><input type="checkbox" id="keygen-exportable"> 允许导出私钥</label>
                     </div>
-                    <div class="form-group">
-                        <label><input type="checkbox" id="keygen-hidden"> 隐藏密钥 ID</label>
-                        <div style="font-size:0.85em;color:#666;margin-top:4px">🔒 启用后，低权限用户无法看到真实的密钥 ID</div>
+                    <div class="form-group form-group-checkbox-row">
+                        <label class="form-group-checkbox-label"><input type="checkbox" id="keygen-hidden"> 隐藏密钥 ID</label>
+                        <div class="form-group-hint"><i class="ri-information-line"></i><span>启用后，低权限用户无法看到真实的密钥 ID</span></div>
                     </div>
                     <div class="form-actions">
-                        <button class="btn" onclick="hideGenerateKeyModal()">取消</button>
-                        <button class="btn btn-primary" onclick="generateKey()">生成</button>
+                        <button class="btn btn-sm" onclick="hideGenerateKeyModal()">取消</button>
+                        <button class="btn btn-sm btn-service-style" onclick="generateKey()">生成</button>
                     </div>
                 </div>
             </div>
             
             <!-- 部署密钥弹窗 -->
             <div class="modal hidden" id="deploy-key-modal">
-                <div class="modal-content">
-                    <h2>🚀 部署公钥到远程服务器</h2>
-                    <p style="margin-bottom:15px;color:#666">将公钥 <code id="deploy-key-id"></code> 部署到远程服务器的 authorized_keys</p>
-                    <div class="form-group">
-                        <label>目标主机</label>
-                        <input type="text" id="deploy-host" placeholder="192.168.55.100 或 hostname" required>
+                <div class="modal-content cc-compact" style="max-width:500px">
+                    <div class="modal-header">
+                        <h2>部署公钥到远程服务器</h2>
+                        <button class="modal-close" onclick="hideDeployKeyModal()"><i class="ri-close-line"></i></button>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group" style="flex:1">
-                            <label>用户名</label>
-                            <input type="text" id="deploy-user" placeholder="root" required>
+                    <div class="modal-body">
+                        <p style="margin-bottom:15px;color:#666">将公钥 <code id="deploy-key-id"></code> 部署到远程服务器的 authorized_keys</p>
+                        <div class="form-group">
+                            <label>目标主机</label>
+                            <input type="text" id="deploy-host" placeholder="192.168.55.100 或 hostname" required>
                         </div>
-                        <div class="form-group" style="width:100px">
-                            <label>端口</label>
-                            <input type="number" id="deploy-port" value="22" min="1" max="65535">
+                        <div class="form-row">
+                            <div class="form-group" style="flex:1">
+                                <label>用户名</label>
+                                <input type="text" id="deploy-user" placeholder="root" required>
+                            </div>
+                            <div class="form-group" style="width:100px">
+                                <label>端口</label>
+                                <input type="number" id="deploy-port" value="22" min="1" max="65535">
+                            </div>
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label>认证密码 (首次部署需要)</label>
-                        <input type="password" id="deploy-password" placeholder="输入 SSH 登录密码" required>
-                    </div>
-                    <div style="background:#e3f2fd;border:1px solid #2196f3;border-radius:4px;padding:10px;margin:15px 0;font-size:0.9rem">
-                        💡 部署成功后，该主机将自动添加到「已部署主机」列表，之后可使用此密钥免密登录
-                    </div>
-                    <div id="deploy-result" class="result-box hidden" style="margin-bottom:15px"></div>
-                    <div class="form-actions">
-                        <button class="btn" onclick="hideDeployKeyModal()">取消</button>
-                        <button class="btn btn-primary" id="deploy-btn" onclick="deployKey()">🚀 开始部署</button>
+                        <div class="form-group">
+                            <label>认证密码 (首次部署需要)</label>
+                            <input type="password" id="deploy-password" placeholder="输入 SSH 登录密码" required>
+                        </div>
+                        <div style="background:#e3f2fd;border:1px solid #2196f3;border-radius:4px;padding:10px;margin:15px 0;font-size:0.9rem">
+                            <i class="ri-information-line"></i> 部署成功后，该主机将自动添加到「已部署主机」列表，之后可使用此密钥免密登录
+                        </div>
+                        <div id="deploy-result" class="result-box hidden" style="margin-bottom:15px"></div>
+                        <div class="form-actions">
+                            <button class="btn btn-sm" onclick="hideDeployKeyModal()" style="color:#666">取消</button>
+                            <button class="btn btn-sm btn-service-style" id="deploy-btn" onclick="deployKey()"><i class="ri-rocket-line"></i> 开始部署</button>
+                        </div>
                     </div>
                 </div>
             </div>
             
             <!-- 撤销密钥弹窗 -->
             <div class="modal hidden" id="revoke-key-modal">
-                <div class="modal-content">
-                    <h2>⚠️ 撤销公钥</h2>
-                    <p style="margin-bottom:15px;color:#666">从远程服务器移除公钥 <code id="revoke-key-id"></code></p>
-                    <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:10px;margin-bottom:15px">
-                        <strong>⚠️ 警告</strong>：撤销后将无法使用此密钥免密登录该服务器
+                <div class="modal-content cc-compact" style="max-width:500px">
+                    <div class="modal-header">
+                        <h2>撤销公钥</h2>
+                        <button class="modal-close" onclick="hideRevokeKeyModal()"><i class="ri-close-line"></i></button>
                     </div>
-                    <div class="form-group">
-                        <label>目标主机</label>
-                        <input type="text" id="revoke-host" placeholder="192.168.55.100 或 hostname" required>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group" style="flex:1">
-                            <label>用户名</label>
-                            <input type="text" id="revoke-user" placeholder="root" required>
+                    <div class="modal-body">
+                        <p style="margin-bottom:15px;color:#666">从远程服务器移除公钥 <code id="revoke-key-id"></code></p>
+                        <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:10px;margin-bottom:15px">
+                            <strong><i class="ri-alert-line"></i> 警告</strong>：撤销后将无法使用此密钥免密登录该服务器
                         </div>
-                        <div class="form-group" style="width:100px">
-                            <label>端口</label>
-                            <input type="number" id="revoke-port" value="22" min="1" max="65535">
+                        <div class="form-group">
+                            <label>目标主机</label>
+                            <input type="text" id="revoke-host" placeholder="192.168.55.100 或 hostname" required>
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label>认证密码</label>
-                        <input type="password" id="revoke-password" placeholder="输入 SSH 登录密码" required>
-                    </div>
-                    <div id="revoke-result" class="result-box hidden" style="margin-bottom:15px"></div>
-                    <div class="form-actions">
-                        <button class="btn" onclick="hideRevokeKeyModal()">取消</button>
-                        <button class="btn btn-danger" id="revoke-btn" onclick="revokeKey()">⚠️ 撤销公钥</button>
+                        <div class="form-row">
+                            <div class="form-group" style="flex:1">
+                                <label>用户名</label>
+                                <input type="text" id="revoke-user" placeholder="root" required>
+                            </div>
+                            <div class="form-group" style="width:100px">
+                                <label>端口</label>
+                                <input type="number" id="revoke-port" value="22" min="1" max="65535">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>认证密码</label>
+                            <input type="password" id="revoke-password" placeholder="输入 SSH 登录密码" required>
+                        </div>
+                        <div id="revoke-result" class="result-box hidden" style="margin-bottom:15px"></div>
+                        <div class="form-actions">
+                            <button class="btn btn-sm" onclick="hideRevokeKeyModal()" style="color:#666">取消</button>
+                            <button class="btn btn-sm btn-danger" id="revoke-btn" onclick="revokeKey()"><i class="ri-alert-line"></i> 撤销公钥</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -10939,7 +11217,7 @@ async function loadSecurityPage() {
             <!-- 主机指纹不匹配警告弹窗 -->
             <div class="modal hidden" id="host-mismatch-modal">
                 <div class="modal-content">
-                    <h2 style="color:#dc3545">⚠️ 安全警告：主机指纹不匹配!</h2>
+                    <h2 style="color:#dc3545"><i class="ri-alert-line"></i> 安全警告：主机指纹不匹配!</h2>
                     <div style="background:#f8d7da;border:1px solid #f5c6cb;border-radius:4px;padding:15px;margin:15px 0">
                         <p style="margin:0 0 10px;font-weight:bold">主机密钥已更改！这可能表明：</p>
                         <ul style="margin:0;padding-left:20px">
@@ -10964,8 +11242,8 @@ async function loadSecurityPage() {
                         <strong>建议</strong>：如果您确认服务器已重装或密钥已更新，可以点击"更新主机密钥"移除旧记录，然后重新连接以信任新密钥。
                     </p>
                     <div class="form-actions">
-                        <button class="btn" onclick="hideHostMismatchModal()">取消</button>
-                        <button class="btn btn-warning" onclick="removeAndRetry()">🔄 更新主机密钥</button>
+                        <button class="btn btn-sm" onclick="hideHostMismatchModal()" style="color:#666">取消</button>
+                        <button class="btn btn-sm btn-warning" onclick="removeAndRetry()"><i class="ri-refresh-line"></i> 更新主机密钥</button>
                     </div>
                 </div>
             </div>
@@ -10973,15 +11251,15 @@ async function loadSecurityPage() {
             <!-- HTTPS 证书：生成密钥对弹窗 -->
             <div class="modal hidden" id="cert-genkey-modal">
                 <div class="modal-content" style="max-width:450px">
-                    <h2>🔑 生成 HTTPS 密钥对</h2>
+                    <h2>生成 HTTPS 密钥对</h2>
                     <p style="color:#666;margin-bottom:15px">为设备生成 ECDSA P-256 密钥对，用于 mTLS 身份验证</p>
                     <div id="cert-genkey-existing-warning" class="hidden" style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:10px;margin-bottom:15px">
-                        ⚠️ 已存在密钥对，继续将覆盖现有密钥！
+                        <i class="ri-alert-line"></i> 已存在密钥对，继续将覆盖现有密钥！
                     </div>
                     <div id="cert-genkey-result" class="result-box hidden" style="margin-bottom:15px"></div>
                     <div class="form-actions">
-                        <button class="btn" onclick="hideCertGenKeyModal()">取消</button>
-                        <button class="btn btn-primary" id="cert-genkey-btn" onclick="generateCertKeypair()">🔑 生成</button>
+                        <button class="btn btn-sm" onclick="hideCertGenKeyModal()" style="color:#666">取消</button>
+                        <button class="btn btn-sm btn-service-style" id="cert-genkey-btn" onclick="generateCertKeypair()"><i class="ri-key-line"></i> 生成</button>
                     </div>
                 </div>
             </div>
@@ -10989,7 +11267,7 @@ async function loadSecurityPage() {
             <!-- HTTPS 证书：生成/查看 CSR 弹窗 -->
             <div class="modal hidden" id="cert-csr-modal">
                 <div class="modal-content" style="max-width:600px">
-                    <h2>📋 证书签名请求 (CSR)</h2>
+                    <h2>证书签名请求 (CSR)</h2>
                     <div class="form-group">
                         <label>设备 ID (CN)</label>
                         <input type="text" id="csr-device-id" placeholder="TIANSHAN-RM01-0001">
@@ -11006,12 +11284,12 @@ async function loadSecurityPage() {
                     <div id="csr-result-box" class="hidden" style="margin-top:15px">
                         <label>CSR 内容（复制到 CA 服务器签发）</label>
                         <textarea id="csr-pem-output" readonly style="width:100%;height:200px;font-family:monospace;font-size:11px"></textarea>
-                        <button class="btn btn-small" onclick="copyCSRToClipboard()" style="margin-top:8px">📋 复制到剪贴板</button>
+                        <button class="btn btn-sm btn-service-style" onclick="copyCSRToClipboard()" style="margin-top:8px"><i class="ri-file-text-line"></i> 复制到剪贴板</button>
                     </div>
                     <div id="csr-gen-result" class="result-box hidden" style="margin-top:10px"></div>
                     <div class="form-actions" style="margin-top:15px">
-                        <button class="btn" onclick="hideCertCSRModal()">关闭</button>
-                        <button class="btn btn-primary" id="csr-gen-btn" onclick="generateCSR()">📋 生成 CSR</button>
+                        <button class="btn btn-sm" onclick="hideCertCSRModal()">关闭</button>
+                        <button class="btn btn-sm btn-service-style" id="csr-gen-btn" onclick="generateCSR()"><i class="ri-file-text-line"></i> 生成 CSR</button>
                     </div>
                 </div>
             </div>
@@ -11019,7 +11297,7 @@ async function loadSecurityPage() {
             <!-- HTTPS 证书：安装证书弹窗 -->
             <div class="modal hidden" id="cert-install-modal">
                 <div class="modal-content" style="max-width:600px">
-                    <h2>📥 安装设备证书</h2>
+                    <h2>安装设备证书</h2>
                     <p style="color:#666;margin-bottom:15px">粘贴 CA 签发的 PEM 格式证书</p>
                     <div class="form-group">
                         <label>证书 PEM</label>
@@ -11027,8 +11305,8 @@ async function loadSecurityPage() {
                     </div>
                     <div id="cert-install-result" class="result-box hidden" style="margin-top:10px"></div>
                     <div class="form-actions" style="margin-top:15px">
-                        <button class="btn" onclick="hideCertInstallModal()">取消</button>
-                        <button class="btn btn-primary" onclick="installCertificate()">📥 安装</button>
+                        <button class="btn btn-sm" onclick="hideCertInstallModal()">取消</button>
+                        <button class="btn btn-sm btn-service-style" onclick="installCertificate()"><i class="ri-upload-line"></i> 安装</button>
                     </div>
                 </div>
             </div>
@@ -11036,7 +11314,7 @@ async function loadSecurityPage() {
             <!-- HTTPS 证书：安装 CA 链弹窗 -->
             <div class="modal hidden" id="cert-ca-modal">
                 <div class="modal-content" style="max-width:600px">
-                    <h2>🏛️ 安装 CA 证书链</h2>
+                    <h2>安装 CA 证书链</h2>
                     <p style="color:#666;margin-bottom:15px">粘贴根证书和中间证书（PEM 格式，可拼接多个）</p>
                     <div class="form-group">
                         <label>CA 证书链 PEM</label>
@@ -11044,8 +11322,8 @@ async function loadSecurityPage() {
                     </div>
                     <div id="ca-install-result" class="result-box hidden" style="margin-top:10px"></div>
                     <div class="form-actions" style="margin-top:15px">
-                        <button class="btn" onclick="hideCertInstallCAModal()">取消</button>
-                        <button class="btn btn-primary" onclick="installCAChain()">🏛️ 安装</button>
+                        <button class="btn btn-sm" onclick="hideCertInstallCAModal()">取消</button>
+                        <button class="btn btn-sm btn-service-style" onclick="installCAChain()"><i class="ri-upload-line"></i> 安装</button>
                     </div>
                 </div>
             </div>
@@ -11053,14 +11331,14 @@ async function loadSecurityPage() {
             <!-- HTTPS 证书：查看证书弹窗 -->
             <div class="modal hidden" id="cert-view-modal">
                 <div class="modal-content" style="max-width:600px">
-                    <h2>👁️ 查看设备证书</h2>
-                    <div id="cert-view-loading" style="text-align:center;padding:20px">🔄 加载中...</div>
+                    <h2>查看设备证书</h2>
+                    <div id="cert-view-loading" style="text-align:center;padding:20px"><i class="ri-refresh-line"></i> 加载中...</div>
                     <div id="cert-view-content" class="hidden">
                         <textarea id="cert-view-pem" readonly style="width:100%;height:250px;font-family:monospace;font-size:11px"></textarea>
-                        <button class="btn btn-small" onclick="copyCertToClipboard()" style="margin-top:8px">📋 复制到剪贴板</button>
+                        <button class="btn btn-sm btn-service-style" onclick="copyCertToClipboard()" style="margin-top:8px"><i class="ri-file-text-line"></i> 复制到剪贴板</button>
                     </div>
                     <div class="form-actions" style="margin-top:15px">
-                        <button class="btn" onclick="hideCertViewModal()">关闭</button>
+                        <button class="btn btn-sm" onclick="hideCertViewModal()">关闭</button>
                     </div>
                 </div>
             </div>
@@ -11090,7 +11368,7 @@ async function refreshSecurityPage() {
                     option.value = key.id;
                     // 隐藏密钥显示别名或掩码 ID，否则显示真实 ID
                     const displayName = (key.hidden && key.alias) ? key.alias : key.id;
-                    option.textContent = `${key.hidden ? '🔒 ' : ''}${displayName} (${key.type_desc || key.type})`;
+                    option.textContent = `${key.hidden ? '[隐藏] ' : ''}${displayName} (${key.type_desc || key.type})`;
                     sshKeySelect.appendChild(option);
                 });
             }
@@ -11101,7 +11379,7 @@ async function refreshSecurityPage() {
             allKeysHtml += keys.data.keys.map(key => {
                 // 隐藏密钥显示别名，否则显示真实 ID
                 const displayId = (key.hidden && key.alias) ? key.alias : key.id;
-                const hiddenIcon = key.hidden ? '🔒 ' : '';
+                const hiddenIcon = key.hidden ? '<i class="ri-lock-line"></i> ' : '';
                 
                 return `
                 <tr>
@@ -11110,15 +11388,15 @@ async function refreshSecurityPage() {
                         ${key.alias && !key.hidden ? `<div style="font-size:0.85em;color:#666;margin-top:2px">${escapeHtml(key.alias)}</div>` : ''}
                     </td>
                     <td>${escapeHtml(key.type_desc || key.type)}</td>
-                    <td><span class="badge badge-info">SSH</span> ${escapeHtml(key.comment) || '-'}</td>
+                    <td><span class="badge badge-service-style">SSH</span> ${escapeHtml(key.comment) || '-'}</td>
                     <td>${formatTimestamp(key.created)}</td>
-                    <td>${key.exportable ? '✅ 是' : '❌ 否'}</td>
+                    <td>${key.exportable ? '是' : '否'}</td>
                     <td>
-                        <button class="btn btn-small" onclick="exportKey('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'}>📤 公钥</button>
-                        <button class="btn btn-small" onclick="exportPrivateKey('${escapeHtml(key.id)}')" ${key.exportable ? '' : 'disabled'} title="${key.exportable ? '导出私钥' : '此密钥不可导出私钥'}">🔐 私钥</button>
-                        <button class="btn btn-small btn-primary" onclick="showDeployKeyModal('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'} title="部署公钥到远程服务器">🚀 部署</button>
-                        <button class="btn btn-small" onclick="showRevokeKeyModal('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'} title="从远程服务器撤销公钥" style="background:#ff9800;color:white">⚠️ 撤销</button>
-                        <button class="btn btn-small btn-danger" onclick="deleteKey('${escapeHtml(key.id)}')">🗑️ 删除</button>
+                        <button class="btn btn-sm btn-service-style" onclick="exportKey('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'}><i class="ri-download-line"></i> 公钥</button>
+                        <button class="btn btn-sm btn-service-style" onclick="exportPrivateKey('${escapeHtml(key.id)}')" ${key.exportable === false ? 'disabled' : ''} title="${key.exportable === false ? '此密钥不可导出私钥' : '导出私钥'}" style="${key.exportable === false ? 'color:#999' : ''}"><i class="ri-key-line"></i> 私钥</button>
+                        <button class="btn btn-sm btn-service-style" onclick="showDeployKeyModal('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'} title="部署公钥到远程服务器"><i class="ri-rocket-line"></i> 部署</button>
+                        <button class="btn btn-sm btn-warning" onclick="showRevokeKeyModal('${escapeHtml(key.id)}')" ${key.has_pubkey ? '' : 'disabled'} title="从远程服务器撤销公钥"><i class="ri-alert-line"></i> 撤销</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteKey('${escapeHtml(key.id)}')"><i class="ri-delete-bin-line"></i> 删除</button>
                     </td>
                 </tr>
                 `;
@@ -11146,17 +11424,17 @@ async function refreshSecurityPage() {
                 allKeysHtml += `
                 <tr style="background:#f0f7ff">
                     <td>
-                        <code>🔐 https</code>
+                        <code><i class="ri-key-line"></i> https</code>
                         <div style="font-size:0.85em;color:#666;margin-top:2px">HTTPS 服务器密钥</div>
                     </td>
                     <td>ECDSA P-256</td>
-                    <td><span class="badge" style="background:#2196f3;color:white">HTTPS</span> ${escapeHtml(comment)}</td>
+                    <td><span class="badge badge-service-style">HTTPS</span> ${escapeHtml(comment)}</td>
                     <td>-</td>
-                    <td>❌ 否</td>
+                    <td>否</td>
                     <td>
-                        <button class="btn btn-small" onclick="showCertCSRModal()" title="生成证书签名请求">📋 CSR</button>
-                        <button class="btn btn-small" onclick="showCertViewModal()" ${hasCert ? '' : 'disabled'} title="查看证书">👁️ 证书</button>
-                        <button class="btn btn-small btn-danger" onclick="deleteCertCredentials()" title="删除 HTTPS 密钥和证书">🗑️ 删除</button>
+                        <button class="btn btn-sm btn-service-style" onclick="showCertCSRModal()" title="生成证书签名请求"><i class="ri-file-text-line"></i> CSR</button>
+                        <button class="btn btn-sm" onclick="showCertViewModal()" ${hasCert ? '' : 'disabled'} title="查看证书" style="color:#666"><i class="ri-eye-line"></i> 证书</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteCertCredentials()" title="删除 HTTPS 密钥和证书"><i class="ri-delete-bin-line"></i> 删除</button>
                     </td>
                 </tr>
                 `;
@@ -11165,15 +11443,15 @@ async function refreshSecurityPage() {
                 allKeysHtml += `
                 <tr style="background:#fff8e1">
                     <td>
-                        <code style="color:#888">🔒 https</code>
+                        <code style="color:#888"><i class="ri-lock-line"></i> https</code>
                         <div style="font-size:0.85em;color:#999;margin-top:2px">HTTPS 服务器密钥</div>
                     </td>
                     <td style="color:#888">-</td>
-                    <td><span class="badge" style="background:#ff9800;color:white">HTTPS</span> <em style="color:#888">未生成密钥</em></td>
+                    <td><span class="badge badge-service-style">HTTPS</span> <em style="color:#888">未生成密钥</em></td>
                     <td>-</td>
                     <td>-</td>
                     <td>
-                        <button class="btn btn-small btn-primary" onclick="showCertGenKeyModal()" title="生成 HTTPS 密钥对">🔑 生成密钥</button>
+                        <button class="btn btn-sm btn-service-style" onclick="showCertGenKeyModal()" title="生成 HTTPS 密钥对"><i class="ri-key-line"></i> 生成密钥</button>
                     </td>
                 </tr>
                 `;
@@ -11243,12 +11521,12 @@ async function refreshSshHostsList() {
                 <td>${escapeHtml(h.host)}</td>
                 <td>${h.port}</td>
                 <td>${escapeHtml(h.username)}</td>
-                <td><span class="badge badge-info">🔑 ${escapeHtml(h.keyid || 'default')}</span></td>
+                <td><span class="badge badge-service-style"><i class="ri-key-line"></i> ${escapeHtml(h.keyid || 'default')}</span></td>
                 <td>
-                    <button class="btn btn-sm" onclick="testSshHostByIndex(${idx})" title="测试连接">🔍 测试</button>
-                    <button class="btn btn-sm" onclick="exportSshHost('${escapeHtml(h.id)}')" title="导出配置为 .tscfg" style="background:#17a2b8;color:white">📤 导出</button>
-                    <button class="btn btn-sm btn-danger" onclick="revokeKeyFromHost(${idx})" title="撤销公钥">🔓 撤销</button>
-                    <button class="btn btn-sm" onclick="removeHostByIndex(${idx})" title="仅移除本地记录" style="background:#6c757d;color:white">🗑️ 移除</button>
+                    <button class="btn btn-sm" onclick="testSshHostByIndex(${idx})" title="测试连接" style="color:#666"><i class="ri-search-line"></i> 测试</button>
+                    <button class="btn btn-sm btn-service-style" onclick="exportSshHost('${escapeHtml(h.id)}')" title="导出配置为 .tscfg"><i class="ri-download-line"></i> 导出</button>
+                    <button class="btn btn-sm btn-danger" onclick="revokeKeyFromHost(${idx})" title="撤销公钥"><i class="ri-lock-unlock-line"></i> 撤销</button>
+                    <button class="btn btn-sm" onclick="removeHostByIndex(${idx})" title="仅移除本地记录" style="color:#666"><i class="ri-delete-bin-line"></i> 移除</button>
                 </td>
             </tr>
         `).join('');
@@ -11284,12 +11562,12 @@ async function refreshKnownHostsList() {
             <tr>
                 <td><code>${escapeHtml(h.host)}</code></td>
                 <td>${h.port}</td>
-                <td><span class="badge">${escapeHtml(h.type)}</span></td>
+                <td><span class="badge badge-service-style">${escapeHtml(h.type)}</span></td>
                 <td><code style="font-size:0.8em;word-break:break-all">${escapeHtml(h.fingerprint.substring(0, 32))}...</code></td>
                 <td>${formatTimestamp(h.added)}</td>
                 <td>
-                    <button class="btn btn-sm" onclick="showFullFingerprint(${idx})" title="查看完整指纹">👁️ 查看</button>
-                    <button class="btn btn-sm" onclick="removeKnownHost(${idx})" title="删除指纹记录" style="background:#dc3545;color:white">🗑️ 删除</button>
+                    <button class="btn btn-sm" onclick="showFullFingerprint(${idx})" title="查看完整指纹" style="color:#666"><i class="ri-eye-line"></i> 查看</button>
+                    <button class="btn btn-sm btn-danger" onclick="removeKnownHost(${idx})" title="删除指纹记录"><i class="ri-delete-bin-line"></i> 删除</button>
                 </td>
             </tr>
         `).join('');
@@ -11448,21 +11726,23 @@ function showExportSshHostModal(hostId) {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:600px">
-            <h2>📤 导出 SSH 主机配置</h2>
-            <p style="color:#666;font-size:0.9rem">导出主机 <strong>${escapeHtml(hostId)}</strong> 的配置为加密配置包</p>
-            
-            <div class="form-group" style="margin-top:15px">
-                <label>目标设备证书 (PEM)</label>
-                <textarea id="export-ssh-host-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
-                <div style="font-size:0.85em;color:#666;margin-top:4px">💡 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+        <div class="modal-content cc-compact" style="max-width:600px">
+            <div class="modal-header">
+                <h2>导出 SSH 主机配置</h2>
+                <button class="modal-close" onclick="hideExportSshHostModal()"><i class="ri-close-line"></i></button>
             </div>
-            
-            <div id="export-ssh-host-result" class="result-box hidden" style="margin-top:10px"></div>
-            
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideExportSshHostModal()">取消</button>
-                <button class="btn btn-primary" id="export-ssh-host-btn" onclick="doExportSshHostFromModal('${escapeHtml(hostId)}')">📤 导出</button>
+            <div class="modal-body">
+                <p style="color:#666;font-size:0.9rem">导出主机 <strong>${escapeHtml(hostId)}</strong> 的配置为加密配置包</p>
+                <div class="form-group" style="margin-top:15px">
+                    <label>目标设备证书 (PEM)</label>
+                    <textarea id="export-ssh-host-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
+                    <div style="font-size:0.85em;color:#666;margin-top:4px"><i class="ri-information-line"></i> 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+                </div>
+                <div id="export-ssh-host-result" class="result-box hidden" style="margin-top:10px"></div>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="hideExportSshHostModal()" style="color:#666">取消</button>
+                    <button class="btn btn-service-style" id="export-ssh-host-btn" onclick="doExportSshHostFromModal('${escapeHtml(hostId)}')"><i class="ri-download-line"></i> 导出</button>
+                </div>
             </div>
         </div>
     `;
@@ -11481,17 +11761,17 @@ async function doExportSshHostFromModal(hostId) {
     const exportBtn = document.getElementById('export-ssh-host-btn');
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在生成配置包...';
+    resultBox.textContent = '正在生成配置包...';
     exportBtn.disabled = true;
     
     try {
         await doExportSshHost(hostId, certText || null);
         resultBox.className = 'result-box success';
-        resultBox.textContent = '✅ 导出成功！';
+        resultBox.textContent = '导出成功！';
         setTimeout(() => hideExportSshHostModal(), 1000);
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
     } finally {
         exportBtn.disabled = false;
     }
@@ -11547,7 +11827,7 @@ function showImportSshHostModal() {
     
     modal.innerHTML = `
         <div class="modal-content" style="max-width:550px">
-            <h2>📥 导入 SSH 主机配置</h2>
+            <h2>导入 SSH 主机配置</h2>
             <p style="color:#666;font-size:0.9rem">选择 .tscfg 配置包文件以导入 SSH 主机配置</p>
             
             <!-- 步骤 1: 选择文件 -->
@@ -11561,7 +11841,7 @@ function showImportSshHostModal() {
             <!-- 步骤 2: 预览 (默认隐藏) -->
             <div id="import-ssh-host-step2" style="display:none">
                 <div class="info-card" style="background:#f8f9fa;padding:15px;border-radius:8px;margin-top:15px">
-                    <h4 style="margin:0 0 10px 0">📋 配置包内容</h4>
+                    <h4 style="margin:0 0 10px 0">配置包内容</h4>
                     <div id="import-ssh-host-preview"></div>
                 </div>
                 <div class="form-group" style="margin-top:15px">
@@ -11575,7 +11855,7 @@ function showImportSshHostModal() {
             
             <div class="form-actions" style="margin-top:15px">
                 <button class="btn" onclick="hideImportSshHostModal()">取消</button>
-                <button class="btn btn-primary" id="import-ssh-host-btn" onclick="confirmSshHostImport()" disabled>📥 确认导入</button>
+                <button class="btn btn-service-style" id="import-ssh-host-btn" onclick="confirmSshHostImport()" disabled><i class="ri-upload-line"></i> 确认导入</button>
             </div>
         </div>
     `;
@@ -11630,27 +11910,27 @@ async function previewSshHostImport() {
             let html = `
                 <table style="width:100%;font-size:0.9em">
                     <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '✅ 官方' : ''}</td></tr>
+                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
                     <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
                 </table>
             `;
             
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">⚠️ 该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404"><i class="ri-alert-line"></i> 该配置已存在，导入将覆盖现有文件</div>`;
             }
             
             previewDiv.innerHTML = html;
             step2.style.display = 'block';
             resultBox.className = 'result-box success';
-            resultBox.textContent = '✅ 签名验证通过';
+            resultBox.textContent = '签名验证通过';
             importBtn.disabled = false;
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '❌ ' + (result.message || '无法验证配置包');
+            resultBox.textContent = (result.message || '无法验证配置包');
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
     }
 }
 
@@ -11668,7 +11948,7 @@ async function confirmSshHostImport() {
     }
     
     resultBox.classList.remove('hidden', 'success', 'error', 'warning');
-    resultBox.textContent = '🔄 正在保存配置...';
+    resultBox.textContent = '正在保存配置...';
     importBtn.disabled = true;
     
     try {
@@ -11682,23 +11962,23 @@ async function confirmSshHostImport() {
             const data = result.data;
             if (data?.exists && !data?.imported) {
                 resultBox.className = 'result-box warning';
-                resultBox.textContent = `⚠️ 配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                resultBox.textContent = `配置 ${data.id} 已存在，请勾选「覆盖」选项`;
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
-                resultBox.innerHTML = `✅ 已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
+                resultBox.innerHTML = `已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
                 showToast(`已导入配置，重启后生效`, 'success');
                 // 不刷新列表，因为还没加载
                 setTimeout(() => hideImportSshHostModal(), 2000);
             }
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '❌ ' + (result.message || '导入失败');
+            resultBox.textContent = (result.message || '导入失败');
             importBtn.disabled = false;
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
         importBtn.disabled = false;
     }
 }
@@ -11748,18 +12028,23 @@ function revokeKeyFromHost(index) {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:500px">
-            <h2>🔓 撤销并移除主机</h2>
-            <p>将从服务器 <strong>${escapeHtml(host.username)}@${escapeHtml(host.host)}:${host.port}</strong> 撤销密钥 <code>${escapeHtml(host.keyid || 'default')}</code></p>
-            <p style="color:#666;font-size:0.9rem;margin-top:10px">撤销成功后将自动从列表中移除该主机</p>
-            <div class="form-group" style="margin-top:15px">
-                <label>服务器密码</label>
-                <input type="password" id="revoke-host-password" class="form-control" placeholder="输入 SSH 密码">
+        <div class="modal-content cc-compact" style="max-width:500px">
+            <div class="modal-header">
+                <h2>撤销并移除主机</h2>
+                <button class="modal-close" onclick="hideRevokeHostModal()"><i class="ri-close-line"></i></button>
             </div>
-            <div id="revoke-host-result" class="result-box hidden" style="margin-top:10px"></div>
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideRevokeHostModal()">取消</button>
-                <button class="btn btn-danger" id="revoke-host-btn" onclick="doRevokeFromHost(${index})">🔓 撤销并移除</button>
+            <div class="modal-body">
+                <p>将从服务器 <strong>${escapeHtml(host.username)}@${escapeHtml(host.host)}:${host.port}</strong> 撤销密钥 <code>${escapeHtml(host.keyid || 'default')}</code></p>
+                <p style="color:#666;font-size:0.9rem;margin-top:10px">撤销成功后将自动从列表中移除该主机</p>
+                <div class="form-group" style="margin-top:15px">
+                    <label>服务器密码</label>
+                    <input type="password" id="revoke-host-password" class="form-control" placeholder="输入 SSH 密码">
+                </div>
+                <div id="revoke-host-result" class="result-box hidden" style="margin-top:10px"></div>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="hideRevokeHostModal()" style="color:#666">取消</button>
+                    <button class="btn btn-danger" id="revoke-host-btn" onclick="doRevokeFromHost(${index})"><i class="ri-lock-unlock-line"></i> 撤销并移除</button>
+                </div>
             </div>
         </div>
     `;
@@ -11787,14 +12072,14 @@ async function doRevokeFromHost(index) {
     const revokeBtn = document.getElementById('revoke-host-btn');
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在撤销公钥...';
+    resultBox.textContent = '正在撤销公钥...';
     revokeBtn.disabled = true;
     
     try {
         const result = await api.sshRevoke(host.host, host.username, password, host.keyid || 'default', host.port);
         
         if (result.data?.revoked) {
-            resultBox.textContent = `✅ 撤销成功！已从服务器移除 ${result.data.removed_count || 1} 个匹配的公钥`;
+            resultBox.textContent = `撤销成功！已从服务器移除 ${result.data.removed_count || 1} 个匹配的公钥`;
             resultBox.classList.add('success');
             
             // 自动移除本地记录
@@ -11806,11 +12091,11 @@ async function doRevokeFromHost(index) {
                 refreshSshHostsList();
             }, 1000);
         } else if (result.data?.found === false) {
-            resultBox.textContent = '⚠️ 未在服务器上找到匹配的公钥（可能已被移除）\n是否仍要移除本地记录？';
+            resultBox.textContent = '未在服务器上找到匹配的公钥（可能已被移除）\n是否仍要移除本地记录？';
             resultBox.classList.add('error');
             
             // 提供移除本地记录的选项
-            revokeBtn.textContent = '🗑️ 仅移除本地记录';
+            revokeBtn.innerHTML = '<i class="ri-delete-bin-line"></i> 仅移除本地记录';
             revokeBtn.onclick = async () => {
                 await api.call('ssh.hosts.remove', { id: host.id });
                 showToast('已移除本地主机记录', 'success');
@@ -11823,7 +12108,7 @@ async function doRevokeFromHost(index) {
             throw new Error(result.message || '撤销失败');
         }
     } catch (e) {
-        resultBox.textContent = '❌ 撤销失败: ' + e.message;
+        resultBox.textContent = '撤销失败: ' + e.message;
         resultBox.classList.add('error');
     } finally {
         revokeBtn.disabled = false;
@@ -11904,17 +12189,22 @@ function showPubkeyModal(id, pubkey, type, comment) {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:700px">
-            <h2>📤 公钥导出 - ${escapeHtml(id)}</h2>
-            <p style="margin-bottom:10px;color:#666">类型: ${escapeHtml(type)}${comment ? ' | 备注: ' + escapeHtml(comment) : ''}</p>
-            <textarea id="pubkey-content" readonly style="width:100%;height:150px;font-family:monospace;font-size:12px;resize:vertical">${escapeHtml(pubkey)}</textarea>
-            <p style="margin-top:10px;font-size:0.85rem;color:#888">
-                💡 将此公钥添加到远程服务器的 <code>~/.ssh/authorized_keys</code> 文件中即可实现免密登录
-            </p>
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="closePubkeyModal()">关闭</button>
-                <button class="btn btn-primary" onclick="copyPubkey()">📋 复制到剪贴板</button>
-                <button class="btn" onclick="downloadPubkey('${escapeHtml(id)}')">💾 下载文件</button>
+        <div class="modal-content cc-compact" style="max-width:700px">
+            <div class="modal-header">
+                <h2>公钥导出 - ${escapeHtml(id)}</h2>
+                <button class="modal-close" onclick="closePubkeyModal()"><i class="ri-close-line"></i></button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom:10px;color:#666">类型: ${escapeHtml(type)}${comment ? ' | 备注: ' + escapeHtml(comment) : ''}</p>
+                <textarea id="pubkey-content" readonly style="width:100%;height:150px;font-family:monospace;font-size:12px;resize:vertical">${escapeHtml(pubkey)}</textarea>
+                <p style="margin-top:10px;font-size:0.85rem;color:#888">
+                    <i class="ri-information-line"></i> 将此公钥添加到远程服务器的 <code>~/.ssh/authorized_keys</code> 文件中即可实现免密登录
+                </p>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="closePubkeyModal()" style="color:#666">关闭</button>
+                    <button class="btn btn-service-style" onclick="copyPubkey()"><i class="ri-file-text-line"></i> 复制到剪贴板</button>
+                    <button class="btn btn-service-style" onclick="downloadPubkey('${escapeHtml(id)}')"><i class="ri-download-line"></i> 下载文件</button>
+                </div>
             </div>
         </div>
     `;
@@ -11939,19 +12229,19 @@ function showPrivkeyModal(id, privkey, type, comment) {
     
     modal.innerHTML = `
         <div class="modal-content" style="max-width:700px">
-            <h2>🔐 私钥导出 - ${escapeHtml(id)}</h2>
+            <h2>私钥导出 - ${escapeHtml(id)}</h2>
             <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:10px;margin-bottom:15px">
-                <strong>⚠️ 安全警告</strong>：私钥是敏感信息，请妥善保管！
+                <strong><i class="ri-alert-line"></i> 安全警告</strong>：私钥是敏感信息，请妥善保管！
             </div>
             <p style="margin-bottom:10px;color:#666">类型: ${escapeHtml(type)}${comment ? ' | 备注: ' + escapeHtml(comment) : ''}</p>
             <textarea id="privkey-content" readonly style="width:100%;height:200px;font-family:monospace;font-size:11px;resize:vertical;background:#2d2d2d;color:#00ff00">${escapeHtml(privkey)}</textarea>
             <p style="margin-top:10px;font-size:0.85rem;color:#888">
-                💡 保存为 <code>~/.ssh/${escapeHtml(id)}</code> 并设置权限 <code>chmod 600</code>
+                <i class="ri-information-line"></i> 保存为 <code>~/.ssh/${escapeHtml(id)}</code> 并设置权限 <code>chmod 600</code>
             </p>
             <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="closePrivkeyModal()">关闭</button>
-                <button class="btn btn-primary" onclick="copyPrivkey()">📋 复制到剪贴板</button>
-                <button class="btn" onclick="downloadPrivkey('${escapeHtml(id)}')">💾 下载文件</button>
+                <button class="btn" onclick="closePrivkeyModal()" style="color:#666">关闭</button>
+                <button class="btn btn-service-style" onclick="copyPrivkey()"><i class="ri-file-text-line"></i> 复制到剪贴板</button>
+                <button class="btn btn-service-style" onclick="downloadPrivkey('${escapeHtml(id)}')"><i class="ri-download-line"></i> 下载文件</button>
             </div>
         </div>
     `;
@@ -12063,7 +12353,7 @@ async function deployKey() {
     const deployBtn = document.getElementById('deploy-btn');
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在部署密钥...';
+    resultBox.textContent = '正在部署密钥...';
     deployBtn.disabled = true;
     
     try {
@@ -12071,11 +12361,11 @@ async function deployKey() {
         const result = await api.sshCopyid(host, user, password, currentDeployKeyId, port, true);
         
         if (result.data?.deployed) {
-            let msg = `✅ 部署成功！现在可以使用密钥 "${currentDeployKeyId}" 免密登录 ${user}@${host}`;
+            let msg = `部署成功！现在可以使用密钥 "${currentDeployKeyId}" 免密登录 ${user}@${host}`;
             if (result.data.verified) {
-                msg += '\n✓ 公钥认证已验证';
+                msg += '\n公钥认证已验证';
             } else {
-                msg += '\n⚠ 公钥认证验证跳过';
+                msg += '\n公钥认证验证跳过';
             }
             resultBox.textContent = msg;
             resultBox.classList.add('success');
@@ -12086,7 +12376,7 @@ async function deployKey() {
             throw new Error('部署失败');
         }
     } catch (e) {
-        resultBox.textContent = '❌ 部署失败: ' + e.message;
+        resultBox.textContent = '部署失败: ' + e.message;
         resultBox.classList.add('error');
     } finally {
         deployBtn.disabled = false;
@@ -12133,7 +12423,7 @@ async function revokeKey() {
     const revokeBtn = document.getElementById('revoke-btn');
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在撤销密钥...';
+    resultBox.textContent = '正在撤销密钥...';
     revokeBtn.disabled = true;
     
     try {
@@ -12141,18 +12431,18 @@ async function revokeKey() {
         const result = await api.sshRevoke(host, user, password, currentRevokeKeyId, port);
         
         if (result.data?.revoked) {
-            resultBox.textContent = `✅ 撤销成功！已从 ${user}@${host} 移除 ${result.data.removed_count || 1} 个匹配的公钥`;
+            resultBox.textContent = `撤销成功！已从 ${user}@${host} 移除 ${result.data.removed_count || 1} 个匹配的公钥`;
             resultBox.classList.add('success');
             showToast('密钥撤销成功', 'success');
         } else if (result.data?.found === false) {
-            resultBox.textContent = `⚠️ 该公钥未在 ${user}@${host} 上找到`;
+            resultBox.textContent = `该公钥未在 ${user}@${host} 上找到`;
             resultBox.classList.add('warning');
             showToast('公钥未找到', 'warning');
         } else {
             throw new Error('撤销失败');
         }
     } catch (e) {
-        resultBox.textContent = '❌ 撤销失败: ' + e.message;
+        resultBox.textContent = '撤销失败: ' + e.message;
         resultBox.classList.add('error');
     } finally {
         revokeBtn.disabled = false;
@@ -12243,7 +12533,7 @@ async function refreshConfigPackStatus() {
         const canExport = data.can_export;
         const deviceType = data.device_type;
         
-        statusIcon.textContent = canExport ? '🛠️' : '📱';
+        statusIcon.innerHTML = canExport ? '<i class="ri-tools-line"></i>' : '<i class="ri-smartphone-line"></i>';
         statusText.textContent = canExport ? 'Developer 设备' : 'Device 设备';
         
         // 设备类型徽章
@@ -12268,7 +12558,7 @@ async function refreshConfigPackStatus() {
         
     } catch (e) {
         console.error('Refresh config pack status error:', e);
-        statusIcon.textContent = '❌';
+        statusIcon.innerHTML = '<i class="ri-close-line"></i>';
         statusText.textContent = '加载失败';
         if (deviceTypeBadge) deviceTypeBadge.style.display = 'none';
         if (infoDetails) infoDetails.style.display = 'none';
@@ -12471,7 +12761,7 @@ function showConfigPackApplyConfirm(path, packInfo) {
             </div>
             <div class="modal-footer">
                 <button class="btn" onclick="closeConfigPackApplyConfirm()">稍后应用</button>
-                <button class="btn btn-primary" onclick="applyConfigPackFromPath('${path}')">🚀 立即应用</button>
+                <button class="btn btn-service-style" onclick="applyConfigPackFromPath('${path}')">🚀 立即应用</button>
             </div>
         </div>
     `;
@@ -12558,7 +12848,7 @@ function hideConfigPackExportModal() {
 // 文件浏览器：刷新当前目录
 async function packExportBrowseRefresh() {
     const fileList = document.getElementById('pack-export-file-list');
-    fileList.innerHTML = '<div style="padding:20px;text-align:center;color:#666">🔄 加载中...</div>';
+    fileList.innerHTML = '<div style="padding:20px;text-align:center;color:#666"><i class="ri-refresh-line"></i> 加载中...</div>';
     
     try {
         const result = await api.storageList(packExportCurrentPath);
@@ -12582,14 +12872,12 @@ async function packExportBrowseRefresh() {
         packExportCurrentEntries = filteredEntries;
         
         if (filteredEntries.length === 0) {
-            fileList.innerHTML = '<div style="padding:20px;text-align:center;color:#999">📁 没有配置文件 (.json)</div>';
+            fileList.innerHTML = '<div style="padding:20px;text-align:center;color:#999"><i class="ri-folder-line"></i> 没有配置文件 (.json)</div>';
             return;
         }
         
-        let html = '<div style="padding:4px">';
+        let html = '<div class="pack-export-file-list-inner">';
         for (const entry of filteredEntries) {
-            const icon = entry.type === 'dir' ? '📁' : '📄';
-            const size = entry.type === 'file' ? ` <span style="color:#999;font-size:0.9em">(${formatFileSize(entry.size)})</span>` : '';
             const fullPath = packExportCurrentPath + '/' + entry.name;
             const isSelected = packExportSelectedFiles.has(fullPath);
             const bgColor = isSelected ? '#e3f2fd' : '';
@@ -12599,21 +12887,21 @@ async function packExportBrowseRefresh() {
             if (entry.type === 'dir') {
                 // 目录：点击进入，无复选框
                 html += `<div onclick="packExportBrowseInto('${safeName}')" 
-                    style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #eee;display:flex;align-items:center" 
+                    class="pack-export-file-row pack-export-dir-row" 
                     onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background=''">
-                    <span style="margin-right:8px">${icon}</span>
-                    <span style="flex:1">${entry.name}</span>
+                    <span class="pack-export-row-icon"><i class="ri-folder-line"></i></span>
+                    <span class="pack-export-row-name">${escapeHtml(entry.name)}</span>
                 </div>`;
             } else {
-                // 文件：带复选框
+                // 文件：网格四列 复选框|图标|文件名|大小，避免错位
                 const checkboxId = 'pack-export-cb-' + entry.name.replace(/[^a-zA-Z0-9]/g, '_');
-                html += `<div style="padding:8px 12px;border-bottom:1px solid #eee;background:${bgColor};display:flex;align-items:center">
+                const sizeStr = formatFileSize(entry.size);
+                html += `<div class="pack-export-file-row pack-export-file-row-with-cb" style="background:${bgColor}">
                     <input type="checkbox" id="${checkboxId}" ${isSelected ? 'checked' : ''} 
-                        onclick="packExportToggleFile('${safeName}', this.checked)" style="margin-right:8px">
-                    <label for="${checkboxId}" style="flex:1;cursor:pointer;margin:0;display:flex;align-items:center">
-                        <span style="margin-right:4px">${icon}</span>
-                        <span>${entry.name}</span>${size}
-                    </label>
+                        onclick="packExportToggleFile('${safeName}', this.checked)" class="pack-export-row-cb">
+                    <span class="pack-export-row-icon"><i class="ri-file-text-line"></i></span>
+                    <label for="${checkboxId}" class="pack-export-row-label"><span class="pack-export-row-name">${escapeHtml(entry.name)}</span></label>
+                    <span class="pack-export-row-size">(${sizeStr})</span>
                 </div>`;
             }
         }
@@ -12624,7 +12912,7 @@ async function packExportBrowseRefresh() {
         packExportUpdateSelectedDisplay();
         
     } catch (e) {
-        fileList.innerHTML = `<div style="padding:20px;text-align:center;color:#e74c3c">❌ 加载失败: ${e.message}</div>`;
+        fileList.innerHTML = `<div style="padding:20px;text-align:center;color:#e74c3c"><i class="ri-error-warning-line"></i> 加载失败: ${e.message}</div>`;
     }
 }
 
@@ -13039,55 +13327,55 @@ async function refreshCertStatus() {
         // 状态显示
         switch (data.status) {
             case 'not_initialized':
-                statusIcon.textContent = '⚪';
+                statusIcon.innerHTML = '<i class="ri-checkbox-blank-circle-line"></i>';
                 statusText.textContent = '未初始化';
                 noKeyHint.style.display = 'block';
                 infoDetails.style.display = 'none';
                 expiryBadge.style.display = 'none';
                 break;
             case 'key_generated':
-                statusIcon.textContent = '🔑';
+                statusIcon.innerHTML = '<i class="ri-key-line"></i>';
                 statusText.textContent = '密钥已生成，等待 CSR';
                 noKeyHint.style.display = 'none';
                 infoDetails.style.display = 'none';
                 expiryBadge.style.display = 'none';
                 break;
             case 'csr_pending':
-                statusIcon.textContent = '📋';
+                statusIcon.innerHTML = '<i class="ri-file-text-line"></i>';
                 statusText.textContent = 'CSR 已生成，等待签发';
                 noKeyHint.style.display = 'none';
                 infoDetails.style.display = 'none';
                 expiryBadge.style.display = 'none';
                 break;
             case 'activated':
-                statusIcon.textContent = '✅';
+                statusIcon.innerHTML = '<i class="ri-check-line"></i>';
                 statusText.textContent = '已激活';
                 noKeyHint.style.display = 'none';
                 infoDetails.style.display = 'block';
                 updateCertInfoDetails(data.cert_info);
                 break;
             case 'expired':
-                statusIcon.textContent = '❌';
+                statusIcon.innerHTML = '<i class="ri-close-line"></i>';
                 statusText.textContent = '已过期';
                 noKeyHint.style.display = 'none';
                 infoDetails.style.display = 'block';
                 updateCertInfoDetails(data.cert_info);
                 break;
             case 'error':
-                statusIcon.textContent = '⚠️';
+                statusIcon.innerHTML = '<i class="ri-alert-line"></i>';
                 statusText.textContent = '错误';
                 noKeyHint.style.display = 'none';
                 infoDetails.style.display = 'none';
                 expiryBadge.style.display = 'none';
                 break;
             default:
-                statusIcon.textContent = '❓';
+                statusIcon.innerHTML = '<i class="ri-question-line"></i>';
                 statusText.textContent = data.status_display || data.status;
         }
         
     } catch (e) {
         console.error('Refresh cert status error:', e);
-        statusIcon.textContent = '❌';
+        statusIcon.innerHTML = '<i class="ri-close-line"></i>';
         statusText.textContent = '加载失败';
         if (noKeyHint) noKeyHint.style.display = 'none';
         if (infoDetails) infoDetails.style.display = 'none';
@@ -13103,7 +13391,7 @@ function updateCertInfoDetails(certInfo) {
     document.getElementById('cert-not-before').textContent = certInfo.not_before ? formatTimestamp(certInfo.not_before) : '-';
     document.getElementById('cert-not-after').textContent = certInfo.not_after ? formatTimestamp(certInfo.not_after) : '-';
     document.getElementById('cert-serial').textContent = certInfo.serial || '-';
-    document.getElementById('cert-valid-status').textContent = certInfo.is_valid ? '✅ 有效' : '❌ 无效';
+    document.getElementById('cert-valid-status').textContent = certInfo.is_valid ? '有效' : '无效';
     
     // 更新过期徽章
     const expiryBadge = document.getElementById('cert-expiry-badge');
@@ -14215,8 +14503,8 @@ async function loadOtaPage() {
                     <div class="server-input-group">
                         <input type="text" id="ota-server-input" class="form-input" 
                                placeholder="http://192.168.1.100:57807">
-                        <button class="btn btn-icon" onclick="saveOtaServer()" title="保存到设备">保存</button>
-                        <button class="btn btn-primary" onclick="checkForUpdates()" style="background-color: #f0f8ff; color: #333;">检查更新</button>
+                        <button class="btn btn-icon" onclick="saveOtaServer()" title="保存到设备" style="color:#666">保存</button>
+                        <button class="btn btn-service-style" onclick="checkForUpdates()">检查更新</button>
                     </div>
                 </div>
                 
@@ -14263,7 +14551,7 @@ async function loadOtaPage() {
                                 <label><input type="checkbox" id="ota-url-include-www" checked> 包含 WebUI</label>
                                 <label><input type="checkbox" id="ota-url-skip-verify"> 跳过验证</label>
                             </div>
-                            <button class="btn btn-primary btn-small" onclick="otaFromUrl()" style="background-color: #f0f8ff; color: #333;">升级</button>
+                            <button class="btn btn-service-style btn-small" onclick="otaFromUrl()">升级</button>
                         </div>
                     </div>
                     <div class="ota-method">
@@ -14274,7 +14562,7 @@ async function loadOtaPage() {
                             <div class="method-options">
                                 <label><input type="checkbox" id="ota-file-include-www" checked> 包含 WebUI</label>
                             </div>
-                            <button class="btn btn-primary btn-small" onclick="otaFromFile()" style="background-color: #f0f8ff; color: #333;">升级</button>
+                            <button class="btn btn-service-style btn-small" onclick="otaFromFile()">升级</button>
                         </div>
                     </div>
                 </div>
@@ -14365,16 +14653,23 @@ async function loadOtaPage() {
             border-color: #4CAF50;
         }
         
-        .btn-icon {
-            padding: 8px 10px;
-            border: 1px solid #ddd;
-            background: #f9f9f9;
+        .server-input-group .btn,
+        .server-input-group .btn-icon {
+            min-height: 40px;
+            padding: 10px 14px;
+            box-sizing: border-box;
+            font-size: 0.95em;
+            line-height: 1.2;
             border-radius: 6px;
-            cursor: pointer;
-            font-size: 1em;
         }
         
-        .btn-icon:hover {
+        .server-input-group .btn-icon {
+            border: 1px solid #ddd;
+            background: #f9f9f9;
+            cursor: pointer;
+        }
+        
+        .server-input-group .btn-icon:hover {
             background: #eee;
         }
         
@@ -15013,7 +15308,7 @@ function startRebootDetection() {
                     countdownEl.innerHTML = `
                         <span style="color:#e74c3c">⚠️ 等待超时</span>
                         <br><span style="font-size:0.9em">请手动检查设备状态并刷新页面</span>
-                        <br><button class="btn btn-primary btn-small" onclick="window.location.reload()" 
+                        <br><button class="btn btn-service-style btn-small" onclick="window.location.reload()" 
                             style="margin-top:10px">刷新页面</button>
                     `;
                 }
@@ -16309,10 +16604,10 @@ async function loadAutomationPage() {
         <div class="page-automation">
             <div class="page-header-row">
                 <div class="header-actions">
-                    <button class="btn btn-primary" onclick="automationControl('start')">▶️ 启动</button>
-                    <button class="btn btn-danger" onclick="automationControl('stop')">⏹️ 停止</button>
-                    <button class="btn" onclick="automationControl('pause')">⏸️ 暂停</button>
-                    <button class="btn" onclick="automationControl('reload')">🔄 重载</button>
+                    <button class="btn btn-success btn-file-action" onclick="automationControl('start')"><i class="ri-play-line"></i> 启动</button>
+                    <button class="btn btn-danger btn-file-action" onclick="automationControl('stop')"><i class="ri-stop-line"></i> 停止</button>
+                    <button class="btn btn-service-style btn-file-action" onclick="automationControl('pause')"><i class="ri-pause-line"></i> 暂停</button>
+                    <button class="btn btn-service-style btn-file-action" onclick="automationControl('reload')"><i class="ri-refresh-line"></i> 重载</button>
                 </div>
             </div>
             
@@ -16324,11 +16619,11 @@ async function loadAutomationPage() {
             <!-- 数据源列表 -->
             <div class="section">
                 <div class="section-header">
-                    <h2>📡 数据源</h2>
+                    <h2>数据源</h2>
                     <div class="section-actions">
-                        <button class="btn btn-primary btn-sm" onclick="showAddSourceModal()">➕ 添加</button>
-                        <button class="btn btn-sm" onclick="showImportSourceModal()" title="导入配置包">📥 导入</button>
-                        <button class="btn btn-sm" onclick="refreshSources()">🔄</button>
+                        <button class="btn btn-success btn-sm" onclick="showAddSourceModal()"><i class="ri-add-line"></i> 添加</button>
+                        <button class="btn btn-sm" onclick="showImportSourceModal()" title="导入配置包" style="color:#666"><i class="ri-download-line"></i> 导入</button>
+                        <button type="button" class="btn btn-sm automation-refresh-btn" onclick="refreshSources()" title="刷新" style="color:#666"><i class="ri-refresh-line"></i></button>
                     </div>
                 </div>
                 <div class="card compact">
@@ -16341,11 +16636,11 @@ async function loadAutomationPage() {
             <!-- 规则列表 -->
             <div class="section">
                 <div class="section-header">
-                    <h2>📋 规则列表</h2>
+                    <h2>规则列表</h2>
                     <div class="section-actions">
-                        <button class="btn btn-primary btn-sm" onclick="showAddRuleModal()">➕ 添加</button>
-                        <button class="btn btn-sm" onclick="showImportRuleModal()" title="导入配置包">📥 导入</button>
-                        <button class="btn btn-sm" onclick="refreshRules()">🔄</button>
+                        <button class="btn btn-success btn-sm" onclick="showAddRuleModal()"><i class="ri-add-line"></i> 添加</button>
+                        <button class="btn btn-sm" onclick="showImportRuleModal()" title="导入配置包" style="color:#666"><i class="ri-download-line"></i> 导入</button>
+                        <button type="button" class="btn btn-sm automation-refresh-btn" onclick="refreshRules()" title="刷新" style="color:#666"><i class="ri-refresh-line"></i></button>
                     </div>
                 </div>
                 <div class="card compact">
@@ -16358,11 +16653,11 @@ async function loadAutomationPage() {
             <!-- 动作模板管理 -->
             <div class="section">
                 <div class="section-header">
-                    <h2>⚡ 动作模板</h2>
+                    <h2>动作模板</h2>
                     <div class="section-actions">
-                        <button class="btn btn-primary btn-sm" onclick="showAddActionModal()">➕ 添加</button>
-                        <button class="btn btn-sm" onclick="showImportActionModal()" title="导入配置包">📥 导入</button>
-                        <button class="btn btn-sm" onclick="refreshActions()">🔄</button>
+                        <button class="btn btn-success btn-sm" onclick="showAddActionModal()"><i class="ri-add-line"></i> 添加</button>
+                        <button class="btn btn-sm" onclick="showImportActionModal()" title="导入配置包" style="color:#666"><i class="ri-download-line"></i> 导入</button>
+                        <button type="button" class="btn btn-sm automation-refresh-btn" onclick="refreshActions()" title="刷新" style="color:#666"><i class="ri-refresh-line"></i></button>
                     </div>
                 </div>
                 <div class="card compact">
@@ -16401,40 +16696,50 @@ async function refreshAutomationStatus() {
             const uptimeSec = Math.floor((d.uptime_ms || 0) / 1000);
             
             container.innerHTML = `
-                <div class="status-card primary">
-                    <div class="status-icon state-${stateClass}">●</div>
-                    <div class="status-info">
+                <div class="status-card">
+                    <div class="status-card-value-row">
+                        <span class="status-icon state-${stateClass}">●</span>
                         <span class="status-value">${stateText}</span>
-                        <span class="status-label">引擎状态</span>
                     </div>
+                    <div class="status-label">引擎状态</div>
                 </div>
                 <div class="status-card">
-                    <div class="status-value">${d.rules_count || 0}</div>
+                    <div class="status-card-value-row">
+                        <span class="status-value">${d.rules_count || 0}</span>
+                    </div>
                     <div class="status-label">规则</div>
                 </div>
                 <div class="status-card">
-                    <div class="status-value">${d.variables_count || 0}</div>
+                    <div class="status-card-value-row">
+                        <span class="status-value">${d.variables_count || 0}</span>
+                    </div>
                     <div class="status-label">变量</div>
                 </div>
                 <div class="status-card">
-                    <div class="status-value">${d.sources_count || 0}</div>
+                    <div class="status-card-value-row">
+                        <span class="status-value">${d.sources_count || 0}</span>
+                    </div>
                     <div class="status-label">数据源</div>
                 </div>
                 <div class="status-card">
-                    <div class="status-value">${d.rule_triggers || 0}</div>
+                    <div class="status-card-value-row">
+                        <span class="status-value">${d.rule_triggers || 0}</span>
+                    </div>
                     <div class="status-label">触发次数</div>
                 </div>
                 <div class="status-card">
-                    <div class="status-value">${formatUptimeSec(uptimeSec)}</div>
+                    <div class="status-card-value-row">
+                        <span class="status-value">${formatUptimeSec(uptimeSec)}</span>
+                    </div>
                     <div class="status-label">运行时长</div>
                 </div>
             `;
         } else {
-            container.innerHTML = `<div class="status-card error"><span>⚠️ ${result.message || '获取状态失败'}</span></div>`;
+            container.innerHTML = `<div class="status-card error"><span>${result.message || '获取状态失败'}</span></div>`;
         }
     } catch (error) {
         const isNetworkError = error.message.includes('fetch') || error.message.includes('network');
-        container.innerHTML = `<div class="status-card error"><span>${isNetworkError ? '🔌 网络连接失败' : '❌ ' + error.message}</span></div>`;
+        container.innerHTML = `<div class="status-card error"><span>${isNetworkError ? '网络连接失败' : error.message}</span></div>`;
     }
 }
 
@@ -16498,8 +16803,8 @@ async function refreshRules() {
                         ${rules.map(r => {
                             const iconValue = r.icon || '⚡';
                             const iconHtml = iconValue.startsWith('/sdcard/') 
-                                ? `<img src="/api/v1/file/download?path=${encodeURIComponent(iconValue)}" style="width:24px;height:24px;object-fit:contain" onerror="this.textContent='⚡'">`
-                                : iconValue;
+                                ? `<img src="/api/v1/file/download?path=${encodeURIComponent(iconValue)}" style="width:24px;height:24px;object-fit:contain" onerror="this.outerHTML='<i class=\\'ri-thunderstorms-line\\' style=\\'font-size:1.2em\\'></i>'">`
+                                : `<i class="${getRuleIconRi(iconValue)}" style="font-size:1.2em"></i>`;
                             const manualBadge = r.manual_trigger ? '<span class="badge" style="background:#27ae60;font-size:0.7em">手动</span>' : '';
                             
                             return `
@@ -16512,11 +16817,11 @@ async function refreshRules() {
                                 <td>${r.actions_count || 0}</td>
                                 <td>${r.trigger_count || 0}</td>
                                 <td style="white-space:nowrap">
-                                    <button class="btn btn-sm" onclick="toggleRule('${r.id}', ${!r.enabled})" title="${r.enabled ? '禁用' : '启用'}">${r.enabled ? '🔴' : '🟢'}</button>
-                                    <button class="btn btn-sm" onclick="triggerRule('${r.id}')" title="手动触发">▶️</button>
-                                    <button class="btn btn-sm" onclick="editRule('${r.id}')" title="编辑">✏️</button>
-                                    <button class="btn btn-sm" onclick="showExportRuleModal('${r.id}')" title="导出配置包">📤</button>
-                                    <button class="btn btn-sm btn-danger" onclick="deleteRule('${r.id}')" title="删除">🗑️</button>
+                                    <button class="btn btn-sm" onclick="toggleRule('${r.id}', ${!r.enabled})" title="${r.enabled ? '禁用' : '启用'}" style="color:#666"><i class="${r.enabled ? 'ri-stop-circle-line' : 'ri-play-circle-line'}"></i></button>
+                                    <button class="btn btn-sm" onclick="triggerRule('${r.id}')" title="手动触发" style="color:#666"><i class="ri-play-line"></i></button>
+                                    <button class="btn btn-sm" onclick="editRule('${r.id}')" title="编辑" style="color:#666"><i class="ri-edit-line"></i></button>
+                                    <button class="btn btn-sm" onclick="showExportRuleModal('${r.id}')" title="导出配置包" style="color:#666"><i class="ri-download-line"></i></button>
+                                    <button class="btn btn-sm btn-danger" onclick="deleteRule('${r.id}')" title="删除"><i class="ri-delete-bin-line"></i></button>
                                 </td>
                             </tr>
                         `}).join('')}
@@ -16524,11 +16829,11 @@ async function refreshRules() {
                 </table>
             `;
         } else {
-            container.innerHTML = `<p style="text-align:center;color:var(--text-light)">⚠️ ${result.message || '获取规则失败'}</p>`;
+            container.innerHTML = `<p style="text-align:center;color:var(--text-light)">${result.message || '获取规则失败'}</p>`;
         }
     } catch (error) {
         const isNetworkError = error.message.includes('fetch') || error.message.includes('network');
-        container.innerHTML = `<p style="text-align:center;color:var(--danger-color)">${isNetworkError ? '🔌 网络连接失败' : '❌ ' + error.message}</p>`;
+        container.innerHTML = `<p style="text-align:center;color:var(--danger-color)">${isNetworkError ? '网络连接失败' : error.message}</p>`;
     }
 }
 
@@ -16593,14 +16898,14 @@ async function refreshSources() {
                             <tr>
                                 <td><code>${s.id}</code></td>
                                 <td>${s.label || s.id}</td>
-                                <td><span style="padding:2px 8px;background:var(--primary-color);color:white;border-radius:4px;font-size:0.85em">${s.type || 'unknown'}</span></td>
+                                <td><span class="btn-service-style" style="display:inline-block;font-size:0.85em">${s.type || 'unknown'}</span></td>
                                 <td><span class="status-badge ${s.enabled ? 'status-running' : 'status-stopped'}">${s.enabled ? '启用' : '禁用'}</span></td>
                                 <td>${s.poll_interval_ms ? (s.poll_interval_ms / 1000) + '秒' : '-'}</td>
                                 <td style="white-space:nowrap">
-                                    <button class="btn btn-sm" onclick="showSourceVariables('${s.id}')" title="查看变量">📊</button>
-                                    <button class="btn btn-sm" onclick="toggleSource('${s.id}', ${!s.enabled})" title="${s.enabled ? '禁用' : '启用'}">${s.enabled ? '🔴' : '🟢'}</button>
-                                    <button class="btn btn-sm" onclick="showExportSourceModal('${s.id}')" title="导出配置包">📤</button>
-                                    <button class="btn btn-sm btn-danger" onclick="deleteSource('${s.id}')" title="删除">🗑️</button>
+                                    <button class="btn btn-sm" onclick="showSourceVariables('${s.id}')" title="查看变量" style="color:#666"><i class="ri-bar-chart-box-line"></i></button>
+                                    <button class="btn btn-sm" onclick="toggleSource('${s.id}', ${!s.enabled})" title="${s.enabled ? '禁用' : '启用'}" style="color:#666"><i class="${s.enabled ? 'ri-stop-circle-line' : 'ri-play-circle-line'}"></i></button>
+                                    <button class="btn btn-sm" onclick="showExportSourceModal('${s.id}')" title="导出配置包" style="color:#666"><i class="ri-download-line"></i></button>
+                                    <button class="btn btn-sm btn-danger" onclick="deleteSource('${s.id}')" title="删除"><i class="ri-delete-bin-line"></i></button>
                                 </td>
                             </tr>
                         `).join('')}
@@ -16608,11 +16913,11 @@ async function refreshSources() {
                 </table>
             `;
         } else {
-            container.innerHTML = `<p style="text-align:center;color:var(--text-light)">⚠️ ${result.message || '获取数据源失败'}</p>`;
+            container.innerHTML = `<p style="text-align:center;color:var(--text-light)">${result.message || '获取数据源失败'}</p>`;
         }
     } catch (error) {
         const isNetworkError = error.message.includes('fetch') || error.message.includes('network');
-        container.innerHTML = `<p style="text-align:center;color:var(--danger-color)">${isNetworkError ? '🔌 网络连接失败' : '❌ ' + error.message}</p>`;
+        container.innerHTML = `<p style="text-align:center;color:var(--danger-color)">${isNetworkError ? '网络连接失败' : error.message}</p>`;
     }
 }
 
@@ -16636,10 +16941,10 @@ async function refreshVariables() {
             if (countBadge) countBadge.textContent = allVariables.length;
             renderVariables(allVariables);
         } else {
-            container.innerHTML = `<p style="text-align:center;color:var(--text-light)">⚠️ ${result.message || '获取变量失败'}</p>`;
+            container.innerHTML = `<p style="text-align:center;color:var(--text-light)">${result.message || '获取变量失败'}</p>`;
         }
     } catch (error) {
-        container.innerHTML = `<p style="text-align:center;color:var(--danger-color)">❌ ${error.message}</p>`;
+        container.innerHTML = `<p style="text-align:center;color:var(--danger-color)">${error.message}</p>`;
     }
 }
 
@@ -16805,10 +17110,10 @@ async function refreshActions() {
                                 <td>${a.async ? '<span class="badge badge-warning">异步</span>' : '<span class="badge badge-light">同步</span>'}</td>
                                 <td class="text-muted">${a.description || '-'}</td>
                                 <td>
-                                    <button class="btn btn-xs" onclick="testAction('${a.id}')" title="测试">▶️</button>
-                                    <button class="btn btn-xs" onclick="editAction('${a.id}')" title="编辑">✏️</button>
-                                    <button class="btn btn-xs" onclick="showExportActionModal('${a.id}')" title="导出配置包">📤</button>
-                                    <button class="btn btn-danger btn-xs" onclick="deleteAction('${a.id}')" title="删除">🗑️</button>
+                                    <button class="btn btn-xs" onclick="testAction('${a.id}')" title="测试" style="color:#666"><i class="ri-play-line"></i></button>
+                                    <button class="btn btn-xs" onclick="editAction('${a.id}')" title="编辑" style="color:#666"><i class="ri-edit-line"></i></button>
+                                    <button class="btn btn-xs" onclick="showExportActionModal('${a.id}')" title="导出配置包" style="color:#666"><i class="ri-download-line"></i></button>
+                                    <button class="btn btn-danger btn-xs" onclick="deleteAction('${a.id}')" title="删除"><i class="ri-delete-bin-line"></i></button>
                                 </td>
                             </tr>
                         `).join('')}
@@ -16861,66 +17166,60 @@ function showAddActionModal() {
     modal.className = 'modal active';
     modal.id = 'action-modal';
     modal.innerHTML = `
-        <div class="modal-content modal-lg">
+        <div class="modal-content cc-compact modal-lg" style="max-width:720px">
             <div class="modal-header">
-                <h3>⚡ 新建动作模板</h3>
-                <button class="modal-close" onclick="closeModal('action-modal')">&times;</button>
+                <h2>新建动作模板</h2>
+                <button class="modal-close" onclick="closeModal('action-modal')"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
-                <!-- 第一步：选择动作类型 -->
                 <div class="action-section">
-                    <div class="section-title">1️⃣ 选择动作类型</div>
+                    <div class="section-title">1. 选择动作类型</div>
                     <div class="action-type-grid">
                         <label class="action-type-card" data-type="cli">
                             <input type="radio" name="action-type" value="cli" checked>
-                            <div class="card-icon">⚡</div>
+                            <div class="card-icon"><i class="ri-terminal-box-line"></i></div>
                             <div class="card-title">CLI 命令</div>
                             <div class="card-desc">执行本地控制台命令</div>
                         </label>
                         <label class="action-type-card" data-type="ssh_cmd_ref">
                             <input type="radio" name="action-type" value="ssh_cmd_ref">
-                            <div class="card-icon">🔐</div>
+                            <div class="card-icon"><i class="ri-shield-keyhole-line"></i></div>
                             <div class="card-title">SSH 命令</div>
                             <div class="card-desc">执行已配置的SSH命令</div>
                         </label>
                         <label class="action-type-card" data-type="led">
                             <input type="radio" name="action-type" value="led">
-                            <div class="card-icon">💡</div>
+                            <div class="card-icon"><i class="ri-lightbulb-line"></i></div>
                             <div class="card-title">LED 控制</div>
                             <div class="card-desc">控制 LED 颜色和效果</div>
                         </label>
                         <label class="action-type-card" data-type="log">
                             <input type="radio" name="action-type" value="log">
-                            <div class="card-icon">📝</div>
+                            <div class="card-icon"><i class="ri-file-text-line"></i></div>
                             <div class="card-title">日志记录</div>
                             <div class="card-desc">输出日志消息</div>
                         </label>
                         <label class="action-type-card" data-type="set_var">
                             <input type="radio" name="action-type" value="set_var">
-                            <div class="card-icon">📊</div>
+                            <div class="card-icon"><i class="ri-database-2-line"></i></div>
                             <div class="card-title">设置变量</div>
                             <div class="card-desc">修改系统变量值</div>
                         </label>
                         <label class="action-type-card" data-type="webhook">
                             <input type="radio" name="action-type" value="webhook">
-                            <div class="card-icon">🌐</div>
+                            <div class="card-icon"><i class="ri-global-line"></i></div>
                             <div class="card-title">Webhook</div>
                             <div class="card-desc">发送 HTTP 请求</div>
                         </label>
                     </div>
                 </div>
-                
-                <!-- 第二步：配置参数 -->
                 <div class="action-section">
-                    <div class="section-title">2️⃣ 配置参数</div>
+                    <div class="section-title">2. 配置参数</div>
                     <div id="action-type-fields" class="action-params-container">
-                        <!-- 动态生成的类型特定字段 -->
                     </div>
                 </div>
-                
-                <!-- 第三步：基本信息 -->
                 <div class="action-section">
-                    <div class="section-title">3️⃣ 基本信息</div>
+                    <div class="section-title">3. 基本信息</div>
                     <div class="form-row">
                         <div class="form-group" style="flex:1">
                             <label>动作 ID <span class="required">*</span></label>
@@ -16960,9 +17259,9 @@ function showAddActionModal() {
                     </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="btn" onclick="closeModal('action-modal')">取消</button>
-                <button class="btn btn-primary" onclick="submitAction()">💾 保存动作</button>
+            <div class="modal-footer cc-compact-footer">
+                <button class="btn" onclick="closeModal('action-modal')" style="color:#666">取消</button>
+                <button class="btn btn-service-style" onclick="submitAction()"><i class="ri-save-line"></i> 保存动作</button>
             </div>
         </div>
     `;
@@ -16993,7 +17292,7 @@ function updateActionTypeFields() {
         cli: `
             <div class="params-card">
                 <div class="params-header">
-                    <span class="params-icon">⚡</span>
+                    <span class="params-icon"><i class="ri-terminal-box-line"></i></span>
                     <span>CLI 命令配置</span>
                 </div>
                 <div class="form-group">
@@ -17031,7 +17330,7 @@ function updateActionTypeFields() {
         ssh_cmd_ref: `
             <div class="params-card">
                 <div class="params-header">
-                    <span class="params-icon">🔐</span>
+                    <span class="params-icon"><i class="ri-shield-keyhole-line"></i></span>
                     <span>SSH 命令配置</span>
                 </div>
                 <div class="form-group">
@@ -17042,7 +17341,7 @@ function updateActionTypeFields() {
                     <small class="form-hint">选择已在 SSH 管理页面配置的命令</small>
                 </div>
                 <div id="ssh-cmd-preview" class="ssh-cmd-preview" style="display:none;">
-                    <div class="preview-title">📋 命令详情</div>
+                    <div class="preview-title">命令详情</div>
                     <div class="preview-content">
                         <div class="preview-row"><span class="preview-label">主机:</span> <span id="preview-host">-</span></div>
                         <div class="preview-row"><span class="preview-label">命令:</span> <code id="preview-cmd">-</code></div>
@@ -17054,7 +17353,7 @@ function updateActionTypeFields() {
         led: `
             <div class="params-card">
                 <div class="params-header">
-                    <span class="params-icon">💡</span>
+                    <span class="params-icon"><i class="ri-lightbulb-line"></i></span>
                     <span>LED 控制配置</span>
                 </div>
                 <div class="form-group">
@@ -17069,10 +17368,10 @@ function updateActionTypeFields() {
                 <div class="form-group" id="action-led-type-group" style="display:none;">
                     <label>控制类型 <span class="required">*</span></label>
                     <select id="action-led-type" class="input" onchange="updateActionLedTypeFields()">
-                        <option value="fill">🎨 纯色填充</option>
-                        <option value="effect">🎬 程序动画</option>
-                        <option value="brightness">☀️ 仅调节亮度</option>
-                        <option value="off">⏹ 关闭</option>
+                        <option value="fill">纯色填充</option>
+                        <option value="effect">程序动画</option>
+                        <option value="brightness">仅调节亮度</option>
+                        <option value="off">关闭</option>
                     </select>
                 </div>
                 
@@ -17080,16 +17379,16 @@ function updateActionTypeFields() {
                 <div class="form-group" id="action-led-matrix-type-group" style="display:none;">
                     <label>控制类型 <span class="required">*</span></label>
                     <select id="action-led-matrix-type" class="input" onchange="updateActionLedTypeFields()">
-                        <option value="fill">🎨 纯色填充</option>
-                        <option value="effect">🎬 程序动画</option>
-                        <option value="text">📝 文本显示</option>
-                        <option value="image">📷 显示图像</option>
-                        <option value="qrcode">📱 显示QR码</option>
-                        <option value="filter">🎨 后处理滤镜</option>
-                        <option value="filter_stop">⏹ 停止滤镜</option>
-                        <option value="text_stop">⏹ 停止文本</option>
-                        <option value="brightness">☀️ 仅调节亮度</option>
-                        <option value="off">⏹ 关闭设备</option>
+                        <option value="fill">纯色填充</option>
+                        <option value="effect">程序动画</option>
+                        <option value="text">文本显示</option>
+                        <option value="image">显示图像</option>
+                        <option value="qrcode">显示QR码</option>
+                        <option value="filter">后处理滤镜</option>
+                        <option value="filter_stop">停止滤镜</option>
+                        <option value="text_stop">停止文本</option>
+                        <option value="brightness">仅调节亮度</option>
+                        <option value="off">关闭设备</option>
                     </select>
                 </div>
                 
@@ -17100,17 +17399,17 @@ function updateActionTypeFields() {
         log: `
             <div class="params-card">
                 <div class="params-header">
-                    <span class="params-icon">📝</span>
+                    <span class="params-icon"><i class="ri-file-text-line"></i></span>
                     <span>日志配置</span>
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
                         <label>级别</label>
                         <select id="action-log-level" class="input">
-                            <option value="3">ℹ️ INFO</option>
-                            <option value="2">⚠️ WARN</option>
-                            <option value="1">❌ ERROR</option>
-                            <option value="4">🔍 DEBUG</option>
+                            <option value="3">INFO</option>
+                            <option value="2">WARN</option>
+                            <option value="1">ERROR</option>
+                            <option value="4">DEBUG</option>
                         </select>
                     </div>
                 </div>
@@ -17124,7 +17423,7 @@ function updateActionTypeFields() {
         set_var: `
             <div class="params-card">
                 <div class="params-header">
-                    <span class="params-icon">📊</span>
+                    <span class="params-icon"><i class="ri-database-2-line"></i></span>
                     <span>变量配置</span>
                 </div>
                 <div class="form-group">
@@ -17141,7 +17440,7 @@ function updateActionTypeFields() {
         webhook: `
             <div class="params-card">
                 <div class="params-header">
-                    <span class="params-icon">🌐</span>
+                    <span class="params-icon"><i class="ri-global-line"></i></span>
                     <span>Webhook 配置</span>
                 </div>
                 <div class="form-group">
@@ -17775,20 +18074,20 @@ function updateActionLedTypeFields() {
                 <div class="form-group">
                     <label>滤镜 <span class="required">*</span></label>
                     <select id="action-led-filter" class="input" onchange="updateActionFilterParams()">
-                        <option value="pulse">💓 脉冲</option>
-                        <option value="breathing">💨 呼吸</option>
-                        <option value="blink">💡 闪烁</option>
-                        <option value="wave">🌊 波浪</option>
-                        <option value="scanline">📺 扫描线</option>
-                        <option value="glitch">⚡ 故障艺术</option>
-                        <option value="rainbow">🌈 彩虹</option>
-                        <option value="sparkle">✨ 闪耀</option>
-                        <option value="plasma">🎆 等离子体</option>
-                        <option value="sepia">🖼️ 怀旧</option>
-                        <option value="posterize">🎨 色阶分离</option>
-                        <option value="contrast">🔆 对比度</option>
-                        <option value="invert">🔄 反色</option>
-                        <option value="grayscale">⬜ 灰度</option>
+                        <option value="pulse">脉冲</option>
+                        <option value="breathing">呼吸</option>
+                        <option value="blink">闪烁</option>
+                        <option value="wave">波浪</option>
+                        <option value="scanline">扫描线</option>
+                        <option value="glitch">故障艺术</option>
+                        <option value="rainbow">彩虹</option>
+                        <option value="sparkle">闪耀</option>
+                        <option value="plasma">等离子体</option>
+                        <option value="sepia">怀旧</option>
+                        <option value="posterize">色阶分离</option>
+                        <option value="contrast">对比度</option>
+                        <option value="invert">反色</option>
+                        <option value="grayscale">灰度</option>
                     </select>
                 </div>
                 <div id="action-filter-params"></div>
@@ -18841,25 +19140,25 @@ function showAddSourceModal() {
     modal.id = 'add-source-modal';
     modal.className = 'modal';
     modal.innerHTML = `
-        <div class="modal-content automation-modal wide">
+        <div class="modal-content cc-compact automation-modal" style="max-width:750px">
             <div class="modal-header">
-                <h3>➕ 添加外部数据源</h3>
-                <button class="modal-close" onclick="closeModal('add-source-modal')">&times;</button>
+                <h2>添加外部数据源</h2>
+                <button class="modal-close" onclick="closeModal('add-source-modal')"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
                 <!-- 数据源类型选择（标签页样式） -->
-                <div class="modal-tabs">
+                <div class="modal-tabs automation-modal-tabs">
                     <button type="button" class="modal-tab active" data-type="rest" onclick="switchSourceType('rest')">
-                        🌐 REST API
+                        REST API
                     </button>
                     <button type="button" class="modal-tab" data-type="websocket" onclick="switchSourceType('websocket')">
-                        🔌 WebSocket
+                        WebSocket
                     </button>
                     <button type="button" class="modal-tab" data-type="socketio" onclick="switchSourceType('socketio')">
-                        ⚡ Socket.IO
+                        Socket.IO
                     </button>
                     <button type="button" class="modal-tab" data-type="variable" onclick="switchSourceType('variable')">
-                        📦 指令变量
+                        指令变量
                     </button>
                 </div>
                 <input type="hidden" id="source-type" value="rest">
@@ -18878,12 +19177,12 @@ function showAddSourceModal() {
                 
                 <!-- REST API 配置 -->
                 <div id="source-rest-config" class="config-section">
-                    <div class="config-title">🌐 REST API 配置</div>
+                    <div class="config-title">REST API 配置</div>
                     <div class="form-group">
                         <label>请求地址 <span class="required">*</span></label>
                         <div class="input-with-btn">
                             <input type="text" id="source-rest-url" class="input" placeholder="http://192.168.1.100/api/status">
-                            <button class="btn btn-sm" onclick="testRestConnection()" id="btn-test-rest">🔍 测试</button>
+                            <button class="btn btn-sm btn-warning" onclick="testRestConnection()" id="btn-test-rest">测试</button>
                         </div>
                     </div>
                     <div class="form-row">
@@ -18908,11 +19207,11 @@ function showAddSourceModal() {
                     <div id="rest-test-result" class="test-result-panel" style="display:none">
                         <div class="test-result-header">
                             <span class="test-status"></span>
-                            <button class="btn btn-sm" onclick="toggleJsonPreview()">📄 原始数据</button>
+                            <button class="btn btn-sm" onclick="toggleJsonPreview()" style="color:#666"><i class="ri-file-text-line"></i> 原始数据</button>
                         </div>
                         <div id="rest-json-preview" class="json-preview" style="display:none"></div>
                         <div id="rest-var-selector" class="var-selector">
-                            <div class="var-selector-title">📊 选择要提取的字段：</div>
+                            <div class="var-selector-title">选择要提取的字段：</div>
                             <div class="var-list"></div>
                         </div>
                     </div>
@@ -18925,12 +19224,12 @@ function showAddSourceModal() {
                 
                 <!-- WebSocket 配置 -->
                 <div id="source-websocket-config" class="config-section" style="display:none">
-                    <div class="config-title">🔌 WebSocket 配置</div>
+                    <div class="config-title">WebSocket 配置</div>
                     <div class="form-group">
                         <label>WebSocket 地址 <span class="required">*</span></label>
                         <div class="input-with-btn">
                             <input type="text" id="source-ws-uri" class="input" placeholder="ws://192.168.1.100:8080/ws">
-                            <button class="btn btn-sm" onclick="testWsConnection()" id="btn-test-ws">🔍 测试</button>
+                            <button class="btn btn-sm btn-warning" onclick="testWsConnection()" id="btn-test-ws">测试</button>
                         </div>
                     </div>
                     
@@ -18938,11 +19237,11 @@ function showAddSourceModal() {
                     <div id="ws-test-result" class="test-result-panel" style="display:none">
                         <div class="test-result-header">
                             <span class="test-status"></span>
-                            <button class="btn btn-sm" onclick="toggleWsJsonPreview()">📄 原始数据</button>
+                            <button class="btn btn-sm" onclick="toggleWsJsonPreview()" style="color:#666"><i class="ri-file-text-line"></i> 原始数据</button>
                         </div>
                         <div id="ws-json-preview" class="json-preview" style="display:none"></div>
                         <div id="ws-var-selector" class="var-selector">
-                            <div class="var-selector-title">📊 选择要提取的字段：</div>
+                            <div class="var-selector-title">选择要提取的字段：</div>
                             <div class="var-list"></div>
                         </div>
                     </div>
@@ -18959,12 +19258,12 @@ function showAddSourceModal() {
                 
                 <!-- Socket.IO 配置 -->
                 <div id="source-socketio-config" class="config-section" style="display:none">
-                    <div class="config-title">⚡ Socket.IO 配置</div>
+                    <div class="config-title">Socket.IO 配置</div>
                     <div class="form-group">
                         <label>服务器地址 <span class="required">*</span></label>
                         <div class="input-with-btn">
                             <input type="text" id="source-sio-url" class="input" placeholder="http://10.10.99.99:59090">
-                            <button class="btn btn-sm" onclick="testSioConnection()" id="btn-test-sio">🔍 测试</button>
+                            <button class="btn btn-sm btn-warning" onclick="testSioConnection()" id="btn-test-sio">测试</button>
                         </div>
                         <small style="color:var(--text-light)">Socket.IO v4 协议，使用 HTTP/HTTPS 地址</small>
                     </div>
@@ -18983,11 +19282,11 @@ function showAddSourceModal() {
                     <div id="sio-test-result" class="test-result-panel" style="display:none">
                         <div class="test-result-header">
                             <span class="test-status"></span>
-                            <button class="btn btn-sm" onclick="toggleSioJsonPreview()">📄 原始数据</button>
+                            <button class="btn btn-sm" onclick="toggleSioJsonPreview()" style="color:#666"><i class="ri-file-text-line"></i> 原始数据</button>
                         </div>
                         <div id="sio-json-preview" class="json-preview" style="display:none"></div>
                         <div id="sio-var-selector" class="var-selector">
-                            <div class="var-selector-title">📊 选择要提取的字段：</div>
+                            <div class="var-selector-title">选择要提取的字段：</div>
                             <div class="var-list"></div>
                         </div>
                     </div>
@@ -19009,7 +19308,7 @@ function showAddSourceModal() {
                 
                 <!-- 指令变量数据源配置 -->
                 <div id="source-variable-config" class="config-section" style="display:none">
-                    <div class="config-title">🔌 SSH 指令变量</div>
+                    <div class="config-title">SSH 指令变量</div>
                     
                     <!-- SSH 主机选择 -->
                     <div class="form-group">
@@ -19031,7 +19330,7 @@ function showAddSourceModal() {
                     
                     <!-- 选中命令的详情预览 -->
                     <div id="source-ssh-cmd-preview" class="ssh-cmd-preview" style="display:none">
-                        <div class="preview-title">📋 指令详情</div>
+                        <div class="preview-title">指令详情</div>
                         <div class="preview-content">
                             <div class="preview-row"><span class="preview-label">命令:</span> <code id="preview-command">-</code></div>
                             <div class="preview-row"><span class="preview-label">描述:</span> <span id="preview-desc">-</span></div>
@@ -19042,7 +19341,7 @@ function showAddSourceModal() {
                     <!-- 变量预览 -->
                     <div class="form-group">
                         <div class="ssh-vars-preview">
-                            <div class="preview-title">📦 将监视以下变量（需先执行指令）：</div>
+                            <div class="preview-title">将监视以下变量（需先执行指令）：</div>
                             <div id="ssh-vars-list" class="ssh-vars-list">
                                 <span class="text-muted">请先选择 SSH 主机和指令</span>
                             </div>
@@ -19063,9 +19362,9 @@ function showAddSourceModal() {
                     <span>创建后立即启用</span>
                 </label>
             </div>
-            <div class="modal-footer">
-                <button class="btn" onclick="closeModal('add-source-modal')">取消</button>
-                <button class="btn btn-primary" onclick="submitAddSource()">添加数据源</button>
+            <div class="modal-footer cc-compact-footer">
+                <button class="btn" onclick="closeModal('add-source-modal')" style="color:#666">取消</button>
+                <button class="btn btn-service-style" onclick="submitAddSource()"><i class="ri-database-2-line"></i> 添加数据源</button>
             </div>
         </div>
     `;
@@ -19096,7 +19395,7 @@ async function testRestConnection() {
     const statusSpan = resultPanel.querySelector('.test-status');
     
     btn.disabled = true;
-    btn.textContent = '⏳ 测试中...';
+    btn.innerHTML = '<i class="ri-hourglass-line"></i> 测试中...';
     resultPanel.style.display = 'block';
     statusSpan.innerHTML = '<span style="color:var(--warning-color)">🔄 正在请求...</span>';
     
@@ -19133,7 +19432,7 @@ async function testRestConnection() {
     }
     
     btn.disabled = false;
-    btn.textContent = '🔍 测试';
+    btn.innerHTML = '<i class="ri-search-line"></i> 测试';
 }
 
 /**
@@ -19158,9 +19457,9 @@ async function testWsConnection() {
     }
     
     btn.disabled = true;
-    btn.textContent = '⏳ 连接中...';
+    btn.innerHTML = '<i class="ri-hourglass-line"></i> 连接中...';
     resultPanel.style.display = 'block';
-    statusSpan.innerHTML = '<span style="color:var(--warning-color)">🔄 正在连接...</span>';
+    statusSpan.innerHTML = '<span style="color:var(--warning-color)">正在连接...</span>';
     
     try {
         // 通过 ESP32 测试 WebSocket（获取第一条消息）
@@ -19189,7 +19488,7 @@ async function testWsConnection() {
     }
     
     btn.disabled = false;
-    btn.textContent = '🔍 测试';
+    btn.innerHTML = '<i class="ri-search-line"></i> 测试';
 }
 
 /**
@@ -19211,9 +19510,9 @@ async function testSioConnection() {
     const eventInput = document.getElementById('source-sio-event');
     
     btn.disabled = true;
-    btn.textContent = '⏳ 连接中...';
+    btn.innerHTML = '<i class="ri-hourglass-line"></i> 连接中...';
     resultPanel.style.display = 'block';
-    
+
     // 显示连接阶段状态
     const statusText = event ? `正在连接并等待事件: ${event}` : '正在连接并自动发现事件...';
     statusSpan.innerHTML = `<span style="color:var(--warning-color)">🔄 ${statusText}</span>`;
@@ -19279,7 +19578,7 @@ async function testSioConnection() {
     }
     
     btn.disabled = false;
-    btn.textContent = '🔍 测试';
+    btn.innerHTML = '<i class="ri-search-line"></i> 测试';
 }
 
 /**
@@ -19540,9 +19839,9 @@ async function onSshHostChangeForSource() {
     
     let html = '<option value="">-- 请选择指令 --</option>';
     commands.forEach((cmd, idx) => {
-        const icon = cmd.icon || '🚀';
-        const label = `${icon} ${cmd.name}`;
-        html += `<option value="${idx}">${label}</option>`;
+        const icon = cmd.icon || 'ri-rocket-line';
+        const label = (icon && icon.startsWith && icon.startsWith('ri-')) ? cmd.name : `${icon} ${cmd.name}`;
+        html += `<option value="${idx}">${escapeHtml(label)}</option>`;
     });
     cmdSelect.innerHTML = html;
 }
@@ -19715,6 +20014,21 @@ async function submitAddSource() {
     }
 }
 
+// 规则图标：后端仍存 emoji，前端显示用 RemixIcon
+const RULE_ICON_LIST = [
+    { emoji: '⚡', ri: 'ri-thunderstorms-line' }, { emoji: '🔔', ri: 'ri-notification-line' }, { emoji: '💡', ri: 'ri-lightbulb-line' },
+    { emoji: '🔌', ri: 'ri-plug-line' }, { emoji: '🌡️', ri: 'ri-temp-hot-line' }, { emoji: '⏰', ri: 'ri-timer-line' },
+    { emoji: '📊', ri: 'ri-bar-chart-line' }, { emoji: '🎯', ri: 'ri-focus-line' }, { emoji: '🚀', ri: 'ri-rocket-line' },
+    { emoji: '⚙️', ri: 'ri-settings-line' }, { emoji: '🔧', ri: 'ri-tools-line' }, { emoji: '🎵', ri: 'ri-music-line' },
+    { emoji: '📱', ri: 'ri-smartphone-line' }, { emoji: '🖥️', ri: 'ri-computer-line' }, { emoji: '🌐', ri: 'ri-global-line' },
+    { emoji: '🔒', ri: 'ri-lock-line' }, { emoji: '🛡️', ri: 'ri-shield-line' }, { emoji: '📝', ri: 'ri-file-text-line' },
+    { emoji: '🎬', ri: 'ri-movie-line' }, { emoji: '🔄', ri: 'ri-refresh-line' }
+];
+function getRuleIconRi(emoji) {
+    const o = RULE_ICON_LIST.find(x => x.emoji === emoji);
+    return o ? o.ri : 'ri-thunderstorms-line';
+}
+
 /**
  * 显示添加/编辑规则模态框
  * @param {object} ruleData - 编辑时传入现有规则数据，添加时为 null
@@ -19733,11 +20047,14 @@ function showAddRuleModal(ruleData = null) {
     const modal = document.createElement('div');
     modal.id = 'add-rule-modal';
     modal.className = 'modal';
+    const iconPickerHtml = RULE_ICON_LIST.map((x, i) =>
+        `<button type="button" class="icon-btn${i === 0 ? ' selected' : ''}" data-emoji="${x.emoji.replace(/"/g, '&quot;')}" onclick="selectRuleIcon(this.getAttribute('data-emoji'))"><i class="${x.ri}"></i></button>`
+    ).join('');
     modal.innerHTML = `
-        <div class="modal-content automation-modal wide">
+        <div class="modal-content cc-compact automation-modal wide" style="max-width:750px">
             <div class="modal-header">
-                <h3>${isEdit ? '✏️ 编辑规则' : '➕ 添加规则'}</h3>
-                <button class="modal-close" onclick="closeModal('add-rule-modal')">&times;</button>
+                <h2>${isEdit ? '编辑规则' : '添加规则'}</h2>
+                <button class="modal-close" onclick="closeModal('add-rule-modal')"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
                 <!-- 基本信息 -->
@@ -19756,16 +20073,14 @@ function showAddRuleModal(ruleData = null) {
                 <div class="form-group">
                     <label>图标</label>
                     <div class="icon-type-tabs">
-                        <button type="button" class="icon-tab active" onclick="switchRuleIconType('emoji')">😀 Emoji</button>
-                        <button type="button" class="icon-tab" onclick="switchRuleIconType('image')">🖼️ 图片</button>
+                        <button type="button" class="icon-tab active" onclick="switchRuleIconType('emoji')">图标</button>
+                        <button type="button" class="icon-tab" onclick="switchRuleIconType('image')">图片</button>
                     </div>
                     <div id="rule-icon-emoji-picker" class="icon-picker">
                         <div class="emoji-custom-input">
-                            <input type="text" id="rule-emoji-input" class="input" placeholder="输入或粘贴 emoji" maxlength="8" onchange="selectRuleIconFromInput()" style="width:100px;text-align:center;font-size:1.2em">
+                            <input type="text" id="rule-emoji-input" class="input" placeholder="自定义" maxlength="8" onchange="selectRuleIconFromInput()" style="width:100px;text-align:center;font-size:1.2em">
                         </div>
-                        ${['⚡','🔔','💡','🔌','🌡️','⏰','📊','🎯','🚀','⚙️','🔧','🎵','📱','🖥️','🌐','🔒','🛡️','📝','🎬','🔄'].map(e => 
-                            `<button type="button" class="icon-btn${e === '⚡' ? ' selected' : ''}" onclick="selectRuleIcon('${e}')">${e}</button>`
-                        ).join('')}
+                        ${iconPickerHtml}
                     </div>
                     <div id="rule-icon-image-picker" class="icon-image-picker hidden">
                         <div class="icon-preview-row">
@@ -19774,8 +20089,8 @@ function showAddRuleModal(ruleData = null) {
                             </div>
                             <div class="icon-path-input">
                                 <input type="text" id="rule-icon-path" readonly placeholder="选择图片...">
-                                <button type="button" class="btn btn-sm" onclick="browseRuleIconImage()">📂 浏览</button>
-                                <button type="button" class="btn btn-sm" onclick="clearRuleIconImage()">✕</button>
+                                <button type="button" class="btn btn-sm" onclick="browseRuleIconImage()" style="color:#666"><i class="ri-folder-open-line"></i> 浏览</button>
+                                <button type="button" class="btn btn-sm" onclick="clearRuleIconImage()" style="color:#666"><i class="ri-close-line"></i></button>
                             </div>
                         </div>
                     </div>
@@ -19784,11 +20099,11 @@ function showAddRuleModal(ruleData = null) {
                 </div>
                 
                 <div class="form-row three-col">
-                    <div class="form-group">
+                    <div class="form-group form-group-logic">
                         <label>条件逻辑</label>
                         <select id="rule-logic" class="input">
-                            <option value="and">全部满足 (AND)</option>
-                            <option value="or">任一满足 (OR)</option>
+                            <option value="and">AND</option>
+                            <option value="or">OR</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -19804,13 +20119,13 @@ function showAddRuleModal(ruleData = null) {
                 <!-- 条件配置 -->
                 <div class="config-section">
                     <div class="config-header">
-                        <span class="config-title">📋 触发条件</span>
+                        <span class="config-title">触发条件</span>
                         <div style="display:flex;gap:8px;align-items:center">
                             <label class="checkbox-label" style="margin:0;padding:0">
                                 <input type="checkbox" id="rule-manual-only" onchange="toggleManualOnly()">
                                 <span>仅手动触发</span>
                             </label>
-                            <button class="btn btn-sm btn-primary" id="add-condition-btn" onclick="addConditionRow()">➕ 添加</button>
+                            <button class="btn btn-sm btn-success" id="add-condition-btn" onclick="addConditionRow()"><i class="ri-add-line"></i> 添加</button>
                         </div>
                     </div>
                     <div id="conditions-container">
@@ -19821,20 +20136,22 @@ function showAddRuleModal(ruleData = null) {
                 <!-- 动作配置 -->
                 <div class="config-section">
                     <div class="config-header">
-                        <span class="config-title">⚡ 执行动作</span>
-                        <button class="btn btn-sm btn-primary" onclick="addActionTemplateRow()">➕ 添加</button>
+                        <span class="config-title">执行动作</span>
+                        <button class="btn btn-sm btn-success" onclick="addActionTemplateRow()"><i class="ri-add-line"></i> 添加</button>
                     </div>
-                    <div id="actions-container">
-                        <p class="empty-hint">从已创建的动作模板中选择要执行的动作</p>
+                    <div class="actions-hint-block">
+                        <div id="actions-container">
+                            <p class="empty-hint">从已创建的动作模板中选择要执行的动作</p>
+                        </div>
+                        <small class="form-hint" style="display:block;margin-top:8px;">
+                            <i class="ri-information-line"></i> 请先在"动作模板"区域创建动作，然后在这里选择使用
+                        </small>
                     </div>
-                    <small class="form-hint" style="display:block;margin-top:8px;">
-                        💡 请先在"动作模板"区域创建动作，然后在这里选择使用
-                    </small>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="btn" onclick="closeModal('add-rule-modal')">取消</button>
-                <button class="btn btn-primary" onclick="submitAddRule(${isEdit ? "'" + ruleData.id + "'" : ''})">${isEdit ? '保存修改' : '添加规则'}</button>
+            <div class="modal-footer cc-compact-footer">
+                <button class="btn" onclick="closeModal('add-rule-modal')" style="color:#666">取消</button>
+                <button class="btn btn-service-style" onclick="submitAddRule(${isEdit ? "'" + ruleData.id + "'" : ''})">${isEdit ? '<i class="ri-save-line"></i> 保存修改' : '<i class="ri-add-line"></i> 添加规则'}</button>
             </div>
         </div>
     `;
@@ -19907,7 +20224,7 @@ function toggleManualOnly() {
         // 禁用添加条件按钮，清空现有条件
         addBtn.disabled = true;
         addBtn.style.opacity = '0.5';
-        container.innerHTML = '<p class="empty-hint" style="color:var(--secondary-color)">👆 此规则仅可通过手动触发按钮执行</p>';
+        container.innerHTML = '<p class="empty-hint" style="color:var(--secondary-color)">此规则仅可通过手动触发按钮执行</p>';
     } else {
         // 启用添加条件按钮
         addBtn.disabled = false;
@@ -19941,9 +20258,10 @@ function switchRuleIconType(type) {
 function selectRuleIcon(icon) {
     document.getElementById('rule-icon').value = icon;
     document.getElementById('rule-icon-type').value = 'emoji';
-    document.getElementById('rule-emoji-input').value = icon;
+    const input = document.getElementById('rule-emoji-input');
+    if (input) input.value = icon;
     document.querySelectorAll('#add-rule-modal .icon-btn').forEach(btn => {
-        btn.classList.toggle('selected', btn.textContent === icon);
+        btn.classList.toggle('selected', btn.getAttribute('data-emoji') === icon);
     });
 }
 
@@ -20847,21 +21165,23 @@ function showExportSourceModal(sourceId) {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:600px">
-            <h2>📤 导出数据源配置</h2>
-            <p style="color:#666;font-size:0.9rem">导出数据源 <strong>${escapeHtml(sourceId)}</strong> 的配置为加密配置包</p>
-            
-            <div class="form-group">
-                <label>目标设备证书 (PEM)</label>
-                <textarea id="export-source-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
-                <div style="font-size:0.85em;color:#666;margin-top:4px">💡 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+        <div class="modal-content cc-compact" style="max-width:600px">
+            <div class="modal-header">
+                <h2>导出数据源配置</h2>
+                <button class="modal-close" onclick="hideExportSourceModal()"><i class="ri-close-line"></i></button>
             </div>
-            
-            <div id="export-source-result" class="result-box hidden" style="margin-top:10px"></div>
-            
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideExportSourceModal()">取消</button>
-                <button class="btn btn-primary" id="export-source-btn" onclick="doExportSource('${escapeHtml(sourceId)}')">📤 导出</button>
+            <div class="modal-body">
+                <p style="color:#666;font-size:0.9rem;margin-top:0">导出数据源 <strong>${escapeHtml(sourceId)}</strong> 的配置为加密配置包</p>
+                <div class="form-group">
+                    <label>目标设备证书 (PEM)</label>
+                    <textarea id="export-source-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
+                    <div style="font-size:0.85em;color:#666;margin-top:4px"><i class="ri-information-line"></i> 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+                </div>
+                <div id="export-source-result" class="result-box hidden" style="margin-top:10px"></div>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="hideExportSourceModal()" style="color:#666">取消</button>
+                    <button class="btn btn-service-style" id="export-source-btn" onclick="doExportSource('${escapeHtml(sourceId)}')"><i class="ri-download-line"></i> 导出</button>
+                </div>
             </div>
         </div>
     `;
@@ -20880,7 +21200,7 @@ async function doExportSource(sourceId) {
     const exportBtn = document.getElementById('export-source-btn');
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在生成配置包...';
+    resultBox.textContent = '正在生成配置包...';
     exportBtn.disabled = true;
     
     try {
@@ -20905,12 +21225,12 @@ async function doExportSource(sourceId) {
         URL.revokeObjectURL(url);
         
         resultBox.className = 'result-box success';
-        resultBox.textContent = '✅ 导出成功！';
+        resultBox.textContent = '导出成功';
         showToast(`已导出数据源配置: ${data.filename}`, 'success');
         setTimeout(() => hideExportSourceModal(), 1000);
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
     } finally {
         exportBtn.disabled = false;
     }
@@ -20929,34 +21249,35 @@ function showImportSourceModal() {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:600px">
-            <h2>📥 导入数据源配置</h2>
-            <p style="color:#666;font-size:0.9rem">选择 .tscfg 配置包文件以导入数据源</p>
-            
-            <div id="import-source-step1">
-                <div class="form-group" style="margin-top:15px">
-                    <label>选择文件</label>
-                    <input type="file" id="import-source-file" class="form-control" accept=".tscfg" onchange="previewSourceImport()">
-                </div>
+        <div class="modal-content cc-compact" style="max-width:600px">
+            <div class="modal-header">
+                <h2>导入数据源配置</h2>
+                <button class="modal-close" onclick="hideImportSourceModal()"><i class="ri-close-line"></i></button>
             </div>
-            
-            <div id="import-source-step2" style="display:none">
-                <div class="info-card" style="background:#f8f9fa;padding:15px;border-radius:8px;margin-top:15px">
-                    <h4 style="margin:0 0 10px 0">📋 配置包内容</h4>
-                    <div id="import-source-preview"></div>
+            <div class="modal-body">
+                <p style="color:#666;font-size:0.9rem;margin-top:0">选择 .tscfg 配置包文件以导入数据源</p>
+                <div id="import-source-step1">
+                    <div class="form-group" style="margin-top:15px">
+                        <label>选择文件</label>
+                        <input type="file" id="import-source-file" class="form-control" accept=".tscfg" onchange="previewSourceImport()">
+                    </div>
                 </div>
-                <div class="form-group" style="margin-top:15px">
-                    <label>
-                        <input type="checkbox" id="import-source-overwrite"> 覆盖已存在的配置
-                    </label>
+                <div id="import-source-step2" style="display:none">
+                    <div class="info-card" style="background:#fff;padding:15px;border-radius:8px;margin-top:15px;border:1px solid #eee">
+                        <h4 style="margin:0 0 10px 0;font-size:0.95rem">配置包内容</h4>
+                        <div id="import-source-preview"></div>
+                    </div>
+                    <div class="form-group" style="margin-top:15px">
+                        <label>
+                            <input type="checkbox" id="import-source-overwrite"> 覆盖已存在的配置
+                        </label>
+                    </div>
                 </div>
-            </div>
-            
-            <div id="import-source-result" class="result-box hidden" style="margin-top:10px"></div>
-            
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideImportSourceModal()">取消</button>
-                <button class="btn btn-primary" id="import-source-btn" onclick="confirmSourceImport()" disabled>📥 确认导入</button>
+                <div id="import-source-result" class="result-box hidden" style="margin-top:10px"></div>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="hideImportSourceModal()" style="color:#666">取消</button>
+                    <button class="btn btn-service-style" id="import-source-btn" onclick="confirmSourceImport()" disabled><i class="ri-download-line"></i> 确认导入</button>
+                </div>
             </div>
         </div>
     `;
@@ -20983,7 +21304,7 @@ async function previewSourceImport() {
     const file = fileInput.files[0];
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在验证配置包...';
+    resultBox.textContent = '正在验证配置包...';
     importBtn.disabled = true;
     step2.style.display = 'none';
     
@@ -21003,26 +21324,26 @@ async function previewSourceImport() {
             let html = `
                 <table style="width:100%;font-size:0.9em">
                     <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#666">类型:</td><td>📡 数据源</td></tr>
-                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '✅ 官方' : ''}</td></tr>
+                    <tr><td style="color:#666">类型:</td><td>数据源</td></tr>
+                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
                     <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
                 </table>
             `;
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">⚠️ 该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">该配置已存在，导入将覆盖现有文件</div>`;
             }
             previewDiv.innerHTML = html;
             step2.style.display = 'block';
             resultBox.className = 'result-box success';
-            resultBox.textContent = '✅ 签名验证通过';
+            resultBox.textContent = '签名验证通过';
             importBtn.disabled = false;
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '❌ ' + (result.message || '无法验证配置包');
+            resultBox.textContent = (result.message || '无法验证配置包');
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
     }
 }
 
@@ -21037,7 +21358,7 @@ async function confirmSourceImport() {
     }
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在保存配置...';
+    resultBox.textContent = '正在保存配置...';
     importBtn.disabled = true;
     
     try {
@@ -21053,22 +21374,22 @@ async function confirmSourceImport() {
             const data = result.data;
             if (data?.exists && !data?.imported) {
                 resultBox.className = 'result-box warning';
-                resultBox.textContent = `⚠️ 配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                resultBox.textContent = `配置 ${data.id} 已存在，请勾选「覆盖」选项`;
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
-                resultBox.innerHTML = `✅ 已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
+                resultBox.innerHTML = `已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
                 showToast(`已导入配置，重启后生效`, 'success');
                 setTimeout(() => hideImportSourceModal(), 2000);
             }
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '❌ ' + (result.message || '导入失败');
+            resultBox.textContent = (result.message || '导入失败');
             importBtn.disabled = false;
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
         importBtn.disabled = false;
     }
 }
@@ -21086,21 +21407,23 @@ function showExportRuleModal(ruleId) {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:600px">
-            <h2>📤 导出规则配置</h2>
-            <p style="color:#666;font-size:0.9rem">导出规则 <strong>${escapeHtml(ruleId)}</strong> 的配置为加密配置包</p>
-            
-            <div class="form-group">
-                <label>目标设备证书 (PEM)</label>
-                <textarea id="export-rule-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
-                <div style="font-size:0.85em;color:#666;margin-top:4px">💡 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+        <div class="modal-content cc-compact" style="max-width:600px">
+            <div class="modal-header">
+                <h2>导出规则配置</h2>
+                <button class="modal-close" onclick="hideExportRuleModal()"><i class="ri-close-line"></i></button>
             </div>
-            
-            <div id="export-rule-result" class="result-box hidden" style="margin-top:10px"></div>
-            
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideExportRuleModal()">取消</button>
-                <button class="btn btn-primary" id="export-rule-btn" onclick="doExportRule('${escapeHtml(ruleId)}')">📤 导出</button>
+            <div class="modal-body">
+                <p style="color:#666;font-size:0.9rem;margin-top:0">导出规则 <strong>${escapeHtml(ruleId)}</strong> 的配置为加密配置包</p>
+                <div class="form-group">
+                    <label>目标设备证书 (PEM)</label>
+                    <textarea id="export-rule-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
+                    <div style="font-size:0.85em;color:#666;margin-top:4px"><i class="ri-information-line"></i> 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+                </div>
+                <div id="export-rule-result" class="result-box hidden" style="margin-top:10px"></div>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="hideExportRuleModal()" style="color:#666">取消</button>
+                    <button class="btn btn-service-style" id="export-rule-btn" onclick="doExportRule('${escapeHtml(ruleId)}')"><i class="ri-download-line"></i> 导出</button>
+                </div>
             </div>
         </div>
     `;
@@ -21119,7 +21442,7 @@ async function doExportRule(ruleId) {
     const exportBtn = document.getElementById('export-rule-btn');
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在生成配置包...';
+    resultBox.textContent = '正在生成配置包...';
     exportBtn.disabled = true;
     
     try {
@@ -21144,12 +21467,12 @@ async function doExportRule(ruleId) {
         URL.revokeObjectURL(url);
         
         resultBox.className = 'result-box success';
-        resultBox.textContent = '✅ 导出成功！';
+        resultBox.textContent = '导出成功';
         showToast(`已导出规则配置: ${data.filename}`, 'success');
         setTimeout(() => hideExportRuleModal(), 1000);
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
     } finally {
         exportBtn.disabled = false;
     }
@@ -21168,34 +21491,35 @@ function showImportRuleModal() {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:600px">
-            <h2>📥 导入规则配置</h2>
-            <p style="color:#666;font-size:0.9rem">选择 .tscfg 配置包文件以导入规则</p>
-            
-            <div id="import-rule-step1">
-                <div class="form-group" style="margin-top:15px">
-                    <label>选择文件</label>
-                    <input type="file" id="import-rule-file" class="form-control" accept=".tscfg" onchange="previewRuleImport()">
-                </div>
+        <div class="modal-content cc-compact" style="max-width:600px">
+            <div class="modal-header">
+                <h2>导入规则配置</h2>
+                <button class="modal-close" onclick="hideImportRuleModal()"><i class="ri-close-line"></i></button>
             </div>
-            
-            <div id="import-rule-step2" style="display:none">
-                <div class="info-card" style="background:#f8f9fa;padding:15px;border-radius:8px;margin-top:15px">
-                    <h4 style="margin:0 0 10px 0">📋 配置包内容</h4>
-                    <div id="import-rule-preview"></div>
+            <div class="modal-body">
+                <p style="color:#666;font-size:0.9rem;margin-top:0">选择 .tscfg 配置包文件以导入规则</p>
+                <div id="import-rule-step1">
+                    <div class="form-group" style="margin-top:15px">
+                        <label>选择文件</label>
+                        <input type="file" id="import-rule-file" class="form-control" accept=".tscfg" onchange="previewRuleImport()">
+                    </div>
                 </div>
-                <div class="form-group" style="margin-top:15px">
-                    <label>
-                        <input type="checkbox" id="import-rule-overwrite"> 覆盖已存在的配置
-                    </label>
+                <div id="import-rule-step2" style="display:none">
+                    <div class="info-card" style="background:#fff;padding:15px;border-radius:8px;margin-top:15px;border:1px solid #eee">
+                        <h4 style="margin:0 0 10px 0;font-size:0.95rem">配置包内容</h4>
+                        <div id="import-rule-preview"></div>
+                    </div>
+                    <div class="form-group" style="margin-top:15px">
+                        <label>
+                            <input type="checkbox" id="import-rule-overwrite"> 覆盖已存在的配置
+                        </label>
+                    </div>
                 </div>
-            </div>
-            
-            <div id="import-rule-result" class="result-box hidden" style="margin-top:10px"></div>
-            
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideImportRuleModal()">取消</button>
-                <button class="btn btn-primary" id="import-rule-btn" onclick="confirmRuleImport()" disabled>📥 确认导入</button>
+                <div id="import-rule-result" class="result-box hidden" style="margin-top:10px"></div>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="hideImportRuleModal()" style="color:#666">取消</button>
+                    <button class="btn btn-service-style" id="import-rule-btn" onclick="confirmRuleImport()" disabled><i class="ri-download-line"></i> 确认导入</button>
+                </div>
             </div>
         </div>
     `;
@@ -21222,7 +21546,7 @@ async function previewRuleImport() {
     const file = fileInput.files[0];
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在验证配置包...';
+    resultBox.textContent = '正在验证配置包...';
     importBtn.disabled = true;
     step2.style.display = 'none';
     
@@ -21242,26 +21566,26 @@ async function previewRuleImport() {
             let html = `
                 <table style="width:100%;font-size:0.9em">
                     <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#666">类型:</td><td>📋 自动化规则</td></tr>
-                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '✅ 官方' : ''}</td></tr>
+                    <tr><td style="color:#666">类型:</td><td>自动化规则</td></tr>
+                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
                     <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
                 </table>
             `;
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">⚠️ 该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">该配置已存在，导入将覆盖现有文件</div>`;
             }
             previewDiv.innerHTML = html;
             step2.style.display = 'block';
             resultBox.className = 'result-box success';
-            resultBox.textContent = '✅ 签名验证通过';
+            resultBox.textContent = '签名验证通过';
             importBtn.disabled = false;
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '❌ ' + (result.message || '无法验证配置包');
+            resultBox.textContent = (result.message || '无法验证配置包');
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
     }
 }
 
@@ -21276,7 +21600,7 @@ async function confirmRuleImport() {
     }
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在保存配置...';
+    resultBox.textContent = '正在保存配置...';
     importBtn.disabled = true;
     
     try {
@@ -21292,22 +21616,22 @@ async function confirmRuleImport() {
             const data = result.data;
             if (data?.exists && !data?.imported) {
                 resultBox.className = 'result-box warning';
-                resultBox.textContent = `⚠️ 配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                resultBox.textContent = `配置 ${data.id} 已存在，请勾选「覆盖」选项`;
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
-                resultBox.innerHTML = `✅ 已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
+                resultBox.innerHTML = `已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
                 showToast(`已导入配置，重启后生效`, 'success');
                 setTimeout(() => hideImportRuleModal(), 2000);
             }
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '❌ ' + (result.message || '导入失败');
+            resultBox.textContent = (result.message || '导入失败');
             importBtn.disabled = false;
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
         importBtn.disabled = false;
     }
 }
@@ -21325,21 +21649,23 @@ function showExportActionModal(actionId) {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:600px">
-            <h2>📤 导出动作模板</h2>
-            <p style="color:#666;font-size:0.9rem">导出动作模板 <strong>${escapeHtml(actionId)}</strong> 的配置为加密配置包</p>
-            
-            <div class="form-group">
-                <label>目标设备证书 (PEM)</label>
-                <textarea id="export-action-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
-                <div style="font-size:0.85em;color:#666;margin-top:4px">💡 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+        <div class="modal-content cc-compact" style="max-width:600px">
+            <div class="modal-header">
+                <h2>导出动作模板</h2>
+                <button class="modal-close" onclick="hideExportActionModal()"><i class="ri-close-line"></i></button>
             </div>
-            
-            <div id="export-action-result" class="result-box hidden" style="margin-top:10px"></div>
-            
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideExportActionModal()">取消</button>
-                <button class="btn btn-primary" id="export-action-btn" onclick="doExportAction('${escapeHtml(actionId)}')">📤 导出</button>
+            <div class="modal-body">
+                <p style="color:#666;font-size:0.9rem;margin-top:0">导出动作模板 <strong>${escapeHtml(actionId)}</strong> 的配置为加密配置包</p>
+                <div class="form-group">
+                    <label>目标设备证书 (PEM)</label>
+                    <textarea id="export-action-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
+                    <div style="font-size:0.85em;color:#666;margin-top:4px"><i class="ri-information-line"></i> 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+                </div>
+                <div id="export-action-result" class="result-box hidden" style="margin-top:10px"></div>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="hideExportActionModal()" style="color:#666">取消</button>
+                    <button class="btn btn-service-style" id="export-action-btn" onclick="doExportAction('${escapeHtml(actionId)}')"><i class="ri-download-line"></i> 导出</button>
+                </div>
             </div>
         </div>
     `;
@@ -21358,7 +21684,7 @@ async function doExportAction(actionId) {
     const exportBtn = document.getElementById('export-action-btn');
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在生成配置包...';
+    resultBox.textContent = '正在生成配置包...';
     exportBtn.disabled = true;
     
     try {
@@ -21383,12 +21709,12 @@ async function doExportAction(actionId) {
         URL.revokeObjectURL(url);
         
         resultBox.className = 'result-box success';
-        resultBox.textContent = '✅ 导出成功！';
+        resultBox.textContent = '导出成功';
         showToast(`已导出动作模板: ${data.filename}`, 'success');
         setTimeout(() => hideExportActionModal(), 1000);
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
     } finally {
         exportBtn.disabled = false;
     }
@@ -21407,34 +21733,35 @@ function showImportActionModal() {
     }
     
     modal.innerHTML = `
-        <div class="modal-content" style="max-width:600px">
-            <h2>📥 导入动作模板</h2>
-            <p style="color:#666;font-size:0.9rem">选择 .tscfg 配置包文件以导入动作模板</p>
-            
-            <div id="import-action-step1">
-                <div class="form-group" style="margin-top:15px">
-                    <label>选择文件</label>
-                    <input type="file" id="import-action-file" class="form-control" accept=".tscfg" onchange="previewActionImport()">
-                </div>
+        <div class="modal-content cc-compact" style="max-width:600px">
+            <div class="modal-header">
+                <h2>导入动作模板</h2>
+                <button class="modal-close" onclick="hideImportActionModal()"><i class="ri-close-line"></i></button>
             </div>
-            
-            <div id="import-action-step2" style="display:none">
-                <div class="info-card" style="background:#f8f9fa;padding:15px;border-radius:8px;margin-top:15px">
-                    <h4 style="margin:0 0 10px 0">📋 配置包内容</h4>
-                    <div id="import-action-preview"></div>
+            <div class="modal-body">
+                <p style="color:#666;font-size:0.9rem;margin-top:0">选择 .tscfg 配置包文件以导入动作模板</p>
+                <div id="import-action-step1">
+                    <div class="form-group" style="margin-top:15px">
+                        <label>选择文件</label>
+                        <input type="file" id="import-action-file" class="form-control" accept=".tscfg" onchange="previewActionImport()">
+                    </div>
                 </div>
-                <div class="form-group" style="margin-top:15px">
-                    <label>
-                        <input type="checkbox" id="import-action-overwrite"> 覆盖已存在的配置
-                    </label>
+                <div id="import-action-step2" style="display:none">
+                    <div class="info-card" style="background:#fff;padding:15px;border-radius:8px;margin-top:15px;border:1px solid #eee">
+                        <h4 style="margin:0 0 10px 0;font-size:0.95rem">配置包内容</h4>
+                        <div id="import-action-preview"></div>
+                    </div>
+                    <div class="form-group" style="margin-top:15px">
+                        <label>
+                            <input type="checkbox" id="import-action-overwrite"> 覆盖已存在的配置
+                        </label>
+                    </div>
                 </div>
-            </div>
-            
-            <div id="import-action-result" class="result-box hidden" style="margin-top:10px"></div>
-            
-            <div class="form-actions" style="margin-top:15px">
-                <button class="btn" onclick="hideImportActionModal()">取消</button>
-                <button class="btn btn-primary" id="import-action-btn" onclick="confirmActionImport()" disabled>📥 确认导入</button>
+                <div id="import-action-result" class="result-box hidden" style="margin-top:10px"></div>
+                <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
+                    <button class="btn" onclick="hideImportActionModal()" style="color:#666">取消</button>
+                    <button class="btn btn-service-style" id="import-action-btn" onclick="confirmActionImport()" disabled><i class="ri-download-line"></i> 确认导入</button>
+                </div>
             </div>
         </div>
     `;
@@ -21461,7 +21788,7 @@ async function previewActionImport() {
     const file = fileInput.files[0];
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在验证配置包...';
+    resultBox.textContent = '正在验证配置包...';
     importBtn.disabled = true;
     step2.style.display = 'none';
     
@@ -21481,26 +21808,26 @@ async function previewActionImport() {
             let html = `
                 <table style="width:100%;font-size:0.9em">
                     <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#666">类型:</td><td>⚡ 动作模板</td></tr>
-                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '✅ 官方' : ''}</td></tr>
+                    <tr><td style="color:#666">类型:</td><td>动作模板</td></tr>
+                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
                     <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
                 </table>
             `;
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">⚠️ 该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">该配置已存在，导入将覆盖现有文件</div>`;
             }
             previewDiv.innerHTML = html;
             step2.style.display = 'block';
             resultBox.className = 'result-box success';
-            resultBox.textContent = '✅ 签名验证通过';
+            resultBox.textContent = '签名验证通过';
             importBtn.disabled = false;
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '❌ ' + (result.message || '无法验证配置包');
+            resultBox.textContent = (result.message || '无法验证配置包');
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
     }
 }
 
@@ -21515,7 +21842,7 @@ async function confirmActionImport() {
     }
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '🔄 正在保存配置...';
+    resultBox.textContent = '正在保存配置...';
     importBtn.disabled = true;
     
     try {
@@ -21531,22 +21858,22 @@ async function confirmActionImport() {
             const data = result.data;
             if (data?.exists && !data?.imported) {
                 resultBox.className = 'result-box warning';
-                resultBox.textContent = `⚠️ 配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                resultBox.textContent = `配置 ${data.id} 已存在，请勾选「覆盖」选项`;
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
-                resultBox.innerHTML = `✅ 已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
+                resultBox.innerHTML = `已保存配置: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">重启系统后生效</small>`;
                 showToast(`已导入配置，重启后生效`, 'success');
                 setTimeout(() => hideImportActionModal(), 2000);
             }
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '❌ ' + (result.message || '导入失败');
+            resultBox.textContent = (result.message || '导入失败');
             importBtn.disabled = false;
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '❌ ' + e.message;
+        resultBox.textContent = e.message;
         importBtn.disabled = false;
     }
 }
@@ -21573,4 +21900,3 @@ window.showImportActionModal = showImportActionModal;
 window.hideImportActionModal = hideImportActionModal;
 window.previewActionImport = previewActionImport;
 window.confirmActionImport = confirmActionImport;
-

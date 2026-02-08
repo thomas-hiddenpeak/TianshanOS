@@ -10,7 +10,7 @@
     --card-bg: #fff;
     --border-color: #ddd;
     --header-height: 60px;
-    --footer-height: 40px;
+    --footer-height: 50px;
 }
 
 * {
@@ -107,6 +107,11 @@ body {
     font-size: 0.9rem;
 }
 
+.footer p {
+    margin: 0;
+    line-height: 1;
+}
+
 /* Cards */
 .cards {
     display: grid;
@@ -180,6 +185,17 @@ body {
     color: #c62828;
 }
 
+/* MD 规范：运行中、添加 */
+.btn-success {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
+}
+.btn-success:hover {
+    background: #c8e6c9;
+    border-color: #81c784;
+}
+
 /* Modal */
 .modal {
     position: fixed;
@@ -221,23 +237,43 @@ body {
 .modal-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
+    justify-content: flex-start;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
     border-bottom: 1px solid var(--border-color);
+    gap: 8px;
 }
 
 .modal-header h2 {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: 1rem;
+    line-height: 28px;
+    height: 28px;
+}
+
+#led-modal-header-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+    margin-right: 8px;
+    align-items: center;
+}
+
+#led-modal-header-actions .btn {
+    height: 28px;
+    line-height: 28px;
+    padding: 0 10px;
 }
 
 .modal-close {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
     font-size: 1.4rem;
     color: var(--text-secondary);
     background: none;
@@ -270,6 +306,125 @@ body {
 .led-modal {
     min-width: 420px;
     max-width: 560px;
+}
+
+/* 色彩校正模态框 - 紧凑版 (重构) */
+.cc-compact {
+    padding: 0 !important;
+    background: #f5f6fa !important;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.cc-compact .modal-header {
+    padding: 12px 20px !important;
+    background: #fff;
+    border-bottom: 1px solid #eee;
+    margin-bottom: 0;
+    display: flex;
+    align-items: flex-start; /* 顶部对齐 */
+    justify-content: space-between;
+    position: relative;
+}
+
+.cc-compact .modal-header h2 {
+    margin: 0 !important;
+    padding: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #333;
+    text-align: left;
+    line-height: 1.2; /* 确保标题紧贴顶部 */
+}
+
+.cc-compact #led-modal-header-actions,
+.cc-compact #command-modal-header-actions {
+    display: flex;
+    gap: 8px;
+    margin-right: 35px; /* 为关闭按钮留位 */
+}
+
+.cc-compact .modal-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-size: 1.4rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: #888;
+    line-height: 1;
+}
+
+.cc-compact .modal-header .btn-service-style {
+    background: #f0f8ff;
+    color: #007bff;
+    border: 1px solid #d0e8ff;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-weight: 400; /* 取消加粗，与底部按钮一致 */
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+    line-height: 1.2; /* 与标题对齐的核心 */
+}
+
+.cc-compact .modal-header .btn-service-style:hover {
+    background: #007bff;
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(0, 123, 255, 0.3);
+}
+
+.cc-compact .modal-body {
+    padding: 20px;
+    background: #f5f6fa;
+    flex: 1;
+    overflow-y: auto;
+    max-height: 75vh;
+}
+
+.cc-compact .modal-footer {
+    padding: 12px 20px;
+    background: #f5f6fa;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.cc-compact .modal-tabs,
+.cc-compact .automation-modal-tabs {
+    display: flex;
+    border-bottom: 2px solid var(--border-color);
+    margin-bottom: 16px;
+}
+
+.cc-compact .modal-tabs .modal-tab,
+.cc-compact .automation-modal-tabs .modal-tab {
+    flex: 1;
+    padding: 10px 16px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 0.95em;
+    color: var(--text-light);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+}
+
+.cc-compact .modal-tabs .modal-tab:hover,
+.cc-compact .automation-modal-tabs .modal-tab:hover {
+    color: var(--text-color);
+    background: var(--bg-color);
+}
+
+.cc-compact .modal-tabs .modal-tab.active,
+.cc-compact .automation-modal-tabs .modal-tab.active {
+    background: #f0f8ff;
+    color: #007bff;
+    border-bottom-color: #007bff;
+    font-weight: 500;
 }
 
 .led-modal .modal-tabs {
@@ -447,6 +602,18 @@ body {
     font-size: 0.85rem;
 }
 
+/* Matrix 文本显示：字体下拉足够大、易点击 */
+#modal-text-font,
+.led-modal .cc-section select#modal-text-font {
+    min-width: 160px;
+    min-height: 38px;
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    appearance: auto;
+    -webkit-appearance: menulist;
+}
+
 .config-actions {
     display: flex;
     gap: 10px;
@@ -454,50 +621,61 @@ body {
     margin-top: 12px;
 }
 
-/* Color Correction Modal */
+/* Color Correction Modal Cards (New Design) */
 .cc-enable-row {
+    background: #fff;
+    padding: 16px 20px;
+    border-radius: 12px;
     margin-bottom: 16px;
-    padding: 12px;
-    background: var(--bg-color);
-    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    border: 1px solid rgba(0,0,0,0.05);
 }
 
 .cc-enable-row label {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     font-weight: 600;
     cursor: pointer;
+    margin: 0;
+    width: 100%;
+    font-size: 1rem;
 }
 
 .cc-enable-row input[type="checkbox"] {
     width: 20px;
     height: 20px;
+    accent-color: #007bff;
 }
 
 .cc-section {
+    background: #fff;
+    padding: 20px;
+    border-radius: 12px;
     margin-bottom: 16px;
-    padding: 12px;
-    background: var(--bg-color);
-    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    border: 1px solid rgba(0,0,0,0.05);
 }
 
 .cc-section h4 {
-    font-size: 0.9rem;
+    font-size: 1rem;
+    font-weight: 600;
     margin: 0 0 8px 0;
-    color: var(--text-color);
+    color: #333;
 }
 
 .cc-help-text {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-    margin: 0 0 10px 0;
-    line-height: 1.4;
-    opacity: 0.85;
+    font-size: 0.85rem;
+    color: #888;
+    margin: 0 0 20px 0;
+    line-height: 1.5;
 }
 
 .cc-section .config-row {
-    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
 }
 
 .cc-section .config-row:last-child {
@@ -506,21 +684,44 @@ body {
 
 .cc-section input[type="range"] {
     flex: 1;
-    min-width: 100px;
+    height: 6px;
+    border-radius: 3px;
+    background: #eee;
+}
+
+.cc-section input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #007bff;
+    box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3);
+    cursor: pointer;
 }
 
 .cc-section span {
-    min-width: 45px;
+    min-width: 50px;
     text-align: right;
-    font-family: monospace;
-    font-size: 0.85rem;
+    font-weight: 500;
+    color: #333;
+    font-family: inherit;
+    font-size: 1rem;
 }
 
-.cc-storage-row {
+.cc-actions {
+    margin-top: 20px;
+    padding: 0;
+    background: transparent;
     display: flex;
-    gap: 8px;
-    justify-content: center;
-    margin-bottom: 12px;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.cc-actions .btn {
+    padding: 8px 20px;
+    font-size: 0.95rem;
+    border-radius: 6px;
 }
 
 /* 文件选择器模态框 - 需要比其他模态框更高的 z-index，因为它会从其他模态框内打开 */
@@ -668,7 +869,7 @@ body {
     font-weight: 500;
 }
 
-.form-group input,
+.form-group input:not([type="checkbox"]):not([type="radio"]),
 .form-group select,
 .form-group textarea {
     width: 100%;
@@ -676,6 +877,46 @@ body {
     border: 1px solid var(--border-color);
     border-radius: 4px;
     font-size: 1rem;
+}
+
+.form-group input[type="checkbox"] {
+    width: auto;
+    min-width: 18px;
+    height: 18px;
+    margin: 0 8px 0 0;
+    vertical-align: middle;
+    accent-color: #007bff;
+}
+
+.form-group-checkbox-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+    cursor: pointer;
+}
+.form-group-checkbox-label input[type="checkbox"] {
+    flex-shrink: 0;
+}
+
+.form-group-hint {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 0.85em;
+    color: #666;
+}
+.form-group-hint i {
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+.form-group-hint span {
+    flex: 1;
+    min-width: 0;
+}
+.form-group-hint-warning {
+    color: #e67e22;
 }
 
 .form-group input:focus,
@@ -741,7 +982,7 @@ body {
 }
 
 .ws-status.connected {
-    background: #2ecc71;
+    background: #2e7d32;
 }
 
 /* 语言切换按钮 */
@@ -965,9 +1206,23 @@ body {
     font-size: 0.85rem;
 }
 
+.time-sync-btn {
+    border: 1px solid transparent;
+}
+.time-sync-btn:active {
+    background: #f0f8ff;
+    color: #007bff;
+    border-color: #d0e8ff;
+}
+
 .btn-success {
-    background: var(--secondary-color);
-    color: white;
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
+}
+.btn-success:hover {
+    background: #c8e6c9;
+    border-color: #81c784;
 }
 
 .btn-warning {
@@ -1091,6 +1346,22 @@ body {
 .led-quick-actions {
     display: flex;
     gap: 8px;
+    position: relative;
+    z-index: 1;
+}
+.led-refresh-btn {
+    min-width: 32px;
+    min-height: 32px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+}
+.led-refresh-btn:active {
+    background: #f0f8ff;
+    color: #007bff;
+    border-color: #d0e8ff;
 }
 
 /* LED 设备网格 */
@@ -1102,7 +1373,7 @@ body {
 
 /* LED 设备卡片 */
 .led-device-card {
-    background: var(--card-bg);
+    background: #ffffff;
     border-radius: 16px;
     border: 2px solid var(--border-color);
     overflow: hidden;
@@ -1115,8 +1386,8 @@ body {
 }
 
 .led-device-card.is-on {
-    border-color: #48bb78;
-    box-shadow: 0 0 20px rgba(72, 187, 120, 0.2);
+    border-color: #007bff;
+    box-shadow: 0 0 20px rgba(0, 123, 255, 0.2);
 }
 
 /* 卡片头部 */
@@ -1125,8 +1396,7 @@ body {
     align-items: center;
     gap: 12px;
     padding: 16px 20px;
-    background: linear-gradient(135deg, var(--bg-color) 0%, var(--card-bg) 100%);
-    border-bottom: 1px solid var(--border-color);
+    background: #ffffff;
 }
 
 .led-device-icon {
@@ -1178,8 +1448,9 @@ body {
 }
 
 .led-device-status.effect {
-    background: rgba(90, 103, 216, 0.2);
-    color: var(--primary-color);
+    background: #f0f8ff;
+    color: #007bff;
+    border: 1px solid #d0e8ff;
 }
 
 /* 卡片控制区域 */
@@ -1188,6 +1459,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 14px;
+    background: #ffffff;
 }
 
 /* 亮度控制行 */
@@ -1217,12 +1489,11 @@ body {
 .led-brightness-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 18px;
-    height: 18px;
-    background: linear-gradient(135deg, var(--primary-color) 0%, #4361ee 100%);
+    width: 16px;
+    height: 16px;
+    background: var(--primary-color);
     border-radius: 50%;
     cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
 }
 
 .led-brightness-row .brightness-value {
@@ -1233,53 +1504,102 @@ body {
     color: var(--text-secondary);
 }
 
-/* 颜色控制行 */
+/* 颜色控制行 - Modern Redesign (缩小约 1/3) */
 .led-color-row {
     display: flex;
     align-items: center;
     gap: 10px;
+    padding: 5px 0;
 }
 
-.led-color-picker {
-    width: 44px;
-    height: 44px;
-    border: none;
-    border-radius: 10px;
+/* Modern Picker */
+.modern-picker-wrapper {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+}
+
+.modern-picker-input {
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    position: absolute;
+    top: 0;
+    left: 0;
     cursor: pointer;
-    padding: 0;
-    background: transparent;
+    z-index: 2;
 }
 
-.led-color-picker::-webkit-color-swatch-wrapper {
-    padding: 0;
-}
-
-.led-color-picker::-webkit-color-swatch {
-    border: 2px solid var(--border-color);
-    border-radius: 10px;
-}
-
-.led-color-presets {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    flex: 1;
-}
-
-.color-dot {
-    width: 28px;
-    height: 28px;
-    border: 2px solid var(--border-color);
+.modern-picker-visual {
+    width: 100%;
+    height: 100%;
     border-radius: 50%;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    padding: 0;
+    background: conic-gradient(from 180deg at 50% 50%, #FF0000 0deg, #FFFF00 60deg, #00FF00 120deg, #00FFFF 180deg, #0000FF 240deg, #FF00FF 300deg, #FF0000 360deg);
+    border: 2px solid white;
+    box-shadow: 0 0 0 2px var(--border-color), 0 1px 3px rgba(0,0,0,0.1);
+    position: relative;
+    transition: transform 0.2s ease;
 }
 
-.color-dot:hover {
-    transform: scale(1.15);
-    border-color: white;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+.modern-picker-wrapper:hover .modern-picker-visual {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 2px var(--primary-color), 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.modern-picker-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 0.85rem;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    pointer-events: none;
+}
+
+/* Modern Presets */
+.modern-presets-container {
+    flex: 1;
+    overflow-x: auto;
+    padding: 4px;
+    scrollbar-width: none; 
+    -ms-overflow-style: none;
+    display: flex;
+    align-items: center;
+}
+.modern-presets-container::-webkit-scrollbar { display: none; }
+
+.modern-presets-list {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.modern-color-dot {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid rgba(0,0,0,0.05);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    position: relative;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.modern-color-dot:hover {
+    transform: scale(1.15) translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    z-index: 10;
+}
+
+.modern-color-dot:active {
+    transform: scale(0.95);
+}
+
+/* White color needs a border */
+.modern-color-dot[style*="#ffffff"] {
+    border: 1px solid var(--border-color);
 }
 
 /* 特效控制行 */
@@ -1299,9 +1619,10 @@ body {
 .led-quick-effect {
     width: 36px;
     height: 36px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--bg-color);
+    border: 1px solid #d0e8ff;
+    border-radius: 4px;
+    background: #f0f8ff;
+    color: #007bff;
     cursor: pointer;
     font-size: 1rem;
     display: flex;
@@ -1311,15 +1632,13 @@ body {
 }
 
 .led-quick-effect:hover {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
-    color: white;
-    transform: translateY(-2px);
+    background: #e0f0ff;
+    border-color: #b0d8ff;
 }
 
 .led-quick-effect.active {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
+    background: #007bff;
+    border-color: #007bff;
     color: white;
 }
 
@@ -1328,20 +1647,31 @@ body {
     font-weight: 600;
 }
 
+.led-matrix-btns {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
 .led-stop-btn {
-    width: 36px;
-    height: 36px;
-    border: 1px solid #e74c3c;
-    border-radius: 8px;
-    background: rgba(231, 76, 60, 0.1);
-    color: #e74c3c;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: 1px solid #ef9a9a;
+    border-radius: 6px;
+    background: #ffebee;
+    color: #c62828;
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
     transition: all 0.15s ease;
 }
 
 .led-stop-btn:hover {
-    background: #e74c3c;
+    background: #c62828;
+    border-color: #c62828;
     color: white;
 }
 
@@ -1350,42 +1680,33 @@ body {
     display: flex;
     gap: 8px;
     padding: 12px 20px 16px;
-    background: var(--bg-color);
-    border-top: 1px solid var(--border-color);
+    background: #ffffff;
     flex-wrap: wrap;
 }
 
 .led-power-btn {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 8px 16px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--card-bg);
+    justify-content: center;
+    padding: 0;
+    border: none;
+    background: transparent;
     cursor: pointer;
     transition: all 0.2s ease;
-    font-size: 0.85rem;
+    font-size: 1.8rem;
+    color: #c62828;
 }
 
 .led-power-btn:hover {
-    background: var(--primary-color);
-    border-color: var(--primary-color);
-    color: white;
+    opacity: 0.8;
 }
 
 .led-power-btn.on {
-    background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-    border-color: #38a169;
-    color: white;
+    color: #2e7d32;
 }
 
 .led-power-btn .power-icon {
-    font-size: 1rem;
-}
-
-.led-power-btn .power-text {
-    font-weight: 500;
+    font-size: 1.8rem;
 }
 
 .led-func-btn {
@@ -1414,21 +1735,19 @@ body {
 
 .led-save-btn {
     margin-left: auto;
-    width: 40px;
-    height: 40px;
-    border: 1px solid var(--secondary-color);
-    border-radius: 8px;
-    background: var(--secondary-color);
-    color: white;
+    border: none;
+    background: transparent;
+    color: #007bff;
     cursor: pointer;
-    font-size: 1rem;
+    font-size: 1.5rem;
     transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .led-save-btn:hover {
-    background: #27ae60;
-    border-color: #27ae60;
-    transform: translateY(-1px);
+    opacity: 0.8;
 }
 
 /* LED 空状态 */
@@ -2114,13 +2433,13 @@ body {
 }
 
 .btn-success {
-    background: #28a745;
-    border-color: #28a745;
-    color: white;
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
 }
-
 .btn-success:hover {
-    background: #218838;
+    background: #c8e6c9;
+    border-color: #81c784;
 }
 
 /* 空状态提示 */
@@ -2129,6 +2448,19 @@ body {
     padding: 30px;
     border-radius: 12px;
     text-align: center;
+}
+
+.commands-list .empty-state {
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.commands-list .empty-state p {
+    margin: 0 0 6px 0;
 }
 
 .empty-state p {
@@ -2218,7 +2550,7 @@ body {
 
 /* 风扇卡片 - 简洁版 */
 .fan-card {
-    background: var(--bg-color);
+    background: #fff;
     padding: 20px;
     border-radius: 12px;
     border: 2px solid var(--border-color);
@@ -2316,11 +2648,6 @@ body {
     background: #6b7280;
 }
 
-.fan-mode-tab.manual {
-    border-radius: 4px;
-    border: 1px solid var(--border-color);
-}
-
 .fan-mode-tab.active.manual {
     background: #fff8e1;
     color: #f57c00;
@@ -2328,11 +2655,15 @@ body {
 }
 
 .fan-mode-tab.active.auto {
-    background: #10b981;
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
 }
 
 .fan-mode-tab.active.curve {
-    background: #3b82f6;
+    background: #f0f8ff;
+    color: #007bff;
+    border: 1px solid #d0e8ff;
 }
 
 /* 滑块区域 */
@@ -2402,10 +2733,10 @@ body {
 .fan-curve-btn {
     width: 100%;
     padding: 10px;
-    background: transparent;
-    border: 1px dashed var(--border-color);
+    background: #f0f8ff;
+    border: 1px solid #d0e8ff;
     border-radius: 8px;
-    color: var(--text-light);
+    color: #007bff;
     font-size: 0.9rem;
     cursor: pointer;
     transition: all 0.2s;
@@ -2413,9 +2744,9 @@ body {
 }
 
 .fan-curve-btn:hover {
-    border-color: var(--primary-color);
-    color: var(--primary-color);
-    background: rgba(79, 195, 247, 0.1);
+    border-color: #007bff;
+    color: #007bff;
+    background: #e0f0ff;
 }
 
 /* 温度信息 */
@@ -2638,6 +2969,52 @@ body {
     color: #c0392b;
 }
 
+/* 导出加密配置包：文件列表排版（网格固定列，避免错位） */
+.pack-export-file-list-inner {
+    padding: 4px;
+}
+.pack-export-file-row {
+    display: grid;
+    grid-template-columns: 20px 22px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #eee;
+}
+.pack-export-dir-row {
+    grid-template-columns: 22px 1fr;
+    cursor: pointer;
+}
+.pack-export-row-cb {
+    margin: 0;
+    justify-self: start;
+}
+.pack-export-row-icon {
+    color: #666;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.pack-export-row-icon i {
+    font-size: 1rem;
+}
+.pack-export-row-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.pack-export-row-label {
+    cursor: pointer;
+    margin: 0;
+    min-width: 0;
+}
+.pack-export-row-size {
+    color: #999;
+    font-size: 0.9em;
+    justify-self: end;
+}
+
 /* Hidden */
 .hidden {
     display: none !important;
@@ -2649,6 +3026,24 @@ body {
 .page-network h1,
 .page-device h1,
 .page-config h1,
+/* 安全页面：第一个 section 与顶栏间距与指令等页面一致 */
+.page-security .section:first-child {
+    margin-top: 0;
+}
+
+/* 安全页按钮统一为 btn-sm 尺寸 */
+.page-security .btn,
+.page-security .btn-sm {
+    padding: 5px 12px;
+    font-size: 0.85rem;
+}
+
+.page-security .form-actions .btn,
+.page-security .form-actions .btn-sm {
+    padding: 5px 12px;
+    font-size: 0.85rem;
+}
+
 .page-security h1,
 .dashboard h1 {
     font-size: 1.8rem;
@@ -2822,6 +3217,23 @@ body {
 .file-actions {
     display: flex;
     gap: 8px;
+    position: relative;
+    z-index: 1;
+}
+
+.page-files .files-refresh-btn {
+    min-width: 32px;
+    min-height: 32px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+}
+.page-files .files-refresh-btn:active {
+    background: #f0f8ff;
+    color: #007bff;
+    border-color: #d0e8ff;
 }
 
 /* 文件页面白色卡片容器 */
@@ -3943,8 +4355,7 @@ body {
     }
     
     .led-power-btn {
-        padding: 6px 12px;
-        font-size: 0.8rem;
+        font-size: 1.5rem;
     }
     
     .color-dot {
@@ -4378,7 +4789,16 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: space-between;
+    min-height: 72px;
     gap: 4px;
+}
+
+.status-card .status-card-value-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
 }
 
 .status-card.primary {
@@ -4443,6 +4863,10 @@ body {
     align-items: flex-start;
 }
 
+.status-card .status-card-value-row .status-icon {
+    flex-shrink: 0;
+}
+
 /* Section 通用样式 */
 .page-automation .section {
     margin-bottom: 24px;
@@ -4464,6 +4888,22 @@ body {
 .page-automation .section-actions {
     display: flex;
     gap: 6px;
+    position: relative;
+    z-index: 1;
+}
+.page-automation .automation-refresh-btn {
+    min-width: 32px;
+    min-height: 32px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+}
+.page-automation .automation-refresh-btn:active {
+    background: #f0f8ff;
+    color: #007bff;
+    border-color: #d0e8ff;
 }
 
 /* 紧凑卡片 */
@@ -4735,9 +5175,11 @@ body {
     background: var(--bg-color);
 }
 
+/* 与 OTA/btn-service-style 一致：浅蓝底、蓝色字、蓝边框 */
 .automation-modal .modal-tab.active {
-    color: var(--primary-color);
-    border-bottom-color: var(--primary-color);
+    background: #f0f8ff;
+    color: #007bff;
+    border-bottom-color: #007bff;
     font-weight: 500;
 }
 
@@ -4806,6 +5248,63 @@ body {
     padding: 16px;
     margin: 0;
     font-size: 0.9rem;
+}
+
+/* 添加规则模态框：表单项左对齐 */
+#add-rule-modal .form-group label,
+#add-rule-modal .config-section,
+#add-rule-modal .icon-type-tabs,
+#add-rule-modal .icon-picker {
+    text-align: left;
+}
+
+/* 规则图标选择器：左对齐、布局整齐 */
+#add-rule-modal .icon-type-tabs {
+    justify-content: flex-start;
+    margin-bottom: 10px;
+}
+
+#add-rule-modal .icon-picker {
+    justify-content: flex-start;
+    align-items: flex-start;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#add-rule-modal .icon-picker .emoji-custom-input {
+    flex-basis: 100%;
+    width: 100%;
+    margin-bottom: 8px;
+}
+
+#add-rule-modal .icon-picker .icon-btn {
+    flex-shrink: 0;
+}
+
+#add-rule-modal .actions-hint-block {
+    text-align: center;
+}
+
+#add-rule-modal .form-row.three-col {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+/* 条件逻辑缩短，避免与冷却时间、立即启用挤在一起 */
+#add-rule-modal .form-row.three-col .form-group-logic {
+    flex: 0 0 90px;
+    min-width: 0;
+}
+
+#add-rule-modal .form-row.three-col .form-group:nth-of-type(2) {
+    flex: 0 0 120px;
+    min-width: 0;
+}
+
+#add-rule-modal .form-row.three-col .checkbox-label {
+    flex: 0 0 auto;
 }
 
 /* 条件行 */
@@ -5922,6 +6421,15 @@ body {
     margin-left: 8px;
 }
 
+/* 浅蓝标签（与 btn-service-style 配色一致：安全页密钥类型/SSH/HTTPS/部署密钥、配置包类型等） */
+.badge-service-style,
+.badge-info {
+    background: #f0f8ff !important;
+    color: #007bff !important;
+    border: 1px solid #d0e8ff;
+    margin-left: 0;
+}
+
 /* ===== SSH Command Icon Picker ===== */
 
 /* Icon type tabs */
@@ -6209,6 +6717,26 @@ body {
     min-width: 0;
 }
 
+/* 风扇控制标题栏按钮：确保可点击、点击时蓝色底色（遵循文档 btn-service-style） */
+.fan-control-section .fan-section-actions {
+    position: relative;
+    z-index: 1;
+}
+.fan-refresh-btn {
+    min-width: 32px;
+    min-height: 32px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+}
+.fan-refresh-btn:active {
+    background: #f0f8ff;
+    color: #007bff;
+    border-color: #d0e8ff;
+}
+
 /* 风扇温度状态栏 */
 .fan-temp-status-bar {
     display: flex;
@@ -6385,7 +6913,7 @@ body {
 
 .data-widgets-empty {
     text-align: center;
-    padding: 40px 20px;
+    padding: 30px 20px;
     color: var(--text-light);
 }
 
@@ -6396,7 +6924,7 @@ body {
 }
 
 .data-widgets-empty p {
-    margin-bottom: 16px;
+    margin-bottom: 0;
 }
 
 /* 组件卡片 */
@@ -6851,6 +7379,7 @@ body {
 .dw-manager-item {
     display: flex;
     align-items: center;
+    flex-wrap: nowrap;
     gap: 8px;
     padding: 8px 10px;
     background: var(--card-bg);
@@ -6875,6 +7404,7 @@ body {
 
 .dw-manager-item-label {
     flex: 1;
+    min-width: 0;
     font-weight: 500;
     font-size: 0.9em;
     white-space: nowrap;
@@ -6891,12 +7421,15 @@ body {
 }
 
 .dw-manager-item-actions {
-    display: none;
+    flex-shrink: 0;
+    margin-left: auto;
+    display: flex;
     gap: 2px;
+    opacity: 0;
 }
 
 .dw-manager-item:hover .dw-manager-item-actions {
-    display: flex;
+    opacity: 1;
 }
 
 .dw-manager-item-actions .dw-btn-icon {
@@ -6985,6 +7518,30 @@ body {
     max-width: 500px;
 }
 
+.dw-edit-panel .form-row {
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.dw-edit-panel .form-row .form-group {
+    min-width: 0;
+}
+
+/* 仅第一行（图标+颜色）：图标占剩余宽度，颜色固定一列，避免拥挤不对齐 */
+.dw-edit-panel .form-row:first-of-type .form-group:first-child {
+    flex: 1;
+}
+
+.dw-edit-panel .form-row:first-of-type .form-group:last-child {
+    flex: 0 0 100px;
+}
+
+.dw-edit-panel .form-row:first-of-type .form-group:last-child .input-color {
+    width: 100%;
+    min-width: 56px;
+    max-width: 80px;
+}
+
 .dw-edit-header {
     margin-bottom: 16px;
 }
@@ -6992,8 +7549,9 @@ body {
 .dw-edit-type-badge {
     display: inline-block;
     padding: 4px 12px;
-    background: var(--primary-color);
-    color: white;
+    background: #f0f8ff;
+    color: #007bff;
+    border: 1px solid #d0e8ff;
     border-radius: 20px;
     font-size: 0.85em;
 }
@@ -7013,8 +7571,9 @@ body {
 
 .dw-expression-group .badge {
     font-size: 0.65em;
-    background: var(--primary-color);
-    color: white;
+    background: #f0f8ff;
+    color: #007bff;
+    border: 1px solid #d0e8ff;
     padding: 2px 6px;
     border-radius: 3px;
 }
@@ -7366,7 +7925,18 @@ body {
 .ri-download-cloud-line,
 .ri-refresh-line,
 .ri-time-line,
-.ri-usb-line {
+.ri-usb-line,
+.ri-information-line,
+.ri-add-line,
+.ri-upload-line,
+.ri-download-line,
+.ri-rocket-line,
+.ri-alert-line,
+.ri-error-warning-line,
+.ri-lock-unlock-line,
+.ri-close-line,
+.ri-eye-line,
+.ri-delete-bin-line {
   font-style: normal;
   line-height: 1;
   display: inline-block;
