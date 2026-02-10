@@ -136,8 +136,8 @@
             <div class="modal-body" id="memory-detail-body">
                 <div class="loading" data-i18n="common.loading">Loading...</div>
             </div>
-            <div class="modal-footer" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center">
-                <span id="memory-detail-timestamp" style="font-size:0.8em;color:#888">-</span>
+            <div class="modal-footer" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+                <span id="memory-detail-timestamp" style="font-size:0.8em;color:#9ca3af">-</span>
                 <button class="btn btn-service-style" onclick="refreshMemoryDetail()"><i class="ri-refresh-line"></i> <span data-i18n="common.refresh">刷新</span></button>
             </div>
         </div>
@@ -154,7 +154,7 @@
                 <div class="loading" data-i18n="common.loading">Loading...</div>
             </div>
             <div class="modal-footer cc-compact-footer">
-                <button class="btn" onclick="closeSourceVariablesModal()" style="color:#666" data-i18n="common.close">关闭</button>
+                <button class="btn" onclick="closeSourceVariablesModal()" style="color:#6b7280" data-i18n="common.close">关闭</button>
             </div>
         </div>
     </div>
@@ -196,9 +196,9 @@
                     <div id="shutdown-settings-error" class="form-error hidden"></div>
                 </div>
                 <div class="config-actions cc-actions">
-                    <button class="btn btn-sm" onclick="resetShutdownSettings()" data-i18n="common.reset" style="color:#666">恢复默认</button>
+                    <button class="btn btn-sm" onclick="resetShutdownSettings()" data-i18n="common.reset" style="color:#6b7280">恢复默认</button>
                     <div style="display:flex;gap:8px">
-                        <button class="btn btn-sm" onclick="closeShutdownSettingsModal()" data-i18n="common.cancel" style="color:#666">取消</button>
+                        <button class="btn btn-sm" onclick="closeShutdownSettingsModal()" data-i18n="common.cancel" style="color:#6b7280">取消</button>
                         <button class="btn btn-service-style btn-sm" onclick="saveShutdownSettings()" data-i18n="common.save">保存</button>
                     </div>
                 </div>
