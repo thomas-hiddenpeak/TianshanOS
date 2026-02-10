@@ -580,19 +580,19 @@ async function loadSystemPage() {
                     </div>
                     <div class="card-content" style="display:flex;gap:20px">
                         <div style="flex:1">
-                            <p style="font-size:0.9em;color:#888;margin-bottom:5px">${t('system.overview')}</p>
+                            <p style="font-size:0.9em;color:#9ca3af;margin-bottom:5px">${t('system.overview')}</p>
                             <p><strong>${t('system.chip')}:</strong> <span id="sys-chip">-</span></p>
-                            <p><strong>${t('system.firmware')}:</strong> <span id="sys-version">-</span> / <span id="sys-idf" style="font-size:0.85em;color:#888">-</span></p>
+                            <p><strong>${t('system.firmware')}:</strong> <span id="sys-version">-</span> / <span id="sys-idf" style="font-size:0.85em;color:#9ca3af">-</span></p>
                             <p><strong>${t('system.uptime')}:</strong> <span id="sys-uptime">-</span></p>
-                            <p style="font-size:0.8em;color:#888;margin-top:5px" id="sys-compile">-</p>
+                            <p style="font-size:0.8em;color:#9ca3af;margin-top:5px" id="sys-compile">-</p>
                         </div>
                         <div style="flex:1;border-left:1px solid #e0e0e0;padding-left:20px">
-                            <p style="font-size:0.9em;color:#888;margin-bottom:5px">${t('system.power')}</p>
-                            <p><strong>${t('system.inputVoltage')}:</strong> <span id="voltage">-</span> <span style="font-size:0.85em;color:#888">/ ${t('system.internal')} <span id="internal-voltage">-</span></span></p>
+                            <p style="font-size:0.9em;color:#9ca3af;margin-bottom:5px">${t('system.power')}</p>
+                            <p><strong>${t('system.inputVoltage')}:</strong> <span id="voltage">-</span> <span style="font-size:0.85em;color:#9ca3af">/ ${t('system.internal')} <span id="internal-voltage">-</span></span></p>
                             <p><strong>${t('system.current')}:</strong> <span id="current">-</span></p>
                             <p><strong>${t('system.wattage')}:</strong> <span id="power-watts">-</span></p>
                             <p style="display:flex;align-items:center;gap:6px"><strong>${t('system.protection')}:</strong> 
-                                <i id="protection-toggle-icon" class="ri-toggle-line" onclick="toggleProtection()" title="${t('system.toggleProtectionTitle')}" style="color:#666;cursor:pointer;font-size:1.2em"></i>
+                                <i id="protection-toggle-icon" class="ri-toggle-line" onclick="toggleProtection()" title="${t('system.toggleProtectionTitle')}" style="color:#6b7280;cursor:pointer;font-size:1.2em"></i>
                                 <span id="protection-status" style="font-size:0.85em">-</span>
                             </p>
                         </div>
@@ -607,15 +607,15 @@ async function loadSystemPage() {
                     </div>
                     <div class="card-content" style="display:flex;gap:20px">
                         <div style="flex:1">
-                            <p style="font-size:0.9em;color:#888;margin-bottom:5px">${t('network.connection')}</p>
+                            <p style="font-size:0.9em;color:#9ca3af;margin-bottom:5px">${t('network.connection')}</p>
                             <p><strong>${t('system.ethernet')}:</strong> <span id="eth-status">-</span></p>
                             <p><strong>${t('system.wifi')}:</strong> <span id="wifi-status">-</span></p>
                             <p><strong>${t('system.ipAddress')}:</strong> <span id="ip-addr" style="font-size:0.9em">-</span></p>
                         </div>
                         <div style="flex:1;border-left:1px solid #e0e0e0;padding-left:20px">
-                            <p style="font-size:0.9em;color:#888;margin-bottom:5px">${t('system.timeSync')}</p>
+                            <p style="font-size:0.9em;color:#9ca3af;margin-bottom:5px">${t('system.timeSync')}</p>
                             <p><strong>${t('system.currentTime')}:</strong> <span id="sys-datetime" style="font-size:0.9em">-</span></p>
-                            <p><strong>${t('system.timeStatus')}:</strong> <span id="sys-time-status">-</span> <span style="font-size:0.85em;color:#888">(<span id="sys-time-source">-</span>)</span></p>
+                            <p><strong>${t('system.timeStatus')}:</strong> <span id="sys-time-status">-</span> <span style="font-size:0.85em;color:#9ca3af">(<span id="sys-time-source">-</span>)</span></p>
                             <p><strong>${t('system.timezone')}:</strong> <span id="sys-timezone">-</span></p>
                             <div style="margin-top:8px;display:flex;gap:5px">
                                 <button type="button" class="btn btn-small btn-gray time-sync-btn" onclick="syncTimeFromBrowser()" style="font-size:0.85em;padding:4px 8px"><i class="ri-refresh-line"></i> ${t('system.syncTime')}</button>
@@ -633,7 +633,7 @@ async function loadSystemPage() {
                     <div class="section-header">
                         <h2>${t('system.devicePanel')}</h2>
                         <div class="section-actions">
-                            <button id="agx-power-btn" class="btn btn-sm btn-danger" onclick="toggleAgxPower()"><i class="ri-checkbox-blank-circle-fill" style="color:#c62828"></i> ${t('system.agxStopped')}</button>
+                            <button id="agx-power-btn" class="btn btn-sm btn-danger" onclick="toggleAgxPower()"><i class="ri-checkbox-blank-circle-fill" style="color:#e11d48"></i> ${t('system.agxStopped')}</button>
                             <button id="lpmu-power-btn" class="btn btn-sm btn-warning" onclick="toggleLpmuPower()"><i class="ri-alert-line"></i> ${t('system.lpmuDetecting')}</button>
                             <button class="btn btn-sm btn-service-style" onclick="showWidgetManager()"><i class="ri-apps-line"></i> ${t('system.widgetManager')}</button>
                         </div>
@@ -906,11 +906,11 @@ function updateProtectionUI(running) {
     
     if (icon) {
         icon.className = running ? 'ri-toggle-fill' : 'ri-toggle-line';
-        icon.style.color = running ? '#2e7d32' : '#666';
+        icon.style.color = running ? '#059669' : '#6b7280';
     }
     if (statusSpan) {
         statusSpan.textContent = running ? t('status.enabled') : t('status.disabled');
-        statusSpan.style.color = running ? '#2e7d32' : '#666';
+        statusSpan.style.color = running ? '#059669' : '#6b7280';
     }
 }
 
@@ -1003,11 +1003,11 @@ function updateAgxPowerButton() {
     if (!btn) return;
 
     if (agxPowerState) {
-        btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#2e7d32"></i> ' + t('system.agxRunning');
+        btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#059669"></i> ' + t('system.agxRunning');
         btn.className = 'btn btn-sm btn-success';
         btn.title = t('system.agxPowerOffTitle');
     } else {
-        btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#c62828"></i> ' + t('system.agxStopped');
+        btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#e11d48"></i> ' + t('system.agxStopped');
         btn.className = 'btn btn-sm btn-danger';
         btn.title = t('system.agxPowerOnTitle');
     }
@@ -1181,12 +1181,12 @@ function updateLpmuPowerButton(remainingSec = 0) {
 
     switch (lpmuState) {
         case 'online':
-            btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#2e7d32"></i> ' + t('system.lpmuRunning');
+            btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#059669"></i> ' + t('system.lpmuRunning');
             btn.className = 'btn btn-sm btn-success';
             btn.title = t('system.lpmuOnlineTitle');
             break;
         case 'offline':
-            btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#c62828"></i> ' + t('system.lpmuStopped');
+            btn.innerHTML = '<i class="ri-checkbox-blank-circle-fill" style="color:#e11d48"></i> ' + t('system.lpmuStopped');
             btn.className = 'btn btn-sm btn-danger';
             btn.title = t('system.lpmuOfflineTitle');
             break;
@@ -1320,7 +1320,7 @@ function updateCpuInfo(data) {
     let html = '';
     data.cores.forEach(core => {
         const usage = Math.round(core.usage || 0);
-        const color = usage > 80 ? '#e74c3c' : (usage > 50 ? '#f39c12' : '#2e7d32');
+        const color = usage > 80 ? '#f43f5e' : (usage > 50 ? '#f59e0b' : '#059669');
         html += `
             <p style="font-size:0.85em;margin:3px 0"><strong>Core ${core.id}:</strong> ${usage}%</p>
             <div class="progress-bar" style="height:10px">
@@ -1331,7 +1331,7 @@ function updateCpuInfo(data) {
     
     if (data.total_usage !== undefined) {
         const avgUsage = Math.round(data.total_usage);
-        html += `<p style="margin-top:5px;font-size:0.8em;color:#888">平均: ${avgUsage}%</p>`;
+        html += `<p style="margin-top:5px;font-size:0.8em;color:#9ca3af">平均: ${avgUsage}%</p>`;
     }
     
     container.innerHTML = html;
@@ -1679,7 +1679,7 @@ async function showFanCurveModal(fanId = 0) {
                     <label style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                         <span>${t('fanPage.bindTempVar')}</span>
                         <div style="display:flex; gap:8px; align-items:center;">
-                            <span id="variable-bind-status" class="badge" style="background:#f0f8ff;color:#007bff;border:1px solid #d0e8ff;">${t('fanPage.unbound')}</span>
+                            <span id="variable-bind-status" class="badge" style="background:rgba(59,130,246,0.06);color:#2563eb;border:1px solid transparent;">${t('fanPage.unbound')}</span>
                             <div id="fan-curve-temp-current" style="padding:4px 12px; background:var(--bg-secondary); border-radius:6px; font-size:16px; font-weight:bold; color:var(--primary);">--°C</div>
                         </div>
                     </label>
@@ -2538,7 +2538,7 @@ const WIDGET_TYPES = {
         name: '文本',
         icon: '<i class="ri-file-text-line"></i>',
         description: '显示文本或格式化字符串',
-        defaultConfig: { unit: '', color: '#868e96' }
+        defaultConfig: { unit: '', color: '#9ca3af' }
     },
     status: {
         name: '状态灯',
@@ -2599,7 +2599,7 @@ const WIDGET_PRESETS = [
     { id: 'current', label: '电流', type: 'number', icon: '<i class="ri-lightbulb-line"></i>', color: '#ff6b6b', unit: 'A' },
     { id: 'network', label: '网速', type: 'bar', icon: '<i class="ri-global-line"></i>', color: '#38d9a9', unit: 'Mbps' },
     { id: 'status', label: '状态', type: 'status', icon: '<i class="ri-record-circle-fill"></i>', color: '#40c057', unit: '' },
-    { id: 'uptime', label: '运行时间', type: 'text', icon: '<i class="ri-timer-line"></i>', color: '#868e96', unit: '' },
+    { id: 'uptime', label: '运行时间', type: 'text', icon: '<i class="ri-timer-line"></i>', color: '#9ca3af', unit: '' },
     { id: 'log', label: '日志流', type: 'log', icon: '<i class="ri-file-list-line"></i>', color: '#495057', maxLines: 15, layout: 'full' },
 ];
 
@@ -3022,7 +3022,7 @@ function updateWidgetValue(widget, value) {
             }
         } else if (type === 'status') {
             const lightEl = document.getElementById(`dw-${id}-light`);
-            if (lightEl) lightEl.style.background = '#868e96';
+            if (lightEl) lightEl.style.background = '#9ca3af';
         }
         return;
     }
@@ -3056,10 +3056,10 @@ function updateWidgetValue(widget, value) {
             if (valueEl) {
                 valueEl.textContent = (isNaN(numVal) ? value : numVal.toFixed(0)) + '°C';
                 if (!isNaN(numVal)) {
-                    if (numVal < 40) valueEl.style.color = '#4dabf7';
-                    else if (numVal < 60) valueEl.style.color = '#69db7c';
-                    else if (numVal < 80) valueEl.style.color = '#ffd43b';
-                    else valueEl.style.color = '#ff6b6b';
+                    if (numVal < 40) valueEl.style.color = '#3b82f6';
+                    else if (numVal < 60) valueEl.style.color = '#10b981';
+                    else if (numVal < 80) valueEl.style.color = '#f59e0b';
+                    else valueEl.style.color = '#f43f5e';
                 }
             }
             break;
@@ -3992,7 +3992,7 @@ async function refreshQuickActions() {
                             isRunning = false;
                         }
                         
-                        const statusIcon = isRunning ? '<i class="ri-record-circle-fill" style="color:#2e7d32"></i>' : '<i class="ri-record-circle-line" style="color:#999"></i>';
+                        const statusIcon = isRunning ? '<i class="ri-record-circle-fill" style="color:#059669"></i>' : '<i class="ri-record-circle-line" style="color:#9ca3af"></i>';
                         const statusTitle = isRunning ? '进程运行中' : '进程未运行';
                         
                         // 服务模式状态显示（只有进程运行时才显示服务状态栏）
@@ -4316,16 +4316,16 @@ async function quickActionViewLog(logFile, hostId) {
         <div id="quick-log-modal" class="modal">
             <div class="modal-content" style="max-width:1400px;width:90%">
                 <div class="modal-header">
-                    <h2><i class="ri-file-text-line"></i> 日志 - <small style="font-weight:normal;font-size:0.7em;color:#888">${escapeHtml(logFile)}</small></h2>
+                    <h2><i class="ri-file-text-line"></i> 日志 - <small style="font-weight:normal;font-size:0.7em;color:#9ca3af">${escapeHtml(logFile)}</small></h2>
                     <button class="modal-close" onclick="closeQuickLogModal()">&times;</button>
                 </div>
                 <div class="modal-body" style="padding:0">
-                    <pre id="quick-log-content" style="max-height:400px;overflow:auto;padding:15px;margin:0;background:#1a1a2e;color:#eee;font-size:12px;white-space:pre-wrap">${t('common.loading')}</pre>
+                    <pre id="quick-log-content" style="max-height:400px;overflow:auto;padding:15px;margin:0;background:#1e293b;color:#e2e8f0;font-size:12px;white-space:pre-wrap">${t('common.loading')}</pre>
                 </div>
                 <div class="modal-footer" style="display:flex;gap:10px;padding:10px 15px;justify-content:space-between;align-items:center">
                     <div style="display:flex;gap:8px;align-items:center">
                         <button class="btn btn-danger" id="quick-log-tail-btn" onclick="toggleQuickLogTail('${escapeHtml(logFile)}', '${escapeHtml(hostId)}')"><i class="ri-stop-line"></i> 停止跟踪</button>
-                        <label style="display:flex;align-items:center;gap:4px;font-size:0.85em;color:#888">
+                        <label style="display:flex;align-items:center;gap:4px;font-size:0.85em;color:#9ca3af">
                             间隔
                             <select id="quick-log-interval" onchange="updateQuickLogInterval('${escapeHtml(logFile)}', '${escapeHtml(hostId)}')" style="padding:2px 6px;border-radius:4px;border:1px solid var(--border-color);background:var(--bg-color);color:var(--text-color);font-size:0.9em">
                                 <option value="1000">1秒</option>
@@ -4336,7 +4336,7 @@ async function quickActionViewLog(logFile, hostId) {
                                 <option value="30000">30秒</option>
                             </select>
                         </label>
-                        <span id="quick-log-status" style="font-size:0.85em;color:#888;display:flex;align-items:center"><span style="color:#27ae60">● 实时更新中</span></span>
+                        <span id="quick-log-status" style="font-size:0.85em;color:#9ca3af;display:flex;align-items:center"><span style="color:#059669">● 实时更新中</span></span>
                     </div>
                     <button class="btn" onclick="closeQuickLogModal()">关闭</button>
                 </div>
@@ -4415,7 +4415,7 @@ function startQuickLogTail(logFile, hostId, intervalMs = 5000) {
         btn.classList.remove('btn-service-style');
         btn.classList.add('btn-danger');
     }
-    if (status) status.innerHTML = '<span style="color:#27ae60">● 实时更新中</span>';
+    if (status) status.innerHTML = '<span style="color:#059669">● 实时更新中</span>';
     quickActionLastContent = '';
     
     // 定义刷新函数
@@ -8425,7 +8425,7 @@ async function loadCommandsPage() {
                 <div class="section-header">
                     <h2>${t('ssh.execResult')}</h2>
                     <div class="section-actions">
-                        <button id="cancel-exec-btn" class="btn btn-sm" onclick="cancelExecution()" style="display:none;background:#dc3545;color:white"><i class="ri-stop-line"></i> ${t('common.cancel')} (Esc)</button>
+                        <button id="cancel-exec-btn" class="btn btn-sm" onclick="cancelExecution()" style="display:none;background:#f43f5e;color:white"><i class="ri-stop-line"></i> ${t('common.cancel')} (Esc)</button>
                         <button class="btn btn-sm" onclick="clearExecResult()"><i class="ri-delete-bin-line"></i> ${t('common.clear')}</button>
                     </div>
                 </div>
@@ -8433,9 +8433,9 @@ async function loadCommandsPage() {
                 <div id="nohup-actions" class="nohup-actions" style="display:none">
                     <button class="btn btn-sm" id="nohup-view-log" onclick="nohupViewLog()"><i class="ri-file-text-line"></i> ${typeof t === 'function' ? t('ssh.viewLog') : '查看日志'}</button>
                     <button class="btn btn-sm" id="nohup-tail-log" onclick="nohupTailLog()"><i class="ri-eye-line"></i> ${typeof t === 'function' ? t('ssh.tailLog') : '实时跟踪'}</button>
-                    <button class="btn btn-sm" id="nohup-stop-tail" onclick="nohupStopTail()" style="display:none;background:#ffc107;color:#333"><i class="ri-stop-line"></i> ${typeof t === 'function' ? t('ssh.stopTail') : '停止跟踪'}</button>
+                    <button class="btn btn-sm" id="nohup-stop-tail" onclick="nohupStopTail()" style="display:none;background:#f59e0b;color:white"><i class="ri-stop-line"></i> ${typeof t === 'function' ? t('ssh.stopTail') : '停止跟踪'}</button>
                     <button class="btn btn-sm" id="nohup-check-process" onclick="nohupCheckProcess()"><i class="ri-search-line"></i> ${typeof t === 'function' ? t('ssh.checkProcess') : '检查进程'}</button>
-                    <button class="btn btn-sm" id="nohup-stop-process" onclick="nohupStopProcess()" style="background:#dc3545;color:white"><i class="ri-stop-circle-line"></i> ${typeof t === 'function' ? t('ssh.stopProcess') : '停止进程'}</button>
+                    <button class="btn btn-sm" id="nohup-stop-process" onclick="nohupStopProcess()" style="background:#f43f5e;color:white"><i class="ri-stop-circle-line"></i> ${typeof t === 'function' ? t('ssh.stopProcess') : '停止进程'}</button>
                 </div>
                 <pre id="exec-result" class="exec-result"></pre>
                 
@@ -8489,7 +8489,7 @@ async function loadCommandsPage() {
                             <input type="text" id="cmd-edit-id" placeholder="${typeof t === 'function' ? t('ssh.cmdIdPlaceholder') : '例如：restart_nginx, check_status'}" 
                                    pattern="^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$"
                                    oninput="validateCommandId(this)" required>
-                            <small style="color:#666">${typeof t === 'function' ? t('ssh.cmdIdHint') : '唯一标识符，仅限字母、数字、下划线、连字符，不能以 _ 或 - 开头/结尾'}</small>
+                            <small style="color:#6b7280">${typeof t === 'function' ? t('ssh.cmdIdHint') : '唯一标识符，仅限字母、数字、下划线、连字符，不能以 _ 或 - 开头/结尾'}</small>
                             <span id="cmd-id-error" class="error-hint" style="display:none;color:var(--danger-color);font-size:12px"></span>
                         </div>
                         <div class="form-group">
@@ -8499,7 +8499,7 @@ async function loadCommandsPage() {
                         <div class="form-group">
                             <label>${typeof t === 'function' ? t('ssh.commandText') : 'SSH 命令'} *</label>
                             <textarea id="cmd-command" rows="3" placeholder="${typeof t === 'function' ? t('ssh.cmdCommandPlaceholder') : '例如：sudo systemctl restart nginx'}" required></textarea>
-                            <small style="color:#666">${typeof t === 'function' ? t('ssh.multiLineHint') : '支持多行命令，每行一条'}</small>
+                            <small style="color:#6b7280">${typeof t === 'function' ? t('ssh.multiLineHint') : '支持多行命令，每行一条'}</small>
                         </div>
                         <div class="form-group">
                             <label>${typeof t === 'function' ? t('common.description') : '描述'}（${typeof t === 'function' ? t('common.optional') : '可选'}）</label>
@@ -8686,8 +8686,8 @@ function addCommandsPageStyles() {
             transform: translateY(-2px);
         }
         .host-card.selected {
-            border-color: #a5d6a7;
-            background: #e8f5e9;
+            border-color: transparent;
+            background: rgba(16, 185, 129, 0.06);
         }
         .host-card .host-name {
             font-weight: bold;
@@ -8883,11 +8883,11 @@ function addCommandsPageStyles() {
         }
         .match-status.timeout {
             background: rgba(255, 193, 7, 0.2);
-            color: #ffc107;
+            color: #f59e0b;
         }
         .match-status.extracting {
-            background: rgba(0, 123, 255, 0.2);
-            color: #007bff;
+            background: rgba(59, 130, 246, 0.12);
+            color: #3b82f6;
             animation: pulse 1.5s infinite;
         }
         @keyframes pulse {
@@ -9022,9 +9022,9 @@ async function loadHostSelector() {
             <div class="host-card orphan-group ${selectedHostId === '__orphan__' ? 'selected' : ''}" 
                  onclick="selectHost('__orphan__')" 
                  data-host-id="__orphan__"
-                 style="background:#fff3cd;border-color:#ffc107">
+                 style="background:rgba(245,158,11,0.06);border-color:transparent">
                 <div class="host-name"><i class="ri-error-warning-line" style="color:var(--warning-color)"></i> 孤儿命令</div>
-                <div class="host-info" style="color:#856404">${orphanCount} 个命令引用了不存在的主机</div>
+                <div class="host-info" style="color:#d97706">${orphanCount} 个命令引用了不存在的主机</div>
             </div>
             `;
         }
@@ -9073,7 +9073,7 @@ function refreshCommandsList() {
         // 孤儿命令警告（引用的主机不存在）
         const isOrphan = cmd.orphan === true;
         const orphanWarningHtml = isOrphan ? `
-            <div class="orphan-warning" style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:4px 8px;margin-bottom:8px;color:#856404;font-size:12px;">
+            <div class="orphan-warning" style="background:rgba(245,158,11,0.06);border:1px solid transparent;border-radius:4px;padding:4px 8px;margin-bottom:8px;color:#d97706;font-size:12px;">
                 主机 "${escapeHtml(cmd.originalHostId || '?')}" 不存在，请删除或重新关联
             </div>
         ` : '';
@@ -9108,7 +9108,7 @@ function refreshCommandsList() {
         const safeName = cmd.name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20) || 'cmd';
         const serviceActionsHtml = (cmd.nohup && cmd.serviceMode) ? `
             <button class="btn btn-sm" onclick="viewServiceLog(${idx}, '${escapeHtml(safeName)}')" title="查看日志"><i class="ri-file-text-line"></i></button>
-            <button class="btn btn-sm" onclick="stopServiceProcess(${idx}, '${escapeHtml(safeName)}')" title="停止服务" style="background:#dc3545;color:white"><i class="ri-stop-line"></i></button>
+            <button class="btn btn-sm" onclick="stopServiceProcess(${idx}, '${escapeHtml(safeName)}')" title="停止服务" style="background:#f43f5e;color:white"><i class="ri-stop-line"></i></button>
         ` : '';
         
         // 图标显示：支持 RemixIcon 类名、图片路径或旧版 Emoji
@@ -9126,7 +9126,7 @@ function refreshCommandsList() {
         const execBtnDisabled = isOrphan ? 'disabled style="opacity:0.5;cursor:not-allowed"' : '';
         
         return `
-        <div class="command-card ${isOrphan ? 'orphan-command' : ''}" data-cmd-idx="${idx}" data-has-service="${cmd.serviceMode || false}" ${isOrphan ? 'style="border:2px solid #ffc107;background:#fffbe6"' : ''}>
+        <div class="command-card ${isOrphan ? 'orphan-command' : ''}" data-cmd-idx="${idx}" data-has-service="${cmd.serviceMode || false}" ${isOrphan ? 'style="border:2px solid #f59e0b;background:rgba(245,158,11,0.06)"' : ''}>
             ${orphanWarningHtml}
             <div class="cmd-header">
                 ${iconHtml}
@@ -9142,7 +9142,7 @@ function refreshCommandsList() {
                 ${varBtnHtml}
                 <button class="btn btn-sm btn-service-style" onclick="exportSshCommand('${escapeHtml(cmd.id)}')" title="${typeof t === 'function' ? t('ssh.exportConfig') : '导出配置'}"><i class="ri-upload-line"></i></button>
                 <button class="btn btn-sm" onclick="editCommand(${idx})" title="${typeof t === 'function' ? t('common.edit') : '编辑'}"><i class="ri-edit-line"></i></button>
-                <button class="btn btn-sm" onclick="deleteCommand(${idx})" title="${typeof t === 'function' ? t('common.delete') : '删除'}" style="background:#dc3545;color:white"><i class="ri-delete-bin-line"></i></button>
+                <button class="btn btn-sm" onclick="deleteCommand(${idx})" title="${typeof t === 'function' ? t('common.delete') : '删除'}" style="background:#f43f5e;color:white"><i class="ri-delete-bin-line"></i></button>
             </div>
         </div>
     `}).join('');
@@ -9776,19 +9776,19 @@ function showExportSshCommandModal(cmdId) {
     modal.innerHTML = `
         <div class="modal-content" style="max-width:600px">
             <h2>${typeof t === 'function' ? t('ssh.exportSshCmdTitle') : '导出 SSH 指令配置'}</h2>
-            <p style="color:#666;font-size:0.9rem">${typeof t === 'function' ? t('ssh.exportSshCmdDesc', {cmdId: escapeHtml(cmdId)}) : `导出指令 <strong>${escapeHtml(cmdId)}</strong> 的配置为加密配置包`}</p>
+            <p style="color:#6b7280;font-size:0.9rem">${typeof t === 'function' ? t('ssh.exportSshCmdDesc', {cmdId: escapeHtml(cmdId)}) : `导出指令 <strong>${escapeHtml(cmdId)}</strong> 的配置为加密配置包`}</p>
             
             <div class="form-group" style="margin-top:15px">
                 <label>
                     <input type="checkbox" id="export-ssh-cmd-include-host" checked> ${typeof t === 'function' ? t('ssh.includeHostConfig') : '同时导出依赖的主机配置'}
                 </label>
-                <div style="font-size:0.85em;color:#666;margin-top:4px">${typeof t === 'function' ? t('ssh.includeHostConfigHint') : '推荐勾选，便于在目标设备完整导入'}</div>
+                <div style="font-size:0.85em;color:#6b7280;margin-top:4px">${typeof t === 'function' ? t('ssh.includeHostConfigHint') : '推荐勾选，便于在目标设备完整导入'}</div>
             </div>
             
             <div class="form-group">
                 <label>${typeof t === 'function' ? t('securityPage.targetDeviceCert') : '目标设备证书 (PEM)'}</label>
                 <textarea id="export-ssh-cmd-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
-                <div style="font-size:0.85em;color:#666;margin-top:4px">${typeof t === 'function' ? t('securityPage.targetCertHint') : '粘贴目标设备的证书。留空则使用本机证书（自加密）'}</div>
+                <div style="font-size:0.85em;color:#6b7280;margin-top:4px">${typeof t === 'function' ? t('securityPage.targetCertHint') : '粘贴目标设备的证书。留空则使用本机证书（自加密）'}</div>
             </div>
             
             <div id="export-ssh-cmd-result" class="result-box hidden" style="margin-top:10px"></div>
@@ -9901,7 +9901,7 @@ async function showImportSshCommandModal() {
     modal.innerHTML = `
         <div class="modal-content" style="max-width:600px">
             <h2 style="font-size:1.25rem">${typeof t === 'function' ? t('ssh.importSshCmdTitle') : '导入 SSH 指令配置'}</h2>
-            <p style="color:#666;font-size:0.9rem">${typeof t === 'function' ? t('ssh.importSshCmdDesc') : '选择 .tscfg 配置包文件以导入 SSH 指令'}</p>
+            <p style="color:#6b7280;font-size:0.9rem">${typeof t === 'function' ? t('ssh.importSshCmdDesc') : '选择 .tscfg 配置包文件以导入 SSH 指令'}</p>
             
             <!-- 步骤 1: 选择文件 -->
             <div id="import-ssh-cmd-step1">
@@ -9931,7 +9931,7 @@ async function showImportSshCommandModal() {
                     <select id="import-ssh-cmd-target-host" class="form-control">
                         ${hostsOptions}
                     </select>
-                    <small style="color:#888">${typeof t === 'function' ? t('ssh.bindToHostHint') : '留空则使用配置包中指定的主机'}</small>
+                    <small style="color:#9ca3af">${typeof t === 'function' ? t('ssh.bindToHostHint') : '留空则使用配置包中指定的主机'}</small>
                 </div>
             </div>
             
@@ -9991,10 +9991,10 @@ async function previewSshCommandImport() {
             // 轻量级验证只返回基本信息
             let html = `
                 <table style="width:100%;font-size:0.9em">
-                    <tr><td style="width:80px;color:#666">${typeof t === 'function' ? t('ssh.configId') : '配置 ID'}:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#666">${typeof t === 'function' ? t('common.type') : '类型'}:</td><td>${data.type === 'ssh_command' ? (typeof t === 'function' ? t('ssh.sshCommand') : 'SSH 指令') : data.type}</td></tr>
-                    <tr><td style="color:#666">${typeof t === 'function' ? t('ssh.signer') : '签名者'}:</td><td>${escapeHtml(data.signer)} ${data.official ? (typeof t === 'function' ? t('ssh.official') : '官方') : ''}</td></tr>
-                    <tr><td style="color:#666">${typeof t === 'function' ? t('ssh.note') : '备注'}:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || (typeof t === 'function' ? t('ssh.restartToLoad') : '重启后自动加载'))}</td></tr>
+                    <tr><td style="width:80px;color:#6b7280">${typeof t === 'function' ? t('ssh.configId') : '配置 ID'}:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
+                    <tr><td style="color:#6b7280">${typeof t === 'function' ? t('common.type') : '类型'}:</td><td>${data.type === 'ssh_command' ? (typeof t === 'function' ? t('ssh.sshCommand') : 'SSH 指令') : data.type}</td></tr>
+                    <tr><td style="color:#6b7280">${typeof t === 'function' ? t('ssh.signer') : '签名者'}:</td><td>${escapeHtml(data.signer)} ${data.official ? (typeof t === 'function' ? t('ssh.official') : '官方') : ''}</td></tr>
+                    <tr><td style="color:#6b7280">${typeof t === 'function' ? t('ssh.note') : '备注'}:</td><td style="color:#9ca3af;font-size:0.85em">${escapeHtml(data.note || (typeof t === 'function' ? t('ssh.restartToLoad') : '重启后自动加载'))}</td></tr>
                 </table>
             `;
             
@@ -10002,7 +10002,7 @@ async function previewSshCommandImport() {
             if (hostGroup) hostGroup.style.display = 'none';
             
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">${typeof t === 'function' ? t('ssh.configExistsOverwrite') : '该配置已存在，导入将覆盖现有文件'}</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#d97706">${typeof t === 'function' ? t('ssh.configExistsOverwrite') : '该配置已存在，导入将覆盖现有文件'}</div>`;
             }
             
             previewDiv.innerHTML = html;
@@ -10054,7 +10054,7 @@ async function confirmSshCommandImport() {
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
-                resultBox.innerHTML = `${typeof t === 'function' ? t('ssh.savedConfig') : '已保存配置'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">${typeof t === 'function' ? t('ssh.restartToTakeEffect') : '重启系统后生效'}</small>`;
+                resultBox.innerHTML = `${typeof t === 'function' ? t('ssh.savedConfig') : '已保存配置'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#6b7280">${typeof t === 'function' ? t('ssh.restartToTakeEffect') : '重启系统后生效'}</small>`;
                 showToast((typeof t === 'function' ? t('toast.importedRestartRequired') : '已导入配置，重启后生效'), 'success');
                 // 不刷新列表，因为还没加载
                 setTimeout(() => hideImportSshCommandModal(), 2000);
@@ -10869,7 +10869,7 @@ async function loadSecurityPage() {
             <div class="section">
                 <h2>${t('ssh.deployedHosts')}</h2>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px">
-                    <p style="color:#666;margin:0"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.hostsHint') : '通过上方密钥的「部署」按钮将公钥部署到远程服务器后，主机将自动出现在此列表'}</p>
+                    <p style="color:#6b7280;margin:0"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.hostsHint') : '通过上方密钥的「部署」按钮将公钥部署到远程服务器后，主机将自动出现在此列表'}</p>
                     <button class="btn btn-sm btn-service-style" onclick="showImportSshHostModal()"><i class="ri-upload-line"></i> ${typeof t === 'function' ? t('securityPage.importHost') : '导入主机'}</button>
                 </div>
                 <table class="data-table">
@@ -10882,7 +10882,7 @@ async function loadSecurityPage() {
             
             <div class="section">
                 <h2>${t('ssh.knownHostFingerprints')}</h2>
-                <p style="color:#666;margin-bottom:15px;font-size:0.9em"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.fingerprintHint') : 'SSH 连接时自动记录的服务器指纹，用于防止中间人攻击。如果服务器重装需要更新指纹。'}</p>
+                <p style="color:#6b7280;margin-bottom:15px;font-size:0.9em"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.fingerprintHint') : 'SSH 连接时自动记录的服务器指纹，用于防止中间人攻击。如果服务器重装需要更新指纹。'}</p>
                 <table class="data-table">
                     <thead>
                         <tr><th>${typeof t === 'function' ? t('securityPage.host') : '主机'}</th><th>${typeof t === 'function' ? t('securityPage.port') : '端口'}</th><th>${typeof t === 'function' ? t('securityPage.keyType') : '密钥类型'}</th><th>${typeof t === 'function' ? t('securityPage.fingerprintSha256') : '指纹 (SHA256)'}</th><th>${typeof t === 'function' ? t('securityPage.addedTime') : '添加时间'}</th><th>${typeof t === 'function' ? t('securityPage.keysTableActions') : '操作'}</th></tr>
@@ -10911,7 +10911,7 @@ async function loadSecurityPage() {
                             <div><strong>${typeof t === 'function' ? t('securityPage.validStatus') : '有效状态'}：</strong><span id="cert-valid-status">-</span></div>
                         </div>
                     </div>
-                    <div id="cert-no-key-hint" style="display:none;color:#666;font-style:italic">
+                    <div id="cert-no-key-hint" style="display:none;color:#6b7280;font-style:italic">
                         ${typeof t === 'function' ? t('securityPage.noKeyHint') : '尚未生成密钥对，请先点击下方按钮生成'}
                     </div>
                 </div>
@@ -10943,7 +10943,7 @@ async function loadSecurityPage() {
                             <div><strong>${typeof t === 'function' ? t('securityPage.formatVersion') : 'Format Version'}:</strong> <span id="pack-version">-</span></div>
                         </div>
                     </div>
-                    <p style="color:#666;margin-top:10px">
+                    <p style="color:#6b7280;margin-top:10px">
                         <i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.configPackDesc') : '配置包系统允许安全地加密和签名配置文件，用于设备间配置分发'}
                     </p>
                 </div>
@@ -10959,7 +10959,7 @@ async function loadSecurityPage() {
             <div class="modal hidden" id="pack-export-cert-modal">
                 <div class="modal-content" style="max-width:600px">
                     <h2>${typeof t === 'function' ? t('securityPage.exportCertTitle') : '导出设备证书'}</h2>
-                    <p style="color:#666;margin-bottom:15px">${typeof t === 'function' ? t('securityPage.exportCertDesc') : '将此证书发送给需要向您发送加密配置的开发者'}</p>
+                    <p style="color:#6b7280;margin-bottom:15px">${typeof t === 'function' ? t('securityPage.exportCertDesc') : '将此证书发送给需要向您发送加密配置的开发者'}</p>
                     <div id="pack-export-cert-loading" style="text-align:center;padding:20px"><i class="ri-refresh-line"></i> ${typeof t === 'function' ? t('common.loading') : 'Loading...'}</div>
                     <div id="pack-export-cert-content" class="hidden">
                         <div class="form-group">
@@ -10986,7 +10986,7 @@ async function loadSecurityPage() {
             <div class="modal hidden" id="pack-import-modal">
                 <div class="modal-content" style="max-width:700px">
                     <h2>${typeof t === 'function' ? t('securityPage.importPackTitle') : '导入配置包'}</h2>
-                    <p style="color:#666;margin-bottom:15px">${typeof t === 'function' ? t('securityPage.importPackDesc') : '上传或粘贴 .tscfg 配置包，验证后保存到设备（加密存储）'}</p>
+                    <p style="color:#6b7280;margin-bottom:15px">${typeof t === 'function' ? t('securityPage.importPackDesc') : '上传或粘贴 .tscfg 配置包，验证后保存到设备（加密存储）'}</p>
                     <div class="form-group">
                         <label>${typeof t === 'function' ? t('common.selectFile') : '选择文件'}</label>
                         <input type="file" id="pack-import-file" accept=".tscfg,.json" onchange="handlePackFileSelect(event)">
@@ -11012,11 +11012,11 @@ async function loadSecurityPage() {
             <div class="modal hidden" id="pack-export-modal">
                 <div class="modal-content" style="width:800px;max-width:90vw;height:auto;min-height:600px;max-height:90vh;overflow-y:auto">
                     <h2>${typeof t === 'function' ? t('securityPage.exportPackTitle') : '导出加密配置包'}</h2>
-                    <p style="color:#666;margin-bottom:15px">${typeof t === 'function' ? t('securityPage.exportPackDesc') : '选择配置文件并加密发送给目标设备（支持多选）'}</p>
+                    <p style="color:#6b7280;margin-bottom:15px">${typeof t === 'function' ? t('securityPage.exportPackDesc') : '选择配置文件并加密发送给目标设备（支持多选）'}</p>
                     
                     <!-- 文件浏览器 -->
                     <div class="form-group">
-                        <label>${typeof t === 'function' ? t('securityPage.selectConfigFiles') : '选择配置文件'} <span style="color:#999">(${typeof t === 'function' ? t('securityPage.multiSelect') : '可多选'})</span></label>
+                        <label>${typeof t === 'function' ? t('securityPage.selectConfigFiles') : '选择配置文件'} <span style="color:#9ca3af">(${typeof t === 'function' ? t('securityPage.multiSelect') : '可多选'})</span></label>
                         <div style="display:flex;gap:8px;margin-bottom:8px">
                             <input type="text" id="pack-export-browse-path" value="/sdcard/config" style="flex:1" readonly>
                             <button class="btn btn-sm btn-gray" onclick="packExportBrowseUp()"><i class="ri-arrow-up-s-line"></i> ${typeof t === 'function' ? t('files.parentFolder') : '上级'}</button>
@@ -11028,9 +11028,9 @@ async function loadSecurityPage() {
                             <button class="btn btn-sm btn-gray" onclick="packExportSelectDir()"><i class="ri-folder-open-line"></i> ${typeof t === 'function' ? t('securityPage.selectDirectory') : '选择整个目录'}</button>
                         </div>
                         <div id="pack-export-file-list" style="border:1px solid #ddd;border-radius:4px;height:180px;overflow-y:auto;background:#f9f9f9">
-                            <div style="padding:20px;text-align:center;color:#666"><i class="ri-refresh-line"></i> ${typeof t === 'function' ? t('common.loading') : 'Loading...'}</div>
+                            <div style="padding:20px;text-align:center;color:#6b7280"><i class="ri-refresh-line"></i> ${typeof t === 'function' ? t('common.loading') : 'Loading...'}</div>
                         </div>
-                        <div id="pack-export-selected" style="margin-top:8px;padding:8px;background:#e8f5e9;border-radius:4px;min-height:36px;display:none">
+                        <div id="pack-export-selected" style="margin-top:8px;padding:8px;background:rgba(16,185,129,0.06);border-radius:4px;min-height:36px;display:none">
                             <strong>${typeof t === 'function' ? t('securityPage.selected') : '已选择'}:</strong> <span id="pack-export-selected-file"></span>
                         </div>
                     </div>
@@ -11046,7 +11046,7 @@ async function loadSecurityPage() {
                     <div class="form-group">
                         <label>${typeof t === 'function' ? t('securityPage.targetDeviceCert') : '目标设备证书 (PEM)'}</label>
                         <textarea id="pack-export-recipient-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:100px;font-family:monospace" required></textarea>
-                        <div style="color:#666;margin-top:4px"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.pasteTargetCert') : '粘贴目标设备导出的证书'}</div>
+                        <div style="color:#6b7280;margin-top:4px"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.pasteTargetCert') : '粘贴目标设备导出的证书'}</div>
                     </div>
                     <div id="pack-export-result" class="result-box" style="margin-top:10px;min-height:24px;visibility:hidden"></div>
                     <div id="pack-export-output" style="margin-top:15px">
@@ -11137,7 +11137,7 @@ async function loadSecurityPage() {
                         <button class="modal-close" onclick="hideDeployKeyModal()"><i class="ri-close-line"></i></button>
                     </div>
                     <div class="modal-body">
-                        <p style="margin-bottom:15px;color:#666">${typeof t === 'function' ? t('securityPage.deployKeyDescPre') : '将公钥'} <code id="deploy-key-id"></code> ${typeof t === 'function' ? t('securityPage.deployKeyDescPost') : '部署到远程服务器的 authorized_keys'}</p>
+                        <p style="margin-bottom:15px;color:#6b7280">${typeof t === 'function' ? t('securityPage.deployKeyDescPre') : '将公钥'} <code id="deploy-key-id"></code> ${typeof t === 'function' ? t('securityPage.deployKeyDescPost') : '部署到远程服务器的 authorized_keys'}</p>
                         <div class="form-group">
                             <label>${typeof t === 'function' ? t('securityPage.targetHost') : '目标主机'}</label>
                             <input type="text" id="deploy-host" placeholder="${typeof t === 'function' ? t('securityPage.hostPlaceholder') : '192.168.55.100 或 hostname'}" required>
@@ -11176,8 +11176,8 @@ async function loadSecurityPage() {
                         <button class="modal-close" onclick="hideRevokeKeyModal()"><i class="ri-close-line"></i></button>
                     </div>
                     <div class="modal-body">
-                        <p style="margin-bottom:15px;color:#666">${typeof t === 'function' ? t('securityPage.revokeKeyDescPre') : '从远程服务器移除公钥'} <code id="revoke-key-id"></code></p>
-                        <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:10px;margin-bottom:15px">
+                        <p style="margin-bottom:15px;color:#6b7280">${typeof t === 'function' ? t('securityPage.revokeKeyDescPre') : '从远程服务器移除公钥'} <code id="revoke-key-id"></code></p>
+                        <div style="background:rgba(245,158,11,0.06);border:1px solid transparent;border-radius:4px;padding:10px;margin-bottom:15px">
                             <strong><i class="ri-alert-line"></i> ${typeof t === 'function' ? t('common.warning') : '警告'}</strong>：${typeof t === 'function' ? t('securityPage.revokeWarning') : '撤销后将无法使用此密钥免密登录该服务器'}
                         </div>
                         <div class="form-group">
@@ -11231,7 +11231,7 @@ async function loadSecurityPage() {
                         <label>${typeof t === 'function' ? t('securityPage.currentFingerprint') : '当前指纹'}</label>
                         <input type="text" id="mismatch-current-fp" readonly style="background:#fff3cd;font-family:monospace;font-size:12px">
                     </div>
-                    <p style="color:#856404;background:#fff3cd;padding:10px;border-radius:4px">
+                    <p style="color:#d97706;background:#fff3cd;padding:10px;border-radius:4px">
                         <strong>${typeof t === 'function' ? t('securityPage.suggestion') : '建议'}</strong>：${typeof t === 'function' ? t('securityPage.hostKeyMismatchSuggestion') : '如果您确认服务器已重装或密钥已更新，可以点击"更新主机密钥"移除旧记录，然后重新连接以信任新密钥。'}
                     </p>
                     <div class="form-actions">
@@ -11245,8 +11245,8 @@ async function loadSecurityPage() {
             <div class="modal hidden" id="cert-genkey-modal">
                 <div class="modal-content" style="max-width:450px">
                     <h2>${typeof t === 'function' ? t('securityPage.genHttpsKeyTitle') : '生成 HTTPS 密钥对'}</h2>
-                    <p style="color:#666;margin-bottom:15px">${typeof t === 'function' ? t('securityPage.genHttpsKeyDesc') : '为设备生成 ECDSA P-256 密钥对，用于 mTLS 身份验证'}</p>
-                    <div id="cert-genkey-existing-warning" class="hidden" style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:10px;margin-bottom:15px">
+                    <p style="color:#6b7280;margin-bottom:15px">${typeof t === 'function' ? t('securityPage.genHttpsKeyDesc') : '为设备生成 ECDSA P-256 密钥对，用于 mTLS 身份验证'}</p>
+                    <div id="cert-genkey-existing-warning" class="hidden" style="background:rgba(245,158,11,0.06);border:1px solid transparent;border-radius:4px;padding:10px;margin-bottom:15px">
                         <i class="ri-alert-line"></i> ${typeof t === 'function' ? t('securityPage.existingKeyWarning') : '已存在密钥对，继续将覆盖现有密钥！'}
                     </div>
                     <div id="cert-genkey-result" class="result-box hidden" style="margin-bottom:15px"></div>
@@ -11264,7 +11264,7 @@ async function loadSecurityPage() {
                     <div class="form-group">
                         <label>${typeof t === 'function' ? t('securityPage.deviceIdCn') : '设备 ID (CN)'}</label>
                         <input type="text" id="csr-device-id" placeholder="TIANSHAN-RM01-0001">
-                        <div style="color:#666;margin-top:4px">${typeof t === 'function' ? t('securityPage.leaveEmptyForDefault') : '留空则使用默认配置'}</div>
+                        <div style="color:#6b7280;margin-top:4px">${typeof t === 'function' ? t('securityPage.leaveEmptyForDefault') : '留空则使用默认配置'}</div>
                     </div>
                     <div class="form-group">
                         <label>${typeof t === 'function' ? t('securityPage.organization') : '组织 (O)'}</label>
@@ -11291,7 +11291,7 @@ async function loadSecurityPage() {
             <div class="modal hidden" id="cert-install-modal">
                 <div class="modal-content" style="max-width:600px">
                     <h2>${typeof t === 'function' ? t('securityPage.installCertTitle') : '安装设备证书'}</h2>
-                    <p style="color:#666;margin-bottom:15px">${typeof t === 'function' ? t('securityPage.installCertDesc') : '粘贴 CA 签发的 PEM 格式证书'}</p>
+                    <p style="color:#6b7280;margin-bottom:15px">${typeof t === 'function' ? t('securityPage.installCertDesc') : '粘贴 CA 签发的 PEM 格式证书'}</p>
                     <div class="form-group">
                         <label>${typeof t === 'function' ? t('securityPage.certPem') : '证书 PEM'}</label>
                         <textarea id="cert-pem-input" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:200px;font-family:monospace"></textarea>
@@ -11308,7 +11308,7 @@ async function loadSecurityPage() {
             <div class="modal hidden" id="cert-ca-modal">
                 <div class="modal-content" style="max-width:600px">
                     <h2>${typeof t === 'function' ? t('securityPage.installCaTitle') : '安装 CA 证书链'}</h2>
-                    <p style="color:#666;margin-bottom:15px">${typeof t === 'function' ? t('securityPage.installCaDesc') : '粘贴根证书和中间证书（PEM 格式，可拼接多个）'}</p>
+                    <p style="color:#6b7280;margin-bottom:15px">${typeof t === 'function' ? t('securityPage.installCaDesc') : '粘贴根证书和中间证书（PEM 格式，可拼接多个）'}</p>
                     <div class="form-group">
                         <label>${typeof t === 'function' ? t('securityPage.caCertPem') : 'CA 证书链 PEM'}</label>
                         <textarea id="ca-pem-input" placeholder="-----BEGIN CERTIFICATE-----&#10;(Root CA)&#10;-----END CERTIFICATE-----&#10;-----BEGIN CERTIFICATE-----&#10;(Intermediate CA)&#10;-----END CERTIFICATE-----" style="width:100%;height:200px;font-family:monospace"></textarea>
@@ -11378,7 +11378,7 @@ async function refreshSecurityPage() {
                 <tr>
                     <td>
                         <code>${hiddenIcon}${escapeHtml(displayId)}</code>
-                        ${key.alias && !key.hidden ? `<div style="color:#666;margin-top:2px">${escapeHtml(key.alias)}</div>` : ''}
+                        ${key.alias && !key.hidden ? `<div style="color:#6b7280;margin-top:2px">${escapeHtml(key.alias)}</div>` : ''}
                     </td>
                     <td>${escapeHtml(key.type_desc || key.type)}</td>
                     <td><span class="badge badge-service-style">SSH</span> ${escapeHtml(key.comment) || '-'}</td>
@@ -11418,7 +11418,7 @@ async function refreshSecurityPage() {
                 <tr style="background:#f0f7ff">
                     <td>
                         <code><i class="ri-key-line"></i> https</code>
-                        <div style="color:#666;margin-top:2px">${typeof t === 'function' ? t('securityPage.httpsServerKey') : 'HTTPS 服务器密钥'}</div>
+                        <div style="color:#6b7280;margin-top:2px">${typeof t === 'function' ? t('securityPage.httpsServerKey') : 'HTTPS 服务器密钥'}</div>
                     </td>
                     <td>ECDSA P-256</td>
                     <td><span class="badge badge-service-style">HTTPS</span> ${escapeHtml(comment)}</td>
@@ -11436,11 +11436,11 @@ async function refreshSecurityPage() {
                 allKeysHtml += `
                 <tr style="background:#fff8e1">
                     <td>
-                        <code style="color:#888"><i class="ri-lock-line"></i> https</code>
+                        <code style="color:#9ca3af"><i class="ri-lock-line"></i> https</code>
                         <div style="color:#999;margin-top:2px">${typeof t === 'function' ? t('securityPage.httpsServerKey') : 'HTTPS 服务器密钥'}</div>
                     </td>
-                    <td style="color:#888">-</td>
-                    <td><span class="badge badge-service-style">HTTPS</span> <em style="color:#888">${typeof t === 'function' ? t('securityPage.noKeyGenerated') : '未生成密钥'}</em></td>
+                    <td style="color:#9ca3af">-</td>
+                    <td><span class="badge badge-service-style">HTTPS</span> <em style="color:#9ca3af">${typeof t === 'function' ? t('securityPage.noKeyGenerated') : '未生成密钥'}</em></td>
                     <td>-</td>
                     <td>-</td>
                     <td>
@@ -11458,7 +11458,7 @@ async function refreshSecurityPage() {
     if (allKeysHtml) {
         tbody.innerHTML = allKeysHtml;
     } else {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#888">${typeof t === 'function' ? t('securityPage.noKeysClickToGenerate') : '暂无密钥，点击上方按钮生成新密钥'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#9ca3af">${typeof t === 'function' ? t('securityPage.noKeysClickToGenerate') : '暂无密钥，点击上方按钮生成新密钥'}</td></tr>`;
     }
     
     // SSH 已部署主机列表（加载数据并渲染到 DOM）
@@ -11725,11 +11725,11 @@ function showExportSshHostModal(hostId) {
                 <button class="modal-close" onclick="hideExportSshHostModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
-                <p style="color:#666">${typeof t === 'function' ? t('securityPage.exportSshHostDesc', {hostId: escapeHtml(hostId)}) : 'Export host <strong>' + escapeHtml(hostId) + '</strong> config as encrypted package'}</p>
+                <p style="color:#6b7280">${typeof t === 'function' ? t('securityPage.exportSshHostDesc', {hostId: escapeHtml(hostId)}) : 'Export host <strong>' + escapeHtml(hostId) + '</strong> config as encrypted package'}</p>
                 <div class="form-group" style="margin-top:15px">
                     <label>${typeof t === 'function' ? t('securityPage.targetDeviceCert') : 'Target Device Certificate (PEM)'}</label>
                     <textarea id="export-ssh-host-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace"></textarea>
-                    <div style="color:#666;margin-top:4px"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.exportSshHostCertHint') : 'Paste target device certificate. Leave empty for self-encryption'}</div>
+                    <div style="color:#6b7280;margin-top:4px"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.exportSshHostCertHint') : 'Paste target device certificate. Leave empty for self-encryption'}</div>
                 </div>
                 <div id="export-ssh-host-result" class="result-box hidden" style="margin-top:10px"></div>
                 <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
@@ -11821,7 +11821,7 @@ function showImportSshHostModal() {
     modal.innerHTML = `
         <div class="modal-content" style="max-width:550px">
             <h2>${typeof t === 'function' ? t('securityPage.importSshHostTitle') : 'Import SSH Host Config'}</h2>
-            <p style="color:#666">${typeof t === 'function' ? t('securityPage.importSshHostDesc') : 'Select .tscfg config file to import SSH host configuration'}</p>
+            <p style="color:#6b7280">${typeof t === 'function' ? t('securityPage.importSshHostDesc') : 'Select .tscfg config file to import SSH host configuration'}</p>
             
             <!-- 步骤 1: 选择文件 -->
             <div id="import-ssh-host-step1">
@@ -11902,14 +11902,14 @@ async function previewSshHostImport() {
             // 构建预览 HTML（轻量级验证只返回基本信息）
             let html = `
                 <table style="width:100%;font-size:0.9em">
-                    <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
-                    <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
+                    <tr><td style="width:80px;color:#6b7280">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
+                    <tr><td style="color:#6b7280">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
+                    <tr><td style="color:#6b7280">备注:</td><td style="color:#9ca3af;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
                 </table>
             `;
             
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404"><i class="ri-alert-line"></i> 该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#d97706"><i class="ri-alert-line"></i> 该配置已存在，导入将覆盖现有文件</div>`;
             }
             
             previewDiv.innerHTML = html;
@@ -11959,7 +11959,7 @@ async function confirmSshHostImport() {
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
-                resultBox.innerHTML = `${typeof t === 'function' ? t('securityPage.savedConfig') : 'Saved config'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">${typeof t === 'function' ? t('securityPage.restartToApply') : 'Restart to apply'}</small>`;
+                resultBox.innerHTML = `${typeof t === 'function' ? t('securityPage.savedConfig') : 'Saved config'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#6b7280">${typeof t === 'function' ? t('securityPage.restartToApply') : 'Restart to apply'}</small>`;
                 showToast(typeof t === 'function' ? t('toast.importedRestartRequired') : 'Imported, restart to apply', 'success');
                 // 不刷新列表，因为还没加载
                 setTimeout(() => hideImportSshHostModal(), 2000);
@@ -12028,7 +12028,7 @@ function revokeKeyFromHost(index) {
             </div>
             <div class="modal-body">
                 <p>${typeof t === 'function' ? t('securityPage.revokeKeyFromHostDesc', {host: escapeHtml(host.username) + '@' + escapeHtml(host.host) + ':' + host.port, keyid: escapeHtml(host.keyid || 'default')}) : 'Revoke key <code>' + escapeHtml(host.keyid || 'default') + '</code> from server <strong>' + escapeHtml(host.username) + '@' + escapeHtml(host.host) + ':' + host.port + '</strong>'}</p>
-                <p style="color:#666;margin-top:10px">${typeof t === 'function' ? t('securityPage.revokeHostHint') : 'Host will be removed from list after successful revocation'}</p>
+                <p style="color:#6b7280;margin-top:10px">${typeof t === 'function' ? t('securityPage.revokeHostHint') : 'Host will be removed from list after successful revocation'}</p>
                 <div class="form-group" style="margin-top:15px">
                     <label>${typeof t === 'function' ? t('securityPage.serverPassword') : 'Server Password'}</label>
                     <input type="password" id="revoke-host-password" class="form-control" placeholder="${typeof t === 'function' ? t('securityPage.serverPasswordPlaceholder') : 'Enter SSH password'}">
@@ -12188,9 +12188,9 @@ function showPubkeyModal(id, pubkey, type, comment) {
                 <button class="modal-close" onclick="closePubkeyModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
-                <p style="margin-bottom:10px;color:#666">${typeof t === 'function' ? t('securityPage.keyTypeLabel') : 'Type'}: ${escapeHtml(type)}${comment ? ' | ' + (typeof t === 'function' ? t('securityPage.commentLabel') : 'Comment') + ': ' + escapeHtml(comment) : ''}</p>
+                <p style="margin-bottom:10px;color:#6b7280">${typeof t === 'function' ? t('securityPage.keyTypeLabel') : 'Type'}: ${escapeHtml(type)}${comment ? ' | ' + (typeof t === 'function' ? t('securityPage.commentLabel') : 'Comment') + ': ' + escapeHtml(comment) : ''}</p>
                 <textarea id="pubkey-content" readonly style="width:100%;height:150px;font-family:monospace;font-size:12px;resize:vertical">${escapeHtml(pubkey)}</textarea>
-                <p style="margin-top:10px;color:#888">
+                <p style="margin-top:10px;color:#9ca3af">
                     <i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.pubkeyHint') : 'Add this public key to the remote server\'s ~/.ssh/authorized_keys file to enable passwordless login'}
                 </p>
                 <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
@@ -12223,12 +12223,12 @@ function showPrivkeyModal(id, privkey, type, comment) {
     modal.innerHTML = `
         <div class="modal-content" style="max-width:700px">
             <h2>${typeof t === 'function' ? t('securityPage.privkeyExport') : 'Private Key Export'} - ${escapeHtml(id)}</h2>
-            <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:10px;margin-bottom:15px">
+            <div style="background:rgba(245,158,11,0.06);border:1px solid transparent;border-radius:4px;padding:10px;margin-bottom:15px">
                 <strong><i class="ri-alert-line"></i> ${typeof t === 'function' ? t('securityPage.securityWarning') : 'Security Warning'}</strong>: ${typeof t === 'function' ? t('securityPage.privkeyWarning') : 'Private key is sensitive information, please keep it safe!'}
             </div>
-            <p style="margin-bottom:10px;color:#666">${typeof t === 'function' ? t('securityPage.keyTypeLabel') : 'Type'}: ${escapeHtml(type)}${comment ? ' | ' + (typeof t === 'function' ? t('securityPage.commentLabel') : 'Comment') + ': ' + escapeHtml(comment) : ''}</p>
+            <p style="margin-bottom:10px;color:#6b7280">${typeof t === 'function' ? t('securityPage.keyTypeLabel') : 'Type'}: ${escapeHtml(type)}${comment ? ' | ' + (typeof t === 'function' ? t('securityPage.commentLabel') : 'Comment') + ': ' + escapeHtml(comment) : ''}</p>
             <textarea id="privkey-content" readonly style="width:100%;height:200px;font-family:monospace;resize:vertical;background:#2d2d2d;color:#00ff00">${escapeHtml(privkey)}</textarea>
-            <p style="margin-top:10px;color:#888">
+            <p style="margin-top:10px;color:#9ca3af">
                 <i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.privkeyHint') : 'Save as ~/.ssh/' + escapeHtml(id) + ' and set permissions chmod 600'}
             </p>
             <div class="form-actions" style="margin-top:15px">
@@ -12712,7 +12712,7 @@ async function importConfigPack() {
                 <div><strong>${typeof t === 'function' ? t('securityPage.officialSignature') : 'Official Signature'}:</strong> ${sig.is_official ? yesStr : noStr}</div>
                 <div><strong>${typeof t === 'function' ? t('securityPage.savePath') : 'Save Path'}:</strong> ${data.saved_path || '-'}</div>
             </div>
-            <div style="margin-top:10px;padding:8px;background:#e8f5e9;border-radius:4px;font-size:12px">
+            <div style="margin-top:10px;padding:8px;background:rgba(16,185,129,0.06);border-radius:4px;font-size:12px">
                 ${typeof t === 'function' ? t('securityPage.packEncryptedHint') : 'Config pack saved encrypted, use <code>config.pack.content</code> API to decrypt as needed'}
             </div>
         `;
@@ -12742,15 +12742,15 @@ function showConfigPackApplyConfirm(path, packInfo) {
                 <span class="modal-title">${typeof t === 'function' ? t('securityPage.configPackUploaded') : 'Config Pack Uploaded'}</span>
             </div>
             <div class="modal-body">
-                <div style="background:#e8f5e9;padding:12px;border-radius:6px;margin-bottom:15px">
-                    <div style="color:#2e7d32;font-weight:bold;margin-bottom:8px">${typeof t === 'function' ? t('securityPage.verifySuccess') : 'Verification Successful'}</div>
+                <div style="background:rgba(16,185,129,0.06);padding:12px;border-radius:6px;margin-bottom:15px">
+                    <div style="color:#059669;font-weight:bold;margin-bottom:8px">${typeof t === 'function' ? t('securityPage.verifySuccess') : 'Verification Successful'}</div>
                     <div style="font-size:0.9em;color:#333">
                         <div>${typeof t === 'function' ? t('securityPage.fileName') : 'File'}: <code>${path.split('/').pop()}</code></div>
                         <div>${typeof t === 'function' ? t('securityPage.signer') : 'Signer'}: ${signerInfo}</div>
                         ${sig.is_official ? '<div style="color:#1976d2">' + (typeof t === 'function' ? t('securityPage.officialSignature') : 'Official Signature') + '</div>' : ''}
                     </div>
                 </div>
-                <p style="margin:0;color:#666;font-size:0.9em">
+                <p style="margin:0;color:#6b7280;font-size:0.9em">
                     ${typeof t === 'function' ? t('securityPage.configPackSavedApplyNow') : 'Config pack saved to device. Apply this config now?'}
                 </p>
             </div>
@@ -12843,7 +12843,7 @@ function hideConfigPackExportModal() {
 // 文件浏览器：刷新当前目录
 async function packExportBrowseRefresh() {
     const fileList = document.getElementById('pack-export-file-list');
-    fileList.innerHTML = '<div style="padding:20px;text-align:center;color:#666"><i class="ri-refresh-line"></i> ' + t('common.loading') + '</div>';
+    fileList.innerHTML = '<div style="padding:20px;text-align:center;color:#6b7280"><i class="ri-refresh-line"></i> ' + t('common.loading') + '</div>';
     
     try {
         const result = await api.storageList(packExportCurrentPath);
@@ -12883,7 +12883,7 @@ async function packExportBrowseRefresh() {
                 // 目录：点击进入，无复选框
                 html += `<div onclick="packExportBrowseInto('${safeName}')" 
                     class="pack-export-file-row pack-export-dir-row" 
-                    onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background=''">
+                    onmouseover="this.style.background='#f3f4f6'" onmouseout="this.style.background=''">
                     <span class="pack-export-row-icon"><i class="ri-folder-line"></i></span>
                     <span class="pack-export-row-name">${escapeHtml(entry.name)}</span>
                 </div>`;
@@ -12907,7 +12907,7 @@ async function packExportBrowseRefresh() {
         packExportUpdateSelectedDisplay();
         
     } catch (e) {
-        fileList.innerHTML = `<div style="padding:20px;text-align:center;color:#e74c3c"><i class="ri-error-warning-line"></i> 加载失败: ${e.message}</div>`;
+        fileList.innerHTML = `<div style="padding:20px;text-align:center;color:#f43f5e"><i class="ri-error-warning-line"></i> 加载失败: ${e.message}</div>`;
     }
 }
 
@@ -12995,14 +12995,14 @@ function packExportUpdateSelectedDisplay() {
     let text = `已选择 ${files.length} 个文件`;
     if (loadingFiles.length > 0) {
         text += ` (${loadingFiles.length} ${t('security.filesLoading')})`;
-        selectedDiv.style.background = '#fff3e0';
+        selectedDiv.style.background = 'rgba(245, 158, 11, 0.06)';
         generateBtn.disabled = true;
     } else if (errorFiles.length > 0) {
         text += ` (${errorFiles.length} 个错误: ${errorFiles[0][1].error})`;
-        selectedDiv.style.background = '#ffebee';
+        selectedDiv.style.background = 'rgba(244, 63, 94, 0.06)';
         generateBtn.disabled = errorFiles.length === files.length;  // 全部错误则禁用
     } else {
-        selectedDiv.style.background = '#e8f5e9';
+        selectedDiv.style.background = 'rgba(16, 185, 129, 0.06)';
         generateBtn.disabled = false;
     }
     
@@ -13225,7 +13225,7 @@ async function refreshConfigPackList() {
         
         if (files.length === 0) {
             const noFiles = typeof t === 'function' ? t('securityPage.noTscfgInDir') : '目录中没有 .tscfg 文件';
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#666">' + noFiles + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#6b7280">' + noFiles + '</td></tr>';
         } else {
             const yesStr = typeof t === 'function' ? t('common.yes') : '是';
             const noStr = typeof t === 'function' ? t('common.no') : '否';
@@ -13918,7 +13918,7 @@ async function loadTerminalPage() {
                 font-family: 'SF Mono', 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
                 font-size: 12px;
                 line-height: 1.6;
-                background: #1a1a2e;
+                background: #1e293b;
                 color: #eee;
                 padding: 12px;
                 overflow-y: auto;
@@ -14694,7 +14694,7 @@ async function loadOtaPage() {
         }
         
         .ota-update-status.has-update {
-            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+            background: rgba(16, 185, 129, 0.06);
             border: 1px solid #81c784;
         }
         
@@ -14709,8 +14709,8 @@ async function loadOtaPage() {
         }
         
         .ota-update-status.error {
-            background: #ffebee;
-            border: 1px solid #ef9a9a;
+            background: rgba(244, 63, 94, 0.06);
+            border: 1px solid transparent;
         }
         
         /* 进度区 */
@@ -14855,7 +14855,7 @@ async function loadOtaPage() {
         
         .partition-card.running {
             border-color: #4CAF50;
-            background: linear-gradient(135deg, #f1f8e9 0%, #e8f5e9 100%);
+            background: rgba(16, 185, 129, 0.06);
         }
         
         .partition-card.bootable {
@@ -15045,7 +15045,7 @@ function displayPartitionsCompact(data) {
         `;
     }
     
-    container.innerHTML = html || '<p style="color:#888;padding:10px">无分区信息</p>';
+    container.innerHTML = html || '<p style="color:#9ca3af;padding:10px">无分区信息</p>';
 }
 
 async function refreshOtaInfo() {
@@ -15135,7 +15135,7 @@ async function refreshOtaProgress() {
                     document.getElementById('ota-message').innerHTML = `
                         <div style="text-align:center">
                             <p>固件和 WebUI 升级完成，设备正在重启...</p>
-                            <p id="reboot-countdown" style="color:#888;margin-top:5px">正在触发重启...</p>
+                            <p id="reboot-countdown" style="color:#9ca3af;margin-top:5px">正在触发重启...</p>
                         </div>
                     `;
                     
@@ -15242,7 +15242,7 @@ async function startWwwOta() {
             document.getElementById('ota-message').innerHTML = `
                 <div style="text-align:center">
                     <p>固件已更新，WebUI 升级跳过，设备正在重启...</p>
-                    <p id="reboot-countdown" style="color:#888;margin-top:5px">正在触发重启...</p>
+                    <p id="reboot-countdown" style="color:#9ca3af;margin-top:5px">正在触发重启...</p>
                 </div>
             `;
             
@@ -15292,7 +15292,7 @@ function startRebootDetection() {
                 
                 if (countdownEl) {
                     countdownEl.innerHTML = `
-                        <span style="color:#27ae60">设备已恢复！</span>
+                        <span style="color:#059669">设备已恢复！</span>
                         <br><span style="font-size:0.9em">当前版本: ${newVersion}</span>
                     `;
                 }
@@ -15313,7 +15313,7 @@ function startRebootDetection() {
                 
                 if (countdownEl) {
                     countdownEl.innerHTML = `
-                        <span style="color:#e74c3c">等待超时</span>
+                        <span style="color:#f43f5e">等待超时</span>
                         <br><span style="font-size:0.9em">请手动检查设备状态并刷新页面</span>
                         <br><button class="btn btn-service-style btn-small" onclick="window.location.reload()" 
                             style="margin-top:10px">刷新页面</button>
@@ -15713,11 +15713,11 @@ async function checkForUpdates() {
             const localParts = parseVersion(localVersion);
             const serverParts = parseVersion(serverVersion);
             if (serverParts.major > localParts.major) {
-                updateType = '<span style="color:#e74c3c;font-weight:bold">🔴 主版本更新</span>';
+                updateType = '<span style="color:#f43f5e;font-weight:bold">🔴 主版本更新</span>';
             } else if (serverParts.minor > localParts.minor) {
                 updateType = '<span style="color:#f39c12;font-weight:bold">🟡 功能更新</span>';
             } else {
-                updateType = '<span style="color:#27ae60;font-weight:bold">🟢 补丁更新</span>';
+                updateType = '<span style="color:#059669;font-weight:bold">🟢 补丁更新</span>';
             }
         }
         
@@ -15728,8 +15728,8 @@ async function checkForUpdates() {
                     <div>
                         <span style="font-weight:600">发现新版本</span>
                         ${updateType ? ` · ${updateType}` : ''}
-                        <div style="margin-top:5px;font-size:0.9em;color:#666">
-                            <code>${localVersion}</code> → <code style="color:#27ae60;font-weight:bold">${serverVersion}</code>
+                        <div style="margin-top:5px;font-size:0.9em;color:#6b7280">
+                            <code>${localVersion}</code> → <code style="color:#059669;font-weight:bold">${serverVersion}</code>
                             <span style="margin-left:10px">${formatSize(serverSize)}</span>
                         </div>
                     </div>
@@ -15744,7 +15744,7 @@ async function checkForUpdates() {
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
                     <div>
                         <span style="font-weight:600">服务器版本较旧</span>
-                        <div style="margin-top:5px;font-size:0.9em;color:#666">
+                        <div style="margin-top:5px;font-size:0.9em;color:#6b7280">
                             <code>${localVersion}</code> → <code style="color:#ff9800">${serverVersion}</code>
                         </div>
                     </div>
@@ -15769,7 +15769,7 @@ async function checkForUpdates() {
         statusDiv.innerHTML = `
             <div>
                 <span style="font-weight:600">检查更新失败</span>
-                <div style="margin-top:5px;font-size:0.9em;color:#666">${error.message}</div>
+                <div style="margin-top:5px;font-size:0.9em;color:#6b7280">${error.message}</div>
             </div>
         `;
     }
@@ -15922,12 +15922,12 @@ async function upgradeViaProxy(serverUrl) {
         // ===== 最终步骤：升级完成，触发重启 =====
         stateEl.textContent = '全部升级完成';
         progressBar.style.width = '100%';
-        progressBar.style.background = 'linear-gradient(90deg, #27ae60, #2ecc71)';
+        progressBar.style.background = 'linear-gradient(90deg, #059669, #10b981)';
         progressPercent.textContent = '';
         messageEl.innerHTML = `
             <div style="text-align:center">
                 <p>固件${includeWww ? '和 WebUI ' : ''}升级完成，设备正在重启...</p>
-                <p id="reboot-countdown" style="color:#888;margin-top:5px">正在触发重启...</p>
+                <p id="reboot-countdown" style="color:#9ca3af;margin-top:5px">正在触发重启...</p>
             </div>
         `;
         
@@ -16088,15 +16088,15 @@ function renderTaskRows(tasks, formatBytes) {
         const alloc = task.stack_alloc || 0;
         const used = task.stack_used || 0;
         const usagePct = task.stack_usage_pct || 0;
-        const hwmColor = hwm < 256 ? '#c62828' : hwm < 512 ? '#f57c00' : '#2e7d32';
-        const usageColor = usagePct >= 90 ? '#c62828' : usagePct >= 75 ? '#f57c00' : '#2e7d32';
+        const hwmColor = hwm < 256 ? '#e11d48' : hwm < 512 ? '#d97706' : '#059669';
+        const usageColor = usagePct >= 90 ? '#e11d48' : usagePct >= 75 ? '#d97706' : '#059669';
         const stateIcon = {
-            'Running': '<i class="ri-checkbox-blank-circle-fill" style="color:#2e7d32"></i>',
-            'Ready': '<i class="ri-checkbox-blank-circle-fill" style="color:#007bff"></i>', 
-            'Blocked': '<i class="ri-checkbox-blank-circle-fill" style="color:#f57c00"></i>',
-            'Suspended': '<i class="ri-checkbox-blank-circle-fill" style="color:#666"></i>',
-            'Deleted': '<i class="ri-checkbox-blank-circle-fill" style="color:#c62828"></i>'
-        }[task.state] || '<i class="ri-checkbox-blank-circle-fill" style="color:#666"></i>';
+            'Running': '<i class="ri-checkbox-blank-circle-fill" style="color:#059669"></i>',
+            'Ready': '<i class="ri-checkbox-blank-circle-fill" style="color:#3b82f6"></i>', 
+            'Blocked': '<i class="ri-checkbox-blank-circle-fill" style="color:#d97706"></i>',
+            'Suspended': '<i class="ri-checkbox-blank-circle-fill" style="color:#6b7280"></i>',
+            'Deleted': '<i class="ri-checkbox-blank-circle-fill" style="color:#e11d48"></i>'
+        }[task.state] || '<i class="ri-checkbox-blank-circle-fill" style="color:#6b7280"></i>';
         return `
         <tr>
             <td><code>${task.name}</code></td>
@@ -16236,16 +16236,15 @@ async function refreshMemoryDetail() {
         
         // 获取进度条颜色
         const getProgressColor = (percent) => {
-            if (percent >= 85) return '#c62828';  // 深红色 - 危险
-            if (percent >= 70) return '#f57c00';  // 橙色 - 警告
-            return '#2e7d32';  // 深绿色 - 正常
+            if (percent >= 85) return '#e11d48';
+            if (percent >= 70) return '#d97706';
+            return '#059669';
         };
         
-        // 获取碎片化颜色
         const getFragColor = (frag) => {
-            if (frag >= 60) return '#c62828';
-            if (frag >= 40) return '#f57c00';
-            return '#2e7d32';
+            if (frag >= 60) return '#e11d48';
+            if (frag >= 40) return '#d97706';
+            return '#059669';
         };
         
         let tipsHtml = '';
@@ -16268,7 +16267,7 @@ async function refreshMemoryDetail() {
                         const translatedMsg = translateTip(msg);
                         const iconColor = level === 'critical' ? '#ef4444' : level === 'warning' ? '#f59e0b' : '#3b82f6';
                         const icon = `<i class="ri-checkbox-blank-circle-fill" style="color:${iconColor}"></i>`;
-                        const bgColor = level === 'critical' ? '#fff5f5' : level === 'warning' ? '#fffbf0' : '#f0f8ff';
+                        const bgColor = level === 'critical' ? 'rgba(244,63,94,0.06)' : level === 'warning' ? 'rgba(245,158,11,0.06)' : 'rgba(59,130,246,0.06)';
                         return `<div class="memory-tip" style="background:${bgColor}">${icon} ${translatedMsg}</div>`;
                     }).join('')}
                 </div>
@@ -16302,7 +16301,7 @@ async function refreshMemoryDetail() {
                         </div>
                         <div class="info-row">
                             <span>${typeof t === 'function' ? t('memoryPage.free') : '空闲'}</span>
-                            <strong style="color:#2e7d32">${formatBytes(dram.free || 0)}</strong>
+                            <strong style="color:#059669">${formatBytes(dram.free || 0)}</strong>
                         </div>
                     </div>
                 </div>
@@ -16332,7 +16331,7 @@ async function refreshMemoryDetail() {
                         </div>
                         <div class="info-row">
                             <span>${typeof t === 'function' ? t('memoryPage.free') : '空闲'}</span>
-                            <strong style="color:#2e7d32">${formatBytes(psram.free || 0)}</strong>
+                            <strong style="color:#059669">${formatBytes(psram.free || 0)}</strong>
                         </div>
                     </div>
                 </div>
@@ -16378,7 +16377,7 @@ async function refreshMemoryDetail() {
                     </div>
                     <div class="iram-item">
                         <span class="iram-label">${typeof t === 'function' ? t('memoryPage.heapFree') : '堆空闲'}</span>
-                        <span class="iram-value" style="color:#2e7d32">${formatBytes(iram.heap_free || 0)}</span>
+                        <span class="iram-value" style="color:#059669">${formatBytes(iram.heap_free || 0)}</span>
                     </div>
                 </div>
             </div>
@@ -16508,7 +16507,7 @@ async function refreshMemoryDetail() {
             
             ${data.tasks && data.tasks.length > 0 ? `
             <div class="memory-tasks">
-                <h4>${typeof t === 'function' ? t('memoryPage.taskStackUsage') : '任务栈使用'} (${typeof t === 'function' ? t('memoryPage.taskCountLabel', { count: data.tasks.length }) : '共 ' + data.tasks.length + ' 个任务'}) <span style="font-size:0.8em;color:#888;font-weight:normal">${typeof t === 'function' ? t('memoryPage.clickToSort') : '点击表头排序'}</span></h4>
+                <h4>${typeof t === 'function' ? t('memoryPage.taskStackUsage') : '任务栈使用'} (${typeof t === 'function' ? t('memoryPage.taskCountLabel', { count: data.tasks.length }) : '共 ' + data.tasks.length + ' 个任务'}) <span style="font-size:0.8em;color:#9ca3af;font-weight:normal">${typeof t === 'function' ? t('memoryPage.clickToSort') : '点击表头排序'}</span></h4>
                 <table class="memory-table task-table sortable-table" id="task-memory-table">
                     <thead>
                         <tr>
@@ -16527,12 +16526,12 @@ async function refreshMemoryDetail() {
                     </tbody>
                 </table>
                 ${data.total_stack_allocated ? `
-                <p style="font-size:0.85em;color:#666;margin-top:8px">
+                <p style="font-size:0.85em;color:#6b7280;margin-top:8px">
                     ${typeof t === 'function' ? t('memoryPage.taskStackTotal') : '任务栈总分配'}: <strong>${formatBytes(data.total_stack_allocated)}</strong> | 
                     ${typeof t === 'function' ? t('memoryPage.totalTaskCount') : '任务总数'}: <strong>${data.task_count}</strong>
                 </p>
                 ` : ''}
-                <p style="font-size:0.85em;color:#888;margin-top:4px">
+                <p style="font-size:0.85em;color:#9ca3af;margin-top:4px">
                     ${typeof t === 'function' ? t('memoryPage.stackHint') : '剩余栈 <256B 为危险区域，<512B 为警告区域'}
                 </p>
             </div>
@@ -16573,7 +16572,7 @@ async function refreshMemoryDetail() {
         body.innerHTML = `
             <div class="error-message">
                 <p>${typeof t === 'function' ? t('memoryPage.loadFailed') : '获取内存详情失败'}</p>
-                <p style="font-size:0.9em;color:#666">${error.message}</p>
+                <p style="font-size:0.9em;color:#6b7280">${error.message}</p>
             </div>
         `;
     }
@@ -16821,7 +16820,7 @@ async function refreshRules() {
                             const iconHtml = iconValue.startsWith('/sdcard/') 
                                 ? `<img src="/api/v1/file/download?path=${encodeURIComponent(iconValue)}" style="width:24px;height:24px;object-fit:contain" onerror="this.outerHTML='<i class=\\'ri-thunderstorms-line\\' style=\\'font-size:1.2em\\'></i>'">`
                                 : `<i class="${getRuleIconRi(iconValue)}" style="font-size:1.2em"></i>`;
-                            const manualBadge = r.manual_trigger ? '<span class="badge" style="background:#27ae60;font-size:0.7em">' + (typeof t === 'function' ? t('common.manual') : '手动') + '</span>' : '';
+                            const manualBadge = r.manual_trigger ? '<span class="badge" style="background:#10b981;font-size:0.7em">' + (typeof t === 'function' ? t('common.manual') : '手动') + '</span>' : '';
                             const enabledStr = typeof t === 'function' ? t('common.enabled') : '启用';
                             const disabledStr = typeof t === 'function' ? t('common.disabled') : '禁用';
                             return `
@@ -21153,11 +21152,11 @@ function showExportSourceModal(sourceId) {
                 <button class="modal-close" onclick="hideExportSourceModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
-                <p style="color:#666;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.exportSourceDesc', {id: escapeHtml(sourceId)}) : `导出数据源 <strong>${escapeHtml(sourceId)}</strong> 的配置为加密配置包`}</p>
+                <p style="color:#6b7280;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.exportSourceDesc', {id: escapeHtml(sourceId)}) : `导出数据源 <strong>${escapeHtml(sourceId)}</strong> 的配置为加密配置包`}</p>
                 <div class="form-group">
                     <label>${typeof t === 'function' ? t('securityPage.targetDeviceCert') : '目标设备证书 (PEM)'}</label>
                     <textarea id="export-source-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
-                    <div style="font-size:0.85em;color:#666;margin-top:4px"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.targetCertHint') : '粘贴目标设备的证书。留空则使用本机证书（自加密）'}</div>
+                    <div style="font-size:0.85em;color:#6b7280;margin-top:4px"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.targetCertHint') : '粘贴目标设备的证书。留空则使用本机证书（自加密）'}</div>
                 </div>
                 <div id="export-source-result" class="result-box hidden" style="margin-top:10px"></div>
                 <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
@@ -21237,7 +21236,7 @@ function showImportSourceModal() {
                 <button class="modal-close" onclick="hideImportSourceModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
-                <p style="color:#666;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.importSourceDesc') : '选择 .tscfg 配置包文件以导入数据源'}</p>
+                <p style="color:#6b7280;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.importSourceDesc') : '选择 .tscfg 配置包文件以导入数据源'}</p>
                 <div id="import-source-step1">
                     <div class="form-group" style="margin-top:15px">
                         <label>${typeof t === 'function' ? t('ssh.selectFile') : '选择文件'}</label>
@@ -21305,14 +21304,14 @@ async function previewSourceImport() {
             const data = result.data;
             let html = `
                 <table style="width:100%;font-size:0.9em">
-                    <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#666">类型:</td><td>数据源</td></tr>
-                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
-                    <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
+                    <tr><td style="width:80px;color:#6b7280">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
+                    <tr><td style="color:#6b7280">类型:</td><td>数据源</td></tr>
+                    <tr><td style="color:#6b7280">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
+                    <tr><td style="color:#6b7280">备注:</td><td style="color:#9ca3af;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
                 </table>
             `;
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#d97706">该配置已存在，导入将覆盖现有文件</div>`;
             }
             previewDiv.innerHTML = html;
             step2.style.display = 'block';
@@ -21360,7 +21359,7 @@ async function confirmSourceImport() {
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
-                resultBox.innerHTML = `${typeof t === 'function' ? t('securityPage.savedConfig') : 'Saved config'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">${typeof t === 'function' ? t('securityPage.restartToApply') : 'Restart to apply'}</small>`;
+                resultBox.innerHTML = `${typeof t === 'function' ? t('securityPage.savedConfig') : 'Saved config'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#6b7280">${typeof t === 'function' ? t('securityPage.restartToApply') : 'Restart to apply'}</small>`;
                 showToast(`已导入配置，重启后生效`, 'success');
                 setTimeout(() => hideImportSourceModal(), 2000);
             }
@@ -21395,11 +21394,11 @@ function showExportRuleModal(ruleId) {
                 <button class="modal-close" onclick="hideExportRuleModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
-                <p style="color:#666;font-size:0.9rem;margin-top:0">导出规则 <strong>${escapeHtml(ruleId)}</strong> 的配置为加密配置包</p>
+                <p style="color:#6b7280;font-size:0.9rem;margin-top:0">导出规则 <strong>${escapeHtml(ruleId)}</strong> 的配置为加密配置包</p>
                 <div class="form-group">
                     <label>目标设备证书 (PEM)</label>
                     <textarea id="export-rule-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
-                    <div style="font-size:0.85em;color:#666;margin-top:4px"><i class="ri-information-line"></i> 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+                    <div style="font-size:0.85em;color:#6b7280;margin-top:4px"><i class="ri-information-line"></i> 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
                 </div>
                 <div id="export-rule-result" class="result-box hidden" style="margin-top:10px"></div>
                 <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
@@ -21479,7 +21478,7 @@ function showImportRuleModal() {
                 <button class="modal-close" onclick="hideImportRuleModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
-                <p style="color:#666;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.importRuleDesc') : '选择 .tscfg 配置包文件以导入规则'}</p>
+                <p style="color:#6b7280;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.importRuleDesc') : '选择 .tscfg 配置包文件以导入规则'}</p>
                 <div id="import-rule-step1">
                     <div class="form-group" style="margin-top:15px">
                         <label>${typeof t === 'function' ? t('ssh.selectFile') : '选择文件'}</label>
@@ -21547,14 +21546,14 @@ async function previewRuleImport() {
             const data = result.data;
             let html = `
                 <table style="width:100%;font-size:0.9em">
-                    <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#666">类型:</td><td>自动化规则</td></tr>
-                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
-                    <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
+                    <tr><td style="width:80px;color:#6b7280">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
+                    <tr><td style="color:#6b7280">类型:</td><td>自动化规则</td></tr>
+                    <tr><td style="color:#6b7280">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
+                    <tr><td style="color:#6b7280">备注:</td><td style="color:#9ca3af;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
                 </table>
             `;
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#d97706">该配置已存在，导入将覆盖现有文件</div>`;
             }
             previewDiv.innerHTML = html;
             step2.style.display = 'block';
@@ -21602,7 +21601,7 @@ async function confirmRuleImport() {
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
-                resultBox.innerHTML = `${typeof t === 'function' ? t('securityPage.savedConfig') : 'Saved config'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">${typeof t === 'function' ? t('securityPage.restartToApply') : 'Restart to apply'}</small>`;
+                resultBox.innerHTML = `${typeof t === 'function' ? t('securityPage.savedConfig') : 'Saved config'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#6b7280">${typeof t === 'function' ? t('securityPage.restartToApply') : 'Restart to apply'}</small>`;
                 showToast(`已导入配置，重启后生效`, 'success');
                 setTimeout(() => hideImportRuleModal(), 2000);
             }
@@ -21637,11 +21636,11 @@ function showExportActionModal(actionId) {
                 <button class="modal-close" onclick="hideExportActionModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
-                <p style="color:#666;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.exportActionDesc', {actionId: escapeHtml(actionId)}) : `导出动作模板 <strong>${escapeHtml(actionId)}</strong> 的配置为加密配置包`}</p>
+                <p style="color:#6b7280;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.exportActionDesc', {actionId: escapeHtml(actionId)}) : `导出动作模板 <strong>${escapeHtml(actionId)}</strong> 的配置为加密配置包`}</p>
                 <div class="form-group">
                     <label>${typeof t === 'function' ? t('securityPage.targetDeviceCert') : '目标设备证书 (PEM)'}</label>
                     <textarea id="export-action-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
-                    <div style="font-size:0.85em;color:#666;margin-top:4px"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.targetCertHint') : '粘贴目标设备的证书。留空则使用本机证书（自加密）'}</div>
+                    <div style="font-size:0.85em;color:#6b7280;margin-top:4px"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.targetCertHint') : '粘贴目标设备的证书。留空则使用本机证书（自加密）'}</div>
                 </div>
                 <div id="export-action-result" class="result-box hidden" style="margin-top:10px"></div>
                 <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
@@ -21721,7 +21720,7 @@ function showImportActionModal() {
                 <button class="modal-close" onclick="hideImportActionModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
-                <p style="color:#666;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.importActionDesc') : '选择 .tscfg 配置包文件以导入动作模板'}</p>
+                <p style="color:#6b7280;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.importActionDesc') : '选择 .tscfg 配置包文件以导入动作模板'}</p>
                 <div id="import-action-step1">
                     <div class="form-group" style="margin-top:15px">
                         <label>${typeof t === 'function' ? t('ssh.selectFile') : '选择文件'}</label>
@@ -21789,14 +21788,14 @@ async function previewActionImport() {
             const data = result.data;
             let html = `
                 <table style="width:100%;font-size:0.9em">
-                    <tr><td style="width:80px;color:#666">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#666">类型:</td><td>动作模板</td></tr>
-                    <tr><td style="color:#666">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
-                    <tr><td style="color:#666">备注:</td><td style="color:#888;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
+                    <tr><td style="width:80px;color:#6b7280">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
+                    <tr><td style="color:#6b7280">类型:</td><td>动作模板</td></tr>
+                    <tr><td style="color:#6b7280">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
+                    <tr><td style="color:#6b7280">备注:</td><td style="color:#9ca3af;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
                 </table>
             `;
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#856404">该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#d97706">该配置已存在，导入将覆盖现有文件</div>`;
             }
             previewDiv.innerHTML = html;
             step2.style.display = 'block';
@@ -21844,7 +21843,7 @@ async function confirmActionImport() {
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
-                resultBox.innerHTML = `${typeof t === 'function' ? t('securityPage.savedConfig') : 'Saved config'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#666">${typeof t === 'function' ? t('securityPage.restartToApply') : 'Restart to apply'}</small>`;
+                resultBox.innerHTML = `${typeof t === 'function' ? t('securityPage.savedConfig') : 'Saved config'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#6b7280">${typeof t === 'function' ? t('securityPage.restartToApply') : 'Restart to apply'}</small>`;
                 showToast(`已导入配置，重启后生效`, 'success');
                 setTimeout(() => hideImportActionModal(), 2000);
             }
