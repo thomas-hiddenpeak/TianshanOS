@@ -433,7 +433,7 @@ function handleEvent(msg) {
             if (typeof window.renderFilteredLogs === 'function') {
                 window.renderFilteredLogs();
             }
-            showToast(`加载了 ${logs.length} 条历史日志`, 'success');
+            showToast(typeof t === 'function' ? t('toast.logsLoadedCount', { count: logs.length }) : `加载了 ${logs.length} 条历史日志`, 'success');
         }
         
         // 终端页面的日志模态框
@@ -480,11 +480,11 @@ function handlePowerEvent(msg) {
     
     // 显示警告
     if (state === 'LOW_VOLTAGE' || state === 'SHUTDOWN') {
-        showToast(`低电压警告: ${voltage}V (${countdown}s)`, 'warning', 5000);
+        showToast(typeof t === 'function' ? t('system.lowVoltageWarning', { voltage, countdown }) : `低电压警告: ${voltage}V (${countdown}s)`, 'warning', 5000);
     } else if (state === 'PROTECTED') {
-        showToast(`电压保护已触发`, 'error', 10000);
+        showToast(typeof t === 'function' ? t('system.voltageProtectionTriggered') : '电压保护已触发', 'error', 10000);
     } else if (state === 'RECOVERY') {
-        showToast(`电压恢复中: ${voltage}V`, 'info', 3000);
+        showToast(typeof t === 'function' ? t('system.voltageRecovering', { voltage }) : `电压恢复中: ${voltage}V`, 'info', 3000);
     }
 }
 
@@ -714,11 +714,14 @@ async function loadSystemPage() {
         </div>
     `;
     
-    // 初始加载
+    // 初始加载（不含快捷操作，避免 ssh.commands.list 慢响应阻塞）
     await refreshSystemPageOnce();
     
-    // 加载数据监控面板
+    // 加载数据监控面板（优先执行，确保组件能实时获取变量数据）
     await initDataWidgets();
+    
+    // 快捷操作在后台加载，不阻塞页面（loadSshCommands 可能 >30s）
+    void refreshQuickActions();
     
     // 订阅 WebSocket 实时更新 - 使用聚合订阅（system.dashboard）
     if (subscriptionManager) {
@@ -819,8 +822,7 @@ async function refreshSystemPageOnce() {
     // LED 设备
     await refreshSystemLeds();
     
-    // 快捷操作
-    await refreshQuickActions();
+    // 快捷操作已移至 loadSystemPage 末尾后台执行，避免阻塞 initDataWidgets
     
     // USB Mux 状态
     await refreshUsbMuxStatus();
@@ -1315,7 +1317,7 @@ function updateCpuInfo(data) {
     
     if (data.total_usage !== undefined) {
         const avgUsage = Math.round(data.total_usage);
-        html += `<p style="margin-top:5px;font-size:0.8em;color:#9ca3af">平均: ${avgUsage}%</p>`;
+        html += `<p style="margin-top:5px;font-size:0.8em;color:#9ca3af">${typeof t === 'function' ? t('common.average') : '平均'}: ${avgUsage}%</p>`;
     }
     
     container.innerHTML = html;
@@ -1516,7 +1518,7 @@ async function applyTestTemp() {
     const temp = parseFloat(input?.value);
     
     if (isNaN(temp) || temp < 0 || temp > 100) {
-        showToast('请输入有效温度 (0-100°C)', 'warning');
+        showToast((typeof t === 'function' ? t('fan.enterValidTemp') : '请输入有效温度 (0-100°C)'), 'warning');
         return;
     }
     
@@ -1525,15 +1527,15 @@ async function applyTestTemp() {
         const result = await api.call('temp.manual', { temperature: temp });
         
         if (result.code === 0) {
-            showToast(`测试温度已设置为 ${temp}°C`, 'success');
+            showToast((typeof t === 'function' ? t('fan.testTempSet', { temp }) : `测试温度已设置为 ${temp}°C`), 'success');
             // 刷新风扇状态
             await refreshFans();
         } else {
-            showToast(`设置失败: ${result.message}`, 'error');
+            showToast((typeof t === 'function' ? t('fan.setFailed', { msg: result.message }) : `设置失败: ${result.message}`), 'error');
         }
     } catch (e) {
         console.error('设置测试温度失败:', e);
-        showToast(`设置失败: ${e.message}`, 'error');
+        showToast((typeof t === 'function' ? t('fan.setFailed', { msg: e.message }) : `设置失败: ${e.message}`), 'error');
     }
 }
 
@@ -1546,16 +1548,16 @@ async function clearTestTemp() {
         const result = await api.call('temp.select', { source: 'variable' });
         
         if (result.code === 0) {
-            showToast('测试温度已清除，恢复正常模式', 'success');
+            showToast((typeof t === 'function' ? t('fan.testTempCleared') : '测试温度已清除，恢复正常模式'), 'success');
             document.getElementById('fan-test-temp').value = '';
             // 刷新风扇状态
             await refreshFans();
         } else {
-            showToast(`清除失败: ${result.message}`, 'error');
+            showToast((typeof t === 'function' ? t('fan.clearFailed', { msg: result.message }) : `清除失败: ${result.message}`), 'error');
         }
     } catch (e) {
         console.error('清除测试温度失败:', e);
-        showToast(`清除失败: ${e.message}`, 'error');
+        showToast((typeof t === 'function' ? t('fan.clearFailed', { msg: e.message }) : `清除失败: ${e.message}`), 'error');
     }
 }
 
@@ -1567,16 +1569,16 @@ function hideServicesModal() {
 async function setFanSpeed(id, speed) {
     try {
         await api.fanSet(id, parseInt(speed));
-        showToast(`风扇 ${id} 速度已设置为 ${speed}%`, 'success');
-    } catch (e) { showToast('设置风扇失败: ' + e.message, 'error'); }
+        showToast(typeof t === 'function' ? t('fan.speedSet', { id, speed }) : `风扇 ${id} 速度已设置为 ${speed}%`, 'success');
+    } catch (e) { showToast((typeof t === 'function' ? t('fan.setFanFailed', { msg: e.message }) : '设置风扇失败: ' + e.message), 'error'); }
 }
 
 async function setFanMode(id, mode) {
     try {
         await api.call('fan.mode', { id: id, mode: mode });
-        showToast(`风扇 ${id} 模式已切换为 ${mode}`, 'success');
+        showToast(typeof t === 'function' ? t('fan.modeSwitch', { id, mode }) : `风扇 ${id} 模式已切换为 ${mode}`, 'success');
         await refreshFans();
-    } catch (e) { showToast('设置风扇模式失败: ' + e.message, 'error'); }
+    } catch (e) { showToast((typeof t === 'function' ? t('fan.setFanModeFailed', { msg: e.message }) : '设置风扇模式失败: ' + e.message), 'error'); }
 }
 
 async function refreshFans() {
@@ -2164,7 +2166,7 @@ async function unbindTempVariable() {
  * 保存 AGX 服务器配置 (保留用于兼容)
  */
 async function saveAgxConfig() {
-    showToast('AGX 配置已移至变量绑定', 'info');
+    showToast((typeof t === 'function' ? t('toast.agxMovedToBinding') : 'AGX 配置已移至变量绑定'), 'info');
     await loadVariableBindStatus();
 }
 
@@ -2412,10 +2414,10 @@ async function serviceAction(name, action) {
         if (action === 'restart') await api.serviceRestart(name);
         else if (action === 'start') await api.serviceStart(name);
         else if (action === 'stop') await api.serviceStop(name);
-        showToast(`服务 ${name} ${action} 成功`, 'success');
+        showToast(typeof t === 'function' ? t('toast.serviceSuccess', { name, action }) : `服务 ${name} ${action} 成功`, 'success');
         await refreshSystemPage();
     } catch (e) {
-        showToast(`操作失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.operationFailedMsg', { msg: e.message }) : `操作失败: ${e.message}`, 'error');
     }
 }
 
@@ -3288,7 +3290,7 @@ function toggleLogReading(widgetId) {
 function startLogReading(widgetId) {
     const widget = dataWidgets.find(w => w.id === widgetId);
     if (!widget || !widget.expression) {
-        showToast('请先配置日志变量', 'warning');
+        showToast((typeof t === 'function' ? t('dataWidget.configLogVariableFirst') : '请先配置日志变量'), 'warning');
         return;
     }
     
@@ -4017,7 +4019,7 @@ async function refreshQuickActions() {
                         }
                         
                         const statusIcon = isRunning ? '<i class="ri-record-circle-fill" style="color:#059669"></i>' : '<i class="ri-record-circle-line" style="color:#9ca3af"></i>';
-                        const statusTitle = isRunning ? '进程运行中' : '进程未运行';
+                        const statusTitle = isRunning ? (typeof t === 'function' ? t('automationPage.processRunning') : '进程运行中') : (typeof t === 'function' ? t('automationPage.processNotRunning') : '进程未运行');
                         let serviceStatusHtml = '';
                         if (nohupInfo.serviceMode && nohupInfo.varName && isRunning) {
                             serviceStatusHtml = `
@@ -4026,22 +4028,27 @@ async function refreshQuickActions() {
                                 </div>
                             `;
                         }
+                        const viewLogText = typeof t === 'function' ? t('automationPage.logTitle') : '日志';
+                        const stopText = typeof t === 'function' ? t('automationPage.stopProcess') : '停止';
+                        const viewLogTitle = typeof t === 'function' ? t('automationPage.viewLog') : '查看日志';
+                        const stopTitle = typeof t === 'function' ? t('ssh.stopProcess') : '终止进程';
                         nohupBtns = `
                             <span class="nohup-status-badge" title="${statusTitle}">${statusIcon}</span>
                             ${serviceStatusHtml}
                             <div class="quick-action-nohup-bar" onclick="event.stopPropagation()">
-                                <button onclick="quickActionViewLog('${escapeHtml(nohupInfo.logFile)}', '${escapeHtml(nohupInfo.hostId)}')" title="查看日志">
-                                    <i class="ri-file-text-line"></i> 日志
+                                <button onclick="quickActionViewLog('${escapeHtml(nohupInfo.logFile)}', '${escapeHtml(nohupInfo.hostId)}')" title="${viewLogTitle}">
+                                    <i class="ri-file-text-line"></i> ${viewLogText}
                                 </button>
-                                <button class="btn-stop" onclick="quickActionStopProcess('${escapeHtml(nohupInfo.pidFile)}', '${escapeHtml(nohupInfo.hostId)}', '${escapeHtml(nohupInfo.cmdName)}', '${escapeHtml(nohupInfo.varName || '')}')" title="终止进程">
-                                    <i class="ri-stop-line"></i> 停止
+                                <button class="btn-stop" onclick="quickActionStopProcess('${escapeHtml(nohupInfo.pidFile)}', '${escapeHtml(nohupInfo.hostId)}', '${escapeHtml(nohupInfo.cmdName)}', '${escapeHtml(nohupInfo.varName || '')}')" title="${stopTitle}">
+                                    <i class="ri-stop-fill"></i> ${stopText}
                                 </button>
                             </div>
                         `;
                     }
                     
+                    const processRunningMsg = typeof t === 'function' ? t('toast.processRunning') : '进程正在运行中，请先停止';
                     const cardOnClick = (nohupInfo && isRunning) 
-                        ? `showToast('进程正在运行中，请先停止', 'warning')`
+                        ? `showToast(${JSON.stringify(processRunningMsg)}, 'warning')`
                         : `triggerQuickAction('${escapeHtml(rule.id)}')`;
                     const cleanName = rule.name.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F1E0}-\u{1F1FF}\u200D]+\s*/gu, '').trim();
                     cardsHtml.push(`
@@ -4124,7 +4131,7 @@ async function updateQuickActionServiceStatus() {
         
         // 如果进程未运行，始终显示"未启动"
         if (!isRunning) {
-            valueEl.textContent = '未启动';
+            valueEl.textContent = (typeof t === 'function' ? t('sshPage.statusIdle') : '未启动');
             container.className = 'quick-action-service-status status-idle';
             continue;
         }
@@ -4136,11 +4143,11 @@ async function updateQuickActionServiceStatus() {
                 valueEl.textContent = getServiceStatusLabel(status);
                 container.className = `quick-action-service-status status-${status}`;
             } else {
-                valueEl.textContent = '检测中';
+                valueEl.textContent = (typeof t === 'function' ? t('sshPage.statusChecking') : '检测中');
                 container.className = 'quick-action-service-status status-checking';
             }
         } catch (e) {
-            valueEl.textContent = '未知';
+            valueEl.textContent = (typeof t === 'function' ? t('sshPage.statusUnknown') : '未知');
             container.className = 'quick-action-service-status status-unknown';
         }
     }
@@ -4158,7 +4165,7 @@ async function triggerQuickAction(ruleId) {
     const card = event?.currentTarget || document.getElementById(`quick-action-${ruleId}`);
     if (!card) {
         console.error('triggerQuickAction: card not found for ruleId=', ruleId);
-        showToast('无法找到操作卡片', 'error');
+        showToast((typeof t === 'function' ? t('toast.cardNotFound') : '无法找到操作卡片'), 'error');
         return;
     }
     
@@ -4169,7 +4176,7 @@ async function triggerQuickAction(ruleId) {
     
     const now = Date.now();
     if (now < _quickActionTriggerCooldownUntil && ruleId !== _quickActionLastTriggeredId) {
-        showToast('请等待几秒后再触发其他模型', 'warning');
+        showToast((typeof t === 'function' ? t('toast.waitBeforeTrigger') : '请等待几秒后再触发其他模型'), 'warning');
         return;
     }
     
@@ -4188,14 +4195,14 @@ async function triggerQuickAction(ruleId) {
         const result = await api.call('automation.rules.trigger', { id: ruleId });
         
         if (result.code === 0) {
-            showToast('操作已执行', 'success');
+            showToast((typeof t === 'function' ? t('toast.operationExecuted') : '操作已执行'), 'success');
             _quickActionLastTriggeredId = ruleId;
             _quickActionTriggerCooldownUntil = Date.now() + 5000;  // 5 秒内勿触发其他规则，避免后端串行导致第二个未执行
             card.classList.add('is-running');
             card.style.pointerEvents = '';
             setTimeout(() => refreshQuickActions(), 2500);
         } else {
-            showToast((result.message || '执行失败'), 'error');
+            showToast((result.message || (typeof t === 'function' ? t('toast.execFailed') : '执行失败')), 'error');
             card.style.pointerEvents = '';  // 失败时恢复点击
             // 恢复原始图标
             if (iconEl && originalIcon) {
@@ -4206,7 +4213,7 @@ async function triggerQuickAction(ruleId) {
         card.classList.remove('triggering');
     } catch (e) {
         console.error('triggerQuickAction error:', e);
-        showToast('执行失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.execFailedMsg', { msg: e.message }) : '执行失败: ' + e.message), 'error');
         if (card) {
             card.classList.remove('triggering');
             card.style.pointerEvents = '';
@@ -4321,16 +4328,26 @@ async function quickActionViewLog(logFile, hostId) {
     // 获取主机信息
     const host = window._sshHostsData?.[hostId];
     if (!host) {
-        showToast('主机不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotExistShort') : '主机不存在'), 'error');
         return;
     }
     
-    // 显示日志模态框
+    const logTitle = typeof t === 'function' ? t('automationPage.logTitle') : '日志';
+    const stopTrackingText = typeof t === 'function' ? t('automationPage.stopTracking') : '停止跟踪';
+    const intervalText = typeof t === 'function' ? t('automationPage.interval') : '间隔';
+    const interval1Sec = typeof t === 'function' ? t('automationPage.interval1Sec') : '1秒';
+    const interval2Sec = typeof t === 'function' ? t('automationPage.interval2Sec') : '2秒';
+    const interval3Sec = typeof t === 'function' ? t('automationPage.interval3Sec') : '3秒';
+    const interval5Sec = typeof t === 'function' ? t('automationPage.interval5Sec') : '5秒';
+    const interval10Sec = typeof t === 'function' ? t('automationPage.interval10Sec') : '10秒';
+    const interval30Sec = typeof t === 'function' ? t('automationPage.interval30Sec') : '30秒';
+    const realTimeText = typeof t === 'function' ? t('automationPage.realTimeUpdating') : '● 实时更新中';
+    const closeText = typeof t === 'function' ? t('common.close') : '关闭';
     const modalHtml = `
         <div id="quick-log-modal" class="modal">
             <div class="modal-content" style="max-width:1400px;width:90%">
                 <div class="modal-header">
-                    <h2><i class="ri-file-text-line"></i> 日志 - <small style="font-weight:normal;font-size:0.7em;color:var(--text-muted)">${escapeHtml(logFile)}</small></h2>
+                    <h2><i class="ri-file-text-line"></i> ${logTitle} - <small style="font-weight:normal;font-size:0.7em;color:var(--text-muted)">${escapeHtml(logFile)}</small></h2>
                     <button class="modal-close" onclick="closeQuickLogModal()">&times;</button>
                 </div>
                 <div class="modal-body" style="padding:0">
@@ -4338,21 +4355,21 @@ async function quickActionViewLog(logFile, hostId) {
                 </div>
                 <div class="modal-footer" style="display:flex;gap:10px;padding:10px 15px;justify-content:space-between;align-items:center">
                     <div style="display:flex;gap:8px;align-items:center">
-                        <button class="btn btn-danger" id="quick-log-tail-btn" onclick="toggleQuickLogTail('${escapeHtml(logFile)}', '${escapeHtml(hostId)}')"><i class="ri-stop-line"></i> 停止跟踪</button>
+                        <button class="btn btn-danger" id="quick-log-tail-btn" onclick="toggleQuickLogTail('${escapeHtml(logFile)}', '${escapeHtml(hostId)}')"><i class="ri-stop-fill"></i> ${stopTrackingText}</button>
                         <label style="display:flex;align-items:center;gap:4px;font-size:0.85em;color:var(--text-muted)">
-                            间隔
+                            ${intervalText}
                             <select id="quick-log-interval" onchange="updateQuickLogInterval('${escapeHtml(logFile)}', '${escapeHtml(hostId)}')" style="padding:2px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-muted);color:var(--text-primary);font-size:0.9em">
-                                <option value="1000">1秒</option>
-                                <option value="2000">2秒</option>
-                                <option value="3000">3秒</option>
-                                <option value="5000" selected>5秒</option>
-                                <option value="10000">10秒</option>
-                                <option value="30000">30秒</option>
+                                <option value="1000">${interval1Sec}</option>
+                                <option value="2000">${interval2Sec}</option>
+                                <option value="3000">${interval3Sec}</option>
+                                <option value="5000" selected>${interval5Sec}</option>
+                                <option value="10000">${interval10Sec}</option>
+                                <option value="30000">${interval30Sec}</option>
                             </select>
                         </label>
-                        <span id="quick-log-status" style="font-size:0.85em;color:var(--text-muted);display:flex;align-items:center"><span style="color:var(--emerald-600)">● 实时更新中</span></span>
+                        <span id="quick-log-status" style="font-size:0.85em;color:var(--text-muted);display:flex;align-items:center"><span style="color:var(--emerald-600)">${realTimeText}</span></span>
                     </div>
-                    <button class="btn" onclick="closeQuickLogModal()">关闭</button>
+                    <button class="btn" onclick="closeQuickLogModal()">${closeText}</button>
                 </div>
             </div>
         </div>
@@ -4422,11 +4439,15 @@ function startQuickLogTail(logFile, hostId, intervalMs = 5000) {
     const status = document.getElementById('quick-log-status');
     
     if (btn) {
-        btn.innerHTML = '<i class="ri-stop-line"></i> 停止跟踪';
+        const stopText = typeof t === 'function' ? t('automationPage.stopTracking') : '停止跟踪';
+        btn.innerHTML = '<i class="ri-stop-fill"></i> ' + stopText;
         btn.classList.remove('btn-service-style');
         btn.classList.add('btn-danger');
     }
-    if (status) status.innerHTML = '<span style="color:#059669">● 实时更新中</span>';
+    if (status) {
+        const realTimeText = typeof t === 'function' ? t('automationPage.realTimeUpdating') : '● 实时更新中';
+        status.innerHTML = '<span style="color:#059669">' + realTimeText + '</span>';
+    }
     quickActionLastContent = '';
     
     // 定义刷新函数
@@ -4479,11 +4500,12 @@ function stopQuickLogTail() {
     const status = document.getElementById('quick-log-status');
     
     if (btn) {
-        btn.innerHTML = '<i class="ri-play-line"></i> 开始跟踪';
+        const startText = typeof t === 'function' ? t('automationPage.startTracking') : '开始跟踪';
+        btn.innerHTML = '<i class="ri-play-line"></i> ' + startText;
         btn.classList.remove('btn-danger');
         btn.classList.add('btn-service-style');
     }
-    if (status) status.textContent = '已暂停';
+    if (status) status.textContent = (typeof t === 'function' ? t('automationPage.trackingStopped') : '已暂停');
 }
 
 /**
@@ -4516,16 +4538,17 @@ function closeQuickLogModal() {
 async function quickActionStopProcess(pidFile, hostId, cmdName, varName) {
     const host = window._sshHostsData?.[hostId];
     if (!host) {
-        showToast('主机不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotExistShort') : '主机不存在'), 'error');
         return;
     }
     
-    if (!confirm(`确定要终止 "${cmdName}" 吗？`)) {
+    const confirmMsg = typeof t === 'function' ? t('toast.confirmTerminateCmd', { cmdName }) : `确定要终止 "${cmdName}" 吗？`;
+    if (!confirm(confirmMsg)) {
         return;
     }
     
     try {
-        showToast('正在终止进程...', 'info');
+        showToast((typeof t === 'function' ? t('toast.terminatingProcess') : '正在终止进程...'), 'info');
         
         // 终止进程：支持 PID 和 PID-1 双重检测
         // 原因：nohup cmd & 的 $! 可能记录了中间 shell PID，真实主进程 PID = $! - 1
@@ -4590,7 +4613,7 @@ async function quickActionStopProcess(pidFile, hostId, cmdName, varName) {
             showToast((result.message || '操作失败'), 'error');
         }
     } catch (e) {
-        showToast('错误: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.errorMsg', { msg: e.message }) : '错误: ' + e.message), 'error');
     }
 }
 
@@ -4911,9 +4934,9 @@ async function fillColorFromPicker(device, color) {
         await api.ledFill(device, color);
         ledStates[device] = true;
         updateLedCardState(device, true);
-        showToast(`${device} 已填充 ${color}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledFilled', { device, color }) : `${device} 已填充 ${color}`, 'success');
     } catch (e) {
-        showToast(`填充失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledFillFailed') + ': ' + e.message : `填充失败: ${e.message}`, 'error');
     }
 }
 
@@ -4924,9 +4947,9 @@ async function quickFillColor(device, color) {
         await api.ledFill(device, color);
         ledStates[device] = true;
         updateLedCardState(device, true, null);
-        showToast(`${device} → ${color}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledFilled', { device, color }) : `${device} → ${color}`, 'success');
     } catch (e) {
-        showToast(`填充失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledFillFailed') + ': ' + e.message : `填充失败: ${e.message}`, 'error');
     }
 }
 
@@ -4936,9 +4959,9 @@ async function quickStartEffect(device, effect) {
         selectedEffects[device] = effect;
         ledStates[device] = true;
         updateLedCardState(device, true, effect);
-        showToast(`${device}: ${effect}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStarted', { device, effect }) : `${device}: ${effect}`, 'success');
     } catch (e) {
-        showToast(`启动失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStartFailed') + ': ' + e.message : `启动失败: ${e.message}`, 'error');
     }
 }
 
@@ -4953,7 +4976,7 @@ async function allLedsOff() {
             console.error(`关闭 ${dev.name} 失败:`, e);
         }
     }
-    showToast('全部 LED 已关闭', 'success');
+    showToast((typeof t === 'function' ? t('toast.allLedsOff') : '全部 LED 已关闭'), 'success');
 }
 
 function updateLedCardState(device, isOn, effect = undefined) {
@@ -5061,9 +5084,9 @@ async function applyColorFromModal(device) {
         await api.ledFill(device, color);
         ledStates[device] = true;
         updateToggleButton(device, true);
-        showToast(`${device} 已填充 ${color}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledFilled', { device, color }) : `${device} 已填充 ${color}`, 'success');
     } catch (e) {
-        showToast(`填充失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledFillFailed') + ': ' + e.message : `填充失败: ${e.message}`, 'error');
     }
 }
 
@@ -5072,9 +5095,9 @@ async function quickFillFromModal(device, color) {
         await api.ledFill(device, color);
         ledStates[device] = true;
         updateToggleButton(device, true);
-        showToast(`${device} → ${color}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledFilled', { device, color }) : `${device} → ${color}`, 'success');
     } catch (e) {
-        showToast(`填充失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledFillFailed') + ': ' + e.message : `填充失败: ${e.message}`, 'error');
     }
 }
 
@@ -5513,7 +5536,7 @@ async function toggleLedFromModal(device, enabled) {
         // 更新卡片状态
         updateLedCardState(device, ledStates[device], selectedEffects[device]);
     } catch (e) {
-        showToast(`操作失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.operationFailedMsg', { msg: e.message }) : `操作失败: ${e.message}`, 'error');
         // 恢复 UI 状态
         const cb = document.getElementById(`modal-device-enabled-${device}`);
         if (cb) cb.checked = ledStates[device];
@@ -5581,7 +5604,7 @@ function resetEffectFromModal(device) {
 async function applyEffectFromModal(device) {
     const effect = selectedEffects[device];
     if (!effect) {
-        showToast('请先选择一个动画', 'warning');
+        showToast((typeof t === 'function' ? t('toast.selectAnimation') : '请先选择一个动画'), 'warning');
         return;
     }
     
@@ -5598,9 +5621,9 @@ async function applyEffectFromModal(device) {
         ledStates[device] = true;
         updateLedCardState(device, true, effect);
         
-        showToast(`${device}: ${effect} 已启动`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStarted', { device, effect }) : `${device}: ${effect} 已启动`, 'success');
     } catch (e) {
-        showToast(`启动动画失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStartFailed') + ': ' + e.message : `启动动画失败: ${e.message}`, 'error');
     }
 }
 
@@ -5610,9 +5633,9 @@ async function stopEffectFromModal(device) {
         await api.ledEffectStop(device);
         delete selectedEffects[device];
         updateLedCardState(device, ledStates[device], null);
-        showToast(`${device} 动画已停止`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStopped', { device }) : `${device} 动画已停止`, 'success');
     } catch (e) {
-        showToast(`停止动画失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStopFailed') + ': ' + e.message : `停止动画失败: ${e.message}`, 'error');
     }
 }
 
@@ -5622,15 +5645,15 @@ async function displayImageFromModal() {
     const center = document.getElementById('modal-image-center')?.checked;
     
     if (!path) {
-        showToast('请输入图像路径', 'warning');
+        showToast((typeof t === 'function' ? t('toast.enterImagePath') : '请输入图像路径'), 'warning');
         return;
     }
     
     try {
         await api.call('led.image', { device: 'matrix', path, center });
-        showToast('图像已显示', 'success');
+        showToast((typeof t === 'function' ? t('toast.imageDisplayed') : '图像已显示'), 'success');
     } catch (e) {
-        showToast(`显示图像失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledImageFailed') + ': ' + e.message : `显示图像失败: ${e.message}`, 'error');
     }
 }
 
@@ -5642,15 +5665,15 @@ async function generateQrCodeFromModal() {
     const bgImage = document.getElementById('modal-qr-bg-image')?.value || '';
     
     if (!text) {
-        showToast('请输入要编码的文本', 'warning');
+        showToast((typeof t === 'function' ? t('toast.enterTextToEncode') : '请输入要编码的文本'), 'warning');
         return;
     }
     
     try {
         await api.call('led.qrcode', { device: 'matrix', text, ecc, fg_color: fg, bg_image: bgImage || undefined });
-        showToast('QR 码已生成', 'success');
+        showToast((typeof t === 'function' ? t('toast.qrGenerated') : 'QR 码已生成'), 'success');
     } catch (e) {
-        showToast(`生成 QR 码失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledQrFailed') + ': ' + e.message : `生成 QR 码失败: ${e.message}`, 'error');
     }
 }
 
@@ -5712,7 +5735,7 @@ async function displayTextFromModal() {
     const loop = document.getElementById('modal-text-loop')?.checked;
     
     if (!text) {
-        showToast('请输入要显示的文本', 'warning');
+        showToast((typeof t === 'function' ? t('toast.enterTextToDisplay') : '请输入要显示的文本'), 'warning');
         return;
     }
     
@@ -5735,9 +5758,9 @@ async function displayTextFromModal() {
             params.y = y;
         }
         await api.call('led.text', params);
-        showToast('文本已显示', 'success');
+        showToast((typeof t === 'function' ? t('toast.textDisplayed') : '文本已显示'), 'success');
     } catch (e) {
-        showToast(`显示文本失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledTextFailed') + ': ' + e.message : `显示文本失败: ${e.message}`, 'error');
     }
 }
 
@@ -5745,9 +5768,9 @@ async function displayTextFromModal() {
 async function stopTextFromModal() {
     try {
         await api.call('led.text.stop', { device: 'matrix' });
-        showToast('文本滚动已停止', 'success');
+        showToast((typeof t === 'function' ? t('toast.textScrollStopped') : '文本滚动已停止'), 'success');
     } catch (e) {
-        showToast(`停止文本失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledTextStopFailed') + ': ' + e.message : `停止文本失败: ${e.message}`, 'error');
     }
 }
 
@@ -5778,7 +5801,7 @@ function selectFilterInModal(filter, btn) {
                 const row = document.createElement('div');
                 row.className = 'config-row';
                 row.innerHTML = `
-                    <label>${paramInfo.label}</label>
+                    <label>${getParamLabel(param)}</label>
                     <input type="range" id="modal-filter-${param}" 
                            min="${paramInfo.min}" max="${paramInfo.max}" 
                            value="${defaultValue}" style="flex:1"
@@ -5799,7 +5822,7 @@ function selectFilterInModal(filter, btn) {
 // \u6a21\u6001\u6846\u5185\u5e94\u7528\u6ede\u955c
 async function applyFilterFromModal() {
     if (!selectedModalFilter) {
-        showToast('\u8bf7\u5148\u9009\u62e9\u4e00\u4e2a\u6ede\u955c', 'warning');
+        showToast(typeof t === 'function' ? t('toast.selectFilter') : '请先选择一个滤镜', 'warning');
         return;
     }
     
@@ -5827,9 +5850,9 @@ async function applyFilterFromModal() {
     
     try {
         await api.call('led.filter.start', params);
-        showToast(`\u6ede\u955c ${selectedModalFilter} \u5df2\u5e94\u7528`, 'success');
+        showToast(typeof t === 'function' ? t('toast.filterApplied', { filter: selectedModalFilter }) : `滤镜 ${selectedModalFilter} 已应用`, 'success');
     } catch (e) {
-        showToast(`\u5e94\u7528\u6ede\u955c\u5931\u8d25: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.filterApplyFailed') + ': ' + e.message : `应用滤镜失败: ${e.message}`, 'error');
     }
 }
 
@@ -5837,9 +5860,9 @@ async function applyFilterFromModal() {
 async function stopFilterFromModal() {
     try {
         await api.call('led.filter.stop', { device: 'matrix' });
-        showToast('滤镜已停止', 'success');
+        showToast((typeof t === 'function' ? t('toast.filterStopped') : '滤镜已停止'), 'success');
     } catch (e) {
-        showToast(`停止滤镜失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.filterStopFailed') + ': ' + e.message : `停止滤镜失败: ${e.message}`, 'error');
     }
 }
 
@@ -6109,7 +6132,7 @@ function showEffectConfig(device, effect) {
 async function applyEffect(device) {
     const effect = selectedEffects[device];
     if (!effect) {
-        showToast('请先选择一个动画', 'warning');
+        showToast((typeof t === 'function' ? t('toast.selectAnimation') : '请先选择一个动画'), 'warning');
         return;
     }
     
@@ -6137,9 +6160,9 @@ async function applyEffect(device) {
         const currentAnim = document.getElementById(`current-anim-${device}`);
         if (currentAnim) currentAnim.textContent = `▶ ${effectDisplayName(effect)}`;
         
-        showToast(`${device}: ${effect} 已启动`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStarted', { device, effect }) : `${device}: ${effect} 已启动`, 'success');
     } catch (e) {
-        showToast(`启动动画失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStartFailed') + ': ' + e.message : `启动动画失败: ${e.message}`, 'error');
     }
 }
 
@@ -6151,9 +6174,9 @@ function updateBrightnessLabel(device, value) {
 async function setBrightness(device, value) {
     try {
         await api.ledBrightness(device, parseInt(value));
-        showToast(`${device} 亮度: ${value}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledBrightnessSet', { device, value }) : `${device} 亮度: ${value}`, 'success');
     } catch (e) { 
-        showToast(`设置 ${device} 亮度失败: ${e.message}`, 'error'); 
+        showToast(typeof t === 'function' ? t('toast.ledBrightnessFailed', { device }) + ': ' + e.message : `设置 ${device} 亮度失败: ${e.message}`, 'error'); 
     }
 }
 
@@ -6169,16 +6192,16 @@ async function toggleLed(device) {
             await api.ledClear(device);
             ledStates[device] = false;
             updateLedCardState(device, false);
-            showToast(`${device} 已关闭`, 'success');
+            showToast(typeof t === 'function' ? t('toast.ledTurnedOff', { device }) : `${device} 已关闭`, 'success');
         } else {
             // 当前是关闭状态，开启它（白光）
             await api.ledFill(device, '#ffffff');
             ledStates[device] = true;
             updateLedCardState(device, true, null);
-            showToast(`${device} 已开启`, 'success');
+            showToast(typeof t === 'function' ? t('toast.ledTurnedOn', { device }) : `${device} 已开启`, 'success');
         }
     } catch (e) {
-        showToast(`操作失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.operationFailedMsg', { msg: e.message }) : `操作失败: ${e.message}`, 'error');
     }
 }
 
@@ -6187,9 +6210,9 @@ async function ledOn(device, color = '#ffffff') {
         await api.ledFill(device, color);
         ledStates[device] = true;
         updateToggleButton(device, true);
-        showToast(`${device} 已开启`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledTurnedOn', { device }) : `${device} 已开启`, 'success');
     } catch (e) {
-        showToast(`开启失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledOnFailed') + ': ' + e.message : `开启失败: ${e.message}`, 'error');
     }
 }
 
@@ -6205,9 +6228,9 @@ async function fillColor(device) {
             btn.querySelector('.toggle-icon').innerHTML = '<i class="ri-checkbox-blank-circle-fill"></i>';
             btn.querySelector('.toggle-text').textContent = '关灯';
         }
-        showToast(`${device} 已填充 ${color}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledFilled', { device, color }) : `${device} 已填充 ${color}`, 'success');
     } catch (e) {
-        showToast(`${device} 填充失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledFillFailed') + ': ' + e.message : `${device} 填充失败: ${e.message}`, 'error');
     }
 }
 
@@ -6223,9 +6246,9 @@ async function quickFill(device, color) {
             btn.querySelector('.toggle-icon').innerHTML = '<i class="ri-checkbox-blank-circle-fill"></i>';
             btn.querySelector('.toggle-text').textContent = '关灯';
         }
-        showToast(`${device} → ${color}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledFilled', { device, color }) : `${device} → ${color}`, 'success');
     } catch (e) {
-        showToast(`填充失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledFillFailed') + ': ' + e.message : `填充失败: ${e.message}`, 'error');
     }
 }
 
@@ -6240,9 +6263,9 @@ async function clearLed(device) {
             btn.querySelector('.toggle-icon').innerHTML = '<i class="ri-lightbulb-line"></i>';
             btn.querySelector('.toggle-text').textContent = '开灯';
         }
-        showToast(`${device} 已关闭`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledTurnedOff', { device }) : `${device} 已关闭`, 'success');
     } catch (e) {
-        showToast(`关闭失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledOffFailed') + ': ' + e.message : `关闭失败: ${e.message}`, 'error');
     }
 }
 
@@ -6257,9 +6280,9 @@ async function startEffect(device, effect) {
             btn.querySelector('.toggle-icon').innerHTML = '<i class="ri-checkbox-blank-circle-fill"></i>';
             btn.querySelector('.toggle-text').textContent = '关灯';
         }
-        showToast(`${device}: ${effect} 已启动`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStarted', { device, effect }) : `${device}: ${effect} 已启动`, 'success');
     } catch (e) {
-        showToast(`启动动画失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStartFailed') + ': ' + e.message : `启动动画失败: ${e.message}`, 'error');
     }
 }
 
@@ -6273,9 +6296,9 @@ async function stopEffect(device) {
         }
         // 清除选中状态
         delete selectedEffects[device];
-        showToast(`${device} 动画已停止`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStopped', { device }) : `${device} 动画已停止`, 'success');
     } catch (e) {
-        showToast(`停止动画失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStopFailed') + ': ' + e.message : `停止动画失败: ${e.message}`, 'error');
     }
 }
 
@@ -6283,12 +6306,12 @@ async function saveLedConfig(device) {
     try {
         const result = await api.call('led.save', { device });
         if (result.animation) {
-            showToast(`${device} 配置已保存: ${result.animation}`, 'success');
+            showToast(typeof t === 'function' ? t('toast.ledConfigSavedWithAnim', { device, anim: result.animation }) : `${device} 配置已保存: ${result.animation}`, 'success');
         } else {
-            showToast(`${device} 配置已保存`, 'success');
+            showToast(typeof t === 'function' ? t('toast.ledConfigSaved', { device }) : `${device} 配置已保存`, 'success');
         }
     } catch (e) {
-        showToast(`保存配置失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledConfigSaveFailed') + ': ' + e.message : `保存配置失败: ${e.message}`, 'error');
     }
 }
 
@@ -6404,7 +6427,7 @@ async function createAndOpenDir(path) {
         await api.storageMkdir(path);
         await loadFilePickerDirectory(path);
     } catch (e) {
-        showToast('创建目录失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.createDirFailed', { msg: e.message }) : '创建目录失败: ' + e.message), 'error');
     }
 }
 
@@ -6467,15 +6490,15 @@ async function displayImage() {
     
     const path = pathInput.value.trim();
     if (!path) {
-        showToast('请输入图像路径', 'error');
+        showToast((typeof t === 'function' ? t('toast.enterImagePath') : '请输入图像路径'), 'error');
         return;
     }
     
     try {
         const result = await api.ledImage(path, 'matrix', centerCheckbox.checked);
-        showToast(`图像显示成功`, 'success');
+        showToast(typeof t === 'function' ? t('toast.imageDisplayed') : '图像显示成功', 'success');
     } catch (e) {
-        showToast(`显示图像失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledImageFailed') + ': ' + e.message : `显示图像失败: ${e.message}`, 'error');
     }
 }
 
@@ -6488,7 +6511,7 @@ async function generateQrCode() {
     
     const text = textInput.value.trim();
     if (!text) {
-        showToast('请输入 QR 码内容', 'error');
+        showToast((typeof t === 'function' ? t('toast.enterQrContent') : '请输入 QR 码内容'), 'error');
         return;
     }
     
@@ -6505,9 +6528,9 @@ async function generateQrCode() {
     
     try {
         const result = await api.ledQrcode(text, params);
-        showToast(`QR 码生成成功`, 'success');
+        showToast(typeof t === 'function' ? t('toast.qrGenerated') : 'QR 码生成成功', 'success');
     } catch (e) {
-        showToast(`生成 QR 码失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledQrFailed') + ': ' + e.message : `生成 QR 码失败: ${e.message}`, 'error');
     }
 }
 
@@ -6542,7 +6565,7 @@ async function loadFontList() {
         if (fonts.length === 0) {
             // 没有字体时添加占位选项
             fontSelect.innerHTML = '<option value="" disabled>无可用字体</option>';
-            showToast('未找到字体文件，请上传到 /sdcard/fonts', 'info');
+            showToast((typeof t === 'function' ? t('toast.fontNotFound') : '未找到字体文件，请上传到 /sdcard/fonts'), 'info');
         } else {
             fonts.forEach(f => {
                 const option = document.createElement('option');
@@ -6580,7 +6603,7 @@ async function displayText() {
     
     const text = textInput.value.trim();
     if (!text) {
-        showToast('请输入显示文本', 'error');
+        showToast((typeof t === 'function' ? t('toast.enterDisplayText') : '请输入显示文本'), 'error');
         return;
     }
     
@@ -6602,9 +6625,9 @@ async function displayText() {
     
     try {
         const result = await api.ledText(text, params);
-        showToast(`文本显示成功`, 'success');
+        showToast(typeof t === 'function' ? t('toast.textDisplayed') : '文本显示成功', 'success');
     } catch (e) {
-        showToast(`显示文本失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledTextFailed') + ': ' + e.message : `显示文本失败: ${e.message}`, 'error');
     }
 }
 
@@ -6612,9 +6635,9 @@ async function displayText() {
 async function stopText() {
     try {
         await api.ledTextStop('matrix');
-        showToast('文本已停止', 'success');
+        showToast((typeof t === 'function' ? t('toast.textStopped') : '文本已停止'), 'success');
     } catch (e) {
-        showToast(`停止失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledTextStopFailed') + ': ' + e.message : `停止失败: ${e.message}`, 'error');
     }
 }
 
@@ -6639,7 +6662,7 @@ const filterConfig = {
     'sepia': { params: [], defaults: {} }
 };
 
-// 参数标签和范围定义
+// 参数标签和范围定义（label 为中文兜底，显示时用 getParamLabel 做 i18n）
 const paramLabels = {
     'speed': { label: '速度', min: 1, max: 100, unit: '', help: '闪耀效果：推荐1-10，低值更慢' },
     'intensity': { label: '强度', min: 0, max: 255, unit: '', help: '亮度增益倍数，推荐100-200产生明显对比' },
@@ -6658,6 +6681,12 @@ const paramLabels = {
 };
 
 let selectedFilter = null;
+
+function getParamLabel(paramKey) {
+    const keyMap = { speed: 'ledPage.paramSpeed', intensity: 'ledPage.paramIntensity', wavelength: 'ledPage.paramWavelength', amplitude: 'ledPage.paramAmplitude', direction: 'ledPage.paramDirection', angle: 'ledPage.paramAngle', width: 'ledPage.paramWidth', frequency: 'ledPage.paramFrequency', saturation: 'ledPage.paramSaturation', density: 'ledPage.paramDensity', decay: 'ledPage.paramDecay', scale: 'ledPage.paramScale', levels: 'ledPage.paramLevels', amount: 'ledPage.paramAmount' };
+    const key = keyMap[paramKey];
+    return (typeof t === 'function' && key) ? t(key) : (paramLabels[paramKey]?.label || paramKey);
+}
 
 // 选择滤镜
 function selectFilter(filterName, btnElement) {
@@ -6692,7 +6721,7 @@ function selectFilter(filterName, btnElement) {
             row.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 10px;';
             
             const label = document.createElement('label');
-            label.textContent = paramInfo.label;
+            label.textContent = getParamLabel(param);
             label.style.minWidth = '60px';
             
             const slider = document.createElement('input');
@@ -6727,7 +6756,7 @@ function selectFilter(filterName, btnElement) {
 // 应用选中的滤镜
 async function applySelectedFilter() {
     if (!selectedFilter) {
-        showToast('请先选择滤镜', 'error');
+        showToast((typeof t === 'function' ? t('toast.selectFilter') : '请先选择滤镜'), 'error');
         return;
     }
     
@@ -6755,9 +6784,9 @@ async function applySelectedFilter() {
     
     try {
         await api.call('led.filter.start', params);
-        showToast(`已应用滤镜: ${selectedFilter}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.filterApplied', { filter: selectedFilter }) : `已应用滤镜: ${selectedFilter}`, 'success');
     } catch (e) {
-        showToast(`应用滤镜失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.filterApplyFailed') + ': ' + e.message : `应用滤镜失败: ${e.message}`, 'error');
     }
 }
 
@@ -6771,7 +6800,7 @@ async function applyFilter(filterName, btnElement) {
 async function stopFilter() {
     try {
         await api.ledFilterStop('matrix');
-        showToast('滤镜已停止', 'success');
+        showToast((typeof t === 'function' ? t('toast.filterStopped') : '滤镜已停止'), 'success');
         
         // 移除滤镜按钮高亮和选中状态
         document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -6788,7 +6817,7 @@ async function stopFilter() {
         const paramsDiv = document.getElementById('filter-params');
         if (paramsDiv) paramsDiv.style.display = 'none';
     } catch (e) {
-        showToast(`停止滤镜失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.filterStopFailed') + ': ' + e.message : `停止滤镜失败: ${e.message}`, 'error');
     }
 }
 
@@ -7269,10 +7298,10 @@ async function setWifiMode() {
     const mode = document.getElementById('wifi-mode-select').value;
     try {
         await api.wifiMode(mode);
-        showToast(`WiFi 模式已切换为 ${getWifiModeDisplay(mode)}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.wifiModeChanged', { mode: getWifiModeDisplay(mode) }) : `WiFi 模式已切换为 ${getWifiModeDisplay(mode)}`, 'success');
         await refreshNetworkPage();
     } catch (e) {
-        showToast('切换失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.switchFailedMsg', { msg: e.message }) : '切换失败: ' + e.message), 'error');
     }
 }
 
@@ -7280,16 +7309,16 @@ async function setWifiMode() {
 async function setHostname() {
     const name = document.getElementById('hostname-input').value.trim();
     if (!name) {
-        showToast('请输入主机名', 'error');
+        showToast((typeof t === 'function' ? t('toast.enterHostname') : '请输入主机名'), 'error');
         return;
     }
     try {
         await api.hostname(name);
-        showToast('主机名已设置', 'success');
+        showToast((typeof t === 'function' ? t('toast.hostnameSet') : '主机名已设置'), 'success');
         document.getElementById('hostname-input').value = '';
         await refreshNetworkPage();
     } catch (e) {
-        showToast('设置失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.setFailedMsg', { msg: e.message }) : '设置失败: ' + e.message), 'error');
     }
 }
 
@@ -7355,20 +7384,20 @@ function connectWifi(ssid) {
     if (password !== null) {
         api.wifiConnect(ssid, password)
             .then(() => {
-                showToast('正在连接...', 'info');
+                showToast((typeof t === 'function' ? t('toast.connecting') : '正在连接...'), 'info');
                 setTimeout(refreshNetworkPage, 3000);
             })
-            .catch(e => showToast('连接失败: ' + e.message, 'error'));
+            .catch(e => showToast((typeof t === 'function' ? t('toast.connectFailedMsg', { msg: e.message }) : '连接失败: ' + e.message), 'error'));
     }
 }
 
 async function disconnectWifi() {
     try {
         await api.wifiDisconnect();
-        showToast('已断开 WiFi 连接', 'success');
+        showToast((typeof t === 'function' ? t('toast.wifiDisconnected') : '已断开 WiFi 连接'), 'success');
         await refreshNetworkPage();
     } catch (e) {
-        showToast('断开失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.disconnectFailedMsg', { msg: e.message }) : '断开失败: ' + e.message), 'error');
     }
 }
 
@@ -7422,22 +7451,22 @@ async function applyApConfig() {
     const hidden = document.getElementById('ap-hidden-input').checked;
     
     if (!ssid) {
-        showToast('请输入 SSID', 'error');
+        showToast((typeof t === 'function' ? t('toast.ssidRequired') : '请输入 SSID'), 'error');
         return;
     }
     
     if (password && password.length < 8) {
-        showToast('密码至少 8 位', 'error');
+        showToast((typeof t === 'function' ? t('toast.passwordShort') : '密码至少 8 位'), 'error');
         return;
     }
     
     try {
         await api.wifiApConfig(ssid, password, channel, hidden);
-        showToast('热点配置已应用', 'success');
+        showToast((typeof t === 'function' ? t('toast.hotspotApplied') : '热点配置已应用'), 'success');
         hideApConfig();
         await refreshNetworkPage();
     } catch (e) {
-        showToast('配置失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.configFailedMsg', { msg: e.message }) : '配置失败: ' + e.message), 'error');
     }
 }
 
@@ -7493,7 +7522,7 @@ async function toggleNat() {
         }
         await refreshNetworkPage();
     } catch (e) { 
-        showToast('操作失败: ' + e.message, 'error'); 
+        showToast((typeof t === 'function' ? t('toast.operationFailedMsg', { msg: e.message }) : '操作失败: ' + e.message), 'error'); 
     }
 }
 
@@ -7677,7 +7706,7 @@ function clearSelection() {
 
 async function batchDelete() {
     if (selectedFiles.size === 0) {
-        showToast('请先选择要删除的文件', 'warning');
+        showToast((typeof t === 'function' ? t('toast.selectFileToDelete') : '请先选择要删除的文件'), 'warning');
         return;
     }
     
@@ -7686,7 +7715,7 @@ async function batchDelete() {
         return;
     }
     
-    showToast(`正在删除 ${count} 个项目...`, 'info');
+    showToast(typeof t === 'function' ? t('files.deletingItems', { count }) : `正在删除 ${count} 个项目...`, 'info');
     
     let successCount = 0;
     let failCount = 0;
@@ -7704,9 +7733,9 @@ async function batchDelete() {
     selectedFiles.clear();
     
     if (failCount === 0) {
-        showToast(`成功删除 ${successCount} 个项目`, 'success');
+        showToast(typeof t === 'function' ? t('files.deleteSuccessCount', { count: successCount }) : `成功删除 ${successCount} 个项目`, 'success');
     } else {
-        showToast(`删除完成: ${successCount} 成功, ${failCount} 失败`, 'warning');
+        showToast(typeof t === 'function' ? t('files.deletePartial', { success: successCount, fail: failCount }) : `删除完成: ${successCount} 成功, ${failCount} 失败`, 'warning');
     }
     
     await refreshFilesPage();
@@ -7714,7 +7743,7 @@ async function batchDelete() {
 
 async function batchDownload() {
     if (selectedFiles.size === 0) {
-        showToast('请先选择要下载的文件', 'warning');
+        showToast((typeof t === 'function' ? t('toast.selectFileToDownload') : '请先选择要下载的文件'), 'warning');
         return;
     }
     
@@ -7728,11 +7757,11 @@ async function batchDownload() {
     }
     
     if (filesToDownload.length === 0) {
-        showToast('选中的项目中没有可下载的文件（文件夹不支持下载）', 'warning');
+        showToast((typeof t === 'function' ? t('toast.noDownloadableFiles') : '选中的项目中没有可下载的文件（文件夹不支持下载）'), 'warning');
         return;
     }
     
-    showToast(`正在下载 ${filesToDownload.length} 个文件...`, 'info');
+    showToast(typeof t === 'function' ? t('files.downloadingFiles', { count: filesToDownload.length }) : `正在下载 ${filesToDownload.length} 个文件...`, 'info');
     
     // 逐个下载文件
     for (const path of filesToDownload) {
@@ -7745,7 +7774,7 @@ async function batchDownload() {
         }
     }
     
-    showToast('批量下载完成', 'success');
+    showToast((typeof t === 'function' ? t('toast.batchDownloadComplete') : '批量下载完成'), 'success');
 }
 
 // SD 卡挂载/卸载
@@ -8066,7 +8095,7 @@ function removeUploadFile(index) {
 
 async function uploadFiles() {
     if (filesToUpload.length === 0) {
-        showToast('请选择要上传的文件', 'warning');
+        showToast((typeof t === 'function' ? t('toast.selectFileToUpload') : '请选择要上传的文件'), 'warning');
         return;
     }
     
@@ -8096,14 +8125,14 @@ async function uploadFiles() {
                 if (pack.valid) {
                     const signer = pack.signature?.signer_cn || '未知';
                     const isOfficial = pack.signature?.is_official ? '(官方)' : '';
-                    showToast(`配置包验证成功\n签名者: ${signer} ${isOfficial}`, 'success', 5000);
+                    showToast(typeof t === 'function' ? t('toast.configPackVerifySuccess', { signer, isOfficial }) : `配置包验证成功\n签名者: ${signer} ${isOfficial}`, 'success', 5000);
                     
                     // 显示应用确认对话框
                     setTimeout(() => {
                         showConfigPackApplyConfirm(targetPath, pack);
                     }, 500);
                 } else {
-                    showToast(`配置包验证失败: ${pack.result_message}`, 'error', 5000);
+                    showToast(typeof t === 'function' ? t('toast.configPackVerifyFailed', { msg: pack.result_message }) : `配置包验证失败: ${pack.result_message}`, 'error', 5000);
                 }
             }
         } catch (e) {
@@ -8114,7 +8143,7 @@ async function uploadFiles() {
         }
     }
     
-    showToast('上传完成', 'success');
+    showToast((typeof t === 'function' ? t('toast.uploadComplete') : '上传完成'), 'success');
     setTimeout(() => {
         closeUploadDialog();
         refreshFilesPage();
@@ -8134,18 +8163,18 @@ function closeNewFolderDialog() {
 async function createNewFolder() {
     const name = document.getElementById('new-folder-name').value.trim();
     if (!name) {
-        showToast('请输入文件夹名称', 'warning');
+        showToast((typeof t === 'function' ? t('toast.enterFolderName') : '请输入文件夹名称'), 'warning');
         return;
     }
     
     const path = currentFilePath + '/' + name;
     try {
         await api.storageMkdir(path);
-        showToast('文件夹创建成功', 'success');
+        showToast((typeof t === 'function' ? t('toast.folderCreated') : '文件夹创建成功'), 'success');
         closeNewFolderDialog();
         refreshFilesPage();
     } catch (e) {
-        showToast('创建失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.createFailedMsg', { msg: e.message }) : '创建失败: ' + e.message), 'error');
     }
 }
 
@@ -8165,7 +8194,7 @@ async function doRename() {
     const originalPath = document.getElementById('rename-original-path').value;
     
     if (!newName) {
-        showToast('请输入新名称', 'warning');
+        showToast((typeof t === 'function' ? t('toast.enterNewName') : '请输入新名称'), 'warning');
         return;
     }
     
@@ -8176,11 +8205,11 @@ async function doRename() {
     
     try {
         await api.storageRename(originalPath, newPath);
-        showToast('重命名成功', 'success');
+        showToast((typeof t === 'function' ? t('toast.renameSuccess') : '重命名成功'), 'success');
         closeRenameDialog();
         refreshFilesPage();
     } catch (e) {
-        showToast('重命名失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.renameFailedMsg', { msg: e.message }) : '重命名失败: ' + e.message), 'error');
     }
 }
 
@@ -8202,10 +8231,10 @@ async function downloadFile(path) {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        showToast('下载开始', 'success');
+        showToast((typeof t === 'function' ? t('toast.downloadStart') : '下载开始'), 'success');
     } catch (e) {
         console.error('Download error:', e);
-        showToast('下载失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.downloadFailedMsg', { msg: e.message }) : '下载失败: ' + e.message), 'error');
     }
 }
 
@@ -8218,10 +8247,10 @@ async function deleteFile(path) {
     
     try {
         await api.storageDelete(path);
-        showToast('删除成功', 'success');
+        showToast((typeof t === 'function' ? t('toast.deleteSuccess') : '删除成功'), 'success');
         refreshFilesPage();
     } catch (e) {
-        showToast('删除失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.deleteFailedMsg', { msg: e.message }) : '删除失败: ' + e.message), 'error');
     }
 }
 
@@ -8493,7 +8522,7 @@ async function loadCommandsPage() {
                 <div id="nohup-actions" class="nohup-actions" style="display:none">
                     <button class="btn btn-sm" id="nohup-view-log" onclick="nohupViewLog()"><i class="ri-file-text-line"></i> ${typeof t === 'function' ? t('ssh.viewLog') : '查看日志'}</button>
                     <button class="btn btn-sm" id="nohup-tail-log" onclick="nohupTailLog()"><i class="ri-eye-line"></i> ${typeof t === 'function' ? t('ssh.tailLog') : '实时跟踪'}</button>
-                    <button class="btn btn-sm" id="nohup-stop-tail" onclick="nohupStopTail()" style="display:none;background:#f59e0b;color:white"><i class="ri-stop-line"></i> ${typeof t === 'function' ? t('ssh.stopTail') : '停止跟踪'}</button>
+                    <button class="btn btn-sm" id="nohup-stop-tail" onclick="nohupStopTail()" style="display:none;background:#f59e0b;color:white"><i class="ri-stop-fill"></i> ${typeof t === 'function' ? t('ssh.stopTail') : '停止跟踪'}</button>
                     <button class="btn btn-sm" id="nohup-check-process" onclick="nohupCheckProcess()"><i class="ri-search-line"></i> ${typeof t === 'function' ? t('ssh.checkProcess') : '检查进程'}</button>
                     <button class="btn btn-sm" id="nohup-stop-process" onclick="nohupStopProcess()" style="background:#f43f5e;color:white"><i class="ri-stop-circle-line"></i> ${typeof t === 'function' ? t('ssh.stopProcess') : '停止进程'}</button>
                 </div>
@@ -9272,12 +9301,12 @@ async function updateServiceStatusInList() {
                 statusEl.textContent = getServiceStatusLabel(status);
                 statusEl.className = `service-status status-${status}`;
             } else {
-                statusEl.textContent = '未启动';
+                statusEl.textContent = (typeof t === 'function' ? t('sshPage.statusIdle') : '未启动');
                 statusEl.className = 'service-status status-idle';
             }
         } catch (e) {
             console.error(`[ServiceStatus] Error getting ${varName}.status:`, e);
-            statusEl.textContent = '未知';
+            statusEl.textContent = (typeof t === 'function' ? t('sshPage.statusUnknown') : '未知');
             statusEl.className = 'service-status status-unknown';
         }
     }
@@ -9287,15 +9316,13 @@ async function updateServiceStatusInList() {
  * 获取服务状态显示文本
  */
 function getServiceStatusLabel(status) {
-    const labels = {
-        'ready': '就绪',
-        'checking': '检测中',
-        'timeout': '超时',
-        'failed': '失败',
-        'idle': '未启动',
-        'stopped': '已停止'
-    };
-    return labels[status] || status;
+    if (typeof t !== 'function') {
+        const labels = { 'ready': '就绪', 'checking': '检测中', 'timeout': '超时', 'failed': '失败', 'idle': '未启动', 'stopped': '已停止' };
+        return labels[status] || status;
+    }
+    const keyMap = { 'ready': 'sshPage.statusReady', 'checking': 'sshPage.statusChecking', 'timeout': 'sshPage.statusTimeout', 'failed': 'sshPage.statusFailed', 'idle': 'sshPage.statusIdle', 'stopped': 'sshPage.statusStopped' };
+    const key = keyMap[status];
+    return key ? t(key) : status;
 }
 
 function showAddCommandModal() {
@@ -9660,7 +9687,7 @@ async function saveCommand() {
     const readyInterval = parseInt(document.getElementById('cmd-ready-interval')?.value) || 5000;
     
     if (!name || !command) {
-        showToast('请填写指令名称和命令', 'warning');
+        showToast((typeof t === 'function' ? t('toast.fillCommandNameAndCmd') : '请填写指令名称和命令'), 'warning');
         return;
     }
     
@@ -9678,29 +9705,29 @@ async function saveCommand() {
         if (cleaned !== command) {
             document.getElementById('cmd-command').value = cleaned;
             command = cleaned;
-            showToast('已自动去除命令中多余的 nohup 包装（后端会自动添加）', 'info');
+            showToast((typeof t === 'function' ? t('toast.nohupStripped') : '已自动去除命令中多余的 nohup 包装（后端会自动添加）'), 'info');
         }
     }
     
     /* ID 验证（必填） */
     if (!cmdId) {
-        showToast('请填写指令 ID', 'warning');
+        showToast((typeof t === 'function' ? t('toast.fillCommandId') : '请填写指令 ID'), 'warning');
         document.getElementById('cmd-edit-id').focus();
         return;
     }
     if (!validateCommandId(document.getElementById('cmd-edit-id'))) {
-        showToast('指令 ID 格式不正确', 'warning');
+        showToast((typeof t === 'function' ? t('toast.commandIdInvalid') : '指令 ID 格式不正确'), 'warning');
         document.getElementById('cmd-edit-id').focus();
         return;
     }
     
     // 服务模式验证
     if (nohup && serviceMode && !readyPattern) {
-        showToast('启用服务模式时必须设置就绪匹配模式', 'warning');
+        showToast((typeof t === 'function' ? t('toast.serviceModeRequiresPattern') : '启用服务模式时必须设置就绪匹配模式'), 'warning');
         return;
     }
     if (nohup && serviceMode && !varName) {
-        showToast('启用服务模式时必须设置变量名', 'warning');
+        showToast((typeof t === 'function' ? t('toast.serviceModeRequiresVar') : '启用服务模式时必须设置变量名'), 'warning');
         return;
     }
     
@@ -9741,11 +9768,11 @@ async function saveCommand() {
             if (existingIdx >= 0) {
                 sshCommands[selectedHostId][existingIdx] = cmdData;
             }
-            showToast('指令已更新', 'success');
+            showToast((typeof t === 'function' ? t('toast.commandUpdated') : '指令已更新'), 'success');
         } else {
             // 新建模式：添加到本地缓存
             sshCommands[selectedHostId].push(cmdData);
-            showToast('指令已创建', 'success');
+            showToast((typeof t === 'function' ? t('toast.commandCreated') : '指令已创建'), 'success');
         }
         
         closeCommandModal();
@@ -9753,7 +9780,7 @@ async function saveCommand() {
         
     } catch (e) {
         console.error('Failed to save command:', e);
-        showToast('保存指令失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.saveCommandFailedMsg', { msg: e.message }) : '保存指令失败: ' + e.message), 'error');
     }
 }
 
@@ -10194,10 +10221,10 @@ async function deleteCommand(idx) {
         // 从本地缓存删除
         sshCommands[selectedHostId].splice(idx, 1);
         refreshCommandsList();
-        showToast('指令已删除', 'success');
+        showToast((typeof t === 'function' ? t('toast.commandDeleted') : '指令已删除'), 'success');
     } catch (e) {
         console.error('Failed to delete command:', e);
-        showToast('删除指令失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.deleteCommandFailedMsg', { msg: e.message }) : '删除指令失败: ' + e.message), 'error');
     }
 }
 
@@ -10214,7 +10241,7 @@ let currentNohupInfo = {
 /* nohup 快捷操作：查看日志 */
 async function nohupViewLog() {
     if (!currentNohupInfo.logFile || !currentNohupInfo.hostId) {
-        showToast('没有可用的日志信息', 'warning');
+        showToast((typeof t === 'function' ? t('ssh.noLogInfo') : '没有可用的日志信息'), 'warning');
         return;
     }
     await executeNohupHelperCommand(`cat "${currentNohupInfo.logFile}"`);
@@ -10227,7 +10254,7 @@ let lastTailContent = '';
 /* nohup 快捷操作：实时跟踪 */
 async function nohupTailLog() {
     if (!currentNohupInfo.logFile || !currentNohupInfo.hostId) {
-        showToast('没有可用的日志信息', 'warning');
+        showToast((typeof t === 'function' ? t('ssh.noLogInfo') : '没有可用的日志信息'), 'warning');
         return;
     }
     
@@ -10309,7 +10336,7 @@ function nohupStopTail() {
 /* nohup 快捷操作：检查进程（使用 PID 文件） */
 async function nohupCheckProcess() {
     if (!currentNohupInfo.pidFile || !currentNohupInfo.hostId) {
-        showToast('没有可用的进程信息', 'warning');
+        showToast((typeof t === 'function' ? t('ssh.noProcessInfo') : '没有可用的进程信息'), 'warning');
         return;
     }
     // 使用 PID 文件检查进程状态，并显示进程详情
@@ -10319,7 +10346,7 @@ async function nohupCheckProcess() {
 /* nohup 快捷操作：停止进程（使用 PID 文件） */
 async function nohupStopProcess() {
     if (!currentNohupInfo.pidFile || !currentNohupInfo.hostId) {
-        showToast('没有可用的进程信息', 'warning');
+        showToast((typeof t === 'function' ? t('ssh.noProcessInfo') : '没有可用的进程信息'), 'warning');
         return;
     }
     
@@ -10342,7 +10369,7 @@ async function nohupStopProcess() {
 async function executeNohupHelperCommand(command) {
     const host = window._cmdHostsList?.find(h => h.id === currentNohupInfo.hostId);
     if (!host) {
-        showToast('主机信息不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotFound') : '主机信息不存在'), 'error');
         return;
     }
     
@@ -10384,13 +10411,13 @@ async function executeNohupHelperCommand(command) {
 async function viewServiceLog(idx, safeName) {
     const cmd = sshCommands[selectedHostId]?.[idx];
     if (!cmd) {
-        showToast('命令不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.cmdNotFound') : '命令不存在'), 'error');
         return;
     }
     
     const host = window._cmdHostsList?.find(h => h.id === selectedHostId);
     if (!host) {
-        showToast('主机信息不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotFound') : '主机信息不存在'), 'error');
         return;
     }
     
@@ -10441,13 +10468,13 @@ async function viewServiceLog(idx, safeName) {
 async function stopServiceProcess(idx, safeName) {
     const cmd = sshCommands[selectedHostId]?.[idx];
     if (!cmd) {
-        showToast('命令不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.cmdNotFound') : '命令不存在'), 'error');
         return;
     }
     
     const host = window._cmdHostsList?.find(h => h.id === selectedHostId);
     if (!host) {
-        showToast('主机信息不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotFound') : '主机信息不存在'), 'error');
         return;
     }
     
@@ -10498,7 +10525,7 @@ async function stopServiceProcess(idx, safeName) {
             const killStatus = (killResult.data?.stdout || '').trim();
             if (killStatus === 'STOPPED') {
                 resultPre.textContent += `服务已停止\n`;
-                showToast('服务已停止', 'success');
+                showToast((typeof t === 'function' ? t('toast.serviceStopped') : '服务已停止'), 'success');
                 
                 // 更新状态变量
                 if (cmd.varName) {
@@ -10521,19 +10548,19 @@ async function stopServiceProcess(idx, safeName) {
                     timeout_ms: 5000
                 });
                 resultPre.textContent += `已强制终止\n`;
-                showToast('服务已强制停止', 'warning');
+                showToast((typeof t === 'function' ? t('toast.serviceForceKilled') : '服务已强制停止'), 'warning');
                 updateServiceStatusInList();
             }
         } else if (status === 'STOPPED') {
             resultPre.textContent += `进程已经停止\n`;
-            showToast('进程已经停止', 'info');
+            showToast((typeof t === 'function' ? t('toast.processAlreadyStopped') : '进程已经停止'), 'info');
         } else {
             resultPre.textContent += `PID 文件不存在，服务可能未启动\n`;
-            showToast('服务未运行', 'info');
+            showToast((typeof t === 'function' ? t('toast.serviceNotRunning') : '服务未运行'), 'info');
         }
     } catch (e) {
         resultPre.textContent += `停止服务失败: ${e.message}`;
-        showToast('停止服务失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.stopServiceFailedMsg', { msg: e.message }) : '停止服务失败: ' + e.message), 'error');
     }
     
     resultPre.scrollTop = resultPre.scrollHeight;
@@ -10545,13 +10572,13 @@ async function executeCommand(idx) {
     
     const host = window._cmdHostsList?.find(h => h.id === selectedHostId);
     if (!host) {
-        showToast('主机信息不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotFound') : '主机信息不存在'), 'error');
         return;
     }
     
     // 检查是否有正在运行的命令（nohup 模式不需要检查）
     if (currentExecSessionId && !cmd.nohup) {
-        showToast('有命令正在执行中，请先取消或等待完成', 'warning');
+        showToast((typeof t === 'function' ? t('toast.commandRunning') : '有命令正在执行中，请先取消或等待完成'), 'warning');
         return;
     }
     
@@ -10666,7 +10693,7 @@ async function executeCommand(idx) {
             return;
         }
         resultPre.textContent = `启动执行失败\n\n${e.message}`;
-        showToast('启动执行失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('ssh.startExecFailedMsg', { msg: e.message }) : '启动执行失败: ' + e.message), 'error');
         cancelBtn.style.display = 'none';
         currentExecSessionId = null;
     }
@@ -10674,7 +10701,7 @@ async function executeCommand(idx) {
 
 async function cancelExecution() {
     if (!currentExecSessionId) {
-        showToast('没有正在执行的命令', 'info');
+        showToast((typeof t === 'function' ? t('toast.noRunningCommand') : '没有正在执行的命令'), 'info');
         return;
     }
     
@@ -10684,9 +10711,9 @@ async function cancelExecution() {
     
     try {
         await api.call('ssh.cancel', { session_id: currentExecSessionId });
-        showToast('取消请求已发送', 'info');
+        showToast((typeof t === 'function' ? t('toast.cancelSent') : '取消请求已发送'), 'info');
     } catch (e) {
-        showToast('取消失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.cancelFailedMsg', { msg: e.message }) : '取消失败: ' + e.message), 'error');
         cancelBtn.disabled = false;
         cancelBtn.innerHTML = '<i class="ri-stop-line"></i> 取消 (Esc)';
     }
@@ -10751,7 +10778,7 @@ function handleSshExecMessage(msg) {
                     if (msg.extracted) {
                         resultPre.textContent += `  提取内容: ${msg.extracted}\n`;
                     }
-                    showToast('模式匹配成功', msg.fail_matched ? 'error' : 'success');
+                    showToast((typeof t === 'function' ? t('toast.patternMatchSuccess') : '模式匹配成功'), msg.fail_matched ? 'error' : 'success');
                 } else if (isExtractOnly) {
                     /* 仅提取更新（持续提取场景）*/
                     /* 不在输出区显示，只更新面板 */
@@ -10807,15 +10834,15 @@ function handleSshExecMessage(msg) {
                 
                 // 根据状态显示 Toast
                 if (msg.status === 'match_success' || (msg.exit_code === 0 && !msg.fail_matched)) {
-                    showToast('命令执行成功', 'success');
+                    showToast((typeof t === 'function' ? t('toast.commandSuccess') : '命令执行成功'), 'success');
                 } else if (msg.status === 'match_failed' || msg.fail_matched) {
-                    showToast('命令执行完成，模式匹配失败', 'warning');
+                    showToast((typeof t === 'function' ? t('toast.commandMatchFailed') : '命令执行完成，模式匹配失败'), 'warning');
                 } else if (msg.status === 'timeout') {
-                    showToast('命令执行超时', 'warning');
+                    showToast((typeof t === 'function' ? t('toast.commandTimeout') : '命令执行超时'), 'warning');
                 } else if (msg.exit_code === 0) {
-                    showToast('命令执行成功', 'success');
+                    showToast((typeof t === 'function' ? t('toast.commandSuccess') : '命令执行成功'), 'success');
                 } else {
-                    showToast(`命令执行完成，退出码: ${msg.exit_code}`, 'warning');
+                    showToast(typeof t === 'function' ? t('toast.commandCompletedCode', { code: msg.exit_code }) : `命令执行完成，退出码: ${msg.exit_code}`, 'warning');
                 }
             }
             break;
@@ -10827,7 +10854,7 @@ function handleSshExecMessage(msg) {
                     cancelBtn.style.display = 'none';
                 }
                 currentExecSessionId = null;
-                showToast('执行出错: ' + msg.error, 'error');
+                showToast((typeof t === 'function' ? t('toast.execErrorMsg', { msg: msg.error }) : '执行出错: ' + msg.error), 'error');
             }
             break;
             
@@ -10838,7 +10865,7 @@ function handleSshExecMessage(msg) {
                     cancelBtn.style.display = 'none';
                 }
                 currentExecSessionId = null;
-                showToast('命令已取消', 'info');
+                showToast((typeof t === 'function' ? t('toast.commandCancelled') : '命令已取消'), 'info');
             }
             break;
     }
@@ -11700,13 +11727,13 @@ async function removeKnownHost(index) {
     try {
         const result = await api.call('hosts.remove', { host: host.host, port: host.port });
         if (result.code === 0) {
-            showToast('已删除主机指纹', 'success');
+            showToast((typeof t === 'function' ? t('toast.hostFingerprintDeleted') : '已删除主机指纹'), 'success');
             await refreshKnownHostsList();
         } else {
-            showToast('删除失败: ' + (result.message || '未知错误'), 'error');
+            showToast((typeof t === 'function' ? t('toast.deleteFailedMsg', { msg: result.message || t('common.unknown') }) : '删除失败: ' + (result.message || '未知错误')), 'error');
         }
     } catch (e) {
-        showToast('删除失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.deleteFailedMsg', { msg: e.message }) : '删除失败: ' + e.message), 'error');
     }
 }
 
@@ -11714,7 +11741,7 @@ async function removeKnownHost(index) {
  * 测试 SSH 连接
  */
 async function testSshConnection(hostId) {
-    showToast(`正在测试连接 ${hostId}...`, 'info');
+    showToast(typeof t === 'function' ? t('toast.testingConnection', { host: hostId }) : `正在测试连接 ${hostId}...`, 'info');
     
     try {
         // 获取主机信息
@@ -11722,12 +11749,12 @@ async function testSshConnection(hostId) {
         console.log('ssh.hosts.get result:', hostResult);
         
         if (hostResult.code !== 0) {
-            showToast(`无法获取主机信息: ${hostResult.message || '未知错误'}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.cannotGetHostInfo') + ': ' + (hostResult.message || t('common.unknown')) : `无法获取主机信息: ${hostResult.message || '未知错误'}`, 'error');
             return;
         }
         
         if (!hostResult.data) {
-            showToast('主机信息为空', 'error');
+            showToast((typeof t === 'function' ? t('toast.hostInfoEmpty') : '主机信息为空'), 'error');
             return;
         }
         
@@ -11743,13 +11770,13 @@ async function testSshConnection(hostId) {
         });
         
         if (execResult.code === 0) {
-            showToast(`连接 ${hostId} 成功！`, 'success');
+            showToast(typeof t === 'function' ? t('toast.connectionSuccess', { host: hostId }) : `连接 ${hostId} 成功！`, 'success');
         } else {
-            showToast(`连接失败: ${execResult.message || '未知错误'}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.connectFailedMsg', { msg: execResult.message || t('common.unknown') }) : `连接失败: ${execResult.message || '未知错误'}`, 'error');
         }
     } catch (e) {
         console.error('Test SSH connection error:', e);
-        showToast(`测试失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.testConnectionFailed') + ': ' + e.message : `测试失败: ${e.message}`, 'error');
     }
 }
 
@@ -11759,11 +11786,11 @@ async function testSshConnection(hostId) {
 async function testSshHostByIndex(index) {
     const host = window._sshHostsList?.[index];
     if (!host) {
-        showToast('主机信息不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotFound') : '主机信息不存在'), 'error');
         return;
     }
     
-    showToast(`正在测试连接 ${host.id}...`, 'info');
+    showToast(typeof t === 'function' ? t('toast.testingConnection', { host: host.id }) : `正在测试连接 ${host.id}...`, 'info');
     
     try {
         const execResult = await api.call('ssh.exec', {
@@ -11776,13 +11803,13 @@ async function testSshHostByIndex(index) {
         });
         
         if (execResult.code === 0) {
-            showToast(`连接 ${host.id} 成功！`, 'success');
+            showToast(typeof t === 'function' ? t('toast.connectionSuccess', { host: host.id }) : `连接 ${host.id} 成功！`, 'success');
         } else {
-            showToast(`连接失败: ${execResult.message || '未知错误'}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.connectFailedMsg', { msg: execResult.message || t('common.unknown') }) : `连接失败: ${execResult.message || '未知错误'}`, 'error');
         }
     } catch (e) {
         console.error('Test SSH connection error:', e);
-        showToast(`测试失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.testConnectionFailed') + ': ' + e.message : `测试失败: ${e.message}`, 'error');
     }
 }
 
@@ -12044,7 +12071,7 @@ async function confirmSshHostImport() {
     const importBtn = document.getElementById('import-ssh-host-btn');
     
     if (!window._importSshHostTscfg) {
-        showToast('请先选择文件', 'error');
+        showToast((typeof t === 'function' ? t('toast.selectFileFirst') : '请先选择文件'), 'error');
         return;
     }
     
@@ -12090,7 +12117,7 @@ async function confirmSshHostImport() {
 async function removeHostByIndex(index) {
     const host = window._sshHostsList?.[index];
     if (!host) {
-        showToast('主机信息不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotFound') : '主机信息不存在'), 'error');
         return;
     }
     
@@ -12099,13 +12126,13 @@ async function removeHostByIndex(index) {
     try {
         const result = await api.call('ssh.hosts.remove', { id: host.id });
         if (result.code === 0) {
-            showToast(`SSH 主机 ${host.id} 已从列表移除`, 'success');
+            showToast(typeof t === 'function' ? t('toast.sshHostRemoved', { id: host.id }) : `SSH 主机 ${host.id} 已从列表移除`, 'success');
             await loadSshHostsData();
         } else {
-            showToast('移除失败: ' + (result.message || '未知错误'), 'error');
+            showToast((typeof t === 'function' ? t('toast.removeFailedMsg', { msg: result.message || t('common.unknown') }) : '移除失败: ' + (result.message || '未知错误')), 'error');
         }
     } catch (e) {
-        showToast('移除失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.removeFailedMsg', { msg: e.message }) : '移除失败: ' + e.message), 'error');
     }
 }
 
@@ -12115,7 +12142,7 @@ async function removeHostByIndex(index) {
 function revokeKeyFromHost(index) {
     const host = window._sshHostsList?.[index];
     if (!host) {
-        showToast('主机信息不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotFound') : '主机信息不存在'), 'error');
         return;
     }
     
@@ -12225,13 +12252,13 @@ async function deleteSshHostFromSecurity(id) {
     try {
         const result = await api.call('ssh.hosts.remove', { id });
         if (result.code === 0) {
-            showToast(`SSH 主机 ${id} 已从列表移除`, 'success');
+            showToast(typeof t === 'function' ? t('toast.sshHostRemoved', { id }) : `SSH 主机 ${id} 已从列表移除`, 'success');
             await loadSshHostsData();
         } else {
-            showToast('移除失败: ' + (result.message || '未知错误'), 'error');
+            showToast((typeof t === 'function' ? t('toast.removeFailedMsg', { msg: result.message || t('common.unknown') }) : '移除失败: ' + (result.message || '未知错误')), 'error');
         }
     } catch (e) {
-        showToast('移除失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.removeFailedMsg', { msg: e.message }) : '移除失败: ' + e.message), 'error');
     }
 }
 
@@ -12239,10 +12266,10 @@ async function deleteKey(id) {
     if (confirm(`确定要删除密钥 "${id}" 吗？此操作不可撤销！`)) {
         try {
             await api.keyDelete(id);
-            showToast('密钥已删除', 'success');
+            showToast((typeof t === 'function' ? t('toast.keyDeleted') : '密钥已删除'), 'success');
             await refreshSecurityPage();
         } catch (e) {
-            showToast('删除失败: ' + e.message, 'error');
+            showToast((typeof t === 'function' ? t('toast.deleteFailedMsg', { msg: e.message }) : '删除失败: ' + e.message), 'error');
         }
     }
 }
@@ -12254,10 +12281,10 @@ async function exportKey(id) {
             // 显示公钥弹窗
             showPubkeyModal(id, result.data.public_key, result.data.type, result.data.comment);
         } else {
-            showToast('无法获取公钥', 'error');
+            showToast((typeof t === 'function' ? t('toast.cannotGetPublicKey') : '无法获取公钥'), 'error');
         }
     } catch (e) {
-        showToast('导出失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.exportFailedMsg', { msg: e.message }) : '导出失败: ' + e.message), 'error');
     }
 }
 
@@ -12272,10 +12299,10 @@ async function exportPrivateKey(id) {
         if (result.data?.private_key) {
             showPrivkeyModal(id, result.data.private_key, result.data.type, result.data.comment);
         } else {
-            showToast('无法获取私钥', 'error');
+            showToast((typeof t === 'function' ? t('toast.cannotGetPrivateKey') : '无法获取私钥'), 'error');
         }
     } catch (e) {
-        showToast('导出失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.exportFailedMsg', { msg: e.message }) : '导出失败: ' + e.message), 'error');
     }
 }
 
@@ -12360,12 +12387,12 @@ async function copyPubkey() {
     if (textarea) {
         try {
             await navigator.clipboard.writeText(textarea.value);
-            showToast('已复制到剪贴板', 'success');
+            showToast((typeof t === 'function' ? t('toast.copied') : '已复制到剪贴板'), 'success');
         } catch (e) {
             // Fallback for older browsers
             textarea.select();
             document.execCommand('copy');
-            showToast('已复制到剪贴板', 'success');
+            showToast((typeof t === 'function' ? t('toast.copied') : '已复制到剪贴板'), 'success');
         }
     }
 }
@@ -12381,7 +12408,7 @@ function downloadPubkey(id) {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        showToast(`已下载 ${id}.pub`, 'success');
+        showToast(typeof t === 'function' ? t('toast.downloadedPublicKey', { id }) : `已下载 ${id}.pub`, 'success');
     }
 }
 
@@ -12390,11 +12417,11 @@ async function copyPrivkey() {
     if (textarea) {
         try {
             await navigator.clipboard.writeText(textarea.value);
-            showToast('已复制到剪贴板', 'success');
+            showToast((typeof t === 'function' ? t('toast.copied') : '已复制到剪贴板'), 'success');
         } catch (e) {
             textarea.select();
             document.execCommand('copy');
-            showToast('已复制到剪贴板', 'success');
+            showToast((typeof t === 'function' ? t('toast.copied') : '已复制到剪贴板'), 'success');
         }
     }
 }
@@ -12410,7 +12437,7 @@ function downloadPrivkey(id) {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        showToast(`已下载 ${id}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.downloadedPrivateKey', { id }) : `已下载 ${id}`, 'success');
     }
 }
 
@@ -12446,7 +12473,7 @@ async function deployKey() {
     const password = document.getElementById('deploy-password').value;
     
     if (!host || !user || !password) {
-        showToast('请填写完整的服务器信息', 'error');
+        showToast((typeof t === 'function' ? t('toast.fillServerInfo') : '请填写完整的服务器信息'), 'error');
         return;
     }
     
@@ -12470,7 +12497,7 @@ async function deployKey() {
             }
             resultBox.textContent = msg;
             resultBox.classList.add('success');
-            showToast('密钥部署成功', 'success');
+            showToast((typeof t === 'function' ? t('toast.keyDeployed') : '密钥部署成功'), 'success');
             // 刷新已部署主机列表（后端 ssh.copyid 会自动注册主机）
             await loadSshHostsData();
         } else {
@@ -12516,7 +12543,7 @@ async function revokeKey() {
     const password = document.getElementById('revoke-password').value;
     
     if (!host || !user || !password) {
-        showToast('请填写完整的服务器信息', 'error');
+        showToast((typeof t === 'function' ? t('toast.fillServerInfo') : '请填写完整的服务器信息'), 'error');
         return;
     }
     
@@ -12534,11 +12561,11 @@ async function revokeKey() {
         if (result.data?.revoked) {
             resultBox.textContent = `撤销成功！已从 ${user}@${host} 移除 ${result.data.removed_count || 1} 个匹配的公钥`;
             resultBox.classList.add('success');
-            showToast('密钥撤销成功', 'success');
+            showToast((typeof t === 'function' ? t('toast.keyRevoked') : '密钥撤销成功'), 'success');
         } else if (result.data?.found === false) {
             resultBox.textContent = `该公钥未在 ${user}@${host} 上找到`;
             resultBox.classList.add('warning');
-            showToast('公钥未找到', 'warning');
+            showToast((typeof t === 'function' ? t('toast.publicKeyNotFound') : '公钥未找到'), 'warning');
         } else {
             throw new Error('撤销失败');
         }
@@ -12573,11 +12600,11 @@ async function removeAndRetry() {
     try {
         // 使用新的 hosts.update API 更新主机密钥
         await api.hostsUpdate(currentMismatchInfo.host, currentMismatchInfo.port || 22);
-        showToast('旧主机密钥已移除，请重新连接以信任新密钥', 'success');
+        showToast((typeof t === 'function' ? t('toast.oldHostKeyRemoved') : '旧主机密钥已移除，请重新连接以信任新密钥'), 'success');
         hideHostMismatchModal();
         await refreshSecurityPage();
     } catch (e) {
-        showToast('更新失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.updateFailedMsg', { msg: e.message }) : '更新失败: ' + e.message), 'error');
     }
 }
 
@@ -12585,10 +12612,10 @@ async function removeHost(host, port) {
     if (confirm(`确定要移除主机 "${host}:${port}" 的记录吗？`)) {
         try {
             await api.hostsRemove(host, port);
-            showToast('主机已移除', 'success');
+            showToast((typeof t === 'function' ? t('toast.hostRemoved') : '主机已移除'), 'success');
             await refreshSecurityPage();
         } catch (e) {
-            showToast('移除失败: ' + e.message, 'error');
+            showToast((typeof t === 'function' ? t('toast.removeFailedMsg', { msg: e.message }) : '移除失败: ' + e.message), 'error');
         }
     }
 }
@@ -12597,10 +12624,10 @@ async function clearAllHosts() {
     if (confirm('确定要清除所有已知主机记录吗？此操作不可撤销！')) {
         try {
             await api.hostsClear();
-            showToast('已清除所有已知主机', 'success');
+            showToast((typeof t === 'function' ? t('toast.allHostsCleared') : '已清除所有已知主机'), 'success');
             await refreshSecurityPage();
         } catch (e) {
-            showToast('清除失败: ' + e.message, 'error');
+            showToast((typeof t === 'function' ? t('toast.clearFailedMsg', { msg: e.message }) : '清除失败: ' + e.message), 'error');
         }
     }
 }
@@ -12702,9 +12729,9 @@ async function loadConfigPackCert() {
 function copyPackCertToClipboard() {
     const pem = document.getElementById('pack-cert-pem').value;
     navigator.clipboard.writeText(pem).then(() => {
-        showToast('证书已复制到剪贴板', 'success');
+        showToast(typeof t === 'function' ? t('toast.certCopied') : '证书已复制到剪贴板', 'success');
     }).catch(e => {
-        showToast('复制失败: ' + e.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.copyFailedMsg', { msg: e.message }) : '复制失败: ' + e.message, 'error');
     });
 }
 
@@ -12884,7 +12911,7 @@ function closeConfigPackApplyConfirm() {
  */
 async function applyConfigPackFromPath(path) {
     closeConfigPackApplyConfirm();
-    showToast('正在应用配置...', 'info');
+    showToast(typeof t === 'function' ? t('toast.applyingConfig') : '正在应用配置...', 'info');
     
     try {
         const result = await api.call('config.pack.apply', { path }, 'POST');
@@ -12896,13 +12923,13 @@ async function applyConfigPackFromPath(path) {
         if (data.success) {
             const modules = data.applied_modules || [];
             const moduleList = modules.length > 0 ? modules.join(', ') : '无';
-            showToast(`配置已应用\n模块: ${moduleList}`, 'success', 5000);
+            showToast(typeof t === 'function' ? t('toast.configApplied', { modules: moduleList }) : `配置已应用\n模块: ${moduleList}`, 'success', 5000);
         } else {
-            showToast(`应用失败: ${data.result_message}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.applyFailedMsg', { msg: data.result_message }) : `应用失败: ${data.result_message}`, 'error');
         }
     } catch (e) {
         console.error('Apply config pack error:', e);
-        showToast('应用失败: ' + e.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.applyFailedMsg', { msg: e.message }) : '应用失败: ' + e.message, 'error');
     }
 }
 
@@ -13151,7 +13178,7 @@ function packExportDeselectAll() {
 async function packExportSelectDir() {
     // 与全选功能相同，但可以在 UI 上有区分
     await packExportSelectAll();
-    showToast(`已选择当前目录下的所有 JSON 文件`, 'success');
+    showToast(typeof t === 'function' ? t('toast.selectedJsonFiles') : '已选择当前目录下的所有 JSON 文件', 'success');
 }
 
 // 文件大小格式化
@@ -13280,9 +13307,9 @@ async function exportConfigPack() {
 function copyPackTscfgToClipboard() {
     const tscfg = document.getElementById('pack-export-tscfg').value;
     navigator.clipboard.writeText(tscfg).then(() => {
-        showToast('配置包已复制到剪贴板', 'success');
+        showToast(typeof t === 'function' ? t('toast.configPackCopied') : '配置包已复制到剪贴板', 'success');
     }).catch(e => {
-        showToast('复制失败: ' + e.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.copyFailedMsg', { msg: e.message }) : '复制失败: ' + e.message, 'error');
     });
 }
 
@@ -13300,7 +13327,7 @@ function downloadPackTscfg() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
-    showToast('配置包已下载: ' + filename, 'success');
+    showToast(typeof t === 'function' ? t('toast.configPackDownloaded', { filename }) : '配置包已下载: ' + filename, 'success');
 }
 
 // 配置包：列表弹窗
@@ -13559,7 +13586,7 @@ async function generateCertKeypair() {
         if (result.code === 0 || result.data?.success) {
             resultBox.textContent = 'ECDSA P-256 密钥对生成成功！';
             resultBox.classList.add('success');
-            showToast('密钥对生成成功', 'success');
+            showToast(typeof t === 'function' ? t('toast.keypairGenerated') : '密钥对生成成功', 'success');
             
             setTimeout(() => {
                 hideCertGenKeyModal();
@@ -13612,7 +13639,7 @@ async function generateCSR() {
             resultBox.classList.add('hidden');
             csrResultBox.classList.remove('hidden');
             document.getElementById('csr-pem-output').value = result.data.csr_pem;
-            showToast('CSR 生成成功', 'success');
+            showToast(typeof t === 'function' ? t('toast.csrGenerated') : 'CSR 生成成功', 'success');
         } else {
             throw new Error(result.message || '生成失败');
         }
@@ -13627,9 +13654,9 @@ async function generateCSR() {
 function copyCSRToClipboard() {
     const csr = document.getElementById('csr-pem-output').value;
     navigator.clipboard.writeText(csr).then(() => {
-        showToast('CSR 已复制到剪贴板', 'success');
+        showToast(typeof t === 'function' ? t('toast.csrCopied') : 'CSR 已复制到剪贴板', 'success');
     }).catch(e => {
-        showToast('复制失败: ' + e.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.copyFailedMsg', { msg: e.message }) : '复制失败: ' + e.message, 'error');
     });
 }
 
@@ -13647,7 +13674,7 @@ function hideCertInstallModal() {
 async function installCertificate() {
     const certPem = document.getElementById('cert-pem-input').value.trim();
     if (!certPem) {
-        showToast('请输入证书 PEM', 'error');
+        showToast(typeof t === 'function' ? t('toast.enterCertPem') : '请输入证书 PEM', 'error');
         return;
     }
     
@@ -13660,7 +13687,7 @@ async function installCertificate() {
         if (result.code === 0 || result.data?.success) {
             resultBox.textContent = '证书安装成功！';
             resultBox.classList.add('success');
-            showToast('证书安装成功', 'success');
+            showToast(typeof t === 'function' ? t('toast.certInstalled') : '证书安装成功', 'success');
             
             setTimeout(() => {
                 hideCertInstallModal();
@@ -13689,7 +13716,7 @@ function hideCertInstallCAModal() {
 async function installCAChain() {
     const caPem = document.getElementById('ca-pem-input').value.trim();
     if (!caPem) {
-        showToast('请输入 CA 证书链 PEM', 'error');
+        showToast(typeof t === 'function' ? t('toast.enterCaPem') : '请输入 CA 证书链 PEM', 'error');
         return;
     }
     
@@ -13702,7 +13729,7 @@ async function installCAChain() {
         if (result.code === 0 || result.data?.success) {
             resultBox.textContent = 'CA 证书链安装成功！';
             resultBox.classList.add('success');
-            showToast('CA 证书链安装成功', 'success');
+            showToast(typeof t === 'function' ? t('toast.caInstalled') : 'CA 证书链安装成功', 'success');
             
             setTimeout(() => {
                 hideCertInstallCAModal();
@@ -13747,9 +13774,9 @@ function hideCertViewModal() {
 function copyCertToClipboard() {
     const cert = document.getElementById('cert-view-pem').value;
     navigator.clipboard.writeText(cert).then(() => {
-        showToast('证书已复制到剪贴板', 'success');
+        showToast(typeof t === 'function' ? t('toast.certCopied') : '证书已复制到剪贴板', 'success');
     }).catch(e => {
-        showToast('复制失败: ' + e.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.copyFailedMsg', { msg: e.message }) : '复制失败: ' + e.message, 'error');
     });
 }
 
@@ -13761,13 +13788,13 @@ async function deleteCertCredentials() {
     try {
         const result = await api.certDelete();
         if (result.code === 0 || result.data?.success) {
-            showToast('PKI 凭证已删除', 'success');
+            showToast(typeof t === 'function' ? t('toast.pkiDeleted') : 'PKI 凭证已删除', 'success');
             await refreshCertStatus();
         } else {
             throw new Error(result.message || '删除失败');
         }
     } catch (e) {
-        showToast('删除失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.deleteFailedMsg', { msg: e.message }) : '删除失败: ' + e.message), 'error');
     }
 }
 
@@ -13792,18 +13819,18 @@ async function generateKey() {
     const hidden = document.getElementById('keygen-hidden').checked;
     
     if (!id) {
-        showToast('请输入密钥 ID', 'error');
+        showToast(typeof t === 'function' ? t('toast.enterKeyId') : '请输入密钥 ID', 'error');
         return;
     }
     
     try {
-        showToast('正在生成密钥...', 'info');
+        showToast(typeof t === 'function' ? t('toast.generatingKey') : '正在生成密钥...', 'info');
         await api.keyGenerate(id, type, comment, exportable, alias, hidden);
         hideGenerateKeyModal();
-        showToast(`密钥 "${alias || id}" 生成成功`, 'success');
+        showToast(typeof t === 'function' ? t('toast.keyGenerated', { name: alias || id }) : `密钥 "${alias || id}" 生成成功`, 'success');
         await refreshSecurityPage();
     } catch (e) {
-        showToast('生成失败: ' + e.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.generateFailedMsg', { msg: e.message }) : '生成失败: ' + e.message, 'error');
     }
 }
 
@@ -14141,7 +14168,7 @@ function terminalClear() {
 function terminalDisconnect() {
     if (webTerminal) {
         webTerminal.disconnect();
-        showToast('终端已断开', 'info');
+        showToast(typeof t === 'function' ? t('toast.terminalDisconnected') : '终端已断开', 'info');
     }
 }
 
@@ -15222,7 +15249,7 @@ async function refreshOtaProgress() {
                     // 开始检测设备重启
                     startRebootDetection();
                 } else if (state === 'error') {
-                    showToast('升级失败: ' + message, 'error');
+                    showToast(typeof t === 'function' ? t('toast.upgradeFailedMsg', { msg: message }) : '升级失败: ' + message, 'error');
                     clearInterval(refreshInterval);
                     refreshInterval = null;
                     otaStep = 'idle';
@@ -15305,7 +15332,7 @@ async function startWwwOta() {
         sdcardOtaSource = '';  // 重置
         
         if (result.code !== 0) {
-            showToast('WebUI 升级启动失败: ' + result.message, 'error');
+            showToast(typeof t === 'function' ? t('toast.webuiUpgradeStartFailed') + ': ' + result.message : 'WebUI 升级启动失败: ' + result.message, 'error');
             // 即使 www 失败也继续重启（因为 app 已经更新）
             otaStep = 'idle';
             clearInterval(refreshInterval);
@@ -15370,7 +15397,7 @@ function startRebootDetection() {
                     `;
                 }
                 
-                showToast(`OTA 升级成功！当前版本: ${newVersion}`, 'success');
+                showToast(typeof t === 'function' ? t('toast.otaUpgradeSuccess', { version: newVersion }) : `OTA 升级成功！当前版本: ${newVersion}`, 'success');
                 
                 // 3 秒后刷新页面
                 setTimeout(() => {
@@ -15400,13 +15427,13 @@ function startRebootDetection() {
 async function otaFromUrl() {
     const url = document.getElementById('ota-url-input').value.trim();
     if (!url) {
-        showToast('请输入固件 URL', 'error');
+        showToast(typeof t === 'function' ? t('toast.enterFirmwareUrl') : '请输入固件 URL', 'error');
         return;
     }
     
     // 允许 http 和 https
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        showToast('URL 必须以 http:// 或 https:// 开头', 'error');
+        showToast(typeof t === 'function' ? t('toast.urlMustHttp') : 'URL 必须以 http:// 或 https:// 开头', 'error');
         return;
     }
     
@@ -15434,11 +15461,11 @@ async function otaFromUrl() {
     document.getElementById('ota-abort-btn').style.display = 'inline-block';
     
     try {
-        showToast('开始两步升级：固件 + WebUI', 'info');
+        showToast(typeof t === 'function' ? t('toast.twoStepUpgrade') : '开始两步升级：固件 + WebUI', 'info');
         const result = await api.call('ota.upgrade_url', params);
         
         if (result.code === 0) {
-            showToast('固件升级已启动', 'success');
+            showToast(typeof t === 'function' ? t('toast.firmwareUpgradeStarted') : '固件升级已启动', 'success');
             document.getElementById('ota-state-text').textContent = '下载中...';
             // 开始刷新进度
             if (!refreshInterval) {
@@ -15447,14 +15474,14 @@ async function otaFromUrl() {
             // 立即刷新一次
             await refreshOtaProgress();
         } else {
-            showToast('启动升级失败: ' + result.message, 'error');
+            showToast(typeof t === 'function' ? t('toast.upgradeStartFailedMsg', { msg: result.message }) : '启动升级失败: ' + result.message, 'error');
             // 显示错误状态
             document.getElementById('ota-state-text').textContent = '错误';
             document.getElementById('ota-message').textContent = result.message || '启动失败';
             document.getElementById('ota-abort-btn').style.display = 'none';
         }
     } catch (error) {
-        showToast('启动升级失败: ' + error.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.upgradeStartFailedMsg', { msg: error.message }) : '启动升级失败: ' + error.message, 'error');
         document.getElementById('ota-state-text').textContent = '错误';
         document.getElementById('ota-message').textContent = error.message || '网络错误';
         document.getElementById('ota-abort-btn').style.display = 'none';
@@ -15464,7 +15491,7 @@ async function otaFromUrl() {
 async function otaFromFile() {
     const filepath = document.getElementById('ota-file-input').value.trim();
     if (!filepath) {
-        showToast('请输入文件路径', 'error');
+        showToast(typeof t === 'function' ? t('toast.enterFilePath') : '请输入文件路径', 'error');
         return;
     }
     
@@ -15492,11 +15519,11 @@ async function otaFromFile() {
     document.getElementById('ota-abort-btn').style.display = 'inline-block';
     
     try {
-        showToast('开始从文件升级固件...', 'info');
+        showToast(typeof t === 'function' ? t('toast.startingFileUpgrade') : '开始从文件升级固件...', 'info');
         const result = await api.call('ota.upgrade_file', params);
         
         if (result.code === 0) {
-            showToast('固件升级已启动', 'success');
+            showToast(typeof t === 'function' ? t('toast.firmwareUpgradeStarted') : '固件升级已启动', 'success');
             document.getElementById('ota-state-text').textContent = '写入中...';
             // 开始刷新进度
             if (!refreshInterval) {
@@ -15504,13 +15531,13 @@ async function otaFromFile() {
             }
             await refreshOtaProgress();
         } else {
-            showToast('启动升级失败: ' + result.message, 'error');
+            showToast(typeof t === 'function' ? t('toast.upgradeStartFailedMsg', { msg: result.message }) : '启动升级失败: ' + result.message, 'error');
             document.getElementById('ota-state-text').textContent = '错误';
             document.getElementById('ota-message').textContent = result.message || '启动失败';
             document.getElementById('ota-abort-btn').style.display = 'none';
         }
     } catch (error) {
-        showToast('启动升级失败: ' + error.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.upgradeStartFailedMsg', { msg: error.message }) : '启动升级失败: ' + error.message, 'error');
         document.getElementById('ota-state-text').textContent = '错误';
         document.getElementById('ota-message').textContent = error.message || '网络错误';
         document.getElementById('ota-abort-btn').style.display = 'none';
@@ -15526,13 +15553,13 @@ async function validateOta() {
         const result = await api.call('ota.validate');
         
         if (result.code === 0) {
-            showToast('固件已标记为有效', 'success');
+            showToast(typeof t === 'function' ? t('toast.firmwareValidated') : '固件已标记为有效', 'success');
             await refreshOtaInfo();
         } else {
-            showToast('操作失败: ' + result.message, 'error');
+            showToast(typeof t === 'function' ? t('toast.operationFailedMsg', { msg: result.message }) : '操作失败: ' + result.message, 'error');
         }
     } catch (error) {
-        showToast('操作失败: ' + error.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.operationFailedMsg', { msg: error.message }) : '操作失败: ' + error.message, 'error');
     }
 }
 
@@ -15546,17 +15573,17 @@ function confirmRollback() {
 
 async function rollbackOta() {
     try {
-        showToast('正在回滚固件...', 'info');
+        showToast(typeof t === 'function' ? t('toast.rollingBack') : '正在回滚固件...', 'info');
         const result = await api.call('ota.rollback');
         
         if (result.code === 0) {
-            showToast('回滚成功！系统将在 3 秒后重启...', 'success');
+            showToast(typeof t === 'function' ? t('toast.rollbackSuccess') : '回滚成功！系统将在 3 秒后重启...', 'success');
             // 3秒后页面会因为重启而断开连接
         } else {
-            showToast('回滚失败: ' + result.message, 'error');
+            showToast(typeof t === 'function' ? t('toast.rollbackFailedMsg', { msg: result.message }) : '回滚失败: ' + result.message, 'error');
         }
     } catch (error) {
-        showToast('回滚失败: ' + error.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.rollbackFailedMsg', { msg: error.message }) : '回滚失败: ' + error.message, 'error');
     }
 }
 
@@ -15575,16 +15602,16 @@ async function abortOta() {
         }
         
         if (result.code === 0) {
-            showToast('升级已中止', 'info');
+            showToast(typeof t === 'function' ? t('toast.upgradeAborted') : '升级已中止', 'info');
             otaStep = 'idle';
             await refreshOtaInfo();
             clearInterval(refreshInterval);
             refreshInterval = null;
         } else {
-            showToast('中止失败: ' + result.message, 'error');
+            showToast(typeof t === 'function' ? t('toast.abortFailedMsg', { msg: result.message }) : '中止失败: ' + result.message, 'error');
         }
     } catch (error) {
-        showToast('中止失败: ' + error.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.abortFailedMsg', { msg: error.message }) : '中止失败: ' + error.message, 'error');
     }
 }
 
@@ -15693,15 +15720,15 @@ async function saveOtaServer() {
         
         if (result.code === 0) {
             if (serverUrl) {
-                showToast('OTA 服务器地址已保存', 'success');
+                showToast(typeof t === 'function' ? t('toast.otaServerSaved') : 'OTA 服务器地址已保存', 'success');
             } else {
-                showToast('OTA 服务器地址已清除', 'info');
+                showToast(typeof t === 'function' ? t('toast.otaServerCleared') : 'OTA 服务器地址已清除', 'info');
             }
         } else {
-            showToast('保存失败: ' + result.message, 'error');
+            showToast(typeof t === 'function' ? t('toast.saveFailedMsg', { msg: result.message }) : '保存失败: ' + result.message, 'error');
         }
     } catch (error) {
-        showToast('保存失败: ' + error.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.saveFailedMsg', { msg: error.message }) : '保存失败: ' + error.message, 'error');
     }
 }
 
@@ -15711,7 +15738,7 @@ let currentFirmwareVersion = null;
 async function checkForUpdates() {
     const serverUrl = document.getElementById('ota-server-input').value.trim();
     if (!serverUrl) {
-        showToast('请先输入 OTA 服务器地址', 'error');
+        showToast(typeof t === 'function' ? t('toast.enterOtaServer') : '请先输入 OTA 服务器地址', 'error');
         return;
     }
     
@@ -15851,7 +15878,7 @@ async function checkForUpdates() {
 async function upgradeFromServer() {
     const serverUrl = document.getElementById('ota-server-input').value.trim();
     if (!serverUrl) {
-        showToast('OTA 服务器地址未设置', 'error');
+        showToast(typeof t === 'function' ? t('toast.otaServerNotSet') : 'OTA 服务器地址未设置', 'error');
         return;
     }
     
@@ -15925,7 +15952,7 @@ async function upgradeViaProxy(serverUrl) {
         });
         
         console.log('Proxy OTA: Firmware downloaded,', firmwareData.byteLength, 'bytes');
-        showToast(`固件下载完成 (${formatSize(firmwareData.byteLength)})`, 'success');
+        showToast(typeof t === 'function' ? t('ota.firmwareDownloadComplete', { size: formatSize(firmwareData.byteLength) }) : `固件下载完成 (${formatSize(firmwareData.byteLength)})`, 'success');
         
         // ===== 第二步：上传固件到 ESP32 =====
         updateStep(2, '上传固件到设备...');
@@ -15943,7 +15970,7 @@ async function upgradeViaProxy(serverUrl) {
         }
         
         console.log('Proxy OTA: Firmware uploaded to device');
-        showToast('固件写入完成！', 'success');
+        showToast(typeof t === 'function' ? t('toast.firmwareWriteComplete') : '固件写入完成！', 'success');
         progressBar.style.width = '100%';
         progressPercent.textContent = '';
         
@@ -15966,7 +15993,7 @@ async function upgradeViaProxy(serverUrl) {
                 });
                 
                 console.log('Proxy OTA: WWW downloaded,', wwwData.byteLength, 'bytes');
-                showToast(`WebUI 下载完成 (${formatSize(wwwData.byteLength)})`, 'success');
+                showToast(typeof t === 'function' ? t('ota.webuiDownloadComplete', { size: formatSize(wwwData.byteLength) }) : `WebUI 下载完成 (${formatSize(wwwData.byteLength)})`, 'success');
                 
                 // 上传 www.bin
                 updateStep(4, '上传 WebUI 到设备...');
@@ -15979,16 +16006,16 @@ async function upgradeViaProxy(serverUrl) {
                 
                 if (!wwwResult.success) {
                     console.warn('WWW upload failed:', wwwResult.error);
-                    showToast('WebUI 升级跳过: ' + wwwResult.error, 'warning');
+                    showToast(typeof t === 'function' ? t('toast.webuiUpgradeSkipped', { msg: wwwResult.error }) : 'WebUI 升级跳过: ' + wwwResult.error, 'warning');
                 } else {
                     console.log('Proxy OTA: WWW uploaded to device');
-                    showToast('WebUI 写入完成！', 'success');
+                    showToast(typeof t === 'function' ? t('toast.webuiWriteComplete') : 'WebUI 写入完成！', 'success');
                     progressBar.style.width = '100%';
                     progressPercent.textContent = '';
                 }
             } catch (wwwError) {
                 console.warn('WWW download/upload failed:', wwwError);
-                showToast('WebUI 升级跳过: ' + wwwError.message, 'warning');
+                showToast(typeof t === 'function' ? t('toast.webuiUpgradeSkipped', { msg: wwwError.message }) : 'WebUI 升级跳过: ' + wwwError.message, 'warning');
             }
         }
         
@@ -16023,7 +16050,7 @@ async function upgradeViaProxy(serverUrl) {
         progressBar.style.width = '0%';
         progressPercent.textContent = '';
         otaStep = 'idle';
-        showToast('升级失败: ' + error.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.upgradeFailedMsg', { msg: error.message }) : '升级失败: ' + error.message, 'error');
     }
 }
 
@@ -16847,12 +16874,12 @@ function formatUptimeSec(seconds) {
 async function automationControl(action) {
     try {
         const result = await api.call(`automation.${action}`);
-        showToast(`${action}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
+        showToast(typeof t === 'function' ? t('toast.actionResult', { action, msg: result.message || 'OK' }) : `${action}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
         if (result.code === 0) {
             await refreshAutomationStatus();
         }
     } catch (error) {
-        showToast(`${action} 失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.actionFailedMsg', { action, msg: error.message }) : `${action} 失败: ${error.message}`, 'error');
     }
 }
 
@@ -16938,12 +16965,12 @@ async function toggleRule(id, enable) {
     try {
         const action = enable ? 'automation.rules.enable' : 'automation.rules.disable';
         const result = await api.call(action, { id });
-        showToast(`规则 ${id} ${enable ? '启用' : '禁用'}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
+        showToast(typeof t === 'function' ? t('toast.ruleToggled', { id, state: enable ? t('status.enabled') : t('status.disabled') }) + ': ' + (result.message || 'OK') : `规则 ${id} ${enable ? '启用' : '禁用'}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
         if (result.code === 0) {
             await refreshRules();
         }
     } catch (error) {
-        showToast(`切换规则状态失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.toggleRuleFailed') + ': ' + error.message : `切换规则状态失败: ${error.message}`, 'error');
     }
 }
 
@@ -16953,9 +16980,9 @@ async function toggleRule(id, enable) {
 async function triggerRule(id) {
     try {
         const result = await api.call('automation.rules.trigger', { id });
-        showToast(`触发规则 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
+        showToast(typeof t === 'function' ? t('toast.ruleTriggered', { id }) + ': ' + (result.message || 'OK') : `触发规则 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
     } catch (error) {
-        showToast(`触发规则失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.triggerRuleFailed') + ': ' + error.message : `触发规则失败: ${error.message}`, 'error');
     }
 }
 
@@ -17598,7 +17625,7 @@ async function submitAction() {
     const async = document.getElementById('action-async')?.checked || false;
     
     if (!id) {
-        showToast('请填写动作 ID', 'error');
+        showToast(typeof t === 'function' ? t('toast.fillActionId') : '请填写动作 ID', 'error');
         return;
     }
     if (!type) {
@@ -17613,7 +17640,7 @@ async function submitAction() {
         case 'cli':
             const cliCmd = document.getElementById('action-cli-command')?.value?.trim();
             if (!cliCmd) {
-                showToast('请填写命令行', 'error');
+                showToast(typeof t === 'function' ? t('toast.fillCommand') : '请填写命令行', 'error');
                 return;
             }
             data.cli = {
@@ -17625,7 +17652,7 @@ async function submitAction() {
         case 'ssh_cmd_ref':
             const cmdId = document.getElementById('action-ssh-cmd-id')?.value;
             if (!cmdId) {
-                showToast('请选择 SSH 命令', 'error');
+                showToast(typeof t === 'function' ? t('toast.selectSshCommand') : '请选择 SSH 命令', 'error');
                 return;
             }
             data.ssh_ref = { cmd_id: cmdId };
@@ -17633,7 +17660,7 @@ async function submitAction() {
         case 'led':
             const ledDevice = document.getElementById('action-led-device')?.value;
             if (!ledDevice) {
-                showToast('请选择 LED 设备', 'error');
+                showToast(typeof t === 'function' ? t('toast.selectLedDevice') : '请选择 LED 设备', 'error');
                 return;
             }
             const isMatrix = ledDevice === 'matrix';
@@ -17659,7 +17686,7 @@ async function submitAction() {
                     data.led.speed = parseInt(document.getElementById('action-led-speed')?.value) || 50;
                     data.led.color = document.getElementById('action-led-color')?.value || '#FF0000';
                     if (!data.led.effect) {
-                        showToast('请选择动画', 'error');
+                        showToast(typeof t === 'function' ? t('toast.selectAnimation') : '请选择动画', 'error');
                         return;
                     }
                     break;
@@ -17672,7 +17699,7 @@ async function submitAction() {
                 case 'text':
                     data.led.text = document.getElementById('action-led-text')?.value?.trim();
                     if (!data.led.text) {
-                        showToast('请输入文本内容', 'error');
+                        showToast(typeof t === 'function' ? t('toast.enterText') : '请输入文本内容', 'error');
                         return;
                     }
                     data.led.font = document.getElementById('action-led-font')?.value || '';
@@ -17688,7 +17715,7 @@ async function submitAction() {
                 case 'image':
                     data.led.image_path = document.getElementById('action-led-image-path')?.value?.trim();
                     if (!data.led.image_path) {
-                        showToast('请输入图像路径', 'error');
+                        showToast((typeof t === 'function' ? t('toast.enterImagePath') : '请输入图像路径'), 'error');
                         return;
                     }
                     data.led.center = document.getElementById('action-led-center')?.checked || false;
@@ -17696,7 +17723,7 @@ async function submitAction() {
                 case 'qrcode':
                     data.led.qr_text = document.getElementById('action-led-qr-text')?.value?.trim();
                     if (!data.led.qr_text) {
-                        showToast('请输入QR码内容', 'error');
+                        showToast(typeof t === 'function' ? t('toast.enterQrContent') : '请输入QR码内容', 'error');
                         return;
                     }
                     data.led.qr_ecc = document.getElementById('action-led-qr-ecc')?.value || 'M';
@@ -17706,7 +17733,7 @@ async function submitAction() {
                 case 'filter':
                     data.led.filter = document.getElementById('action-led-filter')?.value;
                     if (!data.led.filter) {
-                        showToast('请选择滤镜', 'error');
+                        showToast(typeof t === 'function' ? t('toast.selectFilter') : '请选择滤镜', 'error');
                         return;
                     }
                     // 根据滤镜类型收集对应参数
@@ -17726,7 +17753,7 @@ async function submitAction() {
         case 'log':
             const logMsg = document.getElementById('action-log-message')?.value?.trim();
             if (!logMsg) {
-                showToast('请填写日志消息', 'error');
+                showToast(typeof t === 'function' ? t('toast.fillLogMessage') : '请填写日志消息', 'error');
                 return;
             }
             data.log = {
@@ -17738,7 +17765,7 @@ async function submitAction() {
             const varName = document.getElementById('action-var-name')?.value?.trim();
             const varValue = document.getElementById('action-var-value')?.value?.trim();
             if (!varName || !varValue) {
-                showToast('请填写变量名和值', 'error');
+                showToast(typeof t === 'function' ? t('toast.fillVarNameValue') : '请填写变量名和值', 'error');
                 return;
             }
             data.set_var = {
@@ -17749,7 +17776,7 @@ async function submitAction() {
         case 'webhook':
             const webhookUrl = document.getElementById('action-webhook-url')?.value?.trim();
             if (!webhookUrl) {
-                showToast('请填写 Webhook URL', 'error');
+                showToast(typeof t === 'function' ? t('toast.fillWebhookUrl') : '请填写 Webhook URL', 'error');
                 return;
             }
             data.webhook = {
@@ -17763,14 +17790,14 @@ async function submitAction() {
     try {
         const result = await api.call('automation.actions.add', data);
         if (result.code === 0) {
-            showToast(`动作模板 ${id} 创建成功`, 'success');
+            showToast(typeof t === 'function' ? t('toast.actionCreated', { id }) : `动作模板 ${id} 创建成功`, 'success');
             closeModal('action-modal');
             await refreshActions();
         } else {
-            showToast(`创建失败: ${result.message}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.actionCreateFailed') + ': ' + result.message : `创建失败: ${result.message}`, 'error');
         }
     } catch (error) {
-        showToast(`创建失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.actionCreateFailed') + ': ' + error.message : `创建失败: ${error.message}`, 'error');
     }
 }
 
@@ -18580,7 +18607,7 @@ function selectVariable(varName) {
                 saveDataWidgets();
                 renderDataWidgets();
                 refreshDataWidgets();
-                showToast(`已绑定 ${widget.label} → ${varName}`, 'success');
+                showToast(typeof t === 'function' ? t('toast.widgetBound', { widget: widget.label, var: varName }) : `已绑定 ${widget.label} → ${varName}`, 'success');
             }
         }
         closeModal('variable-select-modal');
@@ -18675,7 +18702,7 @@ function updateActionFilterParams() {
  */
 async function testAction(id) {
     try {
-        showToast(`正在执行动作: ${id}...`, 'info');
+        showToast(typeof t === 'function' ? t('toast.actionExecuting', { id }) : `正在执行动作: ${id}...`, 'info');
         const result = await api.call('automation.actions.execute', { id });
         console.log('Action execute result:', result);
         
@@ -18686,11 +18713,11 @@ async function testAction(id) {
             }
             showToast(msg, 'success');
         } else {
-            showToast(`动作 ${id} 失败: ${result.message || '未知错误'}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.actionFailed', { id }) + ': ' + (result.message || t('common.unknown')) : `动作 ${id} 失败: ${result.message || '未知错误'}`, 'error');
         }
     } catch (error) {
         console.error('Action execute error:', error);
-        showToast(`动作执行失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.actionExecuteFailed') + ': ' + error.message : `动作执行失败: ${error.message}`, 'error');
     }
 }
 
@@ -18701,7 +18728,7 @@ async function editAction(id) {
     try {
         const result = await api.call('automation.actions.get', { id });
         if (result.code !== 0) {
-            showToast(`获取动作详情失败: ${result.message}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.getActionFailed') + ': ' + result.message : `获取动作详情失败: ${result.message}`, 'error');
             return;
         }
         
@@ -18917,7 +18944,7 @@ async function editAction(id) {
         }
         
     } catch (error) {
-        showToast(`编辑动作失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.editActionFailed') + ': ' + error.message : `编辑动作失败: ${error.message}`, 'error');
     }
 }
 
@@ -18933,7 +18960,7 @@ async function updateAction(originalId) {
         // 删除旧模板
         const deleteResult = await api.call('automation.actions.delete', { id: originalId });
         if (deleteResult.code !== 0) {
-            showToast(`更新失败: 无法删除旧模板`, 'error');
+            showToast(typeof t === 'function' ? t('toast.deleteOldTemplateFailed') : '更新失败: 无法删除旧模板', 'error');
             return;
         }
         
@@ -18944,7 +18971,7 @@ async function updateAction(originalId) {
         await submitAction();
         
     } catch (error) {
-        showToast(`更新失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.updateFailed') + ': ' + error.message : `更新失败: ${error.message}`, 'error');
     }
 }
 
@@ -18956,12 +18983,12 @@ async function deleteAction(id) {
     
     try {
         const result = await api.call('automation.actions.delete', { id });
-        showToast(`删除动作 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
+        showToast(typeof t === 'function' ? t('toast.deleteActionResult', { id }) + ': ' + (result.message || 'OK') : `删除动作 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
         if (result.code === 0) {
             await refreshActions();
         }
     } catch (error) {
-        showToast(`删除失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.deleteFailedMsg', { msg: error.message }) : `删除失败: ${error.message}`, 'error');
     }
 }
 
@@ -18972,12 +18999,12 @@ async function toggleSource(id, enable) {
     try {
         const action = enable ? 'automation.sources.enable' : 'automation.sources.disable';
         const result = await api.call(action, { id });
-        showToast(`数据源 ${id} ${enable ? '启用' : '禁用'}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
+        showToast(typeof t === 'function' ? t('toast.sourceToggled', { id, state: enable ? t('status.enabled') : t('status.disabled') }) + ': ' + (result.message || 'OK') : `数据源 ${id} ${enable ? '启用' : '禁用'}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
         if (result.code === 0) {
             await refreshSources();
         }
     } catch (error) {
-        showToast(`切换数据源状态失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.toggleSourceFailed') + ': ' + error.message : `切换数据源状态失败: ${error.message}`, 'error');
     }
 }
 
@@ -18991,12 +19018,12 @@ async function deleteSource(id) {
     
     try {
         const result = await api.call('automation.sources.delete', { id });
-        showToast(`删除数据源 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
+        showToast(typeof t === 'function' ? t('toast.deleteSourceResult', { id }) + ': ' + (result.message || 'OK') : `删除数据源 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
         if (result.code === 0) {
             await Promise.all([refreshSources(), refreshAutomationStatus()]);
         }
     } catch (error) {
-        showToast(`删除数据源失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.deleteSourceFailed') + ': ' + error.message : `删除数据源失败: ${error.message}`, 'error');
     }
 }
 
@@ -19143,7 +19170,7 @@ async function saveShutdownSettings() {
     try {
         const result = await api.powerProtectionSet(config);
         if (result.code === 0) {
-            showToast('关机设置已保存', 'success');
+            showToast(typeof t === 'function' ? t('toast.shutdownSettingsSaved') : '关机设置已保存', 'success');
             closeShutdownSettingsModal();
         } else {
             errorDiv.textContent = result.message || '保存失败';
@@ -19179,12 +19206,12 @@ async function resetShutdownSettings() {
             document.getElementById('ss-shutdown-delay').value = 60;
             document.getElementById('ss-recovery-hold').value = 5;
             document.getElementById('ss-fan-stop-delay').value = 60;
-            showToast('已恢复默认设置', 'success');
+            showToast(typeof t === 'function' ? t('toast.defaultsRestored') : '已恢复默认设置', 'success');
         } else {
-            showToast('恢复失败: ' + (result.message || 'Unknown error'), 'error');
+            showToast(typeof t === 'function' ? t('toast.restoreFailedMsg', { msg: result.message || t('common.unknown') }) : '恢复失败: ' + (result.message || '未知错误'), 'error');
         }
     } catch (e) {
-        showToast('恢复失败: ' + e.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.restoreFailedMsg', { msg: e.message }) : '恢复失败: ' + e.message, 'error');
     }
 }
 
@@ -19198,12 +19225,12 @@ async function deleteRule(id) {
     
     try {
         const result = await api.call('automation.rules.delete', { id });
-        showToast(`删除规则 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
+        showToast(typeof t === 'function' ? t('toast.deleteRuleResult', { id }) + ': ' + (result.message || 'OK') : `删除规则 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
         if (result.code === 0) {
             await Promise.all([refreshRules(), refreshAutomationStatus()]);
         }
     } catch (error) {
-        showToast(`删除规则失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.deleteRuleFailed') + ': ' + error.message : `删除规则失败: ${error.message}`, 'error');
     }
 }
 
@@ -19215,14 +19242,14 @@ async function editRule(id) {
         // 获取规则详情
         const result = await api.call('automation.rules.get', { id });
         if (result.code !== 0 || !result.data) {
-            showToast(`获取规则详情失败: ${result.message || '未知错误'}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.getRuleDetailFailed') + ': ' + (result.message || t('common.unknown')) : `获取规则详情失败: ${result.message || '未知错误'}`, 'error');
             return;
         }
         
         // 打开编辑模态框
         showAddRuleModal(result.data);
     } catch (error) {
-        showToast(`获取规则详情失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.getRuleDetailFailed') + ': ' + error.message : `获取规则详情失败: ${error.message}`, 'error');
     }
 }
 
@@ -20065,14 +20092,14 @@ async function submitAddSource() {
     try {
         const result = await api.call('automation.sources.add', params);
         if (result.code === 0) {
-            showToast(`数据源 ${id} 创建成功`, 'success');
+            showToast(typeof t === 'function' ? t('toast.sourceCreated', { id }) : `数据源 ${id} 创建成功`, 'success');
             closeModal('add-source-modal');
             await Promise.all([refreshSources(), refreshAutomationStatus()]);
         } else {
-            showToast(`创建数据源失败: ${result.message}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.sourceCreateFailed') + ': ' + result.message : `创建数据源失败: ${result.message}`, 'error');
         }
     } catch (error) {
-        showToast(`创建数据源失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.sourceCreateFailed') + ': ' + error.message : `创建数据源失败: ${error.message}`, 'error');
     }
 }
 
@@ -20628,7 +20655,7 @@ async function addActionTemplateRow(templateId = '', delayMs = 0, repeatMode = '
     await loadActionTemplatesForRule();
     
     if (cachedActionTemplates.length === 0) {
-        showToast('请先创建动作模板', 'warning');
+        showToast(typeof t === 'function' ? t('toast.createActionFirst') : '请先创建动作模板', 'warning');
         return;
     }
     
@@ -21148,14 +21175,14 @@ async function submitAddRule(originalId = null) {
         
         const result = await api.call('automation.rules.add', params);
         if (result.code === 0) {
-            showToast(`规则 ${id} ${isEdit ? '更新' : '创建'}成功`, 'success');
+            showToast(typeof t === 'function' ? t('toast.ruleCreated', { id, action: isEdit ? t('toast.ruleUpdate') : t('toast.ruleCreate') }) : `规则 ${id} ${isEdit ? '更新' : '创建'}成功`, 'success');
             closeModal('add-rule-modal');
             await Promise.all([refreshRules(), refreshAutomationStatus()]);
         } else {
-            showToast(`${isEdit ? '更新' : '创建'}规则失败: ${result.message}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.ruleCreateFailed', { action: isEdit ? t('toast.ruleUpdate') : t('toast.ruleCreate') }) + ': ' + result.message : `${isEdit ? '更新' : '创建'}规则失败: ${result.message}`, 'error');
         }
     } catch (error) {
-        showToast(`${isEdit ? '更新' : '创建'}规则失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ruleCreateFailed', { action: isEdit ? t('toast.ruleUpdate') : t('toast.ruleCreate') }) + ': ' + error.message : `${isEdit ? '更新' : '创建'}规则失败: ${error.message}`, 'error');
     }
 }
 
@@ -21434,7 +21461,7 @@ async function confirmSourceImport() {
     const importBtn = document.getElementById('import-source-btn');
     
     if (!window._importSourceTscfg) {
-        showToast('请先选择文件', 'error');
+        showToast((typeof t === 'function' ? t('toast.selectFileFirst') : '请先选择文件'), 'error');
         return;
     }
     
@@ -21460,7 +21487,7 @@ async function confirmSourceImport() {
             } else {
                 resultBox.className = 'result-box success';
                 resultBox.innerHTML = `${typeof t === 'function' ? t('securityPage.savedConfig') : 'Saved config'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#6b7280">${typeof t === 'function' ? t('securityPage.restartToApply') : 'Restart to apply'}</small>`;
-                showToast(`已导入配置，重启后生效`, 'success');
+                showToast(typeof t === 'function' ? t('toast.configImported') : '已导入配置，重启后生效', 'success');
                 setTimeout(() => hideImportSourceModal(), 2000);
             }
         } else {
@@ -21549,7 +21576,7 @@ async function doExportRule(ruleId) {
         
         resultBox.className = 'result-box success';
         resultBox.textContent = '导出成功';
-        showToast(`已导出规则配置: ${data.filename}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ruleConfigExported', { filename: data.filename }) : `已导出规则配置: ${data.filename}`, 'success');
         setTimeout(() => hideExportRuleModal(), 1000);
     } catch (e) {
         resultBox.className = 'result-box error';
@@ -21676,7 +21703,7 @@ async function confirmRuleImport() {
     const importBtn = document.getElementById('import-rule-btn');
     
     if (!window._importRuleTscfg) {
-        showToast('请先选择文件', 'error');
+        showToast((typeof t === 'function' ? t('toast.selectFileFirst') : '请先选择文件'), 'error');
         return;
     }
     
@@ -21702,7 +21729,7 @@ async function confirmRuleImport() {
             } else {
                 resultBox.className = 'result-box success';
                 resultBox.innerHTML = `${typeof t === 'function' ? t('securityPage.savedConfig') : 'Saved config'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#6b7280">${typeof t === 'function' ? t('securityPage.restartToApply') : 'Restart to apply'}</small>`;
-                showToast(`已导入配置，重启后生效`, 'success');
+                showToast(typeof t === 'function' ? t('toast.configImported') : '已导入配置，重启后生效', 'success');
                 setTimeout(() => hideImportRuleModal(), 2000);
             }
         } else {
@@ -21918,7 +21945,7 @@ async function confirmActionImport() {
     const importBtn = document.getElementById('import-action-btn');
     
     if (!window._importActionTscfg) {
-        showToast('请先选择文件', 'error');
+        showToast((typeof t === 'function' ? t('toast.selectFileFirst') : '请先选择文件'), 'error');
         return;
     }
     
@@ -21944,7 +21971,7 @@ async function confirmActionImport() {
             } else {
                 resultBox.className = 'result-box success';
                 resultBox.innerHTML = `${typeof t === 'function' ? t('securityPage.savedConfig') : 'Saved config'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#6b7280">${typeof t === 'function' ? t('securityPage.restartToApply') : 'Restart to apply'}</small>`;
-                showToast(`已导入配置，重启后生效`, 'success');
+                showToast(typeof t === 'function' ? t('toast.configImported') : '已导入配置，重启后生效', 'success');
                 setTimeout(() => hideImportActionModal(), 2000);
             }
         } else {

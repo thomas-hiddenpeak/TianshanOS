@@ -192,6 +192,7 @@ body {
 .footer {
     height: var(--footer-height);
     line-height: var(--footer-height);
+    margin-top: -14px;
     background: transparent;
     border-top: none;
     text-align: center;
@@ -1686,9 +1687,17 @@ button.btn-gray:hover,
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
+    margin-bottom: 12px;  /* 与 Device Panel 等 section-header 一致 */
     flex-wrap: wrap;
     gap: 12px;
+}
+/* 系统页 LED 区块：上下间距相等，使标题+按钮在灰色顶线与蓝色内容线间垂直居中 */
+.section .led-page-header {
+    margin-top: -12px;   /* 24px padding → 12px，与 margin-bottom 一致 */
+}
+/* 独立 LED 页：main 有 20px padding，同样实现上下对称 */
+.page-led .led-page-header {
+    margin-top: -8px;   /* 20px → 12px，与 margin-bottom 一致 */
 }
 
 .led-page-header h1 {
@@ -7267,6 +7276,18 @@ button.btn-gray:hover,
     grid-template-columns: 1fr 1fr;
     gap: 20px;
     margin-bottom: 20px;
+}
+
+/* 系统页：Resource Monitor / Device Panel / Fan Control / LED 卡片间距统一为 20px */
+.page-system .panel-row {
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+.page-system .panel-row .section {
+    margin-top: 0;   /* 由 panel-row margin-top 提供与上方卡片的间距 */
+}
+.page-system .panel-row + .section {
+    margin-top: 20px;   /* LED 与 panel-row 的间距，覆盖 .section 默认 16px */
 }
 
 @media (max-width: 1200px) {
