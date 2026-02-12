@@ -3729,6 +3729,18 @@ button.btn-gray:hover,
     margin-left: auto;
 }
 
+/* 挂载/卸载 SD 按钮与 Tab（SD卡、SPIFFS）高度一致 */
+.storage-tabs .storage-controls .btn {
+    height: 2rem;
+    min-height: 2rem;
+    padding-top: 0;
+    padding-bottom: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+}
+
 .btn-success {
     background-color: var(--emerald-50);
     border-color: transparent;
@@ -3880,6 +3892,18 @@ button.btn-gray:hover,
 
 .file-actions-cell .btn-sm {
     margin: 0 2px;
+}
+
+/* 操作列按钮（下载、重命名、删除）统一高度 */
+.file-actions-cell .btn.btn-sm {
+    height: 28px;
+    min-height: 28px;
+    padding-top: 0;
+    padding-bottom: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
 }
 
 .empty-folder {
