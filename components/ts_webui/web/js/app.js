@@ -433,7 +433,7 @@ function handleEvent(msg) {
             if (typeof window.renderFilteredLogs === 'function') {
                 window.renderFilteredLogs();
             }
-            showToast(`加载了 ${logs.length} 条历史日志`, 'success');
+            showToast(typeof t === 'function' ? t('toast.logsLoadedCount', { count: logs.length }) : `加载了 ${logs.length} 条历史日志`, 'success');
         }
         
         // 终端页面的日志模态框
@@ -480,11 +480,11 @@ function handlePowerEvent(msg) {
     
     // 显示警告
     if (state === 'LOW_VOLTAGE' || state === 'SHUTDOWN') {
-        showToast(`低电压警告: ${voltage}V (${countdown}s)`, 'warning', 5000);
+        showToast(typeof t === 'function' ? t('system.lowVoltageWarning', { voltage, countdown }) : `低电压警告: ${voltage}V (${countdown}s)`, 'warning', 5000);
     } else if (state === 'PROTECTED') {
-        showToast(`电压保护已触发`, 'error', 10000);
+        showToast(typeof t === 'function' ? t('system.voltageProtectionTriggered') : '电压保护已触发', 'error', 10000);
     } else if (state === 'RECOVERY') {
-        showToast(`电压恢复中: ${voltage}V`, 'info', 3000);
+        showToast(typeof t === 'function' ? t('system.voltageRecovering', { voltage }) : `电压恢复中: ${voltage}V`, 'info', 3000);
     }
 }
 
@@ -714,11 +714,14 @@ async function loadSystemPage() {
         </div>
     `;
     
-    // 初始加载
+    // 初始加载（不含快捷操作，避免 ssh.commands.list 慢响应阻塞）
     await refreshSystemPageOnce();
     
-    // 加载数据监控面板
+    // 加载数据监控面板（优先执行，确保组件能实时获取变量数据）
     await initDataWidgets();
+    
+    // 快捷操作延迟 2 秒后台加载，避免与 initDataWidgets 的首次变量刷新竞争 API
+    setTimeout(() => void refreshQuickActions(), 2000);
     
     // 订阅 WebSocket 实时更新 - 使用聚合订阅（system.dashboard）
     if (subscriptionManager) {
@@ -819,8 +822,7 @@ async function refreshSystemPageOnce() {
     // LED 设备
     await refreshSystemLeds();
     
-    // 快捷操作
-    await refreshQuickActions();
+    // 快捷操作已移至 loadSystemPage 末尾后台执行，避免阻塞 initDataWidgets
     
     // USB Mux 状态
     await refreshUsbMuxStatus();
@@ -1287,7 +1289,7 @@ function updateMemoryInfo(data) {
         document.getElementById('psram-text').textContent = 
             `${formatBytes(psramUsed)} / ${formatBytes(psramTotal)} (${psramPercent}%)`;
     } else {
-        document.getElementById('psram-text').textContent = '不可用';
+        document.getElementById('psram-text').textContent = typeof t === 'function' ? t('otaPage.psramUnavailable') : '不可用';
     }
 }
 
@@ -1315,7 +1317,7 @@ function updateCpuInfo(data) {
     
     if (data.total_usage !== undefined) {
         const avgUsage = Math.round(data.total_usage);
-        html += `<p style="margin-top:5px;font-size:0.8em;color:#9ca3af">平均: ${avgUsage}%</p>`;
+        html += `<p style="margin-top:5px;font-size:0.8em;color:#9ca3af">${typeof t === 'function' ? t('common.average') : '平均'}: ${avgUsage}%</p>`;
     }
     
     container.innerHTML = html;
@@ -1516,7 +1518,7 @@ async function applyTestTemp() {
     const temp = parseFloat(input?.value);
     
     if (isNaN(temp) || temp < 0 || temp > 100) {
-        showToast('请输入有效温度 (0-100°C)', 'warning');
+        showToast((typeof t === 'function' ? t('fan.enterValidTemp') : '请输入有效温度 (0-100°C)'), 'warning');
         return;
     }
     
@@ -1525,15 +1527,15 @@ async function applyTestTemp() {
         const result = await api.call('temp.manual', { temperature: temp });
         
         if (result.code === 0) {
-            showToast(`测试温度已设置为 ${temp}°C`, 'success');
+            showToast((typeof t === 'function' ? t('fan.testTempSet', { temp }) : `测试温度已设置为 ${temp}°C`), 'success');
             // 刷新风扇状态
             await refreshFans();
         } else {
-            showToast(`设置失败: ${result.message}`, 'error');
+            showToast((typeof t === 'function' ? t('fan.setFailed', { msg: result.message }) : `设置失败: ${result.message}`), 'error');
         }
     } catch (e) {
         console.error('设置测试温度失败:', e);
-        showToast(`设置失败: ${e.message}`, 'error');
+        showToast((typeof t === 'function' ? t('fan.setFailed', { msg: e.message }) : `设置失败: ${e.message}`), 'error');
     }
 }
 
@@ -1546,16 +1548,16 @@ async function clearTestTemp() {
         const result = await api.call('temp.select', { source: 'variable' });
         
         if (result.code === 0) {
-            showToast('测试温度已清除，恢复正常模式', 'success');
+            showToast((typeof t === 'function' ? t('fan.testTempCleared') : '测试温度已清除，恢复正常模式'), 'success');
             document.getElementById('fan-test-temp').value = '';
             // 刷新风扇状态
             await refreshFans();
         } else {
-            showToast(`清除失败: ${result.message}`, 'error');
+            showToast((typeof t === 'function' ? t('fan.clearFailed', { msg: result.message }) : `清除失败: ${result.message}`), 'error');
         }
     } catch (e) {
         console.error('清除测试温度失败:', e);
-        showToast(`清除失败: ${e.message}`, 'error');
+        showToast((typeof t === 'function' ? t('fan.clearFailed', { msg: e.message }) : `清除失败: ${e.message}`), 'error');
     }
 }
 
@@ -1567,16 +1569,16 @@ function hideServicesModal() {
 async function setFanSpeed(id, speed) {
     try {
         await api.fanSet(id, parseInt(speed));
-        showToast(`风扇 ${id} 速度已设置为 ${speed}%`, 'success');
-    } catch (e) { showToast('设置风扇失败: ' + e.message, 'error'); }
+        showToast(typeof t === 'function' ? t('fan.speedSet', { id, speed }) : `风扇 ${id} 速度已设置为 ${speed}%`, 'success');
+    } catch (e) { showToast((typeof t === 'function' ? t('fan.setFanFailed', { msg: e.message }) : '设置风扇失败: ' + e.message), 'error'); }
 }
 
 async function setFanMode(id, mode) {
     try {
         await api.call('fan.mode', { id: id, mode: mode });
-        showToast(`风扇 ${id} 模式已切换为 ${mode}`, 'success');
+        showToast(typeof t === 'function' ? t('fan.modeSwitch', { id, mode }) : `风扇 ${id} 模式已切换为 ${mode}`, 'success');
         await refreshFans();
-    } catch (e) { showToast('设置风扇模式失败: ' + e.message, 'error'); }
+    } catch (e) { showToast((typeof t === 'function' ? t('fan.setFanModeFailed', { msg: e.message }) : '设置风扇模式失败: ' + e.message), 'error'); }
 }
 
 async function refreshFans() {
@@ -2061,7 +2063,7 @@ async function loadVariableBindStatus() {
             
             if (priorityVars.length > 0) {
                 const group1 = document.createElement('optgroup');
-                group1.label = '温度变量';
+                group1.label = typeof t === 'function' ? t('dataWidget.tempVariables') : '温度变量';
                 priorityVars.forEach(v => {
                     const opt = document.createElement('option');
                     opt.value = v.name;
@@ -2073,7 +2075,7 @@ async function loadVariableBindStatus() {
             
             if (otherVars.length > 0) {
                 const group2 = document.createElement('optgroup');
-                group2.label = '其他数值变量';
+                group2.label = typeof t === 'function' ? t('dataWidget.otherNumericVariables') : '其他数值变量';
                 otherVars.forEach(v => {
                     const opt = document.createElement('option');
                     opt.value = v.name;
@@ -2164,7 +2166,7 @@ async function unbindTempVariable() {
  * 保存 AGX 服务器配置 (保留用于兼容)
  */
 async function saveAgxConfig() {
-    showToast('AGX 配置已移至变量绑定', 'info');
+    showToast((typeof t === 'function' ? t('toast.agxMovedToBinding') : 'AGX 配置已移至变量绑定'), 'info');
     await loadVariableBindStatus();
 }
 
@@ -2412,10 +2414,10 @@ async function serviceAction(name, action) {
         if (action === 'restart') await api.serviceRestart(name);
         else if (action === 'start') await api.serviceStart(name);
         else if (action === 'stop') await api.serviceStop(name);
-        showToast(`服务 ${name} ${action} 成功`, 'success');
+        showToast(typeof t === 'function' ? t('toast.serviceSuccess', { name, action }) : `服务 ${name} ${action} 成功`, 'success');
         await refreshSystemPage();
     } catch (e) {
-        showToast(`操作失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.operationFailedMsg', { msg: e.message }) : `操作失败: ${e.message}`, 'error');
     }
 }
 
@@ -2478,7 +2480,7 @@ async function refreshSystemLeds() {
         }
     } catch (e) {
         console.error('LED list error:', e);
-        container.innerHTML = `<div class="error-state">加载失败: ${e.message}</div>`;
+        container.innerHTML = `<div class="error-state">${typeof t === 'function' ? t('common.loadFailedMsg', { msg: e.message }) : '加载失败: ' + e.message}</div>`;
     }
 }
 
@@ -2596,6 +2598,9 @@ let dataWidgetsIntervalId = null;
 
 // 标记是否正在保存（防止重复保存）
 let dataWidgetsSaving = false;
+
+// 标记是否正在刷新（防止重叠刷新）
+let dataWidgetsRefreshing = false;
 
 /**
  * 加载数据组件配置
@@ -2964,23 +2969,23 @@ function renderWidgetHtml(widget) {
                 <div class="dw-log-toolbar ${isCollapsed ? 'dw-log-toolbar-collapsed' : ''}">
                     <button class="btn btn-sm dw-log-collapse-btn" 
                             id="dw-${id}-collapse" onclick="event.stopPropagation();toggleLogCollapse('${id}')"
-                            title="${isCollapsed ? '展开日志' : '折叠日志'}">
+                            title="${isCollapsed ? (typeof t === 'function' ? t('dataWidget.expandLog') : '展开日志') : (typeof t === 'function' ? t('dataWidget.collapseLog') : '折叠日志')}">
                         <i class="ri-arrow-${isCollapsed ? 'down' : 'up'}-s-line"></i>
                     </button>
                     <button class="btn btn-sm ${isReading ? 'btn-danger' : 'btn-service-style'}" 
                             id="dw-${id}-toggle" onclick="event.stopPropagation();toggleLogReading('${id}')">
-                        <i class="ri-${isReading ? 'stop' : 'play'}-line"></i> ${isReading ? '停止' : '读取'}
+                        <i class="ri-${isReading ? 'stop' : 'play'}-line"></i> ${isReading ? (typeof t === 'function' ? t('fanPage.stopReading') : '停止') : (typeof t === 'function' ? t('fanPage.reading') : '读取')}
                     </button>
-                    <button class="btn btn-sm" onclick="event.stopPropagation();refreshLogOnce('${id}')" title="刷新一次">
+                    <button class="btn btn-sm" onclick="event.stopPropagation();refreshLogOnce('${id}')" title="${typeof t === 'function' ? t('common.refreshOnce') : '刷新一次'}">
                         <i class="ri-refresh-line"></i>
                     </button>
-                    <button class="btn btn-sm" onclick="event.stopPropagation();clearLogWidget('${id}')" title="清空">
+                    <button class="btn btn-sm" onclick="event.stopPropagation();clearLogWidget('${id}')" title="${typeof t === 'function' ? t('common.clear') : '清空'}">
                         <i class="ri-delete-bin-line"></i>
                     </button>
-                    <span class="dw-log-status" id="dw-${id}-status">${isReading ? '读取中...' : '已停止'}</span>
+                    <span class="dw-log-status" id="dw-${id}-status">${isReading ? (typeof t === 'function' ? t('common.reading') : '读取中...') : (typeof t === 'function' ? t('status.stopped') : '已停止')}</span>
                 </div>
                 <div class="dw-log-container ${isCollapsed ? 'dw-log-collapsed' : ''}" id="dw-${id}-log" data-max-lines="${maxLines}">
-                    <div class="dw-log-empty">点击「读取」开始获取日志</div>
+                    <div class="dw-log-empty">${typeof t === 'function' ? t('dataWidget.clickToRead') : '点击「读取」开始获取日志'}</div>
                 </div>`;
             break;
             
@@ -3116,10 +3121,10 @@ function updateWidgetValue(widget, value) {
             const th = thresholds || [0, 50, 80];
             const cl = colors || ['#40c057', '#fab005', '#fa5252'];
             let statusColor = cl[0];
-            let statusText = '正常';
+            let statusText = typeof t === 'function' ? t('dataWidget.statusNormal') : '正常';
             if (!isNaN(numVal)) {
-                if (numVal >= th[2]) { statusColor = cl[2]; statusText = '警告'; }
-                else if (numVal >= th[1]) { statusColor = cl[1]; statusText = '注意'; }
+                if (numVal >= th[2]) { statusColor = cl[2]; statusText = typeof t === 'function' ? t('dataWidget.statusWarning') : '警告'; }
+                else if (numVal >= th[1]) { statusColor = cl[1]; statusText = typeof t === 'function' ? t('dataWidget.statusAttention') : '注意'; }
             }
             if (lightEl) lightEl.style.background = statusColor;
             if (valueEl) valueEl.textContent = statusText;
@@ -3170,55 +3175,63 @@ async function initDataWidgets() {
 
 /**
  * 刷新所有组件的数据
+ * 使用 automation.variables.list 一次获取全部变量，避免 N 次 get 串行调用
  */
 async function refreshDataWidgets() {
-    // 先批量获取所有需要的变量
-    const varNames = new Set();
-    dataWidgets.forEach(w => {
-        if (w.type !== 'log' && w.expression) {
-            // 从表达式中提取变量名
-            const matches = w.expression.match(/\$\{([^}]+)\}/g);
-            if (matches) {
-                matches.forEach(m => varNames.add(m.slice(2, -1).trim()));
+    if (dataWidgetsRefreshing) return;
+    dataWidgetsRefreshing = true;
+
+    try {
+        // 先收集所有需要的变量名
+        const varNames = new Set();
+        dataWidgets.forEach(w => {
+            if (w.type !== 'log' && w.expression) {
+                const matches = w.expression.match(/\$\{([^}]+)\}/g);
+                if (matches) {
+                    matches.forEach(m => varNames.add(m.slice(2, -1).trim()));
+                }
+            }
+            if (w.expression2) {
+                const matches = w.expression2.match(/\$\{([^}]+)\}/g);
+                if (matches) {
+                    matches.forEach(m => varNames.add(m.slice(2, -1).trim()));
+                }
+            }
+        });
+
+        // 一次 API 调用获取全部变量（替代 N 次 variables.get）
+        const variables = {};
+        if (varNames.size > 0) {
+            try {
+                const resp = await api.call('automation.variables.list');
+                if (resp.code === 0 && resp.data?.variables) {
+                    for (const v of resp.data.variables) {
+                        if (varNames.has(v.name) && v.value !== undefined) {
+                            variables[v.name] = v.value;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('获取变量列表失败:', e);
             }
         }
-        if (w.expression2) {
-            const matches = w.expression2.match(/\$\{([^}]+)\}/g);
-            if (matches) {
-                matches.forEach(m => varNames.add(m.slice(2, -1).trim()));
+
+        // 更新每个组件（日志组件不自动刷新）
+        for (const widget of dataWidgets) {
+            if (widget.type === 'log') {
+                continue;
+            } else if (widget.expression) {
+                const value = evaluateExpression(widget.expression, variables);
+                updateWidgetValue(widget, value);
+                if (widget.expression2) {
+                    widget.subValue = evaluateExpression(widget.expression2, variables);
+                }
+            } else {
+                updateWidgetValue(widget, null);
             }
         }
-    });
-    
-    // 获取所有变量的值
-    const variables = {};
-    for (const name of varNames) {
-        try {
-            const resp = await api.call('automation.variables.get', { name });
-            if (resp.code === 0 && resp.data) {
-                variables[name] = resp.data.value;
-            }
-        } catch (e) {
-            console.warn('获取变量失败:', name, e);
-        }
-    }
-    
-    // 更新每个组件（日志组件不自动刷新）
-    for (const widget of dataWidgets) {
-        if (widget.type === 'log') {
-            // 日志组件由用户手动控制，不自动刷新
-            continue;
-        } else if (widget.expression) {
-            const value = evaluateExpression(widget.expression, variables);
-            updateWidgetValue(widget, value);
-            
-            // 处理副值
-            if (widget.expression2) {
-                widget.subValue = evaluateExpression(widget.expression2, variables);
-            }
-        } else {
-            updateWidgetValue(widget, null);
-        }
+    } finally {
+        dataWidgetsRefreshing = false;
     }
 }
 
@@ -3259,7 +3272,7 @@ function toggleLogCollapse(widgetId) {
     
     if (btn) {
         btn.innerHTML = `<i class="ri-arrow-${widget._isCollapsed ? 'down' : 'up'}-s-line"></i>`;
-        btn.title = widget._isCollapsed ? '展开日志' : '折叠日志';
+        btn.title = widget._isCollapsed ? (typeof t === 'function' ? t('dataWidget.expandLog') : '展开日志') : (typeof t === 'function' ? t('dataWidget.collapseLog') : '折叠日志');
     }
     
     // 保存状态
@@ -3288,7 +3301,7 @@ function toggleLogReading(widgetId) {
 function startLogReading(widgetId) {
     const widget = dataWidgets.find(w => w.id === widgetId);
     if (!widget || !widget.expression) {
-        showToast('请先配置日志变量', 'warning');
+        showToast((typeof t === 'function' ? t('dataWidget.configLogVariableFirst') : '请先配置日志变量'), 'warning');
         return;
     }
     
@@ -3304,7 +3317,7 @@ function startLogReading(widgetId) {
         if (toolbar) toolbar.classList.remove('dw-log-toolbar-collapsed');
         if (btn) {
             btn.innerHTML = '<i class="ri-arrow-up-s-line"></i>';
-            btn.title = '折叠日志';
+            btn.title = typeof t === 'function' ? t('dataWidget.collapseLog') : '折叠日志';
         }
     }
     
@@ -3346,10 +3359,10 @@ function updateLogToggleButton(widgetId, isReading) {
     
     if (btn) {
         btn.className = `btn btn-sm ${isReading ? 'btn-danger' : 'btn-service-style'}`;
-        btn.innerHTML = `<i class="ri-${isReading ? 'stop' : 'play'}-line"></i> ${isReading ? '停止' : '读取'}`;
+        btn.innerHTML = `<i class="ri-${isReading ? 'stop' : 'play'}-line"></i> ${isReading ? (typeof t === 'function' ? t('fanPage.stopReading') : '停止') : (typeof t === 'function' ? t('fanPage.reading') : '读取')}`;
     }
     if (status) {
-        status.textContent = isReading ? '读取中...' : '已停止';
+        status.textContent = isReading ? (typeof t === 'function' ? t('common.reading') : '读取中...') : (typeof t === 'function' ? t('status.stopped') : '已停止');
     }
 }
 
@@ -3364,7 +3377,7 @@ async function refreshLogOnce(widgetId) {
     if (!container) return;
     
     if (!widget.expression) {
-        container.innerHTML = '<div class="dw-log-empty">未配置日志变量</div>';
+        container.innerHTML = '<div class="dw-log-empty">' + (typeof t === 'function' ? t('fanPage.noLogVariable') : '未配置日志变量') + '</div>';
         return;
     }
     
@@ -3372,7 +3385,7 @@ async function refreshLogOnce(widgetId) {
         // 从表达式中提取变量名
         const varMatch = widget.expression.match(/\$\{([^}]+)\}/);
         if (!varMatch) {
-            container.innerHTML = '<div class="dw-log-error">无效的变量表达式</div>';
+            container.innerHTML = '<div class="dw-log-error">' + (typeof t === 'function' ? t('fanPage.invalidExpression') : '无效的变量表达式') + '</div>';
             return;
         }
         
@@ -3380,7 +3393,7 @@ async function refreshLogOnce(widgetId) {
         const result = await api.call('automation.variables.get', { name: varName });
         
         if (result.code !== 0 || result.data?.value === undefined) {
-            container.innerHTML = '<div class="dw-log-error">变量不存在或无数据</div>';
+            container.innerHTML = '<div class="dw-log-error">' + (typeof t === 'function' ? t('fanPage.variableNoData') : '变量不存在或无数据') + '</div>';
             return;
         }
         
@@ -3389,7 +3402,7 @@ async function refreshLogOnce(widgetId) {
         
     } catch (e) {
         console.warn('获取日志变量失败:', e);
-        container.innerHTML = '<div class="dw-log-error">读取失败</div>';
+        container.innerHTML = '<div class="dw-log-error">' + (typeof t === 'function' ? t('fanPage.readFailed') : '读取失败') + '</div>';
     }
 }
 
@@ -3425,7 +3438,7 @@ function appendLogToWidget(widgetId, newText, maxLines) {
     
     // 渲染
     if (existingLines.length === 0) {
-        container.innerHTML = '<div class="dw-log-empty">暂无日志</div>';
+        container.innerHTML = '<div class="dw-log-empty">' + (typeof t === 'function' ? t('fanPage.noLogs') : '暂无日志') + '</div>';
     } else {
         container.innerHTML = existingLines.map(line => {
             const escaped = escapeHtml(line);
@@ -3450,7 +3463,7 @@ function appendLogToWidget(widgetId, newText, maxLines) {
 function clearLogWidget(widgetId) {
     const container = document.getElementById(`dw-${widgetId}-log`);
     if (container) {
-        container.innerHTML = '<div class="dw-log-empty">已清空</div>';
+        container.innerHTML = '<div class="dw-log-empty">' + (typeof t === 'function' ? t('fanPage.cleared') : '已清空') + '</div>';
     }
 }
 
@@ -3682,7 +3695,7 @@ function createNewWidget(type) {
         widget.maxLines = defaults.maxLines || 15;
         widget.refreshInterval = 2000;
         widget.layout = 'full';  // 日志组件默认独占一行
-        widget.label = '日志流';
+        widget.label = typeof t === 'function' ? t('dataWidget.presetLog') : '日志流';
     }
     
     dataWidgets.push(widget);
@@ -3930,7 +3943,7 @@ function deleteDataWidget(widgetId) {
     
     const widget = dataWidgets[idx];
     
-    if (!confirm(`确定要删除"${widget.label}"组件吗？`)) return;
+    if (!confirm(typeof t === 'function' ? t('ui.confirmDeleteWidget', { label: widget.label }) : `确定要删除"${widget.label}"组件吗？`)) return;
     
     dataWidgets.splice(idx, 1);
     saveDataWidgets();
@@ -4017,7 +4030,7 @@ async function refreshQuickActions() {
                         }
                         
                         const statusIcon = isRunning ? '<i class="ri-record-circle-fill" style="color:#059669"></i>' : '<i class="ri-record-circle-line" style="color:#9ca3af"></i>';
-                        const statusTitle = isRunning ? '进程运行中' : '进程未运行';
+                        const statusTitle = isRunning ? (typeof t === 'function' ? t('automationPage.processRunning') : '进程运行中') : (typeof t === 'function' ? t('automationPage.processNotRunning') : '进程未运行');
                         let serviceStatusHtml = '';
                         if (nohupInfo.serviceMode && nohupInfo.varName && isRunning) {
                             serviceStatusHtml = `
@@ -4026,22 +4039,27 @@ async function refreshQuickActions() {
                                 </div>
                             `;
                         }
+                        const viewLogText = typeof t === 'function' ? t('automationPage.logTitle') : '日志';
+                        const stopText = typeof t === 'function' ? t('automationPage.stopProcess') : '停止';
+                        const viewLogTitle = typeof t === 'function' ? t('automationPage.viewLog') : '查看日志';
+                        const stopTitle = typeof t === 'function' ? t('ssh.stopProcess') : '终止进程';
                         nohupBtns = `
                             <span class="nohup-status-badge" title="${statusTitle}">${statusIcon}</span>
                             ${serviceStatusHtml}
                             <div class="quick-action-nohup-bar" onclick="event.stopPropagation()">
-                                <button onclick="quickActionViewLog('${escapeHtml(nohupInfo.logFile)}', '${escapeHtml(nohupInfo.hostId)}')" title="查看日志">
-                                    <i class="ri-file-text-line"></i> 日志
+                                <button onclick="quickActionViewLog('${escapeHtml(nohupInfo.logFile)}', '${escapeHtml(nohupInfo.hostId)}')" title="${viewLogTitle}">
+                                    <i class="ri-file-text-line"></i> ${viewLogText}
                                 </button>
-                                <button class="btn-stop" onclick="quickActionStopProcess('${escapeHtml(nohupInfo.pidFile)}', '${escapeHtml(nohupInfo.hostId)}', '${escapeHtml(nohupInfo.cmdName)}', '${escapeHtml(nohupInfo.varName || '')}')" title="终止进程">
-                                    <i class="ri-stop-line"></i> 停止
+                                <button class="btn-stop" onclick="quickActionStopProcess('${escapeHtml(nohupInfo.pidFile)}', '${escapeHtml(nohupInfo.hostId)}', '${escapeHtml(nohupInfo.cmdName)}', '${escapeHtml(nohupInfo.varName || '')}')" title="${stopTitle}">
+                                    <i class="ri-stop-fill"></i> ${stopText}
                                 </button>
                             </div>
                         `;
                     }
                     
+                    const processRunningMsg = typeof t === 'function' ? t('toast.processRunning') : '进程正在运行中，请先停止';
                     const cardOnClick = (nohupInfo && isRunning) 
-                        ? `showToast('进程正在运行中，请先停止', 'warning')`
+                        ? `showToast(${JSON.stringify(processRunningMsg)}, 'warning')`
                         : `triggerQuickAction('${escapeHtml(rule.id)}')`;
                     const cleanName = rule.name.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F1E0}-\u{1F1FF}\u200D]+\s*/gu, '').trim();
                     cardsHtml.push(`
@@ -4124,7 +4142,7 @@ async function updateQuickActionServiceStatus() {
         
         // 如果进程未运行，始终显示"未启动"
         if (!isRunning) {
-            valueEl.textContent = '未启动';
+            valueEl.textContent = (typeof t === 'function' ? t('sshPage.statusIdle') : '未启动');
             container.className = 'quick-action-service-status status-idle';
             continue;
         }
@@ -4136,11 +4154,11 @@ async function updateQuickActionServiceStatus() {
                 valueEl.textContent = getServiceStatusLabel(status);
                 container.className = `quick-action-service-status status-${status}`;
             } else {
-                valueEl.textContent = '检测中';
+                valueEl.textContent = (typeof t === 'function' ? t('sshPage.statusChecking') : '检测中');
                 container.className = 'quick-action-service-status status-checking';
             }
         } catch (e) {
-            valueEl.textContent = '未知';
+            valueEl.textContent = (typeof t === 'function' ? t('sshPage.statusUnknown') : '未知');
             container.className = 'quick-action-service-status status-unknown';
         }
     }
@@ -4158,7 +4176,7 @@ async function triggerQuickAction(ruleId) {
     const card = event?.currentTarget || document.getElementById(`quick-action-${ruleId}`);
     if (!card) {
         console.error('triggerQuickAction: card not found for ruleId=', ruleId);
-        showToast('无法找到操作卡片', 'error');
+        showToast((typeof t === 'function' ? t('toast.cardNotFound') : '无法找到操作卡片'), 'error');
         return;
     }
     
@@ -4169,7 +4187,7 @@ async function triggerQuickAction(ruleId) {
     
     const now = Date.now();
     if (now < _quickActionTriggerCooldownUntil && ruleId !== _quickActionLastTriggeredId) {
-        showToast('请等待几秒后再触发其他模型', 'warning');
+        showToast((typeof t === 'function' ? t('toast.waitBeforeTrigger') : '请等待几秒后再触发其他模型'), 'warning');
         return;
     }
     
@@ -4188,14 +4206,14 @@ async function triggerQuickAction(ruleId) {
         const result = await api.call('automation.rules.trigger', { id: ruleId });
         
         if (result.code === 0) {
-            showToast('操作已执行', 'success');
+            showToast((typeof t === 'function' ? t('toast.operationExecuted') : '操作已执行'), 'success');
             _quickActionLastTriggeredId = ruleId;
             _quickActionTriggerCooldownUntil = Date.now() + 5000;  // 5 秒内勿触发其他规则，避免后端串行导致第二个未执行
             card.classList.add('is-running');
             card.style.pointerEvents = '';
             setTimeout(() => refreshQuickActions(), 2500);
         } else {
-            showToast((result.message || '执行失败'), 'error');
+            showToast((result.message || (typeof t === 'function' ? t('toast.execFailed') : '执行失败')), 'error');
             card.style.pointerEvents = '';  // 失败时恢复点击
             // 恢复原始图标
             if (iconEl && originalIcon) {
@@ -4206,7 +4224,7 @@ async function triggerQuickAction(ruleId) {
         card.classList.remove('triggering');
     } catch (e) {
         console.error('triggerQuickAction error:', e);
-        showToast('执行失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.execFailedMsg', { msg: e.message }) : '执行失败: ' + e.message), 'error');
         if (card) {
             card.classList.remove('triggering');
             card.style.pointerEvents = '';
@@ -4321,16 +4339,26 @@ async function quickActionViewLog(logFile, hostId) {
     // 获取主机信息
     const host = window._sshHostsData?.[hostId];
     if (!host) {
-        showToast('主机不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotExistShort') : '主机不存在'), 'error');
         return;
     }
     
-    // 显示日志模态框
+    const logTitle = typeof t === 'function' ? t('automationPage.logTitle') : '日志';
+    const stopTrackingText = typeof t === 'function' ? t('automationPage.stopTracking') : '停止跟踪';
+    const intervalText = typeof t === 'function' ? t('automationPage.interval') : '间隔';
+    const interval1Sec = typeof t === 'function' ? t('automationPage.interval1Sec') : '1秒';
+    const interval2Sec = typeof t === 'function' ? t('automationPage.interval2Sec') : '2秒';
+    const interval3Sec = typeof t === 'function' ? t('automationPage.interval3Sec') : '3秒';
+    const interval5Sec = typeof t === 'function' ? t('automationPage.interval5Sec') : '5秒';
+    const interval10Sec = typeof t === 'function' ? t('automationPage.interval10Sec') : '10秒';
+    const interval30Sec = typeof t === 'function' ? t('automationPage.interval30Sec') : '30秒';
+    const realTimeText = typeof t === 'function' ? t('automationPage.realTimeUpdating') : '● 实时更新中';
+    const closeText = typeof t === 'function' ? t('common.close') : '关闭';
     const modalHtml = `
         <div id="quick-log-modal" class="modal">
             <div class="modal-content" style="max-width:1400px;width:90%">
                 <div class="modal-header">
-                    <h2><i class="ri-file-text-line"></i> 日志 - <small style="font-weight:normal;font-size:0.7em;color:var(--text-muted)">${escapeHtml(logFile)}</small></h2>
+                    <h2><i class="ri-file-text-line"></i> ${logTitle} - <small style="font-weight:normal;font-size:0.7em;color:var(--text-muted)">${escapeHtml(logFile)}</small></h2>
                     <button class="modal-close" onclick="closeQuickLogModal()">&times;</button>
                 </div>
                 <div class="modal-body" style="padding:0">
@@ -4338,21 +4366,21 @@ async function quickActionViewLog(logFile, hostId) {
                 </div>
                 <div class="modal-footer" style="display:flex;gap:10px;padding:10px 15px;justify-content:space-between;align-items:center">
                     <div style="display:flex;gap:8px;align-items:center">
-                        <button class="btn btn-danger" id="quick-log-tail-btn" onclick="toggleQuickLogTail('${escapeHtml(logFile)}', '${escapeHtml(hostId)}')"><i class="ri-stop-line"></i> 停止跟踪</button>
+                        <button class="btn btn-danger" id="quick-log-tail-btn" onclick="toggleQuickLogTail('${escapeHtml(logFile)}', '${escapeHtml(hostId)}')"><i class="ri-stop-fill"></i> ${stopTrackingText}</button>
                         <label style="display:flex;align-items:center;gap:4px;font-size:0.85em;color:var(--text-muted)">
-                            间隔
+                            ${intervalText}
                             <select id="quick-log-interval" onchange="updateQuickLogInterval('${escapeHtml(logFile)}', '${escapeHtml(hostId)}')" style="padding:2px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-muted);color:var(--text-primary);font-size:0.9em">
-                                <option value="1000">1秒</option>
-                                <option value="2000">2秒</option>
-                                <option value="3000">3秒</option>
-                                <option value="5000" selected>5秒</option>
-                                <option value="10000">10秒</option>
-                                <option value="30000">30秒</option>
+                                <option value="1000">${interval1Sec}</option>
+                                <option value="2000">${interval2Sec}</option>
+                                <option value="3000">${interval3Sec}</option>
+                                <option value="5000" selected>${interval5Sec}</option>
+                                <option value="10000">${interval10Sec}</option>
+                                <option value="30000">${interval30Sec}</option>
                             </select>
                         </label>
-                        <span id="quick-log-status" style="font-size:0.85em;color:var(--text-muted);display:flex;align-items:center"><span style="color:var(--emerald-600)">● 实时更新中</span></span>
+                        <span id="quick-log-status" style="font-size:0.85em;color:var(--text-muted);display:flex;align-items:center"><span style="color:var(--emerald-600)">${realTimeText}</span></span>
                     </div>
-                    <button class="btn" onclick="closeQuickLogModal()">关闭</button>
+                    <button class="btn" onclick="closeQuickLogModal()">${closeText}</button>
                 </div>
             </div>
         </div>
@@ -4383,21 +4411,24 @@ async function quickActionRefreshLog(logFile, hostId) {
             port: host.port,
             user: host.username,
             keyid: host.keyid,
-            command: `if [ -f ${logFile} ]; then cat ${logFile}; else echo '[日志文件不存在或为空]'; fi`,
+            command: `if [ -f ${logFile} ]; then cat ${logFile}; else echo '${typeof t === 'function' ? t('automationPage.logFileEmptyBracket') : '[日志文件不存在或为空]'}'; fi`,
             timeout_ms: 15000
         });
         if (result.code !== 0 || !result.data) {
-            contentEl.textContent = '[获取失败] ' + (result.message || 'code=' + result.code);
+            contentEl.textContent = (typeof t === 'function' ? t('automationPage.logFetchFailed') : '[获取失败]') + ' ' + (result.message || 'code=' + result.code);
             return;
         }
-        const output = (result.data.stdout || result.data.stderr || '').trim() || '[空]';
+        const _empty = typeof t === 'function' ? t('automationPage.logEmptyBracket') : '[空]';
+        const output = (result.data.stdout || result.data.stderr || '').trim() || _empty;
         if (output !== quickActionLastContent) {
             contentEl.textContent = output;
             contentEl.scrollTop = contentEl.scrollHeight;
             quickActionLastContent = output;
         }
     } catch (e) {
-        contentEl.textContent = '[错误] ' + e.message + '\n\n若设备繁忙可稍后重试。';
+        const _err = typeof t === 'function' ? t('automationPage.logError') : '[错误]';
+        const _retry = typeof t === 'function' ? t('automationPage.deviceBusyRetry') : '若设备繁忙可稍后重试。';
+        contentEl.textContent = _err + ' ' + e.message + '\n\n' + _retry;
     }
 }
 
@@ -4422,11 +4453,15 @@ function startQuickLogTail(logFile, hostId, intervalMs = 5000) {
     const status = document.getElementById('quick-log-status');
     
     if (btn) {
-        btn.innerHTML = '<i class="ri-stop-line"></i> 停止跟踪';
+        const stopText = typeof t === 'function' ? t('automationPage.stopTracking') : '停止跟踪';
+        btn.innerHTML = '<i class="ri-stop-fill"></i> ' + stopText;
         btn.classList.remove('btn-service-style');
         btn.classList.add('btn-danger');
     }
-    if (status) status.innerHTML = '<span style="color:#059669">● 实时更新中</span>';
+    if (status) {
+        const realTimeText = typeof t === 'function' ? t('automationPage.realTimeUpdating') : '● 实时更新中';
+        status.innerHTML = '<span style="color:#059669">' + realTimeText + '</span>';
+    }
     quickActionLastContent = '';
     
     // 定义刷新函数
@@ -4479,11 +4514,12 @@ function stopQuickLogTail() {
     const status = document.getElementById('quick-log-status');
     
     if (btn) {
-        btn.innerHTML = '<i class="ri-play-line"></i> 开始跟踪';
+        const startText = typeof t === 'function' ? t('automationPage.startTracking') : '开始跟踪';
+        btn.innerHTML = '<i class="ri-play-line"></i> ' + startText;
         btn.classList.remove('btn-danger');
         btn.classList.add('btn-service-style');
     }
-    if (status) status.textContent = '已暂停';
+    if (status) status.textContent = (typeof t === 'function' ? t('automationPage.trackingStopped') : '已暂停');
 }
 
 /**
@@ -4516,16 +4552,17 @@ function closeQuickLogModal() {
 async function quickActionStopProcess(pidFile, hostId, cmdName, varName) {
     const host = window._sshHostsData?.[hostId];
     if (!host) {
-        showToast('主机不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotExistShort') : '主机不存在'), 'error');
         return;
     }
     
-    if (!confirm(`确定要终止 "${cmdName}" 吗？`)) {
+    const confirmMsg = typeof t === 'function' ? t('toast.confirmTerminateCmd', { cmdName }) : `确定要终止 "${cmdName}" 吗？`;
+    if (!confirm(confirmMsg)) {
         return;
     }
     
     try {
-        showToast('正在终止进程...', 'info');
+        showToast((typeof t === 'function' ? t('toast.terminatingProcess') : '正在终止进程...'), 'info');
         
         // 终止进程：支持 PID 和 PID-1 双重检测
         // 原因：nohup cmd & 的 $! 可能记录了中间 shell PID，真实主进程 PID = $! - 1
@@ -4567,13 +4604,13 @@ async function quickActionStopProcess(pidFile, hostId, cmdName, varName) {
         if (result.code === 0 && result.data) {
             const output = (result.data.stdout || '').trim();
             const msgMap = {
-                'TERMINATED': '服务已停止',
-                'FORCE_KILLED': '服务已强制终止',
-                'ALREADY_STOPPED': '进程已不在运行，已清理 PID 文件',
-                'NO_PID_FILE': 'PID 文件不存在',
-                'STILL_RUNNING': '无法终止进程，请手动处理'
+                'TERMINATED': typeof t === 'function' ? t('toast.terminateTERMINATED') : '服务已停止',
+                'FORCE_KILLED': typeof t === 'function' ? t('toast.terminateFORCE_KILLED') : '服务已强制终止',
+                'ALREADY_STOPPED': typeof t === 'function' ? t('toast.terminateALREADY_STOPPED') : '进程已不在运行，已清理 PID 文件',
+                'NO_PID_FILE': typeof t === 'function' ? t('toast.terminateNO_PID_FILE') : 'PID 文件不存在',
+                'STILL_RUNNING': typeof t === 'function' ? t('toast.terminateSTILL_RUNNING') : '无法终止进程，请手动处理'
             };
-            const msg = msgMap[output] || (output || '操作完成');
+            const msg = msgMap[output] || (output || (typeof t === 'function' ? t('toast.terminateDefault') : '操作完成'));
             const isSuccess = ['TERMINATED', 'FORCE_KILLED', 'ALREADY_STOPPED'].includes(output);
             showToast(msg, isSuccess ? 'success' : (output === 'STILL_RUNNING' ? 'error' : 'info'));
             // 停止成功后，清除服务模式状态变量（否则"就绪"标签会残留）
@@ -4587,10 +4624,10 @@ async function quickActionStopProcess(pidFile, hostId, cmdName, varName) {
             // 刷新状态
             setTimeout(() => refreshQuickActions(), 1500);
         } else {
-            showToast((result.message || '操作失败'), 'error');
+            showToast((result.message || (typeof t === 'function' ? t('common.operationFailed') : '操作失败')), 'error');
         }
     } catch (e) {
-        showToast('错误: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.errorMsg', { msg: e.message }) : '错误: ' + e.message), 'error');
     }
 }
 
@@ -4718,7 +4755,7 @@ async function loadLedPage() {
                 <div class="led-quick-actions">
                     <button type="button" class="btn btn-sm btn-gray led-refresh-btn" onclick="refreshLedPage()" title="刷新"><i class="ri-refresh-line"></i></button>
                     <button class="btn btn-sm btn-gray led-color-correction-btn" id="led-page-cc-btn" onclick="openLedModal('matrix', 'colorcorrection')" style="display:none"><i class="ri-contrast-line"></i> 色彩校正</button>
-                    <button class="btn btn-sm btn-gray" onclick="allLedsOff()">全部关闭</button>
+                    <button class="btn btn-sm btn-gray" onclick="allLedsOff()">${typeof t === 'function' ? t('ledPage.allOff') : '全部关闭'}</button>
                 </div>
             </div>
             <div id="led-devices-grid" class="led-devices-grid">
@@ -4775,7 +4812,7 @@ async function refreshLedPage() {
         }
     } catch (e) {
         console.error('LED list error:', e);
-        container.innerHTML = `<div class="error-state">加载失败: ${e.message}</div>`;
+        container.innerHTML = `<div class="error-state">${typeof t === 'function' ? t('common.loadFailedMsg', { msg: e.message }) : '加载失败: ' + e.message}</div>`;
     }
 }
 
@@ -4911,9 +4948,9 @@ async function fillColorFromPicker(device, color) {
         await api.ledFill(device, color);
         ledStates[device] = true;
         updateLedCardState(device, true);
-        showToast(`${device} 已填充 ${color}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledFilled', { device, color }) : `${device} 已填充 ${color}`, 'success');
     } catch (e) {
-        showToast(`填充失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledFillFailed') + ': ' + e.message : `填充失败: ${e.message}`, 'error');
     }
 }
 
@@ -4924,9 +4961,9 @@ async function quickFillColor(device, color) {
         await api.ledFill(device, color);
         ledStates[device] = true;
         updateLedCardState(device, true, null);
-        showToast(`${device} → ${color}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledFilled', { device, color }) : `${device} → ${color}`, 'success');
     } catch (e) {
-        showToast(`填充失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledFillFailed') + ': ' + e.message : `填充失败: ${e.message}`, 'error');
     }
 }
 
@@ -4936,9 +4973,9 @@ async function quickStartEffect(device, effect) {
         selectedEffects[device] = effect;
         ledStates[device] = true;
         updateLedCardState(device, true, effect);
-        showToast(`${device}: ${effect}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStarted', { device, effect }) : `${device}: ${effect}`, 'success');
     } catch (e) {
-        showToast(`启动失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStartFailed') + ': ' + e.message : `启动失败: ${e.message}`, 'error');
     }
 }
 
@@ -4953,7 +4990,7 @@ async function allLedsOff() {
             console.error(`关闭 ${dev.name} 失败:`, e);
         }
     }
-    showToast('全部 LED 已关闭', 'success');
+    showToast((typeof t === 'function' ? t('toast.allLedsOff') : '全部 LED 已关闭'), 'success');
 }
 
 function updateLedCardState(device, isOn, effect = undefined) {
@@ -4971,13 +5008,13 @@ function updateLedCardState(device, isOn, effect = undefined) {
     const statusEl = card.querySelector('.led-device-status');
     if (statusEl) {
         if (!isOn) {
-            statusEl.textContent = '已关闭';
+            statusEl.textContent = typeof t === 'function' ? t('ledPage.statusOff') : '已关闭';
             statusEl.className = 'led-device-status off';
         } else if (effect) {
             statusEl.textContent = `▶ ${effectDisplayName(effect)}`;
             statusEl.className = 'led-device-status effect';
         } else {
-            statusEl.textContent = '常亮';
+            statusEl.textContent = typeof t === 'function' ? t('ledPage.statusOn') : '常亮';
             statusEl.className = 'led-device-status on';
         }
     }
@@ -5026,15 +5063,15 @@ function openColorModal(device) {
     const title = document.getElementById('led-modal-title');
     const body = document.getElementById('led-modal-body');
     
-    title.textContent = `${device} - 颜色设置`;
+    title.textContent = `${device} - ${typeof t === 'function' ? t('ledPage.colorSettings') : '颜色设置'}`;
     body.innerHTML = `
         <div class="modal-section">
-            <h3>颜色选择</h3>
+            <h3>${typeof t === 'function' ? t('ledPage.colorSelect') : '颜色选择'}</h3>
             <div class="config-row">
                 <input type="color" id="modal-color-picker-${device}" value="${colorHex}" style="width:60px;height:40px;">
-                <button class="btn btn-service-style" onclick="applyColorFromModal('${device}')">填充颜色</button>
+                <button class="btn btn-service-style" onclick="applyColorFromModal('${device}')">${typeof t === 'function' ? t('ledPage.fillColor') : '填充颜色'}</button>
             </div>
-            <h3 style="margin-top:16px;">快捷颜色</h3>
+            <h3 style="margin-top:16px;">${typeof t === 'function' ? t('ledPage.quickColors') : '快捷颜色'}</h3>
             <div class="preset-colors-grid">
                 <button class="color-preset" style="background:#ff0000" onclick="quickFillFromModal('${device}', '#ff0000')"></button>
                 <button class="color-preset" style="background:#ff6600" onclick="quickFillFromModal('${device}', '#ff6600')"></button>
@@ -5061,9 +5098,9 @@ async function applyColorFromModal(device) {
         await api.ledFill(device, color);
         ledStates[device] = true;
         updateToggleButton(device, true);
-        showToast(`${device} 已填充 ${color}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledFilled', { device, color }) : `${device} 已填充 ${color}`, 'success');
     } catch (e) {
-        showToast(`填充失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledFillFailed') + ': ' + e.message : `填充失败: ${e.message}`, 'error');
     }
 }
 
@@ -5072,9 +5109,9 @@ async function quickFillFromModal(device, color) {
         await api.ledFill(device, color);
         ledStates[device] = true;
         updateToggleButton(device, true);
-        showToast(`${device} → ${color}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledFilled', { device, color }) : `${device} → ${color}`, 'success');
     } catch (e) {
-        showToast(`填充失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledFillFailed') + ': ' + e.message : `填充失败: ${e.message}`, 'error');
     }
 }
 
@@ -5088,10 +5125,10 @@ function updateToggleButton(device, isOn) {
     if (btn && !btn.classList.contains('led-power-btn')) {
         if (isOn) {
             btn.classList.add('on');
-            btn.innerHTML = '<i class="ri-sun-line"></i> 已开启';
+            btn.innerHTML = '<i class="ri-sun-line"></i> ' + (typeof t === 'function' ? t('ledPage.on') : '已开启');
         } else {
             btn.classList.remove('on');
-            btn.innerHTML = '<i class="ri-lightbulb-line"></i> 已关闭';
+            btn.innerHTML = '<i class="ri-lightbulb-line"></i> ' + (typeof t === 'function' ? t('ledPage.off') : '已关闭');
         }
     }
 }
@@ -5377,7 +5414,7 @@ function generateLedModalContent(device, type) {
             </div>
         `;
     }
-    return '<p>未知类型</p>';
+    return '<p>' + (typeof t === 'function' ? t('ledPage.unknownType') : '未知类型') + '</p>';
 }
 
 // LED 模态框存储
@@ -5513,7 +5550,7 @@ async function toggleLedFromModal(device, enabled) {
         // 更新卡片状态
         updateLedCardState(device, ledStates[device], selectedEffects[device]);
     } catch (e) {
-        showToast(`操作失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.operationFailedMsg', { msg: e.message }) : `操作失败: ${e.message}`, 'error');
         // 恢复 UI 状态
         const cb = document.getElementById(`modal-device-enabled-${device}`);
         if (cb) cb.checked = ledStates[device];
@@ -5581,7 +5618,7 @@ function resetEffectFromModal(device) {
 async function applyEffectFromModal(device) {
     const effect = selectedEffects[device];
     if (!effect) {
-        showToast('请先选择一个动画', 'warning');
+        showToast((typeof t === 'function' ? t('toast.selectAnimation') : '请先选择一个动画'), 'warning');
         return;
     }
     
@@ -5598,9 +5635,9 @@ async function applyEffectFromModal(device) {
         ledStates[device] = true;
         updateLedCardState(device, true, effect);
         
-        showToast(`${device}: ${effect} 已启动`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStarted', { device, effect }) : `${device}: ${effect} 已启动`, 'success');
     } catch (e) {
-        showToast(`启动动画失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStartFailed') + ': ' + e.message : `启动动画失败: ${e.message}`, 'error');
     }
 }
 
@@ -5610,9 +5647,9 @@ async function stopEffectFromModal(device) {
         await api.ledEffectStop(device);
         delete selectedEffects[device];
         updateLedCardState(device, ledStates[device], null);
-        showToast(`${device} 动画已停止`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStopped', { device }) : `${device} 动画已停止`, 'success');
     } catch (e) {
-        showToast(`停止动画失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStopFailed') + ': ' + e.message : `停止动画失败: ${e.message}`, 'error');
     }
 }
 
@@ -5622,15 +5659,15 @@ async function displayImageFromModal() {
     const center = document.getElementById('modal-image-center')?.checked;
     
     if (!path) {
-        showToast('请输入图像路径', 'warning');
+        showToast((typeof t === 'function' ? t('toast.enterImagePath') : '请输入图像路径'), 'warning');
         return;
     }
     
     try {
         await api.call('led.image', { device: 'matrix', path, center });
-        showToast('图像已显示', 'success');
+        showToast((typeof t === 'function' ? t('toast.imageDisplayed') : '图像已显示'), 'success');
     } catch (e) {
-        showToast(`显示图像失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledImageFailed') + ': ' + e.message : `显示图像失败: ${e.message}`, 'error');
     }
 }
 
@@ -5642,15 +5679,15 @@ async function generateQrCodeFromModal() {
     const bgImage = document.getElementById('modal-qr-bg-image')?.value || '';
     
     if (!text) {
-        showToast('请输入要编码的文本', 'warning');
+        showToast((typeof t === 'function' ? t('toast.enterTextToEncode') : '请输入要编码的文本'), 'warning');
         return;
     }
     
     try {
         await api.call('led.qrcode', { device: 'matrix', text, ecc, fg_color: fg, bg_image: bgImage || undefined });
-        showToast('QR 码已生成', 'success');
+        showToast((typeof t === 'function' ? t('toast.qrGenerated') : 'QR 码已生成'), 'success');
     } catch (e) {
-        showToast(`生成 QR 码失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledQrFailed') + ': ' + e.message : `生成 QR 码失败: ${e.message}`, 'error');
     }
 }
 
@@ -5694,7 +5731,7 @@ async function loadFontListForModal() {
     } catch (e) {
         console.error('加载字体失败:', e);
         // 如果加载失败，显示提示
-        fontSelect.innerHTML = '<option value="">无可用字体</option>';
+        fontSelect.innerHTML = '<option value="">' + (typeof t === 'function' ? t('filePage.noFonts') : '无可用字体') + '</option>';
     }
 }
 
@@ -5712,7 +5749,7 @@ async function displayTextFromModal() {
     const loop = document.getElementById('modal-text-loop')?.checked;
     
     if (!text) {
-        showToast('请输入要显示的文本', 'warning');
+        showToast((typeof t === 'function' ? t('toast.enterTextToDisplay') : '请输入要显示的文本'), 'warning');
         return;
     }
     
@@ -5735,9 +5772,9 @@ async function displayTextFromModal() {
             params.y = y;
         }
         await api.call('led.text', params);
-        showToast('文本已显示', 'success');
+        showToast((typeof t === 'function' ? t('toast.textDisplayed') : '文本已显示'), 'success');
     } catch (e) {
-        showToast(`显示文本失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledTextFailed') + ': ' + e.message : `显示文本失败: ${e.message}`, 'error');
     }
 }
 
@@ -5745,9 +5782,9 @@ async function displayTextFromModal() {
 async function stopTextFromModal() {
     try {
         await api.call('led.text.stop', { device: 'matrix' });
-        showToast('文本滚动已停止', 'success');
+        showToast((typeof t === 'function' ? t('toast.textScrollStopped') : '文本滚动已停止'), 'success');
     } catch (e) {
-        showToast(`停止文本失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledTextStopFailed') + ': ' + e.message : `停止文本失败: ${e.message}`, 'error');
     }
 }
 
@@ -5778,7 +5815,7 @@ function selectFilterInModal(filter, btn) {
                 const row = document.createElement('div');
                 row.className = 'config-row';
                 row.innerHTML = `
-                    <label>${paramInfo.label}</label>
+                    <label>${getParamLabel(param)}</label>
                     <input type="range" id="modal-filter-${param}" 
                            min="${paramInfo.min}" max="${paramInfo.max}" 
                            value="${defaultValue}" style="flex:1"
@@ -5799,7 +5836,7 @@ function selectFilterInModal(filter, btn) {
 // \u6a21\u6001\u6846\u5185\u5e94\u7528\u6ede\u955c
 async function applyFilterFromModal() {
     if (!selectedModalFilter) {
-        showToast('\u8bf7\u5148\u9009\u62e9\u4e00\u4e2a\u6ede\u955c', 'warning');
+        showToast(typeof t === 'function' ? t('toast.selectFilter') : '请先选择一个滤镜', 'warning');
         return;
     }
     
@@ -5827,9 +5864,9 @@ async function applyFilterFromModal() {
     
     try {
         await api.call('led.filter.start', params);
-        showToast(`\u6ede\u955c ${selectedModalFilter} \u5df2\u5e94\u7528`, 'success');
+        showToast(typeof t === 'function' ? t('toast.filterApplied', { filter: selectedModalFilter }) : `滤镜 ${selectedModalFilter} 已应用`, 'success');
     } catch (e) {
-        showToast(`\u5e94\u7528\u6ede\u955c\u5931\u8d25: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.filterApplyFailed') + ': ' + e.message : `应用滤镜失败: ${e.message}`, 'error');
     }
 }
 
@@ -5837,9 +5874,9 @@ async function applyFilterFromModal() {
 async function stopFilterFromModal() {
     try {
         await api.call('led.filter.stop', { device: 'matrix' });
-        showToast('滤镜已停止', 'success');
+        showToast((typeof t === 'function' ? t('toast.filterStopped') : '滤镜已停止'), 'success');
     } catch (e) {
-        showToast(`停止滤镜失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.filterStopFailed') + ': ' + e.message : `停止滤镜失败: ${e.message}`, 'error');
     }
 }
 
@@ -6109,7 +6146,7 @@ function showEffectConfig(device, effect) {
 async function applyEffect(device) {
     const effect = selectedEffects[device];
     if (!effect) {
-        showToast('请先选择一个动画', 'warning');
+        showToast((typeof t === 'function' ? t('toast.selectAnimation') : '请先选择一个动画'), 'warning');
         return;
     }
     
@@ -6137,9 +6174,9 @@ async function applyEffect(device) {
         const currentAnim = document.getElementById(`current-anim-${device}`);
         if (currentAnim) currentAnim.textContent = `▶ ${effectDisplayName(effect)}`;
         
-        showToast(`${device}: ${effect} 已启动`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStarted', { device, effect }) : `${device}: ${effect} 已启动`, 'success');
     } catch (e) {
-        showToast(`启动动画失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStartFailed') + ': ' + e.message : `启动动画失败: ${e.message}`, 'error');
     }
 }
 
@@ -6151,9 +6188,9 @@ function updateBrightnessLabel(device, value) {
 async function setBrightness(device, value) {
     try {
         await api.ledBrightness(device, parseInt(value));
-        showToast(`${device} 亮度: ${value}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledBrightnessSet', { device, value }) : `${device} 亮度: ${value}`, 'success');
     } catch (e) { 
-        showToast(`设置 ${device} 亮度失败: ${e.message}`, 'error'); 
+        showToast(typeof t === 'function' ? t('toast.ledBrightnessFailed', { device }) + ': ' + e.message : `设置 ${device} 亮度失败: ${e.message}`, 'error'); 
     }
 }
 
@@ -6169,16 +6206,16 @@ async function toggleLed(device) {
             await api.ledClear(device);
             ledStates[device] = false;
             updateLedCardState(device, false);
-            showToast(`${device} 已关闭`, 'success');
+            showToast(typeof t === 'function' ? t('toast.ledTurnedOff', { device }) : `${device} 已关闭`, 'success');
         } else {
             // 当前是关闭状态，开启它（白光）
             await api.ledFill(device, '#ffffff');
             ledStates[device] = true;
             updateLedCardState(device, true, null);
-            showToast(`${device} 已开启`, 'success');
+            showToast(typeof t === 'function' ? t('toast.ledTurnedOn', { device }) : `${device} 已开启`, 'success');
         }
     } catch (e) {
-        showToast(`操作失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.operationFailedMsg', { msg: e.message }) : `操作失败: ${e.message}`, 'error');
     }
 }
 
@@ -6187,9 +6224,9 @@ async function ledOn(device, color = '#ffffff') {
         await api.ledFill(device, color);
         ledStates[device] = true;
         updateToggleButton(device, true);
-        showToast(`${device} 已开启`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledTurnedOn', { device }) : `${device} 已开启`, 'success');
     } catch (e) {
-        showToast(`开启失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledOnFailed') + ': ' + e.message : `开启失败: ${e.message}`, 'error');
     }
 }
 
@@ -6203,11 +6240,11 @@ async function fillColor(device) {
         if (btn) {
             btn.classList.add('on');
             btn.querySelector('.toggle-icon').innerHTML = '<i class="ri-checkbox-blank-circle-fill"></i>';
-            btn.querySelector('.toggle-text').textContent = '关灯';
+            btn.querySelector('.toggle-text').textContent = typeof t === 'function' ? t('ledPage.turnOffLight') : '关灯';
         }
-        showToast(`${device} 已填充 ${color}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledFilled', { device, color }) : `${device} 已填充 ${color}`, 'success');
     } catch (e) {
-        showToast(`${device} 填充失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledFillFailed') + ': ' + e.message : `${device} 填充失败: ${e.message}`, 'error');
     }
 }
 
@@ -6221,11 +6258,11 @@ async function quickFill(device, color) {
         if (btn) {
             btn.classList.add('on');
             btn.querySelector('.toggle-icon').innerHTML = '<i class="ri-checkbox-blank-circle-fill"></i>';
-            btn.querySelector('.toggle-text').textContent = '关灯';
+            btn.querySelector('.toggle-text').textContent = typeof t === 'function' ? t('ledPage.turnOffLight') : '关灯';
         }
-        showToast(`${device} → ${color}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledFilled', { device, color }) : `${device} → ${color}`, 'success');
     } catch (e) {
-        showToast(`填充失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledFillFailed') + ': ' + e.message : `填充失败: ${e.message}`, 'error');
     }
 }
 
@@ -6238,11 +6275,11 @@ async function clearLed(device) {
         if (btn) {
             btn.classList.remove('on');
             btn.querySelector('.toggle-icon').innerHTML = '<i class="ri-lightbulb-line"></i>';
-            btn.querySelector('.toggle-text').textContent = '开灯';
+            btn.querySelector('.toggle-text').textContent = typeof t === 'function' ? t('ledPage.turnOnLight') : '开灯';
         }
-        showToast(`${device} 已关闭`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledTurnedOff', { device }) : `${device} 已关闭`, 'success');
     } catch (e) {
-        showToast(`关闭失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledOffFailed') + ': ' + e.message : `关闭失败: ${e.message}`, 'error');
     }
 }
 
@@ -6255,11 +6292,11 @@ async function startEffect(device, effect) {
         if (btn) {
             btn.classList.add('on');
             btn.querySelector('.toggle-icon').innerHTML = '<i class="ri-checkbox-blank-circle-fill"></i>';
-            btn.querySelector('.toggle-text').textContent = '关灯';
+            btn.querySelector('.toggle-text').textContent = typeof t === 'function' ? t('ledPage.turnOffLight') : '关灯';
         }
-        showToast(`${device}: ${effect} 已启动`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStarted', { device, effect }) : `${device}: ${effect} 已启动`, 'success');
     } catch (e) {
-        showToast(`启动动画失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStartFailed') + ': ' + e.message : `启动动画失败: ${e.message}`, 'error');
     }
 }
 
@@ -6273,9 +6310,9 @@ async function stopEffect(device) {
         }
         // 清除选中状态
         delete selectedEffects[device];
-        showToast(`${device} 动画已停止`, 'success');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStopped', { device }) : `${device} 动画已停止`, 'success');
     } catch (e) {
-        showToast(`停止动画失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledEffectStopFailed') + ': ' + e.message : `停止动画失败: ${e.message}`, 'error');
     }
 }
 
@@ -6283,12 +6320,12 @@ async function saveLedConfig(device) {
     try {
         const result = await api.call('led.save', { device });
         if (result.animation) {
-            showToast(`${device} 配置已保存: ${result.animation}`, 'success');
+            showToast(typeof t === 'function' ? t('toast.ledConfigSavedWithAnim', { device, anim: result.animation }) : `${device} 配置已保存: ${result.animation}`, 'success');
         } else {
-            showToast(`${device} 配置已保存`, 'success');
+            showToast(typeof t === 'function' ? t('toast.ledConfigSaved', { device }) : `${device} 配置已保存`, 'success');
         }
     } catch (e) {
-        showToast(`保存配置失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledConfigSaveFailed') + ': ' + e.message : `保存配置失败: ${e.message}`, 'error');
     }
 }
 
@@ -6346,8 +6383,8 @@ async function loadFilePickerDirectory(path) {
             if (result.error.includes('not found') || result.error.includes('Directory')) {
                 listContainer.innerHTML = `
                     <div class="empty-state">
-                        <div>目录不存在</div>
-                        <button class="btn btn-sm btn-service-style" onclick="createAndOpenDir('${path}')">创建目录</button>
+                        <div>${typeof t === 'function' ? t('filePage.dirNotExist') : '目录不存在'}</div>
+                        <button class="btn btn-sm btn-service-style" onclick="createAndOpenDir('${path}')">${typeof t === 'function' ? t('filePage.createDir') : '创建目录'}</button>
                     </div>`;
                 return;
             }
@@ -6365,7 +6402,7 @@ async function loadFilePickerDirectory(path) {
         });
         
         if (filtered.length === 0) {
-            listContainer.innerHTML = '<div class="empty-state">无图片文件</div>';
+            listContainer.innerHTML = '<div class="empty-state">' + (typeof t === 'function' ? t('filePage.noImages') : '无图片文件') + '</div>';
             return;
         }
         
@@ -6404,7 +6441,7 @@ async function createAndOpenDir(path) {
         await api.storageMkdir(path);
         await loadFilePickerDirectory(path);
     } catch (e) {
-        showToast('创建目录失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.createDirFailed', { msg: e.message }) : '创建目录失败: ' + e.message), 'error');
     }
 }
 
@@ -6467,15 +6504,15 @@ async function displayImage() {
     
     const path = pathInput.value.trim();
     if (!path) {
-        showToast('请输入图像路径', 'error');
+        showToast((typeof t === 'function' ? t('toast.enterImagePath') : '请输入图像路径'), 'error');
         return;
     }
     
     try {
         const result = await api.ledImage(path, 'matrix', centerCheckbox.checked);
-        showToast(`图像显示成功`, 'success');
+        showToast(typeof t === 'function' ? t('toast.imageDisplayed') : '图像显示成功', 'success');
     } catch (e) {
-        showToast(`显示图像失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledImageFailed') + ': ' + e.message : `显示图像失败: ${e.message}`, 'error');
     }
 }
 
@@ -6488,7 +6525,7 @@ async function generateQrCode() {
     
     const text = textInput.value.trim();
     if (!text) {
-        showToast('请输入 QR 码内容', 'error');
+        showToast((typeof t === 'function' ? t('toast.enterQrContent') : '请输入 QR 码内容'), 'error');
         return;
     }
     
@@ -6505,9 +6542,9 @@ async function generateQrCode() {
     
     try {
         const result = await api.ledQrcode(text, params);
-        showToast(`QR 码生成成功`, 'success');
+        showToast(typeof t === 'function' ? t('toast.qrGenerated') : 'QR 码生成成功', 'success');
     } catch (e) {
-        showToast(`生成 QR 码失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledQrFailed') + ': ' + e.message : `生成 QR 码失败: ${e.message}`, 'error');
     }
 }
 
@@ -6541,8 +6578,8 @@ async function loadFontList() {
         
         if (fonts.length === 0) {
             // 没有字体时添加占位选项
-            fontSelect.innerHTML = '<option value="" disabled>无可用字体</option>';
-            showToast('未找到字体文件，请上传到 /sdcard/fonts', 'info');
+            fontSelect.innerHTML = '<option value="" disabled>' + (typeof t === 'function' ? t('filePage.noFonts') : '无可用字体') + '</option>';
+            showToast((typeof t === 'function' ? t('toast.fontNotFound') : '未找到字体文件，请上传到 /sdcard/fonts'), 'info');
         } else {
             fonts.forEach(f => {
                 const option = document.createElement('option');
@@ -6580,7 +6617,7 @@ async function displayText() {
     
     const text = textInput.value.trim();
     if (!text) {
-        showToast('请输入显示文本', 'error');
+        showToast((typeof t === 'function' ? t('toast.enterDisplayText') : '请输入显示文本'), 'error');
         return;
     }
     
@@ -6602,9 +6639,9 @@ async function displayText() {
     
     try {
         const result = await api.ledText(text, params);
-        showToast(`文本显示成功`, 'success');
+        showToast(typeof t === 'function' ? t('toast.textDisplayed') : '文本显示成功', 'success');
     } catch (e) {
-        showToast(`显示文本失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledTextFailed') + ': ' + e.message : `显示文本失败: ${e.message}`, 'error');
     }
 }
 
@@ -6612,9 +6649,9 @@ async function displayText() {
 async function stopText() {
     try {
         await api.ledTextStop('matrix');
-        showToast('文本已停止', 'success');
+        showToast((typeof t === 'function' ? t('toast.textStopped') : '文本已停止'), 'success');
     } catch (e) {
-        showToast(`停止失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ledTextStopFailed') + ': ' + e.message : `停止失败: ${e.message}`, 'error');
     }
 }
 
@@ -6639,7 +6676,7 @@ const filterConfig = {
     'sepia': { params: [], defaults: {} }
 };
 
-// 参数标签和范围定义
+// 参数标签和范围定义（label 为中文兜底，显示时用 getParamLabel 做 i18n）
 const paramLabels = {
     'speed': { label: '速度', min: 1, max: 100, unit: '', help: '闪耀效果：推荐1-10，低值更慢' },
     'intensity': { label: '强度', min: 0, max: 255, unit: '', help: '亮度增益倍数，推荐100-200产生明显对比' },
@@ -6659,6 +6696,12 @@ const paramLabels = {
 
 let selectedFilter = null;
 
+function getParamLabel(paramKey) {
+    const keyMap = { speed: 'ledPage.paramSpeed', intensity: 'ledPage.paramIntensity', wavelength: 'ledPage.paramWavelength', amplitude: 'ledPage.paramAmplitude', direction: 'ledPage.paramDirection', angle: 'ledPage.paramAngle', width: 'ledPage.paramWidth', frequency: 'ledPage.paramFrequency', saturation: 'ledPage.paramSaturation', density: 'ledPage.paramDensity', decay: 'ledPage.paramDecay', scale: 'ledPage.paramScale', levels: 'ledPage.paramLevels', amount: 'ledPage.paramAmount' };
+    const key = keyMap[paramKey];
+    return (typeof t === 'function' && key) ? t(key) : (paramLabels[paramKey]?.label || paramKey);
+}
+
 // 选择滤镜
 function selectFilter(filterName, btnElement) {
     selectedFilter = filterName;
@@ -6669,7 +6712,7 @@ function selectFilter(filterName, btnElement) {
     
     // 更新显示的滤镜名称
     const nameSpan = document.getElementById('selected-filter-name');
-    if (nameSpan) nameSpan.textContent = `已选择: ${filterName}`;
+    if (nameSpan) nameSpan.textContent = typeof t === 'function' ? t('led.selectedFilter', { filter: filterName }) : `已选择: ${filterName}`;
     
     // 启用应用按钮
     const applyBtn = document.getElementById('apply-filter-btn');
@@ -6692,7 +6735,7 @@ function selectFilter(filterName, btnElement) {
             row.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 10px;';
             
             const label = document.createElement('label');
-            label.textContent = paramInfo.label;
+            label.textContent = getParamLabel(param);
             label.style.minWidth = '60px';
             
             const slider = document.createElement('input');
@@ -6727,7 +6770,7 @@ function selectFilter(filterName, btnElement) {
 // 应用选中的滤镜
 async function applySelectedFilter() {
     if (!selectedFilter) {
-        showToast('请先选择滤镜', 'error');
+        showToast((typeof t === 'function' ? t('toast.selectFilter') : '请先选择滤镜'), 'error');
         return;
     }
     
@@ -6755,9 +6798,9 @@ async function applySelectedFilter() {
     
     try {
         await api.call('led.filter.start', params);
-        showToast(`已应用滤镜: ${selectedFilter}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.filterApplied', { filter: selectedFilter }) : `已应用滤镜: ${selectedFilter}`, 'success');
     } catch (e) {
-        showToast(`应用滤镜失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.filterApplyFailed') + ': ' + e.message : `应用滤镜失败: ${e.message}`, 'error');
     }
 }
 
@@ -6771,7 +6814,7 @@ async function applyFilter(filterName, btnElement) {
 async function stopFilter() {
     try {
         await api.ledFilterStop('matrix');
-        showToast('滤镜已停止', 'success');
+        showToast((typeof t === 'function' ? t('toast.filterStopped') : '滤镜已停止'), 'success');
         
         // 移除滤镜按钮高亮和选中状态
         document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -6782,13 +6825,13 @@ async function stopFilter() {
         
         // 重置 UI
         const nameSpan = document.getElementById('selected-filter-name');
-        if (nameSpan) nameSpan.textContent = '未选择滤镜';
+        if (nameSpan) nameSpan.textContent = typeof t === 'function' ? t('ledPage.noFilterSelected') : '未选择滤镜';
         const applyBtn = document.getElementById('apply-filter-btn');
         if (applyBtn) applyBtn.disabled = true;
         const paramsDiv = document.getElementById('filter-params');
         if (paramsDiv) paramsDiv.style.display = 'none';
     } catch (e) {
-        showToast(`停止滤镜失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.filterStopFailed') + ': ' + e.message : `停止滤镜失败: ${e.message}`, 'error');
     }
 }
 
@@ -7011,7 +7054,7 @@ async function loadNetworkPage() {
             <!-- AP 接入设备面板 -->
             <div class="net-section hidden" id="ap-stations-section">
                 <div class="section-header">
-                    <h3>热点接入设备</h3>
+                    <h3>${typeof t === 'function' ? t('networkPage.apStations') : '热点接入设备'}</h3>
                     <button class="btn btn-sm" onclick="hideApStations()"><i class="ri-close-line"></i> 关闭</button>
                 </div>
                 <div class="ap-stations-list" id="ap-stations-results"></div>
@@ -7045,12 +7088,12 @@ async function loadNetworkPage() {
                         <input type="text" id="ap-ssid-input" placeholder="TianshanOS">
                     </div>
                     <div class="form-group">
-                        <label>密码 (留空=开放)</label>
-                        <input type="password" id="ap-password-input" placeholder="至少 8 位">
+                        <label>${typeof t === 'function' ? t('networkPage.password') : '密码 (留空=开放)'}</label>
+                        <input type="password" id="ap-password-input" placeholder="${typeof t === 'function' ? t('networkPage.apPasswordHint') : '至少 8 位'}">
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label>信道</label>
+                            <label>${typeof t === 'function' ? t('networkPage.channel') : '信道'}</label>
                             <select id="ap-channel-input">
                                 <option value="1">1</option>
                                 <option value="6" selected>6</option>
@@ -7269,10 +7312,10 @@ async function setWifiMode() {
     const mode = document.getElementById('wifi-mode-select').value;
     try {
         await api.wifiMode(mode);
-        showToast(`WiFi 模式已切换为 ${getWifiModeDisplay(mode)}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.wifiModeChanged', { mode: getWifiModeDisplay(mode) }) : `WiFi 模式已切换为 ${getWifiModeDisplay(mode)}`, 'success');
         await refreshNetworkPage();
     } catch (e) {
-        showToast('切换失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.switchFailedMsg', { msg: e.message }) : '切换失败: ' + e.message), 'error');
     }
 }
 
@@ -7280,16 +7323,16 @@ async function setWifiMode() {
 async function setHostname() {
     const name = document.getElementById('hostname-input').value.trim();
     if (!name) {
-        showToast('请输入主机名', 'error');
+        showToast((typeof t === 'function' ? t('toast.enterHostname') : '请输入主机名'), 'error');
         return;
     }
     try {
         await api.hostname(name);
-        showToast('主机名已设置', 'success');
+        showToast((typeof t === 'function' ? t('toast.hostnameSet') : '主机名已设置'), 'success');
         document.getElementById('hostname-input').value = '';
         await refreshNetworkPage();
     } catch (e) {
-        showToast('设置失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.setFailedMsg', { msg: e.message }) : '设置失败: ' + e.message), 'error');
     }
 }
 
@@ -7355,20 +7398,20 @@ function connectWifi(ssid) {
     if (password !== null) {
         api.wifiConnect(ssid, password)
             .then(() => {
-                showToast('正在连接...', 'info');
+                showToast((typeof t === 'function' ? t('toast.connecting') : '正在连接...'), 'info');
                 setTimeout(refreshNetworkPage, 3000);
             })
-            .catch(e => showToast('连接失败: ' + e.message, 'error'));
+            .catch(e => showToast((typeof t === 'function' ? t('toast.connectFailedMsg', { msg: e.message }) : '连接失败: ' + e.message), 'error'));
     }
 }
 
 async function disconnectWifi() {
     try {
         await api.wifiDisconnect();
-        showToast('已断开 WiFi 连接', 'success');
+        showToast((typeof t === 'function' ? t('toast.wifiDisconnected') : '已断开 WiFi 连接'), 'success');
         await refreshNetworkPage();
     } catch (e) {
-        showToast('断开失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.disconnectFailedMsg', { msg: e.message }) : '断开失败: ' + e.message), 'error');
     }
 }
 
@@ -7384,7 +7427,7 @@ async function showApStations() {
         const result = await api.wifiApStations();
         if (result.data && result.data.stations) {
             if (result.data.stations.length === 0) {
-                container.innerHTML = '<div class="empty-state">无接入设备</div>';
+                container.innerHTML = '<div class="empty-state">' + (typeof t === 'function' ? t('networkPage.noDevice') : '无接入设备') + '</div>';
                 return;
             }
             container.innerHTML = result.data.stations.map(sta => `
@@ -7422,22 +7465,22 @@ async function applyApConfig() {
     const hidden = document.getElementById('ap-hidden-input').checked;
     
     if (!ssid) {
-        showToast('请输入 SSID', 'error');
+        showToast((typeof t === 'function' ? t('toast.ssidRequired') : '请输入 SSID'), 'error');
         return;
     }
     
     if (password && password.length < 8) {
-        showToast('密码至少 8 位', 'error');
+        showToast((typeof t === 'function' ? t('toast.passwordShort') : '密码至少 8 位'), 'error');
         return;
     }
     
     try {
         await api.wifiApConfig(ssid, password, channel, hidden);
-        showToast('热点配置已应用', 'success');
+        showToast((typeof t === 'function' ? t('toast.hotspotApplied') : '热点配置已应用'), 'success');
         hideApConfig();
         await refreshNetworkPage();
     } catch (e) {
-        showToast('配置失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.configFailedMsg', { msg: e.message }) : '配置失败: ' + e.message), 'error');
     }
 }
 
@@ -7461,7 +7504,7 @@ async function loadDhcpClients() {
         const result = await api.dhcpClients(iface);
         if (result.data && result.data.clients) {
             if (result.data.clients.length === 0) {
-                container.innerHTML = '<div class="empty-state">无客户端</div>';
+                container.innerHTML = '<div class="empty-state">' + (typeof t === 'function' ? t('networkPage.noClient') : '无客户端') + '</div>';
                 return;
             }
             container.innerHTML = result.data.clients.map(client => `
@@ -7493,7 +7536,7 @@ async function toggleNat() {
         }
         await refreshNetworkPage();
     } catch (e) { 
-        showToast('操作失败: ' + e.message, 'error'); 
+        showToast((typeof t === 'function' ? t('toast.operationFailedMsg', { msg: e.message }) : '操作失败: ' + e.message), 'error'); 
     }
 }
 
@@ -7677,16 +7720,16 @@ function clearSelection() {
 
 async function batchDelete() {
     if (selectedFiles.size === 0) {
-        showToast('请先选择要删除的文件', 'warning');
+        showToast((typeof t === 'function' ? t('toast.selectFileToDelete') : '请先选择要删除的文件'), 'warning');
         return;
     }
     
     const count = selectedFiles.size;
-    if (!confirm(`确定要删除选中的 ${count} 个文件/文件夹吗？此操作不可撤销！`)) {
+    if (!confirm(typeof t === 'function' ? t('ui.confirmDeleteFiles', { count }) : `确定要删除选中的 ${count} 个文件/文件夹吗？此操作不可撤销！`)) {
         return;
     }
     
-    showToast(`正在删除 ${count} 个项目...`, 'info');
+    showToast(typeof t === 'function' ? t('files.deletingItems', { count }) : `正在删除 ${count} 个项目...`, 'info');
     
     let successCount = 0;
     let failCount = 0;
@@ -7704,9 +7747,9 @@ async function batchDelete() {
     selectedFiles.clear();
     
     if (failCount === 0) {
-        showToast(`成功删除 ${successCount} 个项目`, 'success');
+        showToast(typeof t === 'function' ? t('files.deleteSuccessCount', { count: successCount }) : `成功删除 ${successCount} 个项目`, 'success');
     } else {
-        showToast(`删除完成: ${successCount} 成功, ${failCount} 失败`, 'warning');
+        showToast(typeof t === 'function' ? t('files.deletePartial', { success: successCount, fail: failCount }) : `删除完成: ${successCount} 成功, ${failCount} 失败`, 'warning');
     }
     
     await refreshFilesPage();
@@ -7714,7 +7757,7 @@ async function batchDelete() {
 
 async function batchDownload() {
     if (selectedFiles.size === 0) {
-        showToast('请先选择要下载的文件', 'warning');
+        showToast((typeof t === 'function' ? t('toast.selectFileToDownload') : '请先选择要下载的文件'), 'warning');
         return;
     }
     
@@ -7728,11 +7771,11 @@ async function batchDownload() {
     }
     
     if (filesToDownload.length === 0) {
-        showToast('选中的项目中没有可下载的文件（文件夹不支持下载）', 'warning');
+        showToast((typeof t === 'function' ? t('toast.noDownloadableFiles') : '选中的项目中没有可下载的文件（文件夹不支持下载）'), 'warning');
         return;
     }
     
-    showToast(`正在下载 ${filesToDownload.length} 个文件...`, 'info');
+    showToast(typeof t === 'function' ? t('files.downloadingFiles', { count: filesToDownload.length }) : `正在下载 ${filesToDownload.length} 个文件...`, 'info');
     
     // 逐个下载文件
     for (const path of filesToDownload) {
@@ -7745,7 +7788,7 @@ async function batchDownload() {
         }
     }
     
-    showToast('批量下载完成', 'success');
+    showToast((typeof t === 'function' ? t('toast.batchDownloadComplete') : '批量下载完成'), 'success');
 }
 
 // SD 卡挂载/卸载
@@ -7832,7 +7875,7 @@ async function loadDirectory(path) {
         });
         
         if (entries.length === 0) {
-            listContainer.innerHTML = '<div class="empty-folder">空文件夹</div>';
+            listContainer.innerHTML = '<div class="empty-folder">' + (typeof t === 'function' ? t('filePage.emptyFolder') : '空文件夹') + '</div>';
             // 仍然添加事件监听器（虽然没有文件）
             listContainer.addEventListener('click', handleFileListClick);
             return;
@@ -8066,7 +8109,7 @@ function removeUploadFile(index) {
 
 async function uploadFiles() {
     if (filesToUpload.length === 0) {
-        showToast('请选择要上传的文件', 'warning');
+        showToast((typeof t === 'function' ? t('toast.selectFileToUpload') : '请选择要上传的文件'), 'warning');
         return;
     }
     
@@ -8096,25 +8139,25 @@ async function uploadFiles() {
                 if (pack.valid) {
                     const signer = pack.signature?.signer_cn || '未知';
                     const isOfficial = pack.signature?.is_official ? '(官方)' : '';
-                    showToast(`配置包验证成功\n签名者: ${signer} ${isOfficial}`, 'success', 5000);
+                    showToast(typeof t === 'function' ? t('toast.configPackVerifySuccess', { signer, isOfficial }) : `配置包验证成功\n签名者: ${signer} ${isOfficial}`, 'success', 5000);
                     
                     // 显示应用确认对话框
                     setTimeout(() => {
                         showConfigPackApplyConfirm(targetPath, pack);
                     }, 500);
                 } else {
-                    showToast(`配置包验证失败: ${pack.result_message}`, 'error', 5000);
+                    showToast(typeof t === 'function' ? t('toast.configPackVerifyFailed', { msg: pack.result_message }) : `配置包验证失败: ${pack.result_message}`, 'error', 5000);
                 }
             }
         } catch (e) {
             console.error('Upload error:', e);
             if (items[i]) {
-                items[i].innerHTML = `<span>${file.name}</span><span class="error">失败: ${e.message}</span>`;
+                items[i].innerHTML = `<span>${file.name}</span><span class="error">${typeof t === 'function' ? t('common.uploadFailedMsg', { msg: e.message }) : '失败: ' + e.message}</span>`;
             }
         }
     }
     
-    showToast('上传完成', 'success');
+    showToast((typeof t === 'function' ? t('toast.uploadComplete') : '上传完成'), 'success');
     setTimeout(() => {
         closeUploadDialog();
         refreshFilesPage();
@@ -8134,18 +8177,18 @@ function closeNewFolderDialog() {
 async function createNewFolder() {
     const name = document.getElementById('new-folder-name').value.trim();
     if (!name) {
-        showToast('请输入文件夹名称', 'warning');
+        showToast((typeof t === 'function' ? t('toast.enterFolderName') : '请输入文件夹名称'), 'warning');
         return;
     }
     
     const path = currentFilePath + '/' + name;
     try {
         await api.storageMkdir(path);
-        showToast('文件夹创建成功', 'success');
+        showToast((typeof t === 'function' ? t('toast.folderCreated') : '文件夹创建成功'), 'success');
         closeNewFolderDialog();
         refreshFilesPage();
     } catch (e) {
-        showToast('创建失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.createFailedMsg', { msg: e.message }) : '创建失败: ' + e.message), 'error');
     }
 }
 
@@ -8165,7 +8208,7 @@ async function doRename() {
     const originalPath = document.getElementById('rename-original-path').value;
     
     if (!newName) {
-        showToast('请输入新名称', 'warning');
+        showToast((typeof t === 'function' ? t('toast.enterNewName') : '请输入新名称'), 'warning');
         return;
     }
     
@@ -8176,11 +8219,11 @@ async function doRename() {
     
     try {
         await api.storageRename(originalPath, newPath);
-        showToast('重命名成功', 'success');
+        showToast((typeof t === 'function' ? t('toast.renameSuccess') : '重命名成功'), 'success');
         closeRenameDialog();
         refreshFilesPage();
     } catch (e) {
-        showToast('重命名失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.renameFailedMsg', { msg: e.message }) : '重命名失败: ' + e.message), 'error');
     }
 }
 
@@ -8202,26 +8245,26 @@ async function downloadFile(path) {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        showToast('下载开始', 'success');
+        showToast((typeof t === 'function' ? t('toast.downloadStart') : '下载开始'), 'success');
     } catch (e) {
         console.error('Download error:', e);
-        showToast('下载失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.downloadFailedMsg', { msg: e.message }) : '下载失败: ' + e.message), 'error');
     }
 }
 
 // 删除文件
 async function deleteFile(path) {
     const name = path.split('/').pop();
-    if (!confirm(`确定要删除 "${name}" 吗？`)) {
+    if (!confirm(typeof t === 'function' ? t('ui.confirmDeleteItem', { name }) : `确定要删除 "${name}" 吗？`)) {
         return;
     }
     
     try {
         await api.storageDelete(path);
-        showToast('删除成功', 'success');
+        showToast((typeof t === 'function' ? t('toast.deleteSuccess') : '删除成功'), 'success');
         refreshFilesPage();
     } catch (e) {
-        showToast('删除失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.deleteFailedMsg', { msg: e.message }) : '删除失败: ' + e.message), 'error');
     }
 }
 
@@ -8493,7 +8536,7 @@ async function loadCommandsPage() {
                 <div id="nohup-actions" class="nohup-actions" style="display:none">
                     <button class="btn btn-sm" id="nohup-view-log" onclick="nohupViewLog()"><i class="ri-file-text-line"></i> ${typeof t === 'function' ? t('ssh.viewLog') : '查看日志'}</button>
                     <button class="btn btn-sm" id="nohup-tail-log" onclick="nohupTailLog()"><i class="ri-eye-line"></i> ${typeof t === 'function' ? t('ssh.tailLog') : '实时跟踪'}</button>
-                    <button class="btn btn-sm" id="nohup-stop-tail" onclick="nohupStopTail()" style="display:none;background:#f59e0b;color:white"><i class="ri-stop-line"></i> ${typeof t === 'function' ? t('ssh.stopTail') : '停止跟踪'}</button>
+                    <button class="btn btn-sm" id="nohup-stop-tail" onclick="nohupStopTail()" style="display:none;background:#f59e0b;color:white"><i class="ri-stop-fill"></i> ${typeof t === 'function' ? t('ssh.stopTail') : '停止跟踪'}</button>
                     <button class="btn btn-sm" id="nohup-check-process" onclick="nohupCheckProcess()"><i class="ri-search-line"></i> ${typeof t === 'function' ? t('ssh.checkProcess') : '检查进程'}</button>
                     <button class="btn btn-sm" id="nohup-stop-process" onclick="nohupStopProcess()" style="background:#f43f5e;color:white"><i class="ri-stop-circle-line"></i> ${typeof t === 'function' ? t('ssh.stopProcess') : '停止进程'}</button>
                 </div>
@@ -8565,8 +8608,8 @@ async function loadCommandsPage() {
                             <label>${typeof t === 'function' ? t('common.description') : '描述'}（${typeof t === 'function' ? t('common.optional') : '可选'}）</label>
                             <input type="text" id="cmd-desc" placeholder="${typeof t === 'function' ? t('ssh.cmdDescPlaceholder') : '简要说明这个指令的作用'}">
                         </div>
-                        <div class="form-group">
-                            <label>${typeof t === 'function' ? t('dataWidget.icon') : '图标'}</label>
+                        <div class="config-section config-section-icon">
+                            <span class="config-title">${typeof t === 'function' ? t('dataWidget.icon') : '图标'}</span>
                             <div class="icon-type-tabs">
                                 <button type="button" class="icon-tab active" onclick="switchCmdIconType('emoji')"><i class="ri-emotion-line"></i> ${typeof t === 'function' ? t('automation.iconTab') : '图标'}</button>
                                 <button type="button" class="icon-tab" onclick="switchCmdIconType('image')"><i class="ri-image-line"></i> ${typeof t === 'function' ? t('automation.imageTab') : '图片'}</button>
@@ -8664,7 +8707,7 @@ async function loadCommandsPage() {
                                     <div class="form-group">
                                         <label class="checkbox-label">
                                             <input type="checkbox" id="cmd-stop-on-match" onchange="updateTimeoutState()">
-                                            <span><i class="ri-stop-line"></i> ${typeof t === 'function' ? t('ssh.stopOnMatchLabel') : '匹配后自动停止'}</span>
+                                            <span>${typeof t === 'function' ? t('ssh.stopOnMatchLabel') : '匹配后自动停止'}</span>
                                         </label>
                                         <small>${typeof t === 'function' ? t('ssh.stopOnMatchHint') : '适用于 ping 等持续运行的命令，匹配成功后自动终止'}</small>
                                     </div>
@@ -9020,7 +9063,7 @@ function addCommandsPageStyles() {
             font-size: 1.2em;
             border: 2px solid var(--border);
             border-radius: var(--radius-sm);
-            background: var(--bg-muted);
+            background: transparent;
             cursor: pointer;
         }
         .icon-btn:hover, .icon-btn.selected {
@@ -9044,6 +9087,31 @@ function addCommandsPageStyles() {
         #command-modal .form-group textarea {
             min-height: 150px;
         }
+        /* 新建指令模态框 - 图标区块与添加规则一致，带底色包裹 */
+        #command-modal .config-section.config-section-icon {
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 14px;
+            margin-bottom: 16px;
+            background: var(--bg-muted);
+        }
+        #command-modal .config-section-icon .config-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 12px;
+            display: block;
+        }
+        #command-modal .config-section-icon .icon-type-tabs {
+            margin-bottom: 10px;
+        }
+        /* 图标网格去白底：icon-picker 和 icon-btn 透明，与 config-section 灰底融为一体 */
+        #command-modal .config-section-icon .icon-picker {
+            background: transparent;
+            padding: 0;
+        }
+        #command-modal .config-section-icon .icon-btn {
+            background: transparent;
+        }
     `;
     document.head.appendChild(style);
 }
@@ -9061,8 +9129,8 @@ async function loadHostSelector() {
         if (hosts.length === 0) {
             container.innerHTML = `
                 <div class="empty-state" style="width:100%">
-                    <p>暂无已部署主机</p>
-                    <p style="font-size:0.9em">请先到 <a href="#/security">安全</a> 页面部署 SSH 公钥</p>
+                    <p>${typeof t === 'function' ? t('sshPage.noDeployedHostsMsg') : '暂无已部署主机'}</p>
+                    <p style="font-size:0.9em">${typeof t === 'function' ? t('sshPage.deployKeyAtSecurityHint') : '请先到 <a href="#/security">安全</a> 页面部署 SSH 公钥'}</p>
                 </div>
             `;
             return;
@@ -9247,12 +9315,12 @@ async function updateServiceStatusInList() {
                 statusEl.textContent = getServiceStatusLabel(status);
                 statusEl.className = `service-status status-${status}`;
             } else {
-                statusEl.textContent = '未启动';
+                statusEl.textContent = (typeof t === 'function' ? t('sshPage.statusIdle') : '未启动');
                 statusEl.className = 'service-status status-idle';
             }
         } catch (e) {
             console.error(`[ServiceStatus] Error getting ${varName}.status:`, e);
-            statusEl.textContent = '未知';
+            statusEl.textContent = (typeof t === 'function' ? t('sshPage.statusUnknown') : '未知');
             statusEl.className = 'service-status status-unknown';
         }
     }
@@ -9262,15 +9330,13 @@ async function updateServiceStatusInList() {
  * 获取服务状态显示文本
  */
 function getServiceStatusLabel(status) {
-    const labels = {
-        'ready': '就绪',
-        'checking': '检测中',
-        'timeout': '超时',
-        'failed': '失败',
-        'idle': '未启动',
-        'stopped': '已停止'
-    };
-    return labels[status] || status;
+    if (typeof t !== 'function') {
+        const labels = { 'ready': '就绪', 'checking': '检测中', 'timeout': '超时', 'failed': '失败', 'idle': '未启动', 'stopped': '已停止' };
+        return labels[status] || status;
+    }
+    const keyMap = { 'ready': 'sshPage.statusReady', 'checking': 'sshPage.statusChecking', 'timeout': 'sshPage.statusTimeout', 'failed': 'sshPage.statusFailed', 'idle': 'sshPage.statusIdle', 'stopped': 'sshPage.statusStopped' };
+    const key = keyMap[status];
+    return key ? t(key) : status;
 }
 
 function showAddCommandModal() {
@@ -9355,7 +9421,7 @@ async function showCommandVariables(varName) {
     
     // 更新标题
     const header = modal.querySelector('.modal-header h2');
-    if (header) header.textContent = `指令变量: ${varName}.*`;
+    if (header) header.textContent = typeof t === 'function' ? t('ui.commandVariablesWithName', { varName }) : `指令变量: ${varName}.*`;
     
     body.innerHTML = '<div class="loading">' + t('common.loading') + '</div>';
     modal.classList.remove('hidden');
@@ -9370,7 +9436,7 @@ async function showCommandVariables(varName) {
                 v.source_id === varName || v.name.startsWith(varName + '.'));
             
             if (vars.length === 0) {
-                body.innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:20px">该指令暂无变量数据，请先执行一次</p>';
+                body.innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:20px">' + (typeof t === 'function' ? t('sshPage.noVariableData') : '该指令暂无变量数据，请先执行一次') + '</p>';
                 return;
             }
             
@@ -9378,10 +9444,10 @@ async function showCommandVariables(varName) {
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>变量名</th>
-                            <th>类型</th>
-                            <th>当前值</th>
-                            <th>更新时间</th>
+                            <th>${typeof t === 'function' ? t('sshPage.varTableName') : '变量名'}</th>
+                            <th>${typeof t === 'function' ? t('sshPage.varTableType') : '类型'}</th>
+                            <th>${typeof t === 'function' ? t('sshPage.varTableValue') : '当前值'}</th>
+                            <th>${typeof t === 'function' ? t('sshPage.varTableUpdated') : '更新时间'}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -9397,7 +9463,7 @@ async function showCommandVariables(varName) {
                 </table>
             `;
         } else {
-            body.innerHTML = `<p style="text-align:center;color:var(--rose-500)">${result.message || '获取变量失败'}</p>`;
+            body.innerHTML = `<p style="text-align:center;color:var(--rose-500)">${result.message || (typeof t === 'function' ? t('sshPage.getVarFailed') : '获取变量失败')}</p>`;
         }
     } catch (error) {
         body.innerHTML = `<p style="text-align:center;color:var(--rose-500)">${error.message}</p>`;
@@ -9544,9 +9610,10 @@ async function browseCmdIconImage() {
 function updateCmdIconPreview(path) {
     const preview = document.getElementById('cmd-icon-preview');
     if (path && path.startsWith('/sdcard/')) {
-        preview.innerHTML = `<img src="/api/v1/file/download?path=${encodeURIComponent(path)}" alt="icon" onerror="this.parentElement.innerHTML='<span class=\\'preview-placeholder\\'>加载失败</span>'">`;
+        const loadFailed = typeof t === 'function' ? t('sshPage.iconPreviewFailed') : '加载失败';
+        preview.innerHTML = `<img src="/api/v1/file/download?path=${encodeURIComponent(path)}" alt="icon" onerror="this.parentElement.innerHTML='<span class=\\'preview-placeholder\\'>${loadFailed}</span>'">`;
     } else {
-        preview.innerHTML = '<span class="preview-placeholder">无</span>';
+        preview.innerHTML = '<span class="preview-placeholder">' + (typeof t === 'function' ? t('sshPage.iconPreviewNone') : '无') + '</span>';
     }
 }
 
@@ -9635,7 +9702,7 @@ async function saveCommand() {
     const readyInterval = parseInt(document.getElementById('cmd-ready-interval')?.value) || 5000;
     
     if (!name || !command) {
-        showToast('请填写指令名称和命令', 'warning');
+        showToast((typeof t === 'function' ? t('toast.fillCommandNameAndCmd') : '请填写指令名称和命令'), 'warning');
         return;
     }
     
@@ -9653,29 +9720,29 @@ async function saveCommand() {
         if (cleaned !== command) {
             document.getElementById('cmd-command').value = cleaned;
             command = cleaned;
-            showToast('已自动去除命令中多余的 nohup 包装（后端会自动添加）', 'info');
+            showToast((typeof t === 'function' ? t('toast.nohupStripped') : '已自动去除命令中多余的 nohup 包装（后端会自动添加）'), 'info');
         }
     }
     
     /* ID 验证（必填） */
     if (!cmdId) {
-        showToast('请填写指令 ID', 'warning');
+        showToast((typeof t === 'function' ? t('toast.fillCommandId') : '请填写指令 ID'), 'warning');
         document.getElementById('cmd-edit-id').focus();
         return;
     }
     if (!validateCommandId(document.getElementById('cmd-edit-id'))) {
-        showToast('指令 ID 格式不正确', 'warning');
+        showToast((typeof t === 'function' ? t('toast.commandIdInvalid') : '指令 ID 格式不正确'), 'warning');
         document.getElementById('cmd-edit-id').focus();
         return;
     }
     
     // 服务模式验证
     if (nohup && serviceMode && !readyPattern) {
-        showToast('启用服务模式时必须设置就绪匹配模式', 'warning');
+        showToast((typeof t === 'function' ? t('toast.serviceModeRequiresPattern') : '启用服务模式时必须设置就绪匹配模式'), 'warning');
         return;
     }
     if (nohup && serviceMode && !varName) {
-        showToast('启用服务模式时必须设置变量名', 'warning');
+        showToast((typeof t === 'function' ? t('toast.serviceModeRequiresVar') : '启用服务模式时必须设置变量名'), 'warning');
         return;
     }
     
@@ -9716,11 +9783,11 @@ async function saveCommand() {
             if (existingIdx >= 0) {
                 sshCommands[selectedHostId][existingIdx] = cmdData;
             }
-            showToast('指令已更新', 'success');
+            showToast((typeof t === 'function' ? t('toast.commandUpdated') : '指令已更新'), 'success');
         } else {
             // 新建模式：添加到本地缓存
             sshCommands[selectedHostId].push(cmdData);
-            showToast('指令已创建', 'success');
+            showToast((typeof t === 'function' ? t('toast.commandCreated') : '指令已创建'), 'success');
         }
         
         closeCommandModal();
@@ -9728,7 +9795,7 @@ async function saveCommand() {
         
     } catch (e) {
         console.error('Failed to save command:', e);
-        showToast('保存指令失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.saveCommandFailedMsg', { msg: e.message }) : '保存指令失败: ' + e.message), 'error');
     }
 }
 
@@ -9736,7 +9803,7 @@ function editCommand(idx) {
     const cmd = sshCommands[selectedHostId]?.[idx];
     if (!cmd) return;
     
-    document.getElementById('command-modal-title').textContent = '编辑指令';
+    document.getElementById('command-modal-title').textContent = typeof t === 'function' ? t('otaPage.editCommand') : '编辑指令';
     
     /* 编辑模式：设置 ID 并标记为只读 */
     const idInput = document.getElementById('cmd-edit-id');
@@ -9839,7 +9906,7 @@ async function exportSshCommand(cmdId) {
         showExportSshCommandModal(cmdId);
     } else {
         // 非开发机：直接使用设备证书加密，询问是否包含主机
-        const includeHost = confirm('是否同时导出该指令依赖的主机配置？\n\n点击「确定」将主机配置一起打包（推荐），点击「取消」仅导出指令。');
+        const includeHost = confirm(typeof t === 'function' ? t('automation.confirmExportWithHost') : '是否同时导出该指令依赖的主机配置？\n\n点击「确定」将主机配置一起打包（推荐），点击「取消」仅导出指令。');
         await doExportSshCommand(cmdId, null, includeHost);
     }
 }
@@ -10158,7 +10225,7 @@ async function deleteCommand(idx) {
     const cmd = sshCommands[selectedHostId]?.[idx];
     if (!cmd) return;
     
-    if (!confirm(`确定要删除指令「${cmd.name}」吗？`)) return;
+    if (!confirm(typeof t === 'function' ? t('ui.confirmDeleteCmd', { name: cmd.name }) : `确定要删除指令「${cmd.name}」吗？`)) return;
     
     try {
         // 从后端删除（需要指令 ID）
@@ -10169,10 +10236,10 @@ async function deleteCommand(idx) {
         // 从本地缓存删除
         sshCommands[selectedHostId].splice(idx, 1);
         refreshCommandsList();
-        showToast('指令已删除', 'success');
+        showToast((typeof t === 'function' ? t('toast.commandDeleted') : '指令已删除'), 'success');
     } catch (e) {
         console.error('Failed to delete command:', e);
-        showToast('删除指令失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.deleteCommandFailedMsg', { msg: e.message }) : '删除指令失败: ' + e.message), 'error');
     }
 }
 
@@ -10189,7 +10256,7 @@ let currentNohupInfo = {
 /* nohup 快捷操作：查看日志 */
 async function nohupViewLog() {
     if (!currentNohupInfo.logFile || !currentNohupInfo.hostId) {
-        showToast('没有可用的日志信息', 'warning');
+        showToast((typeof t === 'function' ? t('ssh.noLogInfo') : '没有可用的日志信息'), 'warning');
         return;
     }
     await executeNohupHelperCommand(`cat "${currentNohupInfo.logFile}"`);
@@ -10202,7 +10269,7 @@ let lastTailContent = '';
 /* nohup 快捷操作：实时跟踪 */
 async function nohupTailLog() {
     if (!currentNohupInfo.logFile || !currentNohupInfo.hostId) {
-        showToast('没有可用的日志信息', 'warning');
+        showToast((typeof t === 'function' ? t('ssh.noLogInfo') : '没有可用的日志信息'), 'warning');
         return;
     }
     
@@ -10220,7 +10287,7 @@ async function nohupTailLog() {
     tailBtn.style.display = 'none';
     stopBtn.style.display = 'inline-block';
     
-    resultPre.textContent += `\n\n━━━━━━━━━━━━━━━━━━━━━━\n开始实时跟踪: ${currentNohupInfo.logFile}\n（点击"停止跟踪"按钮退出）\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+    resultPre.textContent += `\n\n━━━━━━━━━━━━━━━━━━━━━━\n${typeof t === 'function' ? t('sshPage.startRealTimeTail', { logFile: currentNohupInfo.logFile }) : `开始实时跟踪: ${currentNohupInfo.logFile}\n（点击"停止跟踪"按钮退出）`}\n━━━━━━━━━━━━━━━━━━━━━━\n`;
     lastTailContent = '';
     
     // 定时获取日志
@@ -10284,7 +10351,7 @@ function nohupStopTail() {
 /* nohup 快捷操作：检查进程（使用 PID 文件） */
 async function nohupCheckProcess() {
     if (!currentNohupInfo.pidFile || !currentNohupInfo.hostId) {
-        showToast('没有可用的进程信息', 'warning');
+        showToast((typeof t === 'function' ? t('ssh.noProcessInfo') : '没有可用的进程信息'), 'warning');
         return;
     }
     // 使用 PID 文件检查进程状态，并显示进程详情
@@ -10294,12 +10361,12 @@ async function nohupCheckProcess() {
 /* nohup 快捷操作：停止进程（使用 PID 文件） */
 async function nohupStopProcess() {
     if (!currentNohupInfo.pidFile || !currentNohupInfo.hostId) {
-        showToast('没有可用的进程信息', 'warning');
+        showToast((typeof t === 'function' ? t('ssh.noProcessInfo') : '没有可用的进程信息'), 'warning');
         return;
     }
     
     // 确认对话框
-    if (!confirm(`确定要停止此后台进程吗？`)) {
+    if (!confirm(typeof t === 'function' ? t('ui.confirmStopProcess') : '确定要停止此后台进程吗？')) {
         return;
     }
     
@@ -10317,7 +10384,7 @@ async function nohupStopProcess() {
 async function executeNohupHelperCommand(command) {
     const host = window._cmdHostsList?.find(h => h.id === currentNohupInfo.hostId);
     if (!host) {
-        showToast('主机信息不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotFound') : '主机信息不存在'), 'error');
         return;
     }
     
@@ -10359,13 +10426,13 @@ async function executeNohupHelperCommand(command) {
 async function viewServiceLog(idx, safeName) {
     const cmd = sshCommands[selectedHostId]?.[idx];
     if (!cmd) {
-        showToast('命令不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.cmdNotFound') : '命令不存在'), 'error');
         return;
     }
     
     const host = window._cmdHostsList?.find(h => h.id === selectedHostId);
     if (!host) {
-        showToast('主机信息不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotFound') : '主机信息不存在'), 'error');
         return;
     }
     
@@ -10378,7 +10445,7 @@ async function viewServiceLog(idx, safeName) {
     document.getElementById('cancel-exec-btn').style.display = 'none';
     document.getElementById('nohup-actions').style.display = 'none';
     
-    resultPre.textContent = `查看服务日志: ${cmd.name}\n文件: ${logFile}\n\n`;
+    resultPre.textContent = (typeof t === 'function' ? t('sshPage.viewServiceLogFile', { name: cmd.name, file: logFile }) : `查看服务日志: ${cmd.name}\n文件: ${logFile}`) + '\n\n';
     resultSection.scrollIntoView({ behavior: 'smooth' });
     
     try {
@@ -10397,12 +10464,12 @@ async function viewServiceLog(idx, safeName) {
         if (stdout) {
             resultPre.textContent += stdout;
         } else if (stderr) {
-            resultPre.textContent += `[错误] ${stderr}`;
+            resultPre.textContent += typeof t === 'function' ? t('sshPage.logErrorMsg', { msg: stderr }) : `[错误] ${stderr}`;
         } else {
-            resultPre.textContent += '（日志为空）';
+            resultPre.textContent += (typeof t === 'function' ? t('ui.logEmpty') : '（日志为空）');
         }
     } catch (e) {
-        resultPre.textContent += `获取日志失败: ${e.message}`;
+        resultPre.textContent += typeof t === 'function' ? t('sshPage.getLogFailedMsg', { msg: e.message }) : `获取日志失败: ${e.message}`;
     }
     
     resultPre.scrollTop = resultPre.scrollHeight;
@@ -10416,18 +10483,18 @@ async function viewServiceLog(idx, safeName) {
 async function stopServiceProcess(idx, safeName) {
     const cmd = sshCommands[selectedHostId]?.[idx];
     if (!cmd) {
-        showToast('命令不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.cmdNotFound') : '命令不存在'), 'error');
         return;
     }
     
     const host = window._cmdHostsList?.find(h => h.id === selectedHostId);
     if (!host) {
-        showToast('主机信息不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotFound') : '主机信息不存在'), 'error');
         return;
     }
     
     // 确认对话框
-    if (!confirm(`确定要停止服务 "${cmd.name}" 吗？`)) {
+    if (!confirm(typeof t === 'function' ? t('ui.confirmStopService', { name: cmd.name }) : `确定要停止服务 "${cmd.name}" 吗？`)) {
         return;
     }
     
@@ -10440,7 +10507,7 @@ async function stopServiceProcess(idx, safeName) {
     document.getElementById('cancel-exec-btn').style.display = 'none';
     document.getElementById('nohup-actions').style.display = 'none';
     
-    resultPre.textContent = `停止服务: ${cmd.name}\n\n`;
+    resultPre.textContent = (typeof t === 'function' ? t('sshPage.stopServiceName', { name: cmd.name }) : `停止服务: ${cmd.name}`) + '\n\n';
     resultSection.scrollIntoView({ behavior: 'smooth' });
     
     try {
@@ -10458,7 +10525,7 @@ async function stopServiceProcess(idx, safeName) {
         
         if (status.startsWith('RUNNING:')) {
             const pid = status.split(':')[1];
-            resultPre.textContent += `进程运行中 (PID: ${pid})，正在停止...\n`;
+            resultPre.textContent += (typeof t === 'function' ? t('sshPage.processRunningPid', { pid }) : `进程运行中 (PID: ${pid})，正在停止...`) + '\n';
             
             // 发送 SIGTERM
             const killResult = await api.call('ssh.exec', {
@@ -10473,7 +10540,7 @@ async function stopServiceProcess(idx, safeName) {
             const killStatus = (killResult.data?.stdout || '').trim();
             if (killStatus === 'STOPPED') {
                 resultPre.textContent += `服务已停止\n`;
-                showToast('服务已停止', 'success');
+                showToast((typeof t === 'function' ? t('toast.serviceStopped') : '服务已停止'), 'success');
                 
                 // 更新状态变量
                 if (cmd.varName) {
@@ -10496,19 +10563,19 @@ async function stopServiceProcess(idx, safeName) {
                     timeout_ms: 5000
                 });
                 resultPre.textContent += `已强制终止\n`;
-                showToast('服务已强制停止', 'warning');
+                showToast((typeof t === 'function' ? t('toast.serviceForceKilled') : '服务已强制停止'), 'warning');
                 updateServiceStatusInList();
             }
         } else if (status === 'STOPPED') {
             resultPre.textContent += `进程已经停止\n`;
-            showToast('进程已经停止', 'info');
+            showToast((typeof t === 'function' ? t('toast.processAlreadyStopped') : '进程已经停止'), 'info');
         } else {
             resultPre.textContent += `PID 文件不存在，服务可能未启动\n`;
-            showToast('服务未运行', 'info');
+            showToast((typeof t === 'function' ? t('toast.serviceNotRunning') : '服务未运行'), 'info');
         }
     } catch (e) {
         resultPre.textContent += `停止服务失败: ${e.message}`;
-        showToast('停止服务失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.stopServiceFailedMsg', { msg: e.message }) : '停止服务失败: ' + e.message), 'error');
     }
     
     resultPre.scrollTop = resultPre.scrollHeight;
@@ -10520,13 +10587,13 @@ async function executeCommand(idx) {
     
     const host = window._cmdHostsList?.find(h => h.id === selectedHostId);
     if (!host) {
-        showToast('主机信息不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotFound') : '主机信息不存在'), 'error');
         return;
     }
     
     // 检查是否有正在运行的命令（nohup 模式不需要检查）
     if (currentExecSessionId && !cmd.nohup) {
-        showToast('有命令正在执行中，请先取消或等待完成', 'warning');
+        showToast((typeof t === 'function' ? t('toast.commandRunning') : '有命令正在执行中，请先取消或等待完成'), 'warning');
         return;
     }
     
@@ -10640,8 +10707,8 @@ async function executeCommand(idx) {
             currentExecSessionId = null;
             return;
         }
-        resultPre.textContent = `启动执行失败\n\n${e.message}`;
-        showToast('启动执行失败: ' + e.message, 'error');
+        resultPre.textContent = typeof t === 'function' ? t('sshPage.startExecFailedDetail', { msg: e.message }) : `启动执行失败\n\n${e.message}`;
+        showToast((typeof t === 'function' ? t('ssh.startExecFailedMsg', { msg: e.message }) : '启动执行失败: ' + e.message), 'error');
         cancelBtn.style.display = 'none';
         currentExecSessionId = null;
     }
@@ -10649,21 +10716,21 @@ async function executeCommand(idx) {
 
 async function cancelExecution() {
     if (!currentExecSessionId) {
-        showToast('没有正在执行的命令', 'info');
+        showToast((typeof t === 'function' ? t('toast.noRunningCommand') : '没有正在执行的命令'), 'info');
         return;
     }
     
     const cancelBtn = document.getElementById('cancel-exec-btn');
     cancelBtn.disabled = true;
-    cancelBtn.textContent = '取消中...';
+    cancelBtn.textContent = typeof t === 'function' ? t('otaPage.cancelling') : '取消中...';
     
     try {
         await api.call('ssh.cancel', { session_id: currentExecSessionId });
-        showToast('取消请求已发送', 'info');
+        showToast((typeof t === 'function' ? t('toast.cancelSent') : '取消请求已发送'), 'info');
     } catch (e) {
-        showToast('取消失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.cancelFailedMsg', { msg: e.message }) : '取消失败: ' + e.message), 'error');
         cancelBtn.disabled = false;
-        cancelBtn.innerHTML = '<i class="ri-stop-line"></i> 取消 (Esc)';
+        cancelBtn.innerHTML = '<i class="ri-stop-line"></i> ' + (typeof t === 'function' ? t('sshPage.cancelEsc') : '取消 (Esc)');
     }
 }
 
@@ -10726,7 +10793,7 @@ function handleSshExecMessage(msg) {
                     if (msg.extracted) {
                         resultPre.textContent += `  提取内容: ${msg.extracted}\n`;
                     }
-                    showToast('模式匹配成功', msg.fail_matched ? 'error' : 'success');
+                    showToast((typeof t === 'function' ? t('toast.patternMatchSuccess') : '模式匹配成功'), msg.fail_matched ? 'error' : 'success');
                 } else if (isExtractOnly) {
                     /* 仅提取更新（持续提取场景）*/
                     /* 不在输出区显示，只更新面板 */
@@ -10782,15 +10849,15 @@ function handleSshExecMessage(msg) {
                 
                 // 根据状态显示 Toast
                 if (msg.status === 'match_success' || (msg.exit_code === 0 && !msg.fail_matched)) {
-                    showToast('命令执行成功', 'success');
+                    showToast((typeof t === 'function' ? t('toast.commandSuccess') : '命令执行成功'), 'success');
                 } else if (msg.status === 'match_failed' || msg.fail_matched) {
-                    showToast('命令执行完成，模式匹配失败', 'warning');
+                    showToast((typeof t === 'function' ? t('toast.commandMatchFailed') : '命令执行完成，模式匹配失败'), 'warning');
                 } else if (msg.status === 'timeout') {
-                    showToast('命令执行超时', 'warning');
+                    showToast((typeof t === 'function' ? t('toast.commandTimeout') : '命令执行超时'), 'warning');
                 } else if (msg.exit_code === 0) {
-                    showToast('命令执行成功', 'success');
+                    showToast((typeof t === 'function' ? t('toast.commandSuccess') : '命令执行成功'), 'success');
                 } else {
-                    showToast(`命令执行完成，退出码: ${msg.exit_code}`, 'warning');
+                    showToast(typeof t === 'function' ? t('toast.commandCompletedCode', { code: msg.exit_code }) : `命令执行完成，退出码: ${msg.exit_code}`, 'warning');
                 }
             }
             break;
@@ -10802,7 +10869,7 @@ function handleSshExecMessage(msg) {
                     cancelBtn.style.display = 'none';
                 }
                 currentExecSessionId = null;
-                showToast('执行出错: ' + msg.error, 'error');
+                showToast((typeof t === 'function' ? t('toast.execErrorMsg', { msg: msg.error }) : '执行出错: ' + msg.error), 'error');
             }
             break;
             
@@ -10813,7 +10880,7 @@ function handleSshExecMessage(msg) {
                     cancelBtn.style.display = 'none';
                 }
                 currentExecSessionId = null;
-                showToast('命令已取消', 'info');
+                showToast((typeof t === 'function' ? t('toast.commandCancelled') : '命令已取消'), 'info');
             }
             break;
     }
@@ -10837,7 +10904,7 @@ function updateMatchResultPanel(msg, isExtractOnly = false) {
     if (statusBadge) {
         if (isExtractOnly) {
             // 持续提取模式 - 显示"提取中"
-            statusBadge.textContent = '提取中...';
+            statusBadge.textContent = typeof t === 'function' ? t('otaPage.extracting') : '提取中...';
             statusBadge.className = 'match-status extracting';
         } else {
             const statusConfig = {
@@ -10861,7 +10928,7 @@ function updateMatchResultPanel(msg, isExtractOnly = false) {
             expectResult.textContent = msg.expect_matched ? 'true' : 'false';
             expectResult.className = `match-value ${msg.expect_matched ? 'true' : 'false'}`;
         } else {
-            expectResult.textContent = '未配置';
+            expectResult.textContent = typeof t === 'function' ? t('otaPage.expectPatternConfigured') : '未配置';
             expectResult.className = 'match-value';
         }
     }
@@ -10870,10 +10937,10 @@ function updateMatchResultPanel(msg, isExtractOnly = false) {
     const failResult = document.getElementById('match-fail-result');
     if (failResult) {
         if (msg.fail_matched !== undefined) {
-            failResult.textContent = msg.fail_matched ? 'true (检测到错误)' : 'false';
+            failResult.textContent = msg.fail_matched ? (typeof t === 'function' ? t('sshPage.failMatchedTrue') : 'true (检测到错误)') : (typeof t === 'function' ? t('sshPage.failMatchedFalse') : 'false');
             failResult.className = `match-value ${msg.fail_matched ? 'false' : 'true'}`;
         } else {
-            failResult.textContent = '未配置';
+            failResult.textContent = typeof t === 'function' ? t('otaPage.expectPatternConfigured') : '未配置';
             failResult.className = 'match-value';
         }
     }
@@ -10885,7 +10952,7 @@ function updateMatchResultPanel(msg, isExtractOnly = false) {
             extractedResult.textContent = msg.extracted;
             extractedResult.title = msg.extracted;
         } else {
-            extractedResult.textContent = '无';
+            extractedResult.textContent = typeof t === 'function' ? t('otaPage.extractedNone') : '无';
         }
     }
     
@@ -11437,7 +11504,7 @@ async function refreshSecurityPage() {
         
         // 更新 SSH 测试的密钥下拉列表
         if (sshKeySelect) {
-            sshKeySelect.innerHTML = '<option value="">-- 选择密钥 --</option>';
+            sshKeySelect.innerHTML = '<option value="">' + (typeof t === 'function' ? t('sshPage.selectKey') : '-- 选择密钥 --') + '</option>';
             if (keys.data?.keys && keys.data.keys.length > 0) {
                 keys.data.keys.forEach(key => {
                     const option = document.createElement('option');
@@ -11660,7 +11727,7 @@ function showFullFingerprint(index) {
     const host = window._knownHostsList?.[index];
     if (!host) return;
     
-    alert(`主机: ${host.host}:${host.port}\n类型: ${host.type}\n指纹 (SHA256):\n${host.fingerprint}`);
+    alert(typeof t === 'function' ? t('ui.alertHostFingerprint', { host: host.host, port: host.port, type: host.type, fingerprint: host.fingerprint }) : `主机: ${host.host}:${host.port}\n类型: ${host.type}\n指纹 (SHA256):\n${host.fingerprint}`);
 }
 
 /**
@@ -11670,18 +11737,18 @@ async function removeKnownHost(index) {
     const host = window._knownHostsList?.[index];
     if (!host) return;
     
-    if (!confirm(`确定要删除主机 ${host.host}:${host.port} 的指纹记录吗？\n\n删除后下次连接将重新验证服务器指纹。`)) return;
+    if (!confirm(typeof t === 'function' ? t('ui.confirmDeleteFingerprint', { host: host.host, port: host.port }) : `确定要删除主机 ${host.host}:${host.port} 的指纹记录吗？\n\n删除后下次连接将重新验证服务器指纹。`)) return;
     
     try {
         const result = await api.call('hosts.remove', { host: host.host, port: host.port });
         if (result.code === 0) {
-            showToast('已删除主机指纹', 'success');
+            showToast((typeof t === 'function' ? t('toast.hostFingerprintDeleted') : '已删除主机指纹'), 'success');
             await refreshKnownHostsList();
         } else {
-            showToast('删除失败: ' + (result.message || '未知错误'), 'error');
+            showToast((typeof t === 'function' ? t('toast.deleteFailedMsg', { msg: result.message || t('common.unknown') }) : '删除失败: ' + (result.message || '未知错误')), 'error');
         }
     } catch (e) {
-        showToast('删除失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.deleteFailedMsg', { msg: e.message }) : '删除失败: ' + e.message), 'error');
     }
 }
 
@@ -11689,7 +11756,7 @@ async function removeKnownHost(index) {
  * 测试 SSH 连接
  */
 async function testSshConnection(hostId) {
-    showToast(`正在测试连接 ${hostId}...`, 'info');
+    showToast(typeof t === 'function' ? t('toast.testingConnection', { host: hostId }) : `正在测试连接 ${hostId}...`, 'info');
     
     try {
         // 获取主机信息
@@ -11697,12 +11764,12 @@ async function testSshConnection(hostId) {
         console.log('ssh.hosts.get result:', hostResult);
         
         if (hostResult.code !== 0) {
-            showToast(`无法获取主机信息: ${hostResult.message || '未知错误'}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.cannotGetHostInfo') + ': ' + (hostResult.message || t('common.unknown')) : `无法获取主机信息: ${hostResult.message || '未知错误'}`, 'error');
             return;
         }
         
         if (!hostResult.data) {
-            showToast('主机信息为空', 'error');
+            showToast((typeof t === 'function' ? t('toast.hostInfoEmpty') : '主机信息为空'), 'error');
             return;
         }
         
@@ -11718,13 +11785,13 @@ async function testSshConnection(hostId) {
         });
         
         if (execResult.code === 0) {
-            showToast(`连接 ${hostId} 成功！`, 'success');
+            showToast(typeof t === 'function' ? t('toast.connectionSuccess', { host: hostId }) : `连接 ${hostId} 成功！`, 'success');
         } else {
-            showToast(`连接失败: ${execResult.message || '未知错误'}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.connectFailedMsg', { msg: execResult.message || t('common.unknown') }) : `连接失败: ${execResult.message || '未知错误'}`, 'error');
         }
     } catch (e) {
         console.error('Test SSH connection error:', e);
-        showToast(`测试失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.testConnectionFailed') + ': ' + e.message : `测试失败: ${e.message}`, 'error');
     }
 }
 
@@ -11734,11 +11801,11 @@ async function testSshConnection(hostId) {
 async function testSshHostByIndex(index) {
     const host = window._sshHostsList?.[index];
     if (!host) {
-        showToast('主机信息不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotFound') : '主机信息不存在'), 'error');
         return;
     }
     
-    showToast(`正在测试连接 ${host.id}...`, 'info');
+    showToast(typeof t === 'function' ? t('toast.testingConnection', { host: host.id }) : `正在测试连接 ${host.id}...`, 'info');
     
     try {
         const execResult = await api.call('ssh.exec', {
@@ -11751,13 +11818,13 @@ async function testSshHostByIndex(index) {
         });
         
         if (execResult.code === 0) {
-            showToast(`连接 ${host.id} 成功！`, 'success');
+            showToast(typeof t === 'function' ? t('toast.connectionSuccess', { host: host.id }) : `连接 ${host.id} 成功！`, 'success');
         } else {
-            showToast(`连接失败: ${execResult.message || '未知错误'}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.connectFailedMsg', { msg: execResult.message || t('common.unknown') }) : `连接失败: ${execResult.message || '未知错误'}`, 'error');
         }
     } catch (e) {
         console.error('Test SSH connection error:', e);
-        showToast(`测试失败: ${e.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.testConnectionFailed') + ': ' + e.message : `测试失败: ${e.message}`, 'error');
     }
 }
 
@@ -11992,17 +12059,17 @@ async function previewSshHostImport() {
             `;
             
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#d97706"><i class="ri-alert-line"></i> 该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#d97706"><i class="ri-alert-line"></i> ${typeof t === 'function' ? t('securityPage.configExistsWarning') : '该配置已存在，导入将覆盖现有文件'}</div>`;
             }
             
             previewDiv.innerHTML = html;
             step2.style.display = 'block';
             resultBox.className = 'result-box success';
-            resultBox.textContent = '签名验证通过';
+            resultBox.textContent = typeof t === 'function' ? t('ssh.signatureVerified') : '签名验证通过';
             importBtn.disabled = false;
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = (result.message || '无法验证配置包');
+            resultBox.textContent = (result.message || (typeof t === 'function' ? t('ssh.cannotVerifyPack') : '无法验证配置包'));
         }
     } catch (e) {
         resultBox.className = 'result-box error';
@@ -12019,12 +12086,12 @@ async function confirmSshHostImport() {
     const importBtn = document.getElementById('import-ssh-host-btn');
     
     if (!window._importSshHostTscfg) {
-        showToast('请先选择文件', 'error');
+        showToast((typeof t === 'function' ? t('toast.selectFileFirst') : '请先选择文件'), 'error');
         return;
     }
     
     resultBox.classList.remove('hidden', 'success', 'error', 'warning');
-    resultBox.textContent = '正在保存配置...';
+    resultBox.textContent = typeof t === 'function' ? t('ssh.savingConfig') : '正在保存配置...';
     importBtn.disabled = true;
     
     try {
@@ -12065,22 +12132,22 @@ async function confirmSshHostImport() {
 async function removeHostByIndex(index) {
     const host = window._sshHostsList?.[index];
     if (!host) {
-        showToast('主机信息不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotFound') : '主机信息不存在'), 'error');
         return;
     }
     
-    if (!confirm(`确定要从列表中移除主机 "${host.id}" 吗？\n\n注意：这只会移除本地记录，不会删除已部署到服务器上的公钥。如需撤销公钥，请点击「撤销」按钮。`)) return;
+    if (!confirm(typeof t === 'function' ? t('ui.confirmRemoveHostLocal', { id: host.id }) : `确定要从列表中移除主机 "${host.id}" 吗？\n\n注意：这只会移除本地记录，不会删除已部署到服务器上的公钥。如需撤销公钥，请点击「撤销」按钮。`)) return;
     
     try {
         const result = await api.call('ssh.hosts.remove', { id: host.id });
         if (result.code === 0) {
-            showToast(`SSH 主机 ${host.id} 已从列表移除`, 'success');
+            showToast(typeof t === 'function' ? t('toast.sshHostRemoved', { id: host.id }) : `SSH 主机 ${host.id} 已从列表移除`, 'success');
             await loadSshHostsData();
         } else {
-            showToast('移除失败: ' + (result.message || '未知错误'), 'error');
+            showToast((typeof t === 'function' ? t('toast.removeFailedMsg', { msg: result.message || t('common.unknown') }) : '移除失败: ' + (result.message || '未知错误')), 'error');
         }
     } catch (e) {
-        showToast('移除失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.removeFailedMsg', { msg: e.message }) : '移除失败: ' + e.message), 'error');
     }
 }
 
@@ -12090,7 +12157,7 @@ async function removeHostByIndex(index) {
 function revokeKeyFromHost(index) {
     const host = window._sshHostsList?.[index];
     if (!host) {
-        showToast('主机信息不存在', 'error');
+        showToast((typeof t === 'function' ? t('sshPage.hostNotFound') : '主机信息不存在'), 'error');
         return;
     }
     
@@ -12195,29 +12262,29 @@ async function doRevokeFromHost(index) {
  * 从安全页面删除 SSH 主机（保留兼容性）
  */
 async function deleteSshHostFromSecurity(id) {
-    if (!confirm(`确定要从列表中移除主机 "${id}" 吗？\n\n注意：这只会移除本地记录，不会删除已部署到服务器上的公钥。如需撤销公钥，请使用密钥管理中的「撤销」功能。`)) return;
+    if (!confirm(typeof t === 'function' ? t('ui.confirmRemoveHostLocal2', { id }) : `确定要从列表中移除主机 "${id}" 吗？\n\n注意：这只会移除本地记录，不会删除已部署到服务器上的公钥。如需撤销公钥，请使用密钥管理中的「撤销」功能。`)) return;
     
     try {
         const result = await api.call('ssh.hosts.remove', { id });
         if (result.code === 0) {
-            showToast(`SSH 主机 ${id} 已从列表移除`, 'success');
+            showToast(typeof t === 'function' ? t('toast.sshHostRemoved', { id }) : `SSH 主机 ${id} 已从列表移除`, 'success');
             await loadSshHostsData();
         } else {
-            showToast('移除失败: ' + (result.message || '未知错误'), 'error');
+            showToast((typeof t === 'function' ? t('toast.removeFailedMsg', { msg: result.message || t('common.unknown') }) : '移除失败: ' + (result.message || '未知错误')), 'error');
         }
     } catch (e) {
-        showToast('移除失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.removeFailedMsg', { msg: e.message }) : '移除失败: ' + e.message), 'error');
     }
 }
 
 async function deleteKey(id) {
-    if (confirm(`确定要删除密钥 "${id}" 吗？此操作不可撤销！`)) {
+    if (confirm(typeof t === 'function' ? t('ui.confirmDeleteKey', { id }) : `确定要删除密钥 "${id}" 吗？此操作不可撤销！`)) {
         try {
             await api.keyDelete(id);
-            showToast('密钥已删除', 'success');
+            showToast((typeof t === 'function' ? t('toast.keyDeleted') : '密钥已删除'), 'success');
             await refreshSecurityPage();
         } catch (e) {
-            showToast('删除失败: ' + e.message, 'error');
+            showToast((typeof t === 'function' ? t('toast.deleteFailedMsg', { msg: e.message }) : '删除失败: ' + e.message), 'error');
         }
     }
 }
@@ -12229,16 +12296,16 @@ async function exportKey(id) {
             // 显示公钥弹窗
             showPubkeyModal(id, result.data.public_key, result.data.type, result.data.comment);
         } else {
-            showToast('无法获取公钥', 'error');
+            showToast((typeof t === 'function' ? t('toast.cannotGetPublicKey') : '无法获取公钥'), 'error');
         }
     } catch (e) {
-        showToast('导出失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.exportFailedMsg', { msg: e.message }) : '导出失败: ' + e.message), 'error');
     }
 }
 
 async function exportPrivateKey(id) {
     // 安全确认
-    if (!confirm(`安全警告\n\n您正在导出私钥 "${id}"。\n\n私钥是高度敏感的安全凭证，请确保：\n• 不要在公共网络传输\n• 不要分享给他人\n• 安全存储在本地\n\n确定要继续吗？`)) {
+    if (!confirm(typeof t === 'function' ? t('ui.confirmExportPrivateKey', { id }) : `安全警告\n\n您正在导出私钥 "${id}"。\n\n私钥是高度敏感的安全凭证，请确保：\n• 不要在公共网络传输\n• 不要分享给他人\n• 安全存储在本地\n\n确定要继续吗？`)) {
         return;
     }
     
@@ -12247,10 +12314,10 @@ async function exportPrivateKey(id) {
         if (result.data?.private_key) {
             showPrivkeyModal(id, result.data.private_key, result.data.type, result.data.comment);
         } else {
-            showToast('无法获取私钥', 'error');
+            showToast((typeof t === 'function' ? t('toast.cannotGetPrivateKey') : '无法获取私钥'), 'error');
         }
     } catch (e) {
-        showToast('导出失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.exportFailedMsg', { msg: e.message }) : '导出失败: ' + e.message), 'error');
     }
 }
 
@@ -12335,12 +12402,12 @@ async function copyPubkey() {
     if (textarea) {
         try {
             await navigator.clipboard.writeText(textarea.value);
-            showToast('已复制到剪贴板', 'success');
+            showToast((typeof t === 'function' ? t('toast.copied') : '已复制到剪贴板'), 'success');
         } catch (e) {
             // Fallback for older browsers
             textarea.select();
             document.execCommand('copy');
-            showToast('已复制到剪贴板', 'success');
+            showToast((typeof t === 'function' ? t('toast.copied') : '已复制到剪贴板'), 'success');
         }
     }
 }
@@ -12356,7 +12423,7 @@ function downloadPubkey(id) {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        showToast(`已下载 ${id}.pub`, 'success');
+        showToast(typeof t === 'function' ? t('toast.downloadedPublicKey', { id }) : `已下载 ${id}.pub`, 'success');
     }
 }
 
@@ -12365,11 +12432,11 @@ async function copyPrivkey() {
     if (textarea) {
         try {
             await navigator.clipboard.writeText(textarea.value);
-            showToast('已复制到剪贴板', 'success');
+            showToast((typeof t === 'function' ? t('toast.copied') : '已复制到剪贴板'), 'success');
         } catch (e) {
             textarea.select();
             document.execCommand('copy');
-            showToast('已复制到剪贴板', 'success');
+            showToast((typeof t === 'function' ? t('toast.copied') : '已复制到剪贴板'), 'success');
         }
     }
 }
@@ -12385,7 +12452,7 @@ function downloadPrivkey(id) {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        showToast(`已下载 ${id}`, 'success');
+        showToast(typeof t === 'function' ? t('toast.downloadedPrivateKey', { id }) : `已下载 ${id}`, 'success');
     }
 }
 
@@ -12421,7 +12488,7 @@ async function deployKey() {
     const password = document.getElementById('deploy-password').value;
     
     if (!host || !user || !password) {
-        showToast('请填写完整的服务器信息', 'error');
+        showToast((typeof t === 'function' ? t('toast.fillServerInfo') : '请填写完整的服务器信息'), 'error');
         return;
     }
     
@@ -12429,7 +12496,7 @@ async function deployKey() {
     const deployBtn = document.getElementById('deploy-btn');
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '正在部署密钥...';
+    resultBox.textContent = typeof t === 'function' ? t('securityPage.deployingKey') : '正在部署密钥...';
     deployBtn.disabled = true;
     
     try {
@@ -12445,14 +12512,14 @@ async function deployKey() {
             }
             resultBox.textContent = msg;
             resultBox.classList.add('success');
-            showToast('密钥部署成功', 'success');
+            showToast((typeof t === 'function' ? t('toast.keyDeployed') : '密钥部署成功'), 'success');
             // 刷新已部署主机列表（后端 ssh.copyid 会自动注册主机）
             await loadSshHostsData();
         } else {
             throw new Error('部署失败');
         }
     } catch (e) {
-        resultBox.textContent = '部署失败: ' + e.message;
+        resultBox.textContent = (typeof t === 'function' ? t('securityPage.deployFailedMsg', { msg: e.message }) : '部署失败: ' + e.message);
         resultBox.classList.add('error');
     } finally {
         deployBtn.disabled = false;
@@ -12491,7 +12558,7 @@ async function revokeKey() {
     const password = document.getElementById('revoke-password').value;
     
     if (!host || !user || !password) {
-        showToast('请填写完整的服务器信息', 'error');
+        showToast((typeof t === 'function' ? t('toast.fillServerInfo') : '请填写完整的服务器信息'), 'error');
         return;
     }
     
@@ -12499,7 +12566,7 @@ async function revokeKey() {
     const revokeBtn = document.getElementById('revoke-btn');
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '正在撤销密钥...';
+    resultBox.textContent = typeof t === 'function' ? t('securityPage.revokingKey') : '正在撤销密钥...';
     revokeBtn.disabled = true;
     
     try {
@@ -12507,18 +12574,18 @@ async function revokeKey() {
         const result = await api.sshRevoke(host, user, password, currentRevokeKeyId, port);
         
         if (result.data?.revoked) {
-            resultBox.textContent = `撤销成功！已从 ${user}@${host} 移除 ${result.data.removed_count || 1} 个匹配的公钥`;
+            resultBox.textContent = typeof t === 'function' ? t('sshPage.revokeSuccess', { target: `${user}@${host}`, count: result.data.removed_count || 1 }) : `撤销成功！已从 ${user}@${host} 移除 ${result.data.removed_count || 1} 个匹配的公钥`;
             resultBox.classList.add('success');
-            showToast('密钥撤销成功', 'success');
+            showToast((typeof t === 'function' ? t('toast.keyRevoked') : '密钥撤销成功'), 'success');
         } else if (result.data?.found === false) {
-            resultBox.textContent = `该公钥未在 ${user}@${host} 上找到`;
+            resultBox.textContent = typeof t === 'function' ? t('sshPage.keyNotFound', { target: `${user}@${host}` }) : `该公钥未在 ${user}@${host} 上找到`;
             resultBox.classList.add('warning');
-            showToast('公钥未找到', 'warning');
+            showToast((typeof t === 'function' ? t('toast.publicKeyNotFound') : '公钥未找到'), 'warning');
         } else {
             throw new Error('撤销失败');
         }
     } catch (e) {
-        resultBox.textContent = '撤销失败: ' + e.message;
+        resultBox.textContent = (typeof t === 'function' ? t('securityPage.revokeFailedMsg', { msg: e.message }) : '撤销失败: ' + e.message);
         resultBox.classList.add('error');
     } finally {
         revokeBtn.disabled = false;
@@ -12548,34 +12615,34 @@ async function removeAndRetry() {
     try {
         // 使用新的 hosts.update API 更新主机密钥
         await api.hostsUpdate(currentMismatchInfo.host, currentMismatchInfo.port || 22);
-        showToast('旧主机密钥已移除，请重新连接以信任新密钥', 'success');
+        showToast((typeof t === 'function' ? t('toast.oldHostKeyRemoved') : '旧主机密钥已移除，请重新连接以信任新密钥'), 'success');
         hideHostMismatchModal();
         await refreshSecurityPage();
     } catch (e) {
-        showToast('更新失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.updateFailedMsg', { msg: e.message }) : '更新失败: ' + e.message), 'error');
     }
 }
 
 async function removeHost(host, port) {
-    if (confirm(`确定要移除主机 "${host}:${port}" 的记录吗？`)) {
+    if (confirm(typeof t === 'function' ? t('ui.confirmRemoveKnownHost', { host, port }) : `确定要移除主机 "${host}:${port}" 的记录吗？`)) {
         try {
             await api.hostsRemove(host, port);
-            showToast('主机已移除', 'success');
+            showToast((typeof t === 'function' ? t('toast.hostRemoved') : '主机已移除'), 'success');
             await refreshSecurityPage();
         } catch (e) {
-            showToast('移除失败: ' + e.message, 'error');
+            showToast((typeof t === 'function' ? t('toast.removeFailedMsg', { msg: e.message }) : '移除失败: ' + e.message), 'error');
         }
     }
 }
 
 async function clearAllHosts() {
-    if (confirm('确定要清除所有已知主机记录吗？此操作不可撤销！')) {
+    if (confirm(typeof t === 'function' ? t('automation.confirmClearKnownHosts') : '确定要清除所有已知主机记录吗？此操作不可撤销！')) {
         try {
             await api.hostsClear();
-            showToast('已清除所有已知主机', 'success');
+            showToast((typeof t === 'function' ? t('toast.allHostsCleared') : '已清除所有已知主机'), 'success');
             await refreshSecurityPage();
         } catch (e) {
-            showToast('清除失败: ' + e.message, 'error');
+            showToast((typeof t === 'function' ? t('toast.clearFailedMsg', { msg: e.message }) : '清除失败: ' + e.message), 'error');
         }
     }
 }
@@ -12670,16 +12737,16 @@ async function loadConfigPackCert() {
         loading.style.display = 'none';
         content.classList.remove('hidden');
     } catch (e) {
-        loading.textContent = '加载失败: ' + e.message;
+        loading.textContent = typeof t === 'function' ? t('securityPage.loadFailedMsg', { msg: e.message }) : '加载失败: ' + e.message;
     }
 }
 
 function copyPackCertToClipboard() {
     const pem = document.getElementById('pack-cert-pem').value;
     navigator.clipboard.writeText(pem).then(() => {
-        showToast('证书已复制到剪贴板', 'success');
+        showToast(typeof t === 'function' ? t('toast.certCopied') : '证书已复制到剪贴板', 'success');
     }).catch(e => {
-        showToast('复制失败: ' + e.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.copyFailedMsg', { msg: e.message }) : '复制失败: ' + e.message, 'error');
     });
 }
 
@@ -12714,13 +12781,13 @@ async function verifyConfigPack() {
     
     if (!content) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '请上传文件或粘贴配置包内容';
+        resultBox.textContent = typeof t === 'function' ? t('securityPage.uploadOrPasteContent') : '请上传文件或粘贴配置包内容';
         resultBox.classList.remove('hidden');
         return;
     }
     
     resultBox.className = 'result-box';
-    resultBox.textContent = '验证中...';
+    resultBox.textContent = typeof t === 'function' ? t('securityPage.verifying') : '验证中...';
     resultBox.classList.remove('hidden');
     preview.classList.add('hidden');
     
@@ -12731,7 +12798,7 @@ async function verifyConfigPack() {
         const data = result.data;
         if (data.valid) {
             resultBox.className = 'result-box success';
-            resultBox.innerHTML = '签名验证通过';
+            resultBox.innerHTML = typeof t === 'function' ? t('ssh.signatureVerified') : '签名验证通过';
             
             // 显示签名信息
             if (data.signature) {
@@ -12748,11 +12815,11 @@ async function verifyConfigPack() {
             }
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = '验证失败: ' + (data.result_message || '签名无效');
+            resultBox.textContent = (typeof t === 'function' ? t('securityPage.verifyFailed') : '验证失败') + ': ' + (data.result_message || (typeof t === 'function' ? t('securityPage.signatureInvalid') : '签名无效'));
         }
     } catch (e) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '验证失败: ' + e.message;
+        resultBox.textContent = (typeof t === 'function' ? t('securityPage.verifyFailed') : '验证失败') + ': ' + e.message;
     }
 }
 
@@ -12763,13 +12830,13 @@ async function importConfigPack() {
     
     if (!content) {
         resultBox.className = 'result-box error';
-        resultBox.textContent = '请上传文件或粘贴配置包内容';
+        resultBox.textContent = typeof t === 'function' ? t('securityPage.uploadOrPasteContent') : '请上传文件或粘贴配置包内容';
         resultBox.classList.remove('hidden');
         return;
     }
     
     resultBox.className = 'result-box';
-    resultBox.textContent = '导入中...';
+    resultBox.textContent = typeof t === 'function' ? t('securityPage.importing') : '导入中...';
     resultBox.classList.remove('hidden');
     
     try {
@@ -12859,7 +12926,7 @@ function closeConfigPackApplyConfirm() {
  */
 async function applyConfigPackFromPath(path) {
     closeConfigPackApplyConfirm();
-    showToast('正在应用配置...', 'info');
+    showToast(typeof t === 'function' ? t('toast.applyingConfig') : '正在应用配置...', 'info');
     
     try {
         const result = await api.call('config.pack.apply', { path }, 'POST');
@@ -12871,13 +12938,13 @@ async function applyConfigPackFromPath(path) {
         if (data.success) {
             const modules = data.applied_modules || [];
             const moduleList = modules.length > 0 ? modules.join(', ') : '无';
-            showToast(`配置已应用\n模块: ${moduleList}`, 'success', 5000);
+            showToast(typeof t === 'function' ? t('toast.configApplied', { modules: moduleList }) : `配置已应用\n模块: ${moduleList}`, 'success', 5000);
         } else {
-            showToast(`应用失败: ${data.result_message}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.applyFailedMsg', { msg: data.result_message }) : `应用失败: ${data.result_message}`, 'error');
         }
     } catch (e) {
         console.error('Apply config pack error:', e);
-        showToast('应用失败: ' + e.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.applyFailedMsg', { msg: e.message }) : '应用失败: ' + e.message, 'error');
     }
 }
 
@@ -13126,7 +13193,7 @@ function packExportDeselectAll() {
 async function packExportSelectDir() {
     // 与全选功能相同，但可以在 UI 上有区分
     await packExportSelectAll();
-    showToast(`已选择当前目录下的所有 JSON 文件`, 'success');
+    showToast(typeof t === 'function' ? t('toast.selectedJsonFiles') : '已选择当前目录下的所有 JSON 文件', 'success');
 }
 
 // 文件大小格式化
@@ -13153,7 +13220,7 @@ async function exportConfigPack() {
     if (!name) {
         resultBox.className = 'result-box error';
         resultBox.style.visibility = 'visible';
-        resultBox.textContent = '请输入配置名称';
+        resultBox.textContent = typeof t === 'function' ? t('securityPage.enterConfigName') : '请输入配置名称';
         return;
     }
     
@@ -13162,14 +13229,14 @@ async function exportConfigPack() {
     if (okFiles.length === 0) {
         resultBox.className = 'result-box error';
         resultBox.style.visibility = 'visible';
-        resultBox.textContent = '请选择配置文件';
+        resultBox.textContent = typeof t === 'function' ? t('securityPage.selectConfigFile') : '请选择配置文件';
         return;
     }
     
     if (!recipientCert) {
         resultBox.className = 'result-box error';
         resultBox.style.visibility = 'visible';
-        resultBox.textContent = '请粘贴目标设备证书';
+        resultBox.textContent = typeof t === 'function' ? t('securityPage.pasteTargetCert') : '请粘贴目标设备证书';
         return;
     }
     
@@ -13190,13 +13257,13 @@ async function exportConfigPack() {
     } catch (e) {
         resultBox.className = 'result-box error';
         resultBox.style.visibility = 'visible';
-        resultBox.textContent = '配置文件不是有效的 JSON: ' + e.message;
+        resultBox.textContent = (typeof t === 'function' ? t('securityPage.invalidJsonConfigMsg', { msg: e.message }) : '配置文件不是有效的 JSON: ' + e.message);
         return;
     }
     
     resultBox.className = 'result-box';
     resultBox.style.visibility = 'visible';
-    resultBox.textContent = `生成配置包中 (${okFiles.length} 个文件)...`;
+    resultBox.textContent = typeof t === 'function' ? t('securityPage.generatingPackWithCount', { count: okFiles.length }) : `生成配置包中 (${okFiles.length} 个文件)...`;
     document.getElementById('pack-export-tscfg').value = '';
     
     try {
@@ -13233,7 +13300,7 @@ async function exportConfigPack() {
         // 显示保存路径
         const savedPathSpan = document.getElementById('pack-export-saved-path');
         if (savedPath && savedPathSpan) {
-            savedPathSpan.textContent = `已保存到设备`;
+            savedPathSpan.textContent = typeof t === 'function' ? t('securityPage.savedToDevice') : '已保存到设备';
             savedPathSpan.style.display = 'inline';
         }
         
@@ -13248,16 +13315,16 @@ async function exportConfigPack() {
     } catch (e) {
         console.error('[ConfigPack] Export error:', e);
         resultBox.className = 'result-box error';
-        resultBox.textContent = '生成失败: ' + e.message;
+        resultBox.textContent = (typeof t === 'function' ? t('securityPage.generationFailedMsg', { msg: e.message }) : '生成失败: ' + e.message);
     }
 }
 
 function copyPackTscfgToClipboard() {
     const tscfg = document.getElementById('pack-export-tscfg').value;
     navigator.clipboard.writeText(tscfg).then(() => {
-        showToast('配置包已复制到剪贴板', 'success');
+        showToast(typeof t === 'function' ? t('toast.configPackCopied') : '配置包已复制到剪贴板', 'success');
     }).catch(e => {
-        showToast('复制失败: ' + e.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.copyFailedMsg', { msg: e.message }) : '复制失败: ' + e.message, 'error');
     });
 }
 
@@ -13275,7 +13342,7 @@ function downloadPackTscfg() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
-    showToast('配置包已下载: ' + filename, 'success');
+    showToast(typeof t === 'function' ? t('toast.configPackDownloaded', { filename }) : '配置包已下载: ' + filename, 'success');
 }
 
 // 配置包：列表弹窗
@@ -13526,15 +13593,15 @@ async function generateCertKeypair() {
     const force = window._certPkiStatus?.has_private_key;
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '正在生成密钥对...';
+    resultBox.textContent = typeof t === 'function' ? t('securityPage.generatingKeyPair') : '正在生成密钥对...';
     btn.disabled = true;
     
     try {
         const result = await api.certGenerateKeypair(force);
         if (result.code === 0 || result.data?.success) {
-            resultBox.textContent = 'ECDSA P-256 密钥对生成成功！';
+            resultBox.textContent = typeof t === 'function' ? t('securityPage.ecdsaKeyPairSuccess') : 'ECDSA P-256 密钥对生成成功！';
             resultBox.classList.add('success');
-            showToast('密钥对生成成功', 'success');
+            showToast(typeof t === 'function' ? t('toast.keypairGenerated') : '密钥对生成成功', 'success');
             
             setTimeout(() => {
                 hideCertGenKeyModal();
@@ -13544,7 +13611,7 @@ async function generateCertKeypair() {
             throw new Error(result.message || '生成失败');
         }
     } catch (e) {
-        resultBox.textContent = '生成失败: ' + e.message;
+        resultBox.textContent = (typeof t === 'function' ? t('securityPage.generationFailedMsg', { msg: e.message }) : '生成失败: ' + e.message);
         resultBox.classList.add('error');
     } finally {
         btn.disabled = false;
@@ -13573,7 +13640,7 @@ async function generateCSR() {
     const btn = document.getElementById('csr-gen-btn');
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '正在生成 CSR...';
+    resultBox.textContent = typeof t === 'function' ? t('securityPage.generatingCsr') : '正在生成 CSR...';
     btn.disabled = true;
     
     try {
@@ -13587,12 +13654,12 @@ async function generateCSR() {
             resultBox.classList.add('hidden');
             csrResultBox.classList.remove('hidden');
             document.getElementById('csr-pem-output').value = result.data.csr_pem;
-            showToast('CSR 生成成功', 'success');
+            showToast(typeof t === 'function' ? t('toast.csrGenerated') : 'CSR 生成成功', 'success');
         } else {
             throw new Error(result.message || '生成失败');
         }
     } catch (e) {
-        resultBox.textContent = '生成失败: ' + e.message;
+        resultBox.textContent = (typeof t === 'function' ? t('securityPage.generationFailedMsg', { msg: e.message }) : '生成失败: ' + e.message);
         resultBox.classList.add('error');
     } finally {
         btn.disabled = false;
@@ -13602,9 +13669,9 @@ async function generateCSR() {
 function copyCSRToClipboard() {
     const csr = document.getElementById('csr-pem-output').value;
     navigator.clipboard.writeText(csr).then(() => {
-        showToast('CSR 已复制到剪贴板', 'success');
+        showToast(typeof t === 'function' ? t('toast.csrCopied') : 'CSR 已复制到剪贴板', 'success');
     }).catch(e => {
-        showToast('复制失败: ' + e.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.copyFailedMsg', { msg: e.message }) : '复制失败: ' + e.message, 'error');
     });
 }
 
@@ -13622,20 +13689,20 @@ function hideCertInstallModal() {
 async function installCertificate() {
     const certPem = document.getElementById('cert-pem-input').value.trim();
     if (!certPem) {
-        showToast('请输入证书 PEM', 'error');
+        showToast(typeof t === 'function' ? t('toast.enterCertPem') : '请输入证书 PEM', 'error');
         return;
     }
     
     const resultBox = document.getElementById('cert-install-result');
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '正在安装证书...';
+    resultBox.textContent = typeof t === 'function' ? t('securityPage.installingCert') : '正在安装证书...';
     
     try {
         const result = await api.certInstall(certPem);
         if (result.code === 0 || result.data?.success) {
-            resultBox.textContent = '证书安装成功！';
+            resultBox.textContent = typeof t === 'function' ? t('securityPage.certInstalledSuccess') : '证书安装成功！';
             resultBox.classList.add('success');
-            showToast('证书安装成功', 'success');
+            showToast(typeof t === 'function' ? t('toast.certInstalled') : '证书安装成功', 'success');
             
             setTimeout(() => {
                 hideCertInstallModal();
@@ -13645,7 +13712,7 @@ async function installCertificate() {
             throw new Error(result.message || '安装失败');
         }
     } catch (e) {
-        resultBox.textContent = '安装失败: ' + e.message;
+        resultBox.textContent = (typeof t === 'function' ? t('securityPage.installFailedMsg', { msg: e.message }) : '安装失败: ' + e.message);
         resultBox.classList.add('error');
     }
 }
@@ -13664,20 +13731,20 @@ function hideCertInstallCAModal() {
 async function installCAChain() {
     const caPem = document.getElementById('ca-pem-input').value.trim();
     if (!caPem) {
-        showToast('请输入 CA 证书链 PEM', 'error');
+        showToast(typeof t === 'function' ? t('toast.enterCaPem') : '请输入 CA 证书链 PEM', 'error');
         return;
     }
     
     const resultBox = document.getElementById('ca-install-result');
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '正在安装 CA 证书链...';
+    resultBox.textContent = typeof t === 'function' ? t('securityPage.installingCaCert') : '正在安装 CA 证书链...';
     
     try {
         const result = await api.certInstallCA(caPem);
         if (result.code === 0 || result.data?.success) {
-            resultBox.textContent = 'CA 证书链安装成功！';
+            resultBox.textContent = typeof t === 'function' ? t('securityPage.caCertInstalledSuccess') : 'CA 证书链安装成功！';
             resultBox.classList.add('success');
-            showToast('CA 证书链安装成功', 'success');
+            showToast(typeof t === 'function' ? t('toast.caInstalled') : 'CA 证书链安装成功', 'success');
             
             setTimeout(() => {
                 hideCertInstallCAModal();
@@ -13687,7 +13754,7 @@ async function installCAChain() {
             throw new Error(result.message || '安装失败');
         }
     } catch (e) {
-        resultBox.textContent = '安装失败: ' + e.message;
+        resultBox.textContent = (typeof t === 'function' ? t('securityPage.installFailedMsg', { msg: e.message }) : '安装失败: ' + e.message);
         resultBox.classList.add('error');
     }
 }
@@ -13711,7 +13778,7 @@ async function showCertViewModal() {
             throw new Error(result.message || '获取证书失败');
         }
     } catch (e) {
-        loading.textContent = '加载失败: ' + e.message;
+        loading.textContent = typeof t === 'function' ? t('securityPage.loadFailedMsg', { msg: e.message }) : '加载失败: ' + e.message;
     }
 }
 
@@ -13722,27 +13789,27 @@ function hideCertViewModal() {
 function copyCertToClipboard() {
     const cert = document.getElementById('cert-view-pem').value;
     navigator.clipboard.writeText(cert).then(() => {
-        showToast('证书已复制到剪贴板', 'success');
+        showToast(typeof t === 'function' ? t('toast.certCopied') : '证书已复制到剪贴板', 'success');
     }).catch(e => {
-        showToast('复制失败: ' + e.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.copyFailedMsg', { msg: e.message }) : '复制失败: ' + e.message, 'error');
     });
 }
 
 async function deleteCertCredentials() {
-    if (!confirm('确定要删除所有 PKI 凭证吗？\n\n这将删除：\n• 私钥\n• 设备证书\n• CA 证书链\n\n此操作不可撤销！')) {
+    if (!confirm(typeof t === 'function' ? t('automation.confirmDeletePKI') : '确定要删除所有 PKI 凭证吗？\n\n这将删除：\n• 私钥\n• 设备证书\n• CA 证书链\n\n此操作不可撤销！')) {
         return;
     }
     
     try {
         const result = await api.certDelete();
         if (result.code === 0 || result.data?.success) {
-            showToast('PKI 凭证已删除', 'success');
+            showToast(typeof t === 'function' ? t('toast.pkiDeleted') : 'PKI 凭证已删除', 'success');
             await refreshCertStatus();
         } else {
             throw new Error(result.message || '删除失败');
         }
     } catch (e) {
-        showToast('删除失败: ' + e.message, 'error');
+        showToast((typeof t === 'function' ? t('toast.deleteFailedMsg', { msg: e.message }) : '删除失败: ' + e.message), 'error');
     }
 }
 
@@ -13767,18 +13834,18 @@ async function generateKey() {
     const hidden = document.getElementById('keygen-hidden').checked;
     
     if (!id) {
-        showToast('请输入密钥 ID', 'error');
+        showToast(typeof t === 'function' ? t('toast.enterKeyId') : '请输入密钥 ID', 'error');
         return;
     }
     
     try {
-        showToast('正在生成密钥...', 'info');
+        showToast(typeof t === 'function' ? t('toast.generatingKey') : '正在生成密钥...', 'info');
         await api.keyGenerate(id, type, comment, exportable, alias, hidden);
         hideGenerateKeyModal();
-        showToast(`密钥 "${alias || id}" 生成成功`, 'success');
+        showToast(typeof t === 'function' ? t('toast.keyGenerated', { name: alias || id }) : `密钥 "${alias || id}" 生成成功`, 'success');
         await refreshSecurityPage();
     } catch (e) {
-        showToast('生成失败: ' + e.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.generateFailedMsg', { msg: e.message }) : '生成失败: ' + e.message, 'error');
     }
 }
 
@@ -14116,7 +14183,7 @@ function terminalClear() {
 function terminalDisconnect() {
     if (webTerminal) {
         webTerminal.disconnect();
-        showToast('终端已断开', 'info');
+        showToast(typeof t === 'function' ? t('toast.terminalDisconnected') : '终端已断开', 'info');
     }
 }
 
@@ -14245,14 +14312,14 @@ function renderModalLogs() {
     // 更新统计
     const statsElem = document.getElementById('modal-log-stats');
     if (statsElem) {
-        statsElem.textContent = `显示 ${filtered.length}/${modalLogEntries.length} 条`;
+        statsElem.textContent = typeof t === 'function' ? t('ui.displayStats', { filtered: filtered.length, total: modalLogEntries.length }) : `显示 ${filtered.length}/${modalLogEntries.length} 条`;
     }
     
     if (filtered.length === 0) {
         container.innerHTML = `
             <div class="log-empty">
                 <div class="icon"><i class="ri-file-list-line"></i></div>
-                <div class="text">暂无日志</div>
+                <div class="text">${typeof t === 'function' ? t('fanPage.noLogs') : '暂无日志'}</div>
             </div>
         `;
         return;
@@ -15093,7 +15160,7 @@ function displayPartitionsCompact(data) {
         `;
     }
     
-    container.innerHTML = html || '<p style="color:#9ca3af;padding:10px">无分区信息</p>';
+    container.innerHTML = html || '<p style="color:#9ca3af;padding:10px">' + (typeof t === 'function' ? t('otaPage.noPartitionInfo') : '无分区信息') + '</p>';
 }
 
 async function refreshOtaInfo() {
@@ -15166,7 +15233,7 @@ async function refreshOtaProgress() {
                 
                 // 处理 App OTA 完成 - 开始 WWW OTA
                 if (otaStep === 'app' && (state === 'pending_reboot' || state === 'completed') && wwwOtaEnabled) {
-                    stateEl.textContent = '固件升级完成，准备升级 WebUI...';
+                    stateEl.textContent = typeof t === 'function' ? t('otaPage.firmwareUpgradeComplete') : '固件升级完成，准备升级 WebUI...';
                     await startWwwOta();
                     return;
                 }
@@ -15179,7 +15246,7 @@ async function refreshOtaProgress() {
                     otaStep = 'idle';
                     
                     // 显示重启倒计时
-                    stateEl.textContent = '全部升级完成';
+                    stateEl.textContent = typeof t === 'function' ? t('otaPage.allUpgradeComplete') : '全部升级完成';
                     document.getElementById('ota-message').innerHTML = `
                         <div style="text-align:center">
                             <p>固件和 WebUI 升级完成，设备正在重启...</p>
@@ -15197,7 +15264,7 @@ async function refreshOtaProgress() {
                     // 开始检测设备重启
                     startRebootDetection();
                 } else if (state === 'error') {
-                    showToast('升级失败: ' + message, 'error');
+                    showToast(typeof t === 'function' ? t('toast.upgradeFailedMsg', { msg: message }) : '升级失败: ' + message, 'error');
                     clearInterval(refreshInterval);
                     refreshInterval = null;
                     otaStep = 'idle';
@@ -15257,7 +15324,7 @@ async function startWwwOta() {
         
         otaStep = 'www';
         
-        document.getElementById('ota-state-text').textContent = '[2/2] 开始升级 WebUI...';
+        document.getElementById('ota-state-text').textContent = typeof t === 'function' ? t('otaPage.step2Webui') : '[2/2] 开始升级 WebUI...';
         document.getElementById('ota-progress-bar').style.width = '0%';
         document.getElementById('ota-progress-percent').textContent = '0%';
         document.getElementById('ota-message').textContent = wwwSource;
@@ -15280,13 +15347,13 @@ async function startWwwOta() {
         sdcardOtaSource = '';  // 重置
         
         if (result.code !== 0) {
-            showToast('WebUI 升级启动失败: ' + result.message, 'error');
+            showToast(typeof t === 'function' ? t('toast.webuiUpgradeStartFailed') + ': ' + result.message : 'WebUI 升级启动失败: ' + result.message, 'error');
             // 即使 www 失败也继续重启（因为 app 已经更新）
             otaStep = 'idle';
             clearInterval(refreshInterval);
             refreshInterval = null;
             
-            document.getElementById('ota-state-text').textContent = '固件升级完成（WebUI 跳过）';
+            document.getElementById('ota-state-text').textContent = typeof t === 'function' ? t('otaPage.firmwareOnlyComplete') : '固件升级完成（WebUI 跳过）';
             document.getElementById('ota-message').innerHTML = `
                 <div style="text-align:center">
                     <p>固件已更新，WebUI 升级跳过，设备正在重启...</p>
@@ -15325,7 +15392,7 @@ function startRebootDetection() {
         const countdownEl = document.getElementById('reboot-countdown');
         
         if (countdownEl) {
-            countdownEl.textContent = `已等待 ${elapsed} 秒...`;
+            countdownEl.textContent = typeof t === 'function' ? t('ui.waitedSeconds', { elapsed }) : `已等待 ${elapsed} 秒...`;
         }
         
         try {
@@ -15345,7 +15412,7 @@ function startRebootDetection() {
                     `;
                 }
                 
-                showToast(`OTA 升级成功！当前版本: ${newVersion}`, 'success');
+                showToast(typeof t === 'function' ? t('toast.otaUpgradeSuccess', { version: newVersion }) : `OTA 升级成功！当前版本: ${newVersion}`, 'success');
                 
                 // 3 秒后刷新页面
                 setTimeout(() => {
@@ -15361,10 +15428,10 @@ function startRebootDetection() {
                 
                 if (countdownEl) {
                     countdownEl.innerHTML = `
-                        <span style="color:#f43f5e">等待超时</span>
-                        <br><span style="font-size:0.9em">请手动检查设备状态并刷新页面</span>
+                        <span style="color:#f43f5e">${typeof t === 'function' ? t('otaPage.waitTimeout') : '等待超时'}</span>
+                        <br><span style="font-size:0.9em">${typeof t === 'function' ? t('otaPage.checkDeviceManually') : '请手动检查设备状态并刷新页面'}</span>
                         <br><button class="btn btn-service-style btn-small" onclick="window.location.reload()" 
-                            style="margin-top:10px">刷新页面</button>
+                            style="margin-top:10px">${typeof t === 'function' ? t('otaPage.refreshPage') : '刷新页面'}</button>
                     `;
                 }
             }
@@ -15375,13 +15442,13 @@ function startRebootDetection() {
 async function otaFromUrl() {
     const url = document.getElementById('ota-url-input').value.trim();
     if (!url) {
-        showToast('请输入固件 URL', 'error');
+        showToast(typeof t === 'function' ? t('toast.enterFirmwareUrl') : '请输入固件 URL', 'error');
         return;
     }
     
     // 允许 http 和 https
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        showToast('URL 必须以 http:// 或 https:// 开头', 'error');
+        showToast(typeof t === 'function' ? t('toast.urlMustHttp') : 'URL 必须以 http:// 或 https:// 开头', 'error');
         return;
     }
     
@@ -15401,20 +15468,20 @@ async function otaFromUrl() {
     // 立即显示进度区域，提供即时反馈
     const progressSection = document.getElementById('ota-progress-section');
     progressSection.style.display = 'block';
-    document.getElementById('ota-state-text').textContent = '[1/2] 正在连接服务器...';
+    document.getElementById('ota-state-text').textContent = typeof t === 'function' ? t('otaPage.step1Connecting') : '[1/2] 正在连接服务器...';
     document.getElementById('ota-progress-bar').style.width = '0%';
     document.getElementById('ota-progress-percent').textContent = '0%';
-    document.getElementById('ota-progress-size').textContent = '准备中...';
+    document.getElementById('ota-progress-size').textContent = typeof t === 'function' ? t('otaPage.preparing') : '准备中...';
     document.getElementById('ota-message').textContent = url;
     document.getElementById('ota-abort-btn').style.display = 'inline-block';
     
     try {
-        showToast('开始两步升级：固件 + WebUI', 'info');
+        showToast(typeof t === 'function' ? t('toast.twoStepUpgrade') : '开始两步升级：固件 + WebUI', 'info');
         const result = await api.call('ota.upgrade_url', params);
         
         if (result.code === 0) {
-            showToast('固件升级已启动', 'success');
-            document.getElementById('ota-state-text').textContent = '下载中...';
+            showToast(typeof t === 'function' ? t('toast.firmwareUpgradeStarted') : '固件升级已启动', 'success');
+            document.getElementById('ota-state-text').textContent = typeof t === 'function' ? t('otaPage.downloading') : '下载中...';
             // 开始刷新进度
             if (!refreshInterval) {
                 refreshInterval = setInterval(refreshOtaProgress, 1000);
@@ -15422,15 +15489,15 @@ async function otaFromUrl() {
             // 立即刷新一次
             await refreshOtaProgress();
         } else {
-            showToast('启动升级失败: ' + result.message, 'error');
+            showToast(typeof t === 'function' ? t('toast.upgradeStartFailedMsg', { msg: result.message }) : '启动升级失败: ' + result.message, 'error');
             // 显示错误状态
-            document.getElementById('ota-state-text').textContent = '错误';
+            document.getElementById('ota-state-text').textContent = typeof t === 'function' ? t('otaPage.stateError') : '错误';
             document.getElementById('ota-message').textContent = result.message || '启动失败';
             document.getElementById('ota-abort-btn').style.display = 'none';
         }
     } catch (error) {
-        showToast('启动升级失败: ' + error.message, 'error');
-        document.getElementById('ota-state-text').textContent = '错误';
+        showToast(typeof t === 'function' ? t('toast.upgradeStartFailedMsg', { msg: error.message }) : '启动升级失败: ' + error.message, 'error');
+        document.getElementById('ota-state-text').textContent = typeof t === 'function' ? t('otaPage.stateError') : '错误';
         document.getElementById('ota-message').textContent = error.message || '网络错误';
         document.getElementById('ota-abort-btn').style.display = 'none';
     }
@@ -15439,7 +15506,7 @@ async function otaFromUrl() {
 async function otaFromFile() {
     const filepath = document.getElementById('ota-file-input').value.trim();
     if (!filepath) {
-        showToast('请输入文件路径', 'error');
+        showToast(typeof t === 'function' ? t('toast.enterFilePath') : '请输入文件路径', 'error');
         return;
     }
     
@@ -15459,41 +15526,41 @@ async function otaFromFile() {
     const progressSection = document.getElementById('ota-progress-section');
     progressSection.style.display = 'block';
     const stepText = includeWww ? '[1/2] ' : '';
-    document.getElementById('ota-state-text').textContent = stepText + '正在读取文件...';
+    document.getElementById('ota-state-text').textContent = stepText + (typeof t === 'function' ? t('otaPage.readingFile') : '正在读取文件...');
     document.getElementById('ota-progress-bar').style.width = '0%';
     document.getElementById('ota-progress-percent').textContent = '0%';
-    document.getElementById('ota-progress-size').textContent = '准备中...';
+    document.getElementById('ota-progress-size').textContent = typeof t === 'function' ? t('otaPage.preparing') : '准备中...';
     document.getElementById('ota-message').textContent = filepath;
     document.getElementById('ota-abort-btn').style.display = 'inline-block';
     
     try {
-        showToast('开始从文件升级固件...', 'info');
+        showToast(typeof t === 'function' ? t('toast.startingFileUpgrade') : '开始从文件升级固件...', 'info');
         const result = await api.call('ota.upgrade_file', params);
         
         if (result.code === 0) {
-            showToast('固件升级已启动', 'success');
-            document.getElementById('ota-state-text').textContent = '写入中...';
+            showToast(typeof t === 'function' ? t('toast.firmwareUpgradeStarted') : '固件升级已启动', 'success');
+            document.getElementById('ota-state-text').textContent = typeof t === 'function' ? t('otaPage.writing') : '写入中...';
             // 开始刷新进度
             if (!refreshInterval) {
                 refreshInterval = setInterval(refreshOtaProgress, 1000);
             }
             await refreshOtaProgress();
         } else {
-            showToast('启动升级失败: ' + result.message, 'error');
-            document.getElementById('ota-state-text').textContent = '错误';
+            showToast(typeof t === 'function' ? t('toast.upgradeStartFailedMsg', { msg: result.message }) : '启动升级失败: ' + result.message, 'error');
+            document.getElementById('ota-state-text').textContent = typeof t === 'function' ? t('otaPage.stateError') : '错误';
             document.getElementById('ota-message').textContent = result.message || '启动失败';
             document.getElementById('ota-abort-btn').style.display = 'none';
         }
     } catch (error) {
-        showToast('启动升级失败: ' + error.message, 'error');
-        document.getElementById('ota-state-text').textContent = '错误';
+        showToast(typeof t === 'function' ? t('toast.upgradeStartFailedMsg', { msg: error.message }) : '启动升级失败: ' + error.message, 'error');
+        document.getElementById('ota-state-text').textContent = typeof t === 'function' ? t('otaPage.stateError') : '错误';
         document.getElementById('ota-message').textContent = error.message || '网络错误';
         document.getElementById('ota-abort-btn').style.display = 'none';
     }
 }
 
 async function validateOta() {
-    if (!confirm('确认将当前固件标记为有效？\n这将取消自动回滚保护。')) {
+    if (!confirm(typeof t === 'function' ? t('automation.confirmMarkFirmwareValid') : '确认将当前固件标记为有效？\n这将取消自动回滚保护。')) {
         return;
     }
     
@@ -15501,18 +15568,18 @@ async function validateOta() {
         const result = await api.call('ota.validate');
         
         if (result.code === 0) {
-            showToast('固件已标记为有效', 'success');
+            showToast(typeof t === 'function' ? t('toast.firmwareValidated') : '固件已标记为有效', 'success');
             await refreshOtaInfo();
         } else {
-            showToast('操作失败: ' + result.message, 'error');
+            showToast(typeof t === 'function' ? t('toast.operationFailedMsg', { msg: result.message }) : '操作失败: ' + result.message, 'error');
         }
     } catch (error) {
-        showToast('操作失败: ' + error.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.operationFailedMsg', { msg: error.message }) : '操作失败: ' + error.message, 'error');
     }
 }
 
 function confirmRollback() {
-    if (!confirm('确认回滚到上一版本固件？\n\n系统将立即重启并加载上一个分区的固件。\n请确保上一版本固件可用！')) {
+    if (!confirm(typeof t === 'function' ? t('automation.confirmRollback') : '确认回滚到上一版本固件？\n\n系统将立即重启并加载上一个分区的固件。\n请确保上一版本固件可用！')) {
         return;
     }
     
@@ -15521,22 +15588,22 @@ function confirmRollback() {
 
 async function rollbackOta() {
     try {
-        showToast('正在回滚固件...', 'info');
+        showToast(typeof t === 'function' ? t('toast.rollingBack') : '正在回滚固件...', 'info');
         const result = await api.call('ota.rollback');
         
         if (result.code === 0) {
-            showToast('回滚成功！系统将在 3 秒后重启...', 'success');
+            showToast(typeof t === 'function' ? t('toast.rollbackSuccess') : '回滚成功！系统将在 3 秒后重启...', 'success');
             // 3秒后页面会因为重启而断开连接
         } else {
-            showToast('回滚失败: ' + result.message, 'error');
+            showToast(typeof t === 'function' ? t('toast.rollbackFailedMsg', { msg: result.message }) : '回滚失败: ' + result.message, 'error');
         }
     } catch (error) {
-        showToast('回滚失败: ' + error.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.rollbackFailedMsg', { msg: error.message }) : '回滚失败: ' + error.message, 'error');
     }
 }
 
 async function abortOta() {
-    if (!confirm('确认中止当前升级？')) {
+    if (!confirm(typeof t === 'function' ? t('automation.confirmAbortUpgrade') : '确认中止当前升级？')) {
         return;
     }
     
@@ -15550,16 +15617,16 @@ async function abortOta() {
         }
         
         if (result.code === 0) {
-            showToast('升级已中止', 'info');
+            showToast(typeof t === 'function' ? t('toast.upgradeAborted') : '升级已中止', 'info');
             otaStep = 'idle';
             await refreshOtaInfo();
             clearInterval(refreshInterval);
             refreshInterval = null;
         } else {
-            showToast('中止失败: ' + result.message, 'error');
+            showToast(typeof t === 'function' ? t('toast.abortFailedMsg', { msg: result.message }) : '中止失败: ' + result.message, 'error');
         }
     } catch (error) {
-        showToast('中止失败: ' + error.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.abortFailedMsg', { msg: error.message }) : '中止失败: ' + error.message, 'error');
     }
 }
 
@@ -15668,15 +15735,15 @@ async function saveOtaServer() {
         
         if (result.code === 0) {
             if (serverUrl) {
-                showToast('OTA 服务器地址已保存', 'success');
+                showToast(typeof t === 'function' ? t('toast.otaServerSaved') : 'OTA 服务器地址已保存', 'success');
             } else {
-                showToast('OTA 服务器地址已清除', 'info');
+                showToast(typeof t === 'function' ? t('toast.otaServerCleared') : 'OTA 服务器地址已清除', 'info');
             }
         } else {
-            showToast('保存失败: ' + result.message, 'error');
+            showToast(typeof t === 'function' ? t('toast.saveFailedMsg', { msg: result.message }) : '保存失败: ' + result.message, 'error');
         }
     } catch (error) {
-        showToast('保存失败: ' + error.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.saveFailedMsg', { msg: error.message }) : '保存失败: ' + error.message, 'error');
     }
 }
 
@@ -15686,7 +15753,7 @@ let currentFirmwareVersion = null;
 async function checkForUpdates() {
     const serverUrl = document.getElementById('ota-server-input').value.trim();
     if (!serverUrl) {
-        showToast('请先输入 OTA 服务器地址', 'error');
+        showToast(typeof t === 'function' ? t('toast.enterOtaServer') : '请先输入 OTA 服务器地址', 'error');
         return;
     }
     
@@ -15761,11 +15828,11 @@ async function checkForUpdates() {
             const localParts = parseVersion(localVersion);
             const serverParts = parseVersion(serverVersion);
             if (serverParts.major > localParts.major) {
-                updateType = '<span style="color:#f43f5e;font-weight:bold">主版本更新</span>';
+                updateType = '<span style="color:#f43f5e;font-weight:bold">' + (typeof t === 'function' ? t('otaPage.majorUpdate') : '主版本更新') + '</span>';
             } else if (serverParts.minor > localParts.minor) {
-                updateType = '<span style="color:#f39c12;font-weight:bold">功能更新</span>';
+                updateType = '<span style="color:#f39c12;font-weight:bold">' + (typeof t === 'function' ? t('otaPage.featureUpdate') : '功能更新') + '</span>';
             } else {
-                updateType = '<span style="color:#059669;font-weight:bold">补丁更新</span>';
+                updateType = '<span style="color:#059669;font-weight:bold">' + (typeof t === 'function' ? t('otaPage.patchUpdate') : '补丁更新') + '</span>';
             }
         }
         
@@ -15774,7 +15841,7 @@ async function checkForUpdates() {
             statusDiv.innerHTML = `
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
                     <div>
-                        <span style="font-weight:600">发现新版本</span>
+                        <span style="font-weight:600">${typeof t === 'function' ? t('otaPage.newVersionFound') : '发现新版本'}</span>
                         ${updateType ? ` · ${updateType}` : ''}
                         <div style="margin-top:5px;font-size:0.9em;color:#6b7280">
                             <code>${localVersion}</code> → <code style="color:#059669;font-weight:bold">${serverVersion}</code>
@@ -15791,7 +15858,7 @@ async function checkForUpdates() {
             statusDiv.innerHTML = `
                 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
                     <div>
-                        <span style="font-weight:600">服务器版本较旧</span>
+                        <span style="font-weight:600">${typeof t === 'function' ? t('otaPage.serverVersionOlder') : '服务器版本较旧'}</span>
                         <div style="margin-top:5px;font-size:0.9em;color:#6b7280">
                             <code>${localVersion}</code> → <code style="color:#ff9800">${serverVersion}</code>
                         </div>
@@ -15805,7 +15872,7 @@ async function checkForUpdates() {
             statusDiv.className = 'ota-update-status no-update';
             statusDiv.innerHTML = `
                 <div style="display:flex;align-items:center;gap:10px">
-                    <span style="font-weight:600">已是最新版本</span>
+                    <span style="font-weight:600">${typeof t === 'function' ? t('otaPage.alreadyLatest') : '已是最新版本'}</span>
                     <code style="color:#2196f3">${localVersion}</code>
                 </div>
             `;
@@ -15816,7 +15883,7 @@ async function checkForUpdates() {
         statusDiv.className = 'ota-update-status error';
         statusDiv.innerHTML = `
             <div>
-                <span style="font-weight:600">检查更新失败</span>
+                <span style="font-weight:600">${typeof t === 'function' ? t('otaPage.checkUpdateFailed') : '检查更新失败'}</span>
                 <div style="margin-top:5px;font-size:0.9em;color:#6b7280">${error.message}</div>
             </div>
         `;
@@ -15826,7 +15893,7 @@ async function checkForUpdates() {
 async function upgradeFromServer() {
     const serverUrl = document.getElementById('ota-server-input').value.trim();
     if (!serverUrl) {
-        showToast('OTA 服务器地址未设置', 'error');
+        showToast(typeof t === 'function' ? t('toast.otaServerNotSet') : 'OTA 服务器地址未设置', 'error');
         return;
     }
     
@@ -15836,7 +15903,7 @@ async function upgradeFromServer() {
     document.getElementById('ota-state-text').textContent = typeof t === 'function' ? t('otaPage.preparingUpgrade') : 'Preparing upgrade...';
     document.getElementById('ota-progress-bar').style.width = '0%';
     document.getElementById('ota-progress-percent').textContent = '';
-    document.getElementById('ota-progress-size').textContent = '正在初始化...';
+    document.getElementById('ota-progress-size').textContent = typeof t === 'function' ? t('otaPage.initializing') : '正在初始化...';
     document.getElementById('ota-message').textContent = serverUrl;
     document.getElementById('ota-abort-btn').style.display = 'none';
     
@@ -15883,10 +15950,10 @@ async function upgradeViaProxy(serverUrl) {
         // ===== 第一步：浏览器下载固件 =====
         updateStep(1, '下载固件中...');
         const firmwareUrl = serverUrl.replace(/\/$/, '') + '/firmware';
-        messageEl.textContent = '从 OTA 服务器下载';
+        messageEl.textContent = typeof t === 'function' ? t('otaPage.downloadingFromServer') : '从 OTA 服务器下载';
         progressBar.style.width = '0%';
         progressPercent.textContent = '0%';
-        progressSize.textContent = '正在连接服务器...';
+        progressSize.textContent = typeof t === 'function' ? t('otaPage.connectingServer') : '正在连接服务器...';
         abortBtn.style.display = 'none';  // 浏览器下载阶段暂不支持中止
         
         console.log('Proxy OTA: Downloading firmware from', firmwareUrl);
@@ -15900,14 +15967,14 @@ async function upgradeViaProxy(serverUrl) {
         });
         
         console.log('Proxy OTA: Firmware downloaded,', firmwareData.byteLength, 'bytes');
-        showToast(`固件下载完成 (${formatSize(firmwareData.byteLength)})`, 'success');
+        showToast(typeof t === 'function' ? t('ota.firmwareDownloadComplete', { size: formatSize(firmwareData.byteLength) }) : `固件下载完成 (${formatSize(firmwareData.byteLength)})`, 'success');
         
         // ===== 第二步：上传固件到 ESP32 =====
         updateStep(2, '上传固件到设备...');
-        messageEl.textContent = `固件大小: ${formatSize(firmwareData.byteLength)}`;
+        messageEl.textContent = typeof t === 'function' ? t('ui.firmwareSize') + ': ' + formatSize(firmwareData.byteLength) : `固件大小: ${formatSize(firmwareData.byteLength)}`;
         progressBar.style.width = '0%';
         progressPercent.textContent = '';
-        progressSize.textContent = '正在写入 Flash（这可能需要1-2分钟）...';
+        progressSize.textContent = typeof t === 'function' ? t('otaPage.writingFlash') : '正在写入 Flash（这可能需要1-2分钟）...';
         
         // 调用 ESP32 上传接口（复用现有的 /api/v1/ota/firmware）
         // 注意：不自动重启，等 www 也完成后再重启
@@ -15918,7 +15985,7 @@ async function upgradeViaProxy(serverUrl) {
         }
         
         console.log('Proxy OTA: Firmware uploaded to device');
-        showToast('固件写入完成！', 'success');
+        showToast(typeof t === 'function' ? t('toast.firmwareWriteComplete') : '固件写入完成！', 'success');
         progressBar.style.width = '100%';
         progressPercent.textContent = '';
         
@@ -15926,10 +15993,10 @@ async function upgradeViaProxy(serverUrl) {
         if (includeWww) {
             updateStep(3, '下载 WebUI...');
             const wwwUrl = serverUrl.replace(/\/$/, '') + '/www';
-            messageEl.textContent = '从 OTA 服务器下载';
+            messageEl.textContent = typeof t === 'function' ? t('otaPage.downloadingFromServer') : '从 OTA 服务器下载';
             progressBar.style.width = '0%';
             progressPercent.textContent = '0%';
-            progressSize.textContent = '正在连接...';
+            progressSize.textContent = typeof t === 'function' ? t('otaPage.connecting') : '正在连接...';
             
             try {
                 // 下载 www.bin
@@ -15941,34 +16008,34 @@ async function upgradeViaProxy(serverUrl) {
                 });
                 
                 console.log('Proxy OTA: WWW downloaded,', wwwData.byteLength, 'bytes');
-                showToast(`WebUI 下载完成 (${formatSize(wwwData.byteLength)})`, 'success');
+                showToast(typeof t === 'function' ? t('ota.webuiDownloadComplete', { size: formatSize(wwwData.byteLength) }) : `WebUI 下载完成 (${formatSize(wwwData.byteLength)})`, 'success');
                 
                 // 上传 www.bin
                 updateStep(4, '上传 WebUI 到设备...');
-                messageEl.textContent = `WebUI 大小: ${formatSize(wwwData.byteLength)}`;
+                messageEl.textContent = typeof t === 'function' ? t('ui.webuiSize') + ': ' + formatSize(wwwData.byteLength) : `WebUI 大小: ${formatSize(wwwData.byteLength)}`;
                 progressBar.style.width = '0%';
                 progressPercent.textContent = '';
-                progressSize.textContent = '正在写入 SPIFFS...';
+                progressSize.textContent = typeof t === 'function' ? t('otaPage.writingSpiffs') : '正在写入 SPIFFS...';
                 
                 const wwwResult = await uploadWwwToDevice(wwwData);
                 
                 if (!wwwResult.success) {
                     console.warn('WWW upload failed:', wwwResult.error);
-                    showToast('WebUI 升级跳过: ' + wwwResult.error, 'warning');
+                    showToast(typeof t === 'function' ? t('toast.webuiUpgradeSkipped', { msg: wwwResult.error }) : 'WebUI 升级跳过: ' + wwwResult.error, 'warning');
                 } else {
                     console.log('Proxy OTA: WWW uploaded to device');
-                    showToast('WebUI 写入完成！', 'success');
+                    showToast(typeof t === 'function' ? t('toast.webuiWriteComplete') : 'WebUI 写入完成！', 'success');
                     progressBar.style.width = '100%';
                     progressPercent.textContent = '';
                 }
             } catch (wwwError) {
                 console.warn('WWW download/upload failed:', wwwError);
-                showToast('WebUI 升级跳过: ' + wwwError.message, 'warning');
+                showToast(typeof t === 'function' ? t('toast.webuiUpgradeSkipped', { msg: wwwError.message }) : 'WebUI 升级跳过: ' + wwwError.message, 'warning');
             }
         }
         
         // ===== 最终步骤：升级完成，触发重启 =====
-        stateEl.textContent = '全部升级完成';
+        stateEl.textContent = typeof t === 'function' ? t('otaPage.allUpgradeComplete') : '全部升级完成';
         progressBar.style.width = '100%';
         progressBar.style.background = 'linear-gradient(90deg, #059669, #10b981)';
         progressPercent.textContent = '';
@@ -15993,12 +16060,12 @@ async function upgradeViaProxy(serverUrl) {
         
     } catch (error) {
         console.error('Proxy OTA failed:', error);
-        stateEl.textContent = '升级失败';
+        stateEl.textContent = typeof t === 'function' ? t('otaPage.upgradeFailed') : '升级失败';
         messageEl.textContent = error.message;
         progressBar.style.width = '0%';
         progressPercent.textContent = '';
         otaStep = 'idle';
-        showToast('升级失败: ' + error.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.upgradeFailedMsg', { msg: error.message }) : '升级失败: ' + error.message, 'error');
     }
 }
 
@@ -16822,12 +16889,12 @@ function formatUptimeSec(seconds) {
 async function automationControl(action) {
     try {
         const result = await api.call(`automation.${action}`);
-        showToast(`${action}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
+        showToast(typeof t === 'function' ? t('toast.actionResult', { action, msg: result.message || 'OK' }) : `${action}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
         if (result.code === 0) {
             await refreshAutomationStatus();
         }
     } catch (error) {
-        showToast(`${action} 失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.actionFailedMsg', { action, msg: error.message }) : `${action} 失败: ${error.message}`, 'error');
     }
 }
 
@@ -16886,11 +16953,11 @@ async function refreshRules() {
                                 <td>${r.actions_count || 0}</td>
                                 <td>${r.trigger_count || 0}</td>
                                 <td style="white-space:nowrap">
-                                    <button class="btn btn-sm btn-gray" onclick="toggleRule('${r.id}', ${!r.enabled})" title="${r.enabled ? disabledStr : enabledStr}"><i class="${r.enabled ? 'ri-stop-circle-line' : 'ri-play-circle-line'}"></i></button>
-                                    <button class="btn btn-sm btn-gray" onclick="triggerRule('${r.id}')" title="${typeof t === 'function' ? t('automation.manualTrigger') : '手动触发'}"><i class="ri-play-line"></i></button>
-                                    <button class="btn btn-sm btn-gray" onclick="editRule('${r.id}')" title="${typeof t === 'function' ? t('common.edit') : '编辑'}"><i class="ri-edit-line"></i></button>
-                                    <button class="btn btn-sm btn-gray" onclick="showExportRuleModal('${r.id}')" title="${typeof t === 'function' ? t('securityPage.exportConfigPack') || '导出配置包' : '导出配置包'}"><i class="ri-download-line"></i></button>
-                                    <button class="btn btn-sm btn-danger" onclick="deleteRule('${r.id}')" title="${typeof t === 'function' ? t('common.delete') : '删除'}"><i class="ri-delete-bin-line"></i></button>
+                                    <button class="btn btn-sm btn-gray btn-icon-square" onclick="toggleRule('${r.id}', ${!r.enabled})" title="${r.enabled ? disabledStr : enabledStr}"><i class="${r.enabled ? 'ri-stop-circle-line' : 'ri-play-circle-line'}"></i></button>
+                                    <button class="btn btn-sm btn-gray btn-icon-square" onclick="triggerRule('${r.id}')" title="${typeof t === 'function' ? t('automation.manualTrigger') : '手动触发'}"><i class="ri-play-line"></i></button>
+                                    <button class="btn btn-sm btn-gray btn-icon-square" onclick="editRule('${r.id}')" title="${typeof t === 'function' ? t('common.edit') : '编辑'}"><i class="ri-edit-line"></i></button>
+                                    <button class="btn btn-sm btn-gray btn-icon-square" onclick="showExportRuleModal('${r.id}')" title="${typeof t === 'function' ? t('securityPage.exportConfigPack') || '导出配置包' : '导出配置包'}"><i class="ri-download-line"></i></button>
+                                    <button class="btn btn-sm btn-danger btn-icon-square" onclick="deleteRule('${r.id}')" title="${typeof t === 'function' ? t('common.delete') : '删除'}"><i class="ri-delete-bin-line"></i></button>
                                 </td>
                             </tr>
                         `}).join('')}
@@ -16913,12 +16980,12 @@ async function toggleRule(id, enable) {
     try {
         const action = enable ? 'automation.rules.enable' : 'automation.rules.disable';
         const result = await api.call(action, { id });
-        showToast(`规则 ${id} ${enable ? '启用' : '禁用'}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
+        showToast(typeof t === 'function' ? t('toast.ruleToggled', { id, state: enable ? t('status.enabled') : t('status.disabled') }) + ': ' + (result.message || 'OK') : `规则 ${id} ${enable ? '启用' : '禁用'}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
         if (result.code === 0) {
             await refreshRules();
         }
     } catch (error) {
-        showToast(`切换规则状态失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.toggleRuleFailed') + ': ' + error.message : `切换规则状态失败: ${error.message}`, 'error');
     }
 }
 
@@ -16928,9 +16995,9 @@ async function toggleRule(id, enable) {
 async function triggerRule(id) {
     try {
         const result = await api.call('automation.rules.trigger', { id });
-        showToast(`触发规则 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
+        showToast(typeof t === 'function' ? t('toast.ruleTriggered', { id }) + ': ' + (result.message || 'OK') : `触发规则 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
     } catch (error) {
-        showToast(`触发规则失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.triggerRuleFailed') + ': ' + error.message : `触发规则失败: ${error.message}`, 'error');
     }
 }
 
@@ -16974,10 +17041,10 @@ async function refreshSources() {
                                 <td><span class="status-badge ${s.enabled ? 'status-running' : 'status-stopped'}">${s.enabled ? enStr : disStr}</span></td>
                                 <td>${s.poll_interval_ms ? (s.poll_interval_ms / 1000) + secStr : '-'}</td>
                                 <td style="white-space:nowrap">
-                                    <button class="btn btn-sm btn-gray" onclick="showSourceVariables('${s.id}')" title="${typeof t === 'function' ? t('automation.viewVariables') : '查看变量'}"><i class="ri-bar-chart-box-line"></i></button>
-                                    <button class="btn btn-sm btn-gray" onclick="toggleSource('${s.id}', ${!s.enabled})" title="${s.enabled ? disStr : enStr}"><i class="${s.enabled ? 'ri-stop-circle-line' : 'ri-play-circle-line'}"></i></button>
-                                    <button class="btn btn-sm btn-gray" onclick="showExportSourceModal('${s.id}')" title="${typeof t === 'function' ? (t('securityPage.exportConfigPack') || '导出配置包') : '导出配置包'}"><i class="ri-download-line"></i></button>
-                                    <button class="btn btn-sm btn-danger" onclick="deleteSource('${s.id}')" title="${typeof t === 'function' ? t('common.delete') : '删除'}"><i class="ri-delete-bin-line"></i></button>
+                                    <button class="btn btn-sm btn-gray btn-icon-square" onclick="showSourceVariables('${s.id}')" title="${typeof t === 'function' ? t('automation.viewVariables') : '查看变量'}"><i class="ri-bar-chart-box-line"></i></button>
+                                    <button class="btn btn-sm btn-gray btn-icon-square" onclick="toggleSource('${s.id}', ${!s.enabled})" title="${s.enabled ? disStr : enStr}"><i class="${s.enabled ? 'ri-stop-circle-line' : 'ri-play-circle-line'}"></i></button>
+                                    <button class="btn btn-sm btn-gray btn-icon-square" onclick="showExportSourceModal('${s.id}')" title="${typeof t === 'function' ? (t('securityPage.exportConfigPack') || '导出配置包') : '导出配置包'}"><i class="ri-download-line"></i></button>
+                                    <button class="btn btn-sm btn-danger btn-icon-square" onclick="deleteSource('${s.id}')" title="${typeof t === 'function' ? t('common.delete') : '删除'}"><i class="ri-delete-bin-line"></i></button>
                                 </td>
                             </tr>
                         `).join('')}
@@ -17013,7 +17080,7 @@ async function refreshVariables() {
             if (countBadge) countBadge.textContent = allVariables.length;
             renderVariables(allVariables);
         } else {
-            container.innerHTML = `<p style="text-align:center;color:var(--text-secondary)">${result.message || '获取变量失败'}</p>`;
+            container.innerHTML = `<p style="text-align:center;color:var(--text-secondary)">${result.message || (typeof t === 'function' ? t('sshPage.getVarFailed') : '获取变量失败')}</p>`;
         }
     } catch (error) {
         container.innerHTML = `<p style="text-align:center;color:var(--rose-500)">${error.message}</p>`;
@@ -17044,7 +17111,7 @@ function renderVariables(variables) {
     if (!container) return;
     
     if (variables.length === 0) {
-        container.innerHTML = '<p style="text-align:center;color:var(--text-secondary)">暂无变量数据</p>';
+        container.innerHTML = '<p style="text-align:center;color:var(--text-secondary)">' + (typeof t === 'function' ? t('automationPage.noVariables') : '暂无变量数据') + '</p>';
         return;
     }
     
@@ -17068,10 +17135,10 @@ function renderVariables(variables) {
                     <table class="data-table compact">
                         <thead>
                             <tr>
-                                <th>变量名</th>
-                                <th>类型</th>
-                                <th>当前值</th>
-                                <th>更新时间</th>
+                                <th>${typeof t === 'function' ? t('sshPage.varTableName') : '变量名'}</th>
+                                <th>${typeof t === 'function' ? t('sshPage.varTableType') : '类型'}</th>
+                                <th>${typeof t === 'function' ? t('sshPage.varTableValue') : '当前值'}</th>
+                                <th>${typeof t === 'function' ? t('sshPage.varTableUpdated') : '更新时间'}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -17184,10 +17251,10 @@ async function refreshActions() {
                                 <td>${a.async ? '<span class="badge badge-warning">' + asyncStr + '</span>' : '<span class="badge badge-light">' + syncStr + '</span>'}</td>
                                 <td class="text-muted">${a.description || '-'}</td>
                                 <td style="white-space:nowrap">
-                                    <button class="btn btn-sm btn-gray" onclick="testAction('${a.id}')" title="${typeof t === 'function' ? t('common.test') : '测试'}"><i class="ri-play-line"></i></button>
-                                    <button class="btn btn-sm btn-gray" onclick="editAction('${a.id}')" title="${typeof t === 'function' ? t('common.edit') : '编辑'}"><i class="ri-edit-line"></i></button>
-                                    <button class="btn btn-sm btn-gray" onclick="showExportActionModal('${a.id}')" title="${typeof t === 'function' ? (t('securityPage.exportConfigPack') || '导出配置包') : '导出配置包'}"><i class="ri-download-line"></i></button>
-                                    <button class="btn btn-sm btn-danger" onclick="deleteAction('${a.id}')" title="${typeof t === 'function' ? t('common.delete') : '删除'}"><i class="ri-delete-bin-line"></i></button>
+                                    <button class="btn btn-sm btn-gray btn-icon-square" onclick="testAction('${a.id}')" title="${typeof t === 'function' ? t('common.test') : '测试'}"><i class="ri-play-line"></i></button>
+                                    <button class="btn btn-sm btn-gray btn-icon-square" onclick="editAction('${a.id}')" title="${typeof t === 'function' ? t('common.edit') : '编辑'}"><i class="ri-edit-line"></i></button>
+                                    <button class="btn btn-sm btn-gray btn-icon-square" onclick="showExportActionModal('${a.id}')" title="${typeof t === 'function' ? (t('securityPage.exportConfigPack') || '导出配置包') : '导出配置包'}"><i class="ri-download-line"></i></button>
+                                    <button class="btn btn-sm btn-danger btn-icon-square" onclick="deleteAction('${a.id}')" title="${typeof t === 'function' ? t('common.delete') : '删除'}"><i class="ri-delete-bin-line"></i></button>
                                 </td>
                             </tr>
                         `).join('')}
@@ -17457,11 +17524,11 @@ function updateActionTypeFields() {
                         <option value="text">${typeof t === 'function' ? t('automation.textDisplay') : '文本显示'}</option>
                         <option value="image">${typeof t === 'function' ? t('automation.displayImage') : '显示图像'}</option>
                         <option value="qrcode">${typeof t === 'function' ? t('automation.displayQrCode') : '显示QR码'}</option>
-                        <option value="filter">后处理滤镜</option>
-                        <option value="filter_stop">停止滤镜</option>
-                        <option value="text_stop">停止文本</option>
-                        <option value="brightness">仅调节亮度</option>
-                        <option value="off">关闭设备</option>
+                        <option value="filter">${typeof t === 'function' ? t('automation.filterDisplay') : '后处理滤镜'}</option>
+                        <option value="filter_stop">${typeof t === 'function' ? t('automation.filterStop') : '停止滤镜'}</option>
+                        <option value="text_stop">${typeof t === 'function' ? t('automation.textStop') : '停止文本'}</option>
+                        <option value="brightness">${typeof t === 'function' ? t('automation.brightnessOnly') : '仅调节亮度'}</option>
+                        <option value="off">${typeof t === 'function' ? t('automation.turnOffDevice') : '关闭设备'}</option>
                     </select>
                 </div>
                 
@@ -17473,11 +17540,11 @@ function updateActionTypeFields() {
             <div class="params-card">
                 <div class="params-header">
                     <span class="params-icon"><i class="ri-file-text-line"></i></span>
-                    <span>日志配置</span>
+                    <span>${typeof t === 'function' ? t('automation.logConfig') : '日志配置'}</span>
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
-                        <label>级别</label>
+                        <label>${typeof t === 'function' ? t('automation.logLevel') : '级别'}</label>
                         <select id="action-log-level" class="input">
                             <option value="3">INFO</option>
                             <option value="2">WARN</option>
@@ -17487,9 +17554,9 @@ function updateActionTypeFields() {
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>消息 <span class="required">*</span></label>
-                    <input type="text" id="action-log-message" class="input" placeholder="如: 设备状态变更: \${device.status}">
-                    <small class="form-hint">支持变量: \${变量名}</small>
+                    <label>${typeof t === 'function' ? t('automation.logMessage') : '消息'} <span class="required">*</span></label>
+                    <input type="text" id="action-log-message" class="input" placeholder="${typeof t === 'function' ? t('automation.actionLogMsgPlaceholder') : '如: 设备状态变更: ${device.status}'}">
+                    <small class="form-hint">${typeof t === 'function' ? t('automation.logMsgHint') : '支持变量: ${变量名}'}</small>
                 </div>
             </div>
         `,
@@ -17497,15 +17564,15 @@ function updateActionTypeFields() {
             <div class="params-card">
                 <div class="params-header">
                     <span class="params-icon"><i class="ri-database-2-line"></i></span>
-                    <span>变量配置</span>
+                    <span>${typeof t === 'function' ? t('automation.varConfig') : '变量配置'}</span>
                 </div>
                 <div class="form-group">
-                    <label>变量名 <span class="required">*</span></label>
+                    <label>${typeof t === 'function' ? t('automation.varNameLabel') : '变量名'} <span class="required">*</span></label>
                     <input type="text" id="action-var-name" class="input" placeholder="如: system.flag">
                 </div>
                 <div class="form-group">
-                    <label>值 <span class="required">*</span></label>
-                    <input type="text" id="action-var-value" class="input" placeholder="支持表达式和变量引用">
+                    <label>${typeof t === 'function' ? t('automation.value') : '值'} <span class="required">*</span></label>
+                    <input type="text" id="action-var-value" class="input" placeholder="${typeof t === 'function' ? t('automation.varValuePlaceholder') : '支持表达式和变量引用'}">
                     <small class="form-hint">示例: true, 123, \${other_var}</small>
                 </div>
             </div>
@@ -17522,7 +17589,7 @@ function updateActionTypeFields() {
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
-                        <label>方法</label>
+                        <label>${typeof t === 'function' ? t('automation.method') : '方法'}</label>
                         <select id="action-webhook-method" class="input">
                             <option value="POST">POST</option>
                             <option value="GET">GET</option>
@@ -17531,7 +17598,7 @@ function updateActionTypeFields() {
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>请求体</label>
+                    <label>${typeof t === 'function' ? t('automation.requestBody') : '请求体'}</label>
                     <input type="text" id="action-webhook-body" class="input input-mono" placeholder='{"event": "\${trigger}"}'>
                     <small class="form-hint">JSON 格式，支持变量</small>
                 </div>
@@ -17573,7 +17640,7 @@ async function submitAction() {
     const async = document.getElementById('action-async')?.checked || false;
     
     if (!id) {
-        showToast('请填写动作 ID', 'error');
+        showToast(typeof t === 'function' ? t('toast.fillActionId') : '请填写动作 ID', 'error');
         return;
     }
     if (!type) {
@@ -17588,7 +17655,7 @@ async function submitAction() {
         case 'cli':
             const cliCmd = document.getElementById('action-cli-command')?.value?.trim();
             if (!cliCmd) {
-                showToast('请填写命令行', 'error');
+                showToast(typeof t === 'function' ? t('toast.fillCommand') : '请填写命令行', 'error');
                 return;
             }
             data.cli = {
@@ -17600,7 +17667,7 @@ async function submitAction() {
         case 'ssh_cmd_ref':
             const cmdId = document.getElementById('action-ssh-cmd-id')?.value;
             if (!cmdId) {
-                showToast('请选择 SSH 命令', 'error');
+                showToast(typeof t === 'function' ? t('toast.selectSshCommand') : '请选择 SSH 命令', 'error');
                 return;
             }
             data.ssh_ref = { cmd_id: cmdId };
@@ -17608,7 +17675,7 @@ async function submitAction() {
         case 'led':
             const ledDevice = document.getElementById('action-led-device')?.value;
             if (!ledDevice) {
-                showToast('请选择 LED 设备', 'error');
+                showToast(typeof t === 'function' ? t('toast.selectLedDevice') : '请选择 LED 设备', 'error');
                 return;
             }
             const isMatrix = ledDevice === 'matrix';
@@ -17634,7 +17701,7 @@ async function submitAction() {
                     data.led.speed = parseInt(document.getElementById('action-led-speed')?.value) || 50;
                     data.led.color = document.getElementById('action-led-color')?.value || '#FF0000';
                     if (!data.led.effect) {
-                        showToast('请选择动画', 'error');
+                        showToast(typeof t === 'function' ? t('toast.selectAnimation') : '请选择动画', 'error');
                         return;
                     }
                     break;
@@ -17647,7 +17714,7 @@ async function submitAction() {
                 case 'text':
                     data.led.text = document.getElementById('action-led-text')?.value?.trim();
                     if (!data.led.text) {
-                        showToast('请输入文本内容', 'error');
+                        showToast(typeof t === 'function' ? t('toast.enterText') : '请输入文本内容', 'error');
                         return;
                     }
                     data.led.font = document.getElementById('action-led-font')?.value || '';
@@ -17663,7 +17730,7 @@ async function submitAction() {
                 case 'image':
                     data.led.image_path = document.getElementById('action-led-image-path')?.value?.trim();
                     if (!data.led.image_path) {
-                        showToast('请输入图像路径', 'error');
+                        showToast((typeof t === 'function' ? t('toast.enterImagePath') : '请输入图像路径'), 'error');
                         return;
                     }
                     data.led.center = document.getElementById('action-led-center')?.checked || false;
@@ -17671,7 +17738,7 @@ async function submitAction() {
                 case 'qrcode':
                     data.led.qr_text = document.getElementById('action-led-qr-text')?.value?.trim();
                     if (!data.led.qr_text) {
-                        showToast('请输入QR码内容', 'error');
+                        showToast(typeof t === 'function' ? t('toast.enterQrContent') : '请输入QR码内容', 'error');
                         return;
                     }
                     data.led.qr_ecc = document.getElementById('action-led-qr-ecc')?.value || 'M';
@@ -17681,7 +17748,7 @@ async function submitAction() {
                 case 'filter':
                     data.led.filter = document.getElementById('action-led-filter')?.value;
                     if (!data.led.filter) {
-                        showToast('请选择滤镜', 'error');
+                        showToast(typeof t === 'function' ? t('toast.selectFilter') : '请选择滤镜', 'error');
                         return;
                     }
                     // 根据滤镜类型收集对应参数
@@ -17701,7 +17768,7 @@ async function submitAction() {
         case 'log':
             const logMsg = document.getElementById('action-log-message')?.value?.trim();
             if (!logMsg) {
-                showToast('请填写日志消息', 'error');
+                showToast(typeof t === 'function' ? t('toast.fillLogMessage') : '请填写日志消息', 'error');
                 return;
             }
             data.log = {
@@ -17713,7 +17780,7 @@ async function submitAction() {
             const varName = document.getElementById('action-var-name')?.value?.trim();
             const varValue = document.getElementById('action-var-value')?.value?.trim();
             if (!varName || !varValue) {
-                showToast('请填写变量名和值', 'error');
+                showToast(typeof t === 'function' ? t('toast.fillVarNameValue') : '请填写变量名和值', 'error');
                 return;
             }
             data.set_var = {
@@ -17724,7 +17791,7 @@ async function submitAction() {
         case 'webhook':
             const webhookUrl = document.getElementById('action-webhook-url')?.value?.trim();
             if (!webhookUrl) {
-                showToast('请填写 Webhook URL', 'error');
+                showToast(typeof t === 'function' ? t('toast.fillWebhookUrl') : '请填写 Webhook URL', 'error');
                 return;
             }
             data.webhook = {
@@ -17738,14 +17805,14 @@ async function submitAction() {
     try {
         const result = await api.call('automation.actions.add', data);
         if (result.code === 0) {
-            showToast(`动作模板 ${id} 创建成功`, 'success');
+            showToast(typeof t === 'function' ? t('toast.actionCreated', { id }) : `动作模板 ${id} 创建成功`, 'success');
             closeModal('action-modal');
             await refreshActions();
         } else {
-            showToast(`创建失败: ${result.message}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.actionCreateFailed') + ': ' + result.message : `创建失败: ${result.message}`, 'error');
         }
     } catch (error) {
-        showToast(`创建失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.actionCreateFailed') + ': ' + error.message : `创建失败: ${error.message}`, 'error');
     }
 }
 
@@ -17788,7 +17855,7 @@ async function loadSshHostsForAction() {
         console.error('加载 SSH 主机列表失败:', e);
         const select = document.getElementById('action-ssh-host');
         if (select) {
-            select.innerHTML = '<option value="">-- 加载失败 --</option>';
+            select.innerHTML = '<option value="">-- ' + (typeof t === 'function' ? t('common.loadFailed') : '加载失败') + ' --</option>';
         }
     }
 }
@@ -17941,7 +18008,7 @@ function updateActionLedTypeFields() {
         case 'fill':
             html = `
                 <div class="form-group">
-                    <label>颜色</label>
+                    <label>${typeof t === 'function' ? t('dataWidget.color') : '颜色'}</label>
                     <div class="led-color-config">
                         <input type="color" value="#FF0000" id="action-led-color" class="led-color-picker-sm">
                         <div class="color-presets-inline">
@@ -17957,15 +18024,15 @@ function updateActionLedTypeFields() {
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
-                        <label>亮度</label>
+                        <label>${typeof t === 'function' ? t('ledPage.ccBrightness') : '亮度'}</label>
                         <div class="brightness-config">
                             <input type="range" min="0" max="255" value="128" id="action-led-brightness" class="brightness-slider-sm" oninput="document.getElementById('action-led-brightness-val').textContent=this.value">
                             <span class="brightness-val" id="action-led-brightness-val">128</span>
                         </div>
                     </div>
                     <div class="form-group" style="flex:1">
-                        <label>索引</label>
-                        <input type="number" id="action-led-index" class="input" value="255" placeholder="255=全部">
+                        <label>${typeof t === 'function' ? t('automation.indexPlaceholder') : '索引'}</label>
+                        <input type="number" id="action-led-index" class="input" value="255" placeholder="${typeof t === 'function' ? t('automation.ledIndexPlaceholder') : '255=全部'}">
                     </div>
                 </div>
             `;
@@ -17975,21 +18042,21 @@ function updateActionLedTypeFields() {
             const effectOptions = effects.map(e => `<option value="${e}">${e}</option>`).join('');
             html = `
                 <div class="form-group">
-                    <label>动画 <span class="required">*</span></label>
+                    <label>${typeof t === 'function' ? t('ledPage.effects') : '动画'} <span class="required">*</span></label>
                     <select id="action-led-effect" class="input">
-                        ${effectOptions || '<option value="">无可用动画</option>'}
+                        ${effectOptions || '<option value="">' + (typeof t === 'function' ? t('ledPage.noEffects') : '无可用动画') + '</option>'}
                     </select>
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
-                        <label>速度</label>
+                        <label>${typeof t === 'function' ? t('ledPage.speed') : '速度'}</label>
                         <div class="brightness-config">
                             <input type="range" min="1" max="100" value="50" id="action-led-speed" class="brightness-slider-sm" oninput="document.getElementById('action-led-speed-val').textContent=this.value">
                             <span class="brightness-val" id="action-led-speed-val">50</span>
                         </div>
                     </div>
                     <div class="form-group" style="flex:1">
-                        <label>颜色</label>
+                        <label>${typeof t === 'function' ? t('dataWidget.color') : '颜色'}</label>
                         <input type="color" value="#FF0000" id="action-led-color" class="led-color-picker-sm">
                     </div>
                 </div>
@@ -17999,7 +18066,7 @@ function updateActionLedTypeFields() {
         case 'brightness':
             html = `
                 <div class="form-group">
-                    <label>亮度</label>
+                    <label>${typeof t === 'function' ? t('ledPage.ccBrightness') : '亮度'}</label>
                     <div class="brightness-config">
                         <input type="range" min="0" max="255" value="128" id="action-led-brightness" class="brightness-slider-sm" oninput="document.getElementById('action-led-brightness-val').textContent=this.value">
                         <span class="brightness-val" id="action-led-brightness-val">128</span>
@@ -18009,31 +18076,31 @@ function updateActionLedTypeFields() {
             break;
             
         case 'off':
-            html = `<div class="form-hint" style="padding:10px;color:var(--text-secondary);">关闭 LED 设备，无需额外参数</div>`;
+            html = `<div class="form-hint" style="padding:10px;color:var(--text-secondary);">${typeof t === 'function' ? t('automation.ledOffHint') : '关闭 LED 设备，无需额外参数'}</div>`;
             break;
             
         case 'filter_stop':
-            html = `<div class="form-hint" style="padding:10px;color:var(--text-secondary);">停止当前运行的滤镜效果，无需额外参数</div>`;
+            html = `<div class="form-hint" style="padding:10px;color:var(--text-secondary);">${typeof t === 'function' ? t('automation.filterStopHint') : '停止当前运行的滤镜效果，无需额外参数'}</div>`;
             break;
             
         case 'text_stop':
-            html = `<div class="form-hint" style="padding:10px;color:var(--text-secondary);">停止当前运行的文本覆盖层，无需额外参数</div>`;
+            html = `<div class="form-hint" style="padding:10px;color:var(--text-secondary);">${typeof t === 'function' ? t('automation.textStopHint') : '停止当前运行的文本覆盖层，无需额外参数'}</div>`;
             break;
             
         case 'text':
             html = `
                 <div class="form-group">
-                    <label>文本内容 <span class="required">*</span></label>
+                    <label>${typeof t === 'function' ? t('automation.textContentLabel') : '文本内容'} <span class="required">*</span></label>
                     <div class="input-with-btn">
-                        <input type="text" id="action-led-text" class="input" placeholder="要显示的文本，支持 \${变量名}">
-                        <button type="button" class="btn btn-sm" onclick="showVariableSelectModal('action-led-text')" title="插入变量"><i class="ri-bar-chart-line"></i></button>
+                        <input type="text" id="action-led-text" class="input" placeholder="${typeof t === 'function' ? t('automation.textPlaceholder') : '要显示的文本，支持 ${变量名}'}">
+                        <button type="button" class="btn btn-sm" onclick="showVariableSelectModal('action-led-text')" title="${typeof t === 'function' ? t('automation.insertVariableTitle') : '插入变量'}"><i class="ri-bar-chart-line"></i></button>
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
-                        <label>字体</label>
+                        <label>${typeof t === 'function' ? t('ledPage.font') : '字体'}</label>
                         <select id="action-led-font" class="input">
-                            <option value="">默认</option>
+                            <option value="">${typeof t === 'function' ? t('ledPage.defaultFont') : '默认'}</option>
                         </select>
                     </div>
                     <div class="form-group" style="flex:1">
@@ -18043,21 +18110,21 @@ function updateActionLedTypeFields() {
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
-                        <label>对齐</label>
+                        <label>${typeof t === 'function' ? t('ledPage.alignment') : '对齐'}</label>
                         <select id="action-led-align" class="input">
-                            <option value="left">左对齐</option>
-                            <option value="center" selected>居中</option>
-                            <option value="right">右对齐</option>
+                            <option value="left">${typeof t === 'function' ? t('ledPage.alignLeft') : '左对齐'}</option>
+                            <option value="center" selected>${typeof t === 'function' ? t('ledPage.alignCenter') : '居中'}</option>
+                            <option value="right">${typeof t === 'function' ? t('ledPage.alignRight') : '右对齐'}</option>
                         </select>
                     </div>
                     <div class="form-group" style="flex:1">
-                        <label>滚动</label>
+                        <label>${typeof t === 'function' ? t('automation.scroll') : '滚动'}</label>
                         <select id="action-led-scroll" class="input">
-                            <option value="none">无滚动</option>
-                            <option value="left" selected>← 向左</option>
-                            <option value="right">→ 向右</option>
-                            <option value="up">↑ 向上</option>
-                            <option value="down">↓ 向下</option>
+                            <option value="none">${typeof t === 'function' ? t('automation.scrollNone') : '无滚动'}</option>
+                            <option value="left" selected>← ${typeof t === 'function' ? t('automation.scrollLeft') : '向左'}</option>
+                            <option value="right">→ ${typeof t === 'function' ? t('automation.scrollRight') : '向右'}</option>
+                            <option value="up">↑ ${typeof t === 'function' ? t('automation.scrollUp') : '向上'}</option>
+                            <option value="down">↓ ${typeof t === 'function' ? t('automation.scrollDown') : '向下'}</option>
                         </select>
                     </div>
                 </div>
@@ -18072,17 +18139,17 @@ function updateActionLedTypeFields() {
                     </div>
                     <div class="form-group" style="flex:1">
                         <label style="visibility:hidden;">自动</label>
-                        <label class="checkbox-label"><input type="checkbox" id="action-led-auto-pos" checked> 自动位置</label>
+                        <label class="checkbox-label"><input type="checkbox" id="action-led-auto-pos" checked> ${typeof t === 'function' ? t('automation.autoPos') : '自动位置'}</label>
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group" style="flex:1">
-                        <label>速度</label>
+                        <label>${typeof t === 'function' ? t('ledPage.speed') : '速度'}</label>
                         <input type="number" id="action-led-speed" class="input" value="50" min="1" max="100">
                     </div>
                     <div class="form-group" style="flex:1">
                         <label style="visibility:hidden;">循环</label>
-                        <label class="checkbox-label"><input type="checkbox" id="action-led-loop" checked> 循环滚动</label>
+                        <label class="checkbox-label"><input type="checkbox" id="action-led-loop" checked> ${typeof t === 'function' ? t('automation.loopScroll') : '循环滚动'}</label>
                     </div>
                 </div>
             `;
@@ -18093,16 +18160,16 @@ function updateActionLedTypeFields() {
         case 'image':
             html = `
                 <div class="form-group">
-                    <label>图像路径 <span class="required">*</span></label>
+                    <label>${typeof t === 'function' ? t('automation.imagePath') : '图像路径'} <span class="required">*</span></label>
                     <div class="input-with-btn">
-                        <input type="text" id="action-led-image-path" class="input" placeholder="/sdcard/images/xxx.png 或 \${变量名}" value="/sdcard/images/">
+                        <input type="text" id="action-led-image-path" class="input" placeholder="${typeof t === 'function' ? t('automation.imagePathPlaceholder') : '/sdcard/images/xxx.png 或 ${变量名}'}" value="/sdcard/images/">
                         <button type="button" class="btn btn-sm" onclick="browseActionImages()" title="${typeof t === 'function' ? t('common.browse') : 'Browse'}"><i class="ri-folder-line"></i></button>
-                        <button type="button" class="btn btn-sm" onclick="showVariableSelectModal('action-led-image-path')" title="插入变量"><i class="ri-bar-chart-line"></i></button>
+                        <button type="button" class="btn btn-sm" onclick="showVariableSelectModal('action-led-image-path')" title="${typeof t === 'function' ? t('automation.insertVariableTitle') : '插入变量'}"><i class="ri-bar-chart-line"></i></button>
                     </div>
-                    <small class="form-hint">支持 PNG、JPG、BMP、GIF 格式，路径支持变量</small>
+                    <small class="form-hint">${typeof t === 'function' ? t('automation.imagePathHint') : '支持 PNG、JPG、BMP、GIF 格式，路径支持变量'}</small>
                 </div>
                 <div class="form-group">
-                    <label class="checkbox-label"><input type="checkbox" id="action-led-center" checked> 居中显示</label>
+                    <label class="checkbox-label"><input type="checkbox" id="action-led-center" checked> ${typeof t === 'function' ? t('automation.centerDisplay') : '居中显示'}</label>
                 </div>
             `;
             break;
@@ -18190,7 +18257,7 @@ async function loadActionLedFonts() {
             return fontExts.includes(ext);
         });
         
-        fontSelect.innerHTML = '<option value="">默认</option>';
+        fontSelect.innerHTML = '<option value="">' + (typeof t === 'function' ? t('ledPage.defaultFont') : '默认') + '</option>';
         fonts.forEach(f => {
             const option = document.createElement('option');
             const baseName = f.name.substring(0, f.name.lastIndexOf('.'));
@@ -18239,7 +18306,7 @@ async function showImageSelectModal(title, onSelect) {
                 <div id="image-select-empty" style="display:none;text-align:center;padding:30px;color:var(--text-secondary);">
                     <i class="ri-inbox-line" style="font-size:48px;margin-bottom:10px;display:block;"></i>
                     <p>没有找到图像文件</p>
-                    <small>支持 PNG、JPG、BMP、GIF 格式</small>
+                    <small>${typeof t === 'function' ? t('automation.supportedFormats') : '支持 PNG、JPG、BMP、GIF 格式'}</small>
                 </div>
             </div>
         </div>
@@ -18555,7 +18622,7 @@ function selectVariable(varName) {
                 saveDataWidgets();
                 renderDataWidgets();
                 refreshDataWidgets();
-                showToast(`已绑定 ${widget.label} → ${varName}`, 'success');
+                showToast(typeof t === 'function' ? t('toast.widgetBound', { widget: widget.label, var: varName }) : `已绑定 ${widget.label} → ${varName}`, 'success');
             }
         }
         closeModal('variable-select-modal');
@@ -18650,7 +18717,7 @@ function updateActionFilterParams() {
  */
 async function testAction(id) {
     try {
-        showToast(`正在执行动作: ${id}...`, 'info');
+        showToast(typeof t === 'function' ? t('toast.actionExecuting', { id }) : `正在执行动作: ${id}...`, 'info');
         const result = await api.call('automation.actions.execute', { id });
         console.log('Action execute result:', result);
         
@@ -18661,11 +18728,11 @@ async function testAction(id) {
             }
             showToast(msg, 'success');
         } else {
-            showToast(`动作 ${id} 失败: ${result.message || '未知错误'}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.actionFailed', { id }) + ': ' + (result.message || t('common.unknown')) : `动作 ${id} 失败: ${result.message || '未知错误'}`, 'error');
         }
     } catch (error) {
         console.error('Action execute error:', error);
-        showToast(`动作执行失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.actionExecuteFailed') + ': ' + error.message : `动作执行失败: ${error.message}`, 'error');
     }
 }
 
@@ -18676,7 +18743,7 @@ async function editAction(id) {
     try {
         const result = await api.call('automation.actions.get', { id });
         if (result.code !== 0) {
-            showToast(`获取动作详情失败: ${result.message}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.getActionFailed') + ': ' + result.message : `获取动作详情失败: ${result.message}`, 'error');
             return;
         }
         
@@ -18883,16 +18950,16 @@ async function editAction(id) {
         
         // 更改模态框标题和按钮
         const modalTitle = document.querySelector('#action-modal .modal-header h3');
-        if (modalTitle) modalTitle.textContent = '编辑动作模板';
+        if (modalTitle) modalTitle.textContent = typeof t === 'function' ? t('otaPage.editActionTemplate') : '编辑动作模板';
         
         const submitBtn = document.querySelector('#action-modal button[onclick="submitAction()"]');
         if (submitBtn) {
-            submitBtn.textContent = '更新';
+            submitBtn.textContent = typeof t === 'function' ? t('otaPage.updateAction') : '更新';
             submitBtn.setAttribute('onclick', `updateAction('${tpl.id}')`);
         }
         
     } catch (error) {
-        showToast(`编辑动作失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.editActionFailed') + ': ' + error.message : `编辑动作失败: ${error.message}`, 'error');
     }
 }
 
@@ -18908,7 +18975,7 @@ async function updateAction(originalId) {
         // 删除旧模板
         const deleteResult = await api.call('automation.actions.delete', { id: originalId });
         if (deleteResult.code !== 0) {
-            showToast(`更新失败: 无法删除旧模板`, 'error');
+            showToast(typeof t === 'function' ? t('toast.deleteOldTemplateFailed') : '更新失败: 无法删除旧模板', 'error');
             return;
         }
         
@@ -18919,7 +18986,7 @@ async function updateAction(originalId) {
         await submitAction();
         
     } catch (error) {
-        showToast(`更新失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.updateFailed') + ': ' + error.message : `更新失败: ${error.message}`, 'error');
     }
 }
 
@@ -18927,16 +18994,16 @@ async function updateAction(originalId) {
  * 删除动作
  */
 async function deleteAction(id) {
-    if (!confirm(`确定要删除动作模板 "${id}" 吗？`)) return;
+    if (!confirm(typeof t === 'function' ? t('ui.confirmDeleteAction', { id }) : `确定要删除动作模板 "${id}" 吗？`)) return;
     
     try {
         const result = await api.call('automation.actions.delete', { id });
-        showToast(`删除动作 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
+        showToast(typeof t === 'function' ? t('toast.deleteActionResult', { id }) + ': ' + (result.message || 'OK') : `删除动作 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
         if (result.code === 0) {
             await refreshActions();
         }
     } catch (error) {
-        showToast(`删除失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.deleteFailedMsg', { msg: error.message }) : `删除失败: ${error.message}`, 'error');
     }
 }
 
@@ -18947,12 +19014,12 @@ async function toggleSource(id, enable) {
     try {
         const action = enable ? 'automation.sources.enable' : 'automation.sources.disable';
         const result = await api.call(action, { id });
-        showToast(`数据源 ${id} ${enable ? '启用' : '禁用'}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
+        showToast(typeof t === 'function' ? t('toast.sourceToggled', { id, state: enable ? t('status.enabled') : t('status.disabled') }) + ': ' + (result.message || 'OK') : `数据源 ${id} ${enable ? '启用' : '禁用'}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
         if (result.code === 0) {
             await refreshSources();
         }
     } catch (error) {
-        showToast(`切换数据源状态失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.toggleSourceFailed') + ': ' + error.message : `切换数据源状态失败: ${error.message}`, 'error');
     }
 }
 
@@ -18960,18 +19027,18 @@ async function toggleSource(id, enable) {
  * 删除数据源
  */
 async function deleteSource(id) {
-    if (!confirm(`确定要删除数据源 "${id}" 吗？此操作不可撤销。`)) {
+    if (!confirm(typeof t === 'function' ? t('ui.confirmDeleteSource', { id }) : `确定要删除数据源 "${id}" 吗？此操作不可撤销。`)) {
         return;
     }
     
     try {
         const result = await api.call('automation.sources.delete', { id });
-        showToast(`删除数据源 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
+        showToast(typeof t === 'function' ? t('toast.deleteSourceResult', { id }) + ': ' + (result.message || 'OK') : `删除数据源 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
         if (result.code === 0) {
             await Promise.all([refreshSources(), refreshAutomationStatus()]);
         }
     } catch (error) {
-        showToast(`删除数据源失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.deleteSourceFailed') + ': ' + error.message : `删除数据源失败: ${error.message}`, 'error');
     }
 }
 
@@ -18985,7 +19052,7 @@ async function showSourceVariables(sourceId) {
     
     // 更新标题
     const header = modal.querySelector('.modal-header h2');
-    if (header) header.textContent = `${sourceId} 变量`;
+    if (header) header.textContent = typeof t === 'function' ? t('ui.sourceVariables', { source: sourceId }) : `${sourceId} 变量`;
     
     body.innerHTML = '<div class="loading">' + t('common.loading') + '</div>';
     modal.classList.remove('hidden');
@@ -18997,7 +19064,7 @@ async function showSourceVariables(sourceId) {
             const vars = result.data.variables.filter(v => v.source_id === sourceId);
             
             if (vars.length === 0) {
-                body.innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:20px">该数据源暂无变量数据</p>';
+                body.innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:20px">' + (typeof t === 'function' ? t('automationPage.sourceNoData') : '该数据源暂无变量数据') + '</p>';
                 return;
             }
             
@@ -19005,10 +19072,10 @@ async function showSourceVariables(sourceId) {
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>变量名</th>
-                            <th>类型</th>
-                            <th>当前值</th>
-                            <th>更新时间</th>
+                            <th>${typeof t === 'function' ? t('sshPage.varTableName') : '变量名'}</th>
+                            <th>${typeof t === 'function' ? t('sshPage.varTableType') : '类型'}</th>
+                            <th>${typeof t === 'function' ? t('sshPage.varTableValue') : '当前值'}</th>
+                            <th>${typeof t === 'function' ? t('sshPage.varTableUpdated') : '更新时间'}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -19024,7 +19091,7 @@ async function showSourceVariables(sourceId) {
                 </table>
             `;
         } else {
-            body.innerHTML = `<p style="text-align:center;color:var(--rose-500)">${result.message || '获取变量失败'}</p>`;
+            body.innerHTML = `<p style="text-align:center;color:var(--rose-500)">${result.message || (typeof t === 'function' ? t('sshPage.getVarFailed') : '获取变量失败')}</p>`;
         }
     } catch (error) {
         body.innerHTML = `<p style="text-align:center;color:var(--rose-500)">${error.message}</p>`;
@@ -19104,13 +19171,13 @@ async function saveShutdownSettings() {
     
     // 验证
     if (config.low_threshold >= config.recovery_threshold) {
-        errorDiv.textContent = '低电压阈值必须小于恢复电压阈值';
+        errorDiv.textContent = typeof t === 'function' ? t('otaPage.lowVoltageError') : '低电压阈值必须小于恢复电压阈值';
         errorDiv.classList.remove('hidden');
         return;
     }
     
     if (config.shutdown_delay < 10 || config.shutdown_delay > 600) {
-        errorDiv.textContent = '关机倒计时必须在 10-600 秒之间';
+        errorDiv.textContent = typeof t === 'function' ? t('otaPage.shutdownDelayError') : '关机倒计时必须在 10-600 秒之间';
         errorDiv.classList.remove('hidden');
         return;
     }
@@ -19118,14 +19185,14 @@ async function saveShutdownSettings() {
     try {
         const result = await api.powerProtectionSet(config);
         if (result.code === 0) {
-            showToast('关机设置已保存', 'success');
+            showToast(typeof t === 'function' ? t('toast.shutdownSettingsSaved') : '关机设置已保存', 'success');
             closeShutdownSettingsModal();
         } else {
             errorDiv.textContent = result.message || '保存失败';
             errorDiv.classList.remove('hidden');
         }
     } catch (e) {
-        errorDiv.textContent = '保存失败: ' + e.message;
+        errorDiv.textContent = typeof t === 'function' ? t('toast.saveFailedMsg', { msg: e.message }) : '保存失败: ' + e.message;
         errorDiv.classList.remove('hidden');
     }
 }
@@ -19134,7 +19201,7 @@ async function saveShutdownSettings() {
  * 恢复默认关机设置
  */
 async function resetShutdownSettings() {
-    if (!confirm('确认恢复默认设置？')) return;
+    if (!confirm(typeof t === 'function' ? t('automation.confirmRestoreDefaults') : '确认恢复默认设置？')) return;
     
     const config = {
         low_threshold: 12.6,
@@ -19154,12 +19221,12 @@ async function resetShutdownSettings() {
             document.getElementById('ss-shutdown-delay').value = 60;
             document.getElementById('ss-recovery-hold').value = 5;
             document.getElementById('ss-fan-stop-delay').value = 60;
-            showToast('已恢复默认设置', 'success');
+            showToast(typeof t === 'function' ? t('toast.defaultsRestored') : '已恢复默认设置', 'success');
         } else {
-            showToast('恢复失败: ' + (result.message || 'Unknown error'), 'error');
+            showToast(typeof t === 'function' ? t('toast.restoreFailedMsg', { msg: result.message || t('common.unknown') }) : '恢复失败: ' + (result.message || '未知错误'), 'error');
         }
     } catch (e) {
-        showToast('恢复失败: ' + e.message, 'error');
+        showToast(typeof t === 'function' ? t('toast.restoreFailedMsg', { msg: e.message }) : '恢复失败: ' + e.message, 'error');
     }
 }
 
@@ -19167,18 +19234,18 @@ async function resetShutdownSettings() {
  * 删除规则
  */
 async function deleteRule(id) {
-    if (!confirm(`确定要删除规则 "${id}" 吗？此操作不可撤销。`)) {
+    if (!confirm(typeof t === 'function' ? t('ui.confirmDeleteRule', { id }) : `确定要删除规则 "${id}" 吗？此操作不可撤销。`)) {
         return;
     }
     
     try {
         const result = await api.call('automation.rules.delete', { id });
-        showToast(`删除规则 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
+        showToast(typeof t === 'function' ? t('toast.deleteRuleResult', { id }) + ': ' + (result.message || 'OK') : `删除规则 ${id}: ${result.message || 'OK'}`, result.code === 0 ? 'success' : 'error');
         if (result.code === 0) {
             await Promise.all([refreshRules(), refreshAutomationStatus()]);
         }
     } catch (error) {
-        showToast(`删除规则失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.deleteRuleFailed') + ': ' + error.message : `删除规则失败: ${error.message}`, 'error');
     }
 }
 
@@ -19190,14 +19257,14 @@ async function editRule(id) {
         // 获取规则详情
         const result = await api.call('automation.rules.get', { id });
         if (result.code !== 0 || !result.data) {
-            showToast(`获取规则详情失败: ${result.message || '未知错误'}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.getRuleDetailFailed') + ': ' + (result.message || t('common.unknown')) : `获取规则详情失败: ${result.message || '未知错误'}`, 'error');
             return;
         }
         
         // 打开编辑模态框
         showAddRuleModal(result.data);
     } catch (error) {
-        showToast(`获取规则详情失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.getRuleDetailFailed') + ': ' + error.message : `获取规则详情失败: ${error.message}`, 'error');
     }
 }
 
@@ -19352,7 +19419,7 @@ function showAddSourceModal() {
                         <input type="checkbox" id="source-sio-auto-discover" checked>
                         <span>${typeof t === 'function' ? t('automation.autoDiscoverFields') : '自动发现所有 JSON 字段为变量'}</span>
                     </label>
-                    <small style="color:var(--text-secondary);display:block;margin-top:-10px;margin-bottom:10px;padding-left:24px">${typeof t === 'function' ? t('automation.autoDiscoverHint') : '关闭后仅使用上方选中的字段作为变量'}</small>
+                    <small style="color:var(--text-secondary);display:block;margin-top:4px;margin-bottom:10px;padding-left:24px">${typeof t === 'function' ? t('automation.autoDiscoverHint') : '关闭后仅使用上方选中的字段作为变量'}</small>
                 </div>
                 
                 <div id="source-variable-config" class="config-section" style="display:none">
@@ -19423,7 +19490,7 @@ async function testRestConnection() {
     const auth = document.getElementById('source-rest-auth').value.trim();
     
     if (!url) {
-        alert('请输入 API 地址');
+        alert(typeof t === 'function' ? t('automation.alertEnterApiAddress') : '请输入 API 地址');
         return;
     }
     
@@ -19479,7 +19546,7 @@ async function testWsConnection() {
     const uri = document.getElementById('source-ws-uri').value.trim();
     
     if (!uri) {
-        alert('请输入 WebSocket 地址');
+        alert(typeof t === 'function' ? t('automation.alertEnterWsAddress') : '请输入 WebSocket 地址');
         return;
     }
     
@@ -19537,7 +19604,7 @@ async function testSioConnection() {
     const timeout = parseInt(document.getElementById('source-sio-timeout').value) || 15000;
     
     if (!url) {
-        alert('请输入 Socket.IO 服务器地址');
+        alert(typeof t === 'function' ? t('automation.alertEnterSioAddress') : '请输入 Socket.IO 服务器地址');
         return;
     }
     
@@ -19952,7 +20019,7 @@ async function submitAddSource() {
     const enabled = document.getElementById('source-enabled').checked;
     
     if (!id) {
-        alert('请输入数据源 ID');
+        alert(typeof t === 'function' ? t('automation.alertEnterSourceId') : '请输入数据源 ID');
         return;
     }
     
@@ -19965,7 +20032,7 @@ async function submitAddSource() {
         params.reconnect_ms = parseInt(document.getElementById('source-ws-reconnect').value) || 5000;
         
         if (!params.uri) {
-            alert('请输入 WebSocket URI');
+            alert(typeof t === 'function' ? t('automation.alertEnterWsUri') : '请输入 WebSocket URI');
             return;
         }
     } else if (type === 'rest') {
@@ -19975,7 +20042,7 @@ async function submitAddSource() {
         params.auth_header = document.getElementById('source-rest-auth').value.trim();
         
         if (!params.url) {
-            alert('请输入 REST URL');
+            alert(typeof t === 'function' ? t('automation.alertEnterRestUrl') : '请输入 REST URL');
             return;
         }
     } else if (type === 'socketio') {
@@ -19990,11 +20057,11 @@ async function submitAddSource() {
         params.auto_discover = autoDiscoverEl ? autoDiscoverEl.checked : true;
         
         if (!params.url) {
-            alert('请输入 Socket.IO 服务器地址');
+            alert(typeof t === 'function' ? t('automation.alertEnterSioAddress') : '请输入 Socket.IO 服务器地址');
             return;
         }
         if (!params.event) {
-            alert('请输入要监听的事件名称（可先通过测试按钮自动发现）');
+            alert(typeof t === 'function' ? t('automation.alertEnterSioEvent') : '请输入要监听的事件名称（可先通过测试按钮自动发现）');
             return;
         }
     } else if (type === 'variable') {
@@ -20003,18 +20070,18 @@ async function submitAddSource() {
         const cmdIdx = document.getElementById('source-ssh-cmd').value;
         
         if (!hostId) {
-            alert('请选择 SSH 主机');
+            alert(typeof t === 'function' ? t('automation.alertSelectSshHost') : '请选择 SSH 主机');
             return;
         }
         if (cmdIdx === '') {
-            alert('请选择 SSH 指令');
+            alert(typeof t === 'function' ? t('automation.alertSelectSshCmd') : '请选择 SSH 指令');
             return;
         }
         
         // 获取选中的命令配置
         const cmd = sshCommands[hostId]?.[parseInt(cmdIdx)];
         if (!cmd) {
-            alert('指令不存在，请重新选择');
+            alert(typeof t === 'function' ? t('automation.alertCmdNotExist') : '指令不存在，请重新选择');
             return;
         }
         
@@ -20040,14 +20107,14 @@ async function submitAddSource() {
     try {
         const result = await api.call('automation.sources.add', params);
         if (result.code === 0) {
-            showToast(`数据源 ${id} 创建成功`, 'success');
+            showToast(typeof t === 'function' ? t('toast.sourceCreated', { id }) : `数据源 ${id} 创建成功`, 'success');
             closeModal('add-source-modal');
             await Promise.all([refreshSources(), refreshAutomationStatus()]);
         } else {
-            showToast(`创建数据源失败: ${result.message}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.sourceCreateFailed') + ': ' + result.message : `创建数据源失败: ${result.message}`, 'error');
         }
     } catch (error) {
-        showToast(`创建数据源失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.sourceCreateFailed') + ': ' + error.message : `创建数据源失败: ${error.message}`, 'error');
     }
 }
 
@@ -20119,8 +20186,8 @@ function showAddRuleModal(ruleData = null) {
                     </div>
                 </div>
                 
-                <div class="form-group">
-                    <label>${typeof t === 'function' ? t('automation.iconLabel') : '图标'}</label>
+                <div class="config-section">
+                    <span class="config-title">${typeof t === 'function' ? t('automation.iconLabel') : '图标'}</span>
                     <div class="icon-type-tabs">
                         <button type="button" class="icon-tab active" onclick="switchRuleIconType('emoji')">${typeof t === 'function' ? t('automation.iconTab') : '图标'}</button>
                         <button type="button" class="icon-tab" onclick="switchRuleIconType('image')">${typeof t === 'function' ? t('automation.imageTab') : '图片'}</button>
@@ -20147,22 +20214,25 @@ function showAddRuleModal(ruleData = null) {
                     <input type="hidden" id="rule-icon-type" value="emoji">
                 </div>
                 
-                <div class="form-row three-col">
-                    <div class="form-group form-group-logic">
-                        <label>${typeof t === 'function' ? t('automation.conditionLogic') : '条件逻辑'}</label>
-                        <select id="rule-logic" class="input">
-                            <option value="and">AND</option>
-                            <option value="or">OR</option>
-                        </select>
+                <div class="config-section">
+                    <span class="config-title">${typeof t === 'function' ? (t('automation.ruleOptions') || '规则选项') : '规则选项'}</span>
+                    <div class="form-row three-col" style="margin-bottom:0">
+                        <div class="form-group form-group-logic">
+                            <label>${typeof t === 'function' ? t('automation.conditionLogic') : '条件逻辑'}</label>
+                            <select id="rule-logic" class="input">
+                                <option value="and">AND</option>
+                                <option value="or">OR</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>${typeof t === 'function' ? t('automation.cooldownMs') : '冷却时间 (ms)'}</label>
+                            <input type="number" id="rule-cooldown" class="input" value="0" min="0">
+                        </div>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="rule-enabled" checked>
+                            <span>${typeof t === 'function' ? t('automation.enableImmediately') : '立即启用'}</span>
+                        </label>
                     </div>
-                    <div class="form-group">
-                        <label>${typeof t === 'function' ? t('automation.cooldownMs') : '冷却时间 (ms)'}</label>
-                        <input type="number" id="rule-cooldown" class="input" value="0" min="0">
-                    </div>
-                    <label class="checkbox-label" style="padding-top:24px">
-                        <input type="checkbox" id="rule-enabled" checked>
-                        <span>${typeof t === 'function' ? t('automation.enableImmediately') : '立即启用'}</span>
-                    </label>
                 </div>
                 
                 <div class="config-section">
@@ -20346,9 +20416,10 @@ async function browseRuleIconImage() {
 function updateRuleIconPreview(path) {
     const preview = document.getElementById('rule-icon-preview');
     if (path && path.startsWith('/sdcard/')) {
-        preview.innerHTML = `<img src="/api/v1/file/download?path=${encodeURIComponent(path)}" alt="icon" onerror="this.parentElement.innerHTML='<span class=\\'preview-placeholder\\'>加载失败</span>'">`;
+        const loadFailed = typeof t === 'function' ? t('sshPage.iconPreviewFailed') : '加载失败';
+        preview.innerHTML = `<img src="/api/v1/file/download?path=${encodeURIComponent(path)}" alt="icon" onerror="this.parentElement.innerHTML='<span class=\\'preview-placeholder\\'>${loadFailed}</span>'">`;
     } else {
-        preview.innerHTML = '<span class="preview-placeholder">无</span>';
+        preview.innerHTML = '<span class="preview-placeholder">' + (typeof t === 'function' ? t('sshPage.iconPreviewNone') : '无') + '</span>';
     }
 }
 
@@ -20600,7 +20671,7 @@ async function addActionTemplateRow(templateId = '', delayMs = 0, repeatMode = '
     await loadActionTemplatesForRule();
     
     if (cachedActionTemplates.length === 0) {
-        showToast('请先创建动作模板', 'warning');
+        showToast(typeof t === 'function' ? t('toast.createActionFirst') : '请先创建动作模板', 'warning');
         return;
     }
     
@@ -20971,8 +21042,8 @@ function updateActionFields(selectElement) {
             break;
         case 'set_var':
             paramsContainer.innerHTML = `
-                <input type="text" class="input action-setvar-name" placeholder="变量名" style="width:120px">
-                <input type="text" class="input action-setvar-value" placeholder="值 (JSON)" style="flex:1">
+                <input type="text" class="input action-setvar-name" placeholder="${typeof t === 'function' ? t('automation.varNamePlaceholder') : '变量名'}" style="width:120px">
+                <input type="text" class="input action-setvar-value" placeholder="${typeof t === 'function' ? t('automation.jsonValuePlaceholder') : '值 (JSON)'}" style="flex:1">
             `;
             break;
         case 'log':
@@ -20982,7 +21053,7 @@ function updateActionFields(selectElement) {
                     <option value="4">WARN</option>
                     <option value="5">ERROR</option>
                 </select>
-                <input type="text" class="input action-log-message" placeholder="日志消息" style="flex:1">
+                <input type="text" class="input action-log-message" placeholder="${typeof t === 'function' ? t('automation.logMessagePlaceholder') : '日志消息'}" style="flex:1">
             `;
             break;
         case 'webhook':
@@ -21096,7 +21167,7 @@ async function submitAddRule(originalId = null) {
     });
     
     if (actions.length === 0) {
-        alert('请至少选择一个动作模板');
+        alert(typeof t === 'function' ? t('automation.alertSelectAction') : '请至少选择一个动作模板');
         return;
     }
     
@@ -21120,14 +21191,14 @@ async function submitAddRule(originalId = null) {
         
         const result = await api.call('automation.rules.add', params);
         if (result.code === 0) {
-            showToast(`规则 ${id} ${isEdit ? '更新' : '创建'}成功`, 'success');
+            showToast(typeof t === 'function' ? t('toast.ruleCreated', { id, action: isEdit ? t('toast.ruleUpdate') : t('toast.ruleCreate') }) : `规则 ${id} ${isEdit ? '更新' : '创建'}成功`, 'success');
             closeModal('add-rule-modal');
             await Promise.all([refreshRules(), refreshAutomationStatus()]);
         } else {
-            showToast(`${isEdit ? '更新' : '创建'}规则失败: ${result.message}`, 'error');
+            showToast(typeof t === 'function' ? t('toast.ruleCreateFailed', { action: isEdit ? t('toast.ruleUpdate') : t('toast.ruleCreate') }) + ': ' + result.message : `${isEdit ? '更新' : '创建'}规则失败: ${result.message}`, 'error');
         }
     } catch (error) {
-        showToast(`${isEdit ? '更新' : '创建'}规则失败: ${error.message}`, 'error');
+        showToast(typeof t === 'function' ? t('toast.ruleCreateFailed', { action: isEdit ? t('toast.ruleUpdate') : t('toast.ruleCreate') }) + ': ' + error.message : `${isEdit ? '更新' : '创建'}规则失败: ${error.message}`, 'error');
     }
 }
 
@@ -21383,12 +21454,12 @@ async function previewSourceImport() {
                 </table>
             `;
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#d97706">该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#d97706">${typeof t === 'function' ? t('securityPage.configExistsWarning') : '该配置已存在，导入将覆盖现有文件'}</div>`;
             }
             previewDiv.innerHTML = html;
             step2.style.display = 'block';
             resultBox.className = 'result-box success';
-            resultBox.textContent = '签名验证通过';
+            resultBox.textContent = typeof t === 'function' ? t('ssh.signatureVerified') : '签名验证通过';
             importBtn.disabled = false;
         } else {
             resultBox.className = 'result-box error';
@@ -21406,12 +21477,12 @@ async function confirmSourceImport() {
     const importBtn = document.getElementById('import-source-btn');
     
     if (!window._importSourceTscfg) {
-        showToast('请先选择文件', 'error');
+        showToast((typeof t === 'function' ? t('toast.selectFileFirst') : '请先选择文件'), 'error');
         return;
     }
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '正在保存配置...';
+    resultBox.textContent = typeof t === 'function' ? t('ssh.savingConfig') : '正在保存配置...';
     importBtn.disabled = true;
     
     try {
@@ -21427,18 +21498,18 @@ async function confirmSourceImport() {
             const data = result.data;
             if (data?.exists && !data?.imported) {
                 resultBox.className = 'result-box warning';
-                resultBox.textContent = `配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                resultBox.textContent = typeof t === 'function' ? t('securityPage.configExistsCheckOverwrite', { id: data.id }) : `配置 ${data.id} 已存在，请勾选「覆盖」选项`;
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
                 resultBox.innerHTML = `${typeof t === 'function' ? t('securityPage.savedConfig') : 'Saved config'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#6b7280">${typeof t === 'function' ? t('securityPage.restartToApply') : 'Restart to apply'}</small>`;
-                showToast(`已导入配置，重启后生效`, 'success');
+                showToast(typeof t === 'function' ? t('toast.configImported') : '已导入配置，重启后生效', 'success');
                 setTimeout(() => hideImportSourceModal(), 2000);
             }
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = (result.message || '导入失败');
-            importBtn.disabled = false;
+resultBox.textContent = (result.message || (typeof t === 'function' ? t('toast.importFailed') : '导入失败'));
+                importBtn.disabled = false;
         }
     } catch (e) {
         resultBox.className = 'result-box error';
@@ -21462,20 +21533,20 @@ function showExportRuleModal(ruleId) {
     modal.innerHTML = `
         <div class="modal-content cc-compact" style="max-width:600px">
             <div class="modal-header">
-                <h2>导出规则配置</h2>
+                <h2>${typeof t === 'function' ? t('ruleConfig.exportTitle') : '导出规则配置'}</h2>
                 <button class="modal-close" onclick="hideExportRuleModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
-                <p style="color:#6b7280;font-size:0.9rem;margin-top:0">导出规则 <strong>${escapeHtml(ruleId)}</strong> 的配置为加密配置包</p>
+                <p style="color:#6b7280;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('ruleConfig.exportDesc', { id: escapeHtml(ruleId) }) : `导出规则 <strong>${escapeHtml(ruleId)}</strong> 的配置为加密配置包`}</p>
                 <div class="form-group">
-                    <label>目标设备证书 (PEM)</label>
+                    <label>${typeof t === 'function' ? t('ruleConfig.targetCert') : '目标设备证书 (PEM)'}</label>
                     <textarea id="export-rule-cert" placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----" style="width:100%;height:120px;font-family:monospace;font-size:11px"></textarea>
-                    <div style="font-size:0.85em;color:#6b7280;margin-top:4px"><i class="ri-information-line"></i> 粘贴目标设备的证书。留空则使用本机证书（自加密）</div>
+                    <div style="font-size:0.85em;color:#6b7280;margin-top:4px"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('ruleConfig.certHint') : '粘贴目标设备的证书。留空则使用本机证书（自加密）'}</div>
                 </div>
                 <div id="export-rule-result" class="result-box hidden" style="margin-top:10px"></div>
                 <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
-                    <button class="btn btn-gray" onclick="hideExportRuleModal()">取消</button>
-                    <button class="btn btn-service-style" id="export-rule-btn" onclick="doExportRule('${escapeHtml(ruleId)}')"><i class="ri-download-line"></i> 导出</button>
+                    <button class="btn btn-gray" onclick="hideExportRuleModal()">${typeof t === 'function' ? t('common.cancel') : '取消'}</button>
+                    <button class="btn btn-service-style" id="export-rule-btn" onclick="doExportRule('${escapeHtml(ruleId)}')"><i class="ri-download-line"></i> ${typeof t === 'function' ? t('ruleConfig.exportBtn') : '导出'}</button>
                 </div>
             </div>
         </div>
@@ -21495,7 +21566,7 @@ async function doExportRule(ruleId) {
     const exportBtn = document.getElementById('export-rule-btn');
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '正在生成配置包...';
+    resultBox.textContent = typeof t === 'function' ? t('securityPage.generatingPack') : '正在生成配置包...';
     exportBtn.disabled = true;
     
     try {
@@ -21520,8 +21591,8 @@ async function doExportRule(ruleId) {
         URL.revokeObjectURL(url);
         
         resultBox.className = 'result-box success';
-        resultBox.textContent = '导出成功';
-        showToast(`已导出规则配置: ${data.filename}`, 'success');
+        resultBox.textContent = typeof t === 'function' ? t('toast.exportSuccess') : '导出成功';
+        showToast(typeof t === 'function' ? t('toast.ruleConfigExported', { filename: data.filename }) : `已导出规则配置: ${data.filename}`, 'success');
         setTimeout(() => hideExportRuleModal(), 1000);
     } catch (e) {
         resultBox.className = 'result-box error';
@@ -21625,12 +21696,12 @@ async function previewRuleImport() {
                 </table>
             `;
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#d97706">该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#d97706">${typeof t === 'function' ? t('securityPage.configExistsWarning') : '该配置已存在，导入将覆盖现有文件'}</div>`;
             }
             previewDiv.innerHTML = html;
             step2.style.display = 'block';
             resultBox.className = 'result-box success';
-            resultBox.textContent = '签名验证通过';
+            resultBox.textContent = typeof t === 'function' ? t('ssh.signatureVerified') : '签名验证通过';
             importBtn.disabled = false;
         } else {
             resultBox.className = 'result-box error';
@@ -21648,12 +21719,12 @@ async function confirmRuleImport() {
     const importBtn = document.getElementById('import-rule-btn');
     
     if (!window._importRuleTscfg) {
-        showToast('请先选择文件', 'error');
+        showToast((typeof t === 'function' ? t('toast.selectFileFirst') : '请先选择文件'), 'error');
         return;
     }
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '正在保存配置...';
+    resultBox.textContent = typeof t === 'function' ? t('ssh.savingConfig') : '正在保存配置...';
     importBtn.disabled = true;
     
     try {
@@ -21669,17 +21740,17 @@ async function confirmRuleImport() {
             const data = result.data;
             if (data?.exists && !data?.imported) {
                 resultBox.className = 'result-box warning';
-                resultBox.textContent = `配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                resultBox.textContent = typeof t === 'function' ? t('securityPage.configExistsCheckOverwrite', { id: data.id }) : `配置 ${data.id} 已存在，请勾选「覆盖」选项`;
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
                 resultBox.innerHTML = `${typeof t === 'function' ? t('securityPage.savedConfig') : 'Saved config'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#6b7280">${typeof t === 'function' ? t('securityPage.restartToApply') : 'Restart to apply'}</small>`;
-                showToast(`已导入配置，重启后生效`, 'success');
+                showToast(typeof t === 'function' ? t('toast.configImported') : '已导入配置，重启后生效', 'success');
                 setTimeout(() => hideImportRuleModal(), 2000);
             }
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = (result.message || '导入失败');
+            resultBox.textContent = (result.message || (typeof t === 'function' ? t('toast.importFailed') : '导入失败'));
             importBtn.disabled = false;
         }
     } catch (e) {
@@ -21867,12 +21938,12 @@ async function previewActionImport() {
                 </table>
             `;
             if (data.exists) {
-                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#d97706">该配置已存在，导入将覆盖现有文件</div>`;
+                html += `<div style="margin-top:10px;padding:8px;background:#fff3cd;border-radius:4px;color:#d97706">${typeof t === 'function' ? t('securityPage.configExistsWarning') : '该配置已存在，导入将覆盖现有文件'}</div>`;
             }
             previewDiv.innerHTML = html;
             step2.style.display = 'block';
             resultBox.className = 'result-box success';
-            resultBox.textContent = '签名验证通过';
+            resultBox.textContent = typeof t === 'function' ? t('ssh.signatureVerified') : '签名验证通过';
             importBtn.disabled = false;
         } else {
             resultBox.className = 'result-box error';
@@ -21890,12 +21961,12 @@ async function confirmActionImport() {
     const importBtn = document.getElementById('import-action-btn');
     
     if (!window._importActionTscfg) {
-        showToast('请先选择文件', 'error');
+        showToast((typeof t === 'function' ? t('toast.selectFileFirst') : '请先选择文件'), 'error');
         return;
     }
     
     resultBox.classList.remove('hidden', 'success', 'error');
-    resultBox.textContent = '正在保存配置...';
+    resultBox.textContent = typeof t === 'function' ? t('ssh.savingConfig') : '正在保存配置...';
     importBtn.disabled = true;
     
     try {
@@ -21911,17 +21982,17 @@ async function confirmActionImport() {
             const data = result.data;
             if (data?.exists && !data?.imported) {
                 resultBox.className = 'result-box warning';
-                resultBox.textContent = `配置 ${data.id} 已存在，请勾选「覆盖」选项`;
+                resultBox.textContent = typeof t === 'function' ? t('securityPage.configExistsCheckOverwrite', { id: data.id }) : `配置 ${data.id} 已存在，请勾选「覆盖」选项`;
                 importBtn.disabled = false;
             } else {
                 resultBox.className = 'result-box success';
                 resultBox.innerHTML = `${typeof t === 'function' ? t('securityPage.savedConfig') : 'Saved config'}: <code>${escapeHtml(data?.id)}</code><br><small style="color:#6b7280">${typeof t === 'function' ? t('securityPage.restartToApply') : 'Restart to apply'}</small>`;
-                showToast(`已导入配置，重启后生效`, 'success');
+                showToast(typeof t === 'function' ? t('toast.configImported') : '已导入配置，重启后生效', 'success');
                 setTimeout(() => hideImportActionModal(), 2000);
             }
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = (result.message || '导入失败');
+            resultBox.textContent = (result.message || (typeof t === 'function' ? t('toast.importFailed') : '导入失败'));
             importBtn.disabled = false;
         }
     } catch (e) {

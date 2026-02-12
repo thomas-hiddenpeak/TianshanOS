@@ -192,6 +192,7 @@ body {
 .footer {
     height: var(--footer-height);
     line-height: var(--footer-height);
+    margin-top: -14px;
     background: transparent;
     border-top: none;
     text-align: center;
@@ -1686,9 +1687,17 @@ button.btn-gray:hover,
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
+    margin-bottom: 12px;  /* 与 Device Panel 等 section-header 一致 */
     flex-wrap: wrap;
     gap: 12px;
+}
+/* 系统页 LED 区块：上下间距相等，使标题+按钮在灰色顶线与蓝色内容线间垂直居中 */
+.section .led-page-header {
+    margin-top: -12px;   /* 24px padding → 12px，与 margin-bottom 一致 */
+}
+/* 独立 LED 页：main 有 20px padding，同样实现上下对称 */
+.page-led .led-page-header {
+    margin-top: -8px;   /* 20px → 12px，与 margin-bottom 一致 */
 }
 
 .led-page-header h1 {
@@ -5564,6 +5573,18 @@ button.btn-gray:hover,
     font-size: 0.85em;
 }
 
+/* 操作列图标按钮：统一为正方形，避免下载/删除按钮比前两个宽 */
+.page-automation .data-table td .btn.btn-sm.btn-icon-square,
+.page-automation .data-table td .btn.btn-sm.btn-danger.btn-icon-square {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 /* 状态徽章 */
 .status-badge {
     display: inline-block;
@@ -5774,7 +5795,7 @@ button.btn-gray:hover,
 #add-rule-modal .form-row.three-col {
     display: flex;
     flex-wrap: nowrap;
-    align-items: flex-start;
+    align-items: center;
     gap: 12px;
 }
 
@@ -5784,6 +5805,13 @@ button.btn-gray:hover,
     min-width: 0;
 }
 
+#add-rule-modal .form-row.three-col .form-group-logic select.input,
+#add-rule-modal .form-row.three-col .form-group input[type="number"] {
+    height: 38px;
+    min-height: 38px;
+    box-sizing: border-box;
+}
+
 #add-rule-modal .form-row.three-col .form-group:nth-of-type(2) {
     flex: 0 0 140px;
     min-width: 0;
@@ -5791,6 +5819,18 @@ button.btn-gray:hover,
 
 #add-rule-modal .form-row.three-col .checkbox-label {
     flex: 0 0 auto;
+    margin-left: 16px;
+    margin-bottom: 0;
+}
+
+/* 冷却时间与条件逻辑样式统一：隐藏 number 的默认 spinner，与 select 下拉视觉一致 */
+#add-rule-modal input[type="number"] {
+    -moz-appearance: textfield;
+}
+#add-rule-modal input[type="number"]::-webkit-outer-spin-button,
+#add-rule-modal input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
 }
 
 /* 条件行 */
@@ -7236,6 +7276,18 @@ button.btn-gray:hover,
     grid-template-columns: 1fr 1fr;
     gap: 20px;
     margin-bottom: 20px;
+}
+
+/* 系统页：Resource Monitor / Device Panel / Fan Control / LED 卡片间距统一为 20px */
+.page-system .panel-row {
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+.page-system .panel-row .section {
+    margin-top: 0;   /* 由 panel-row margin-top 提供与上方卡片的间距 */
+}
+.page-system .panel-row + .section {
+    margin-top: 20px;   /* LED 与 panel-row 的间距，覆盖 .section 默认 16px */
 }
 
 @media (max-width: 1200px) {

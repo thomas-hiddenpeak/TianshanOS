@@ -92,6 +92,7 @@
 .ri-bar-chart-line:before { content: "\ea9e"; }
 .ri-search-line:before { content: "\f0d1"; }
 .ri-stop-line:before { content: "\f1a1"; }
+.ri-stop-fill:before { content: "\f1a0"; }
 .ri-play-line:before { content: "\f00b"; }
 .ri-settings-line:before { content: "\f0ee"; }
 .ri-settings-3-line:before { content: "\f0e6"; }
