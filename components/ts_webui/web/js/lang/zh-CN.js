@@ -148,6 +148,7 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('zh-CN', {
         uploadFailedMsg: '失败: {msg}',
         copyToClipboard: '复制到剪贴板',
         selectFile: '选择文件',
+        noFileSelected: '未选择任何文件',
         install: '安装'
     },
     
@@ -539,6 +540,8 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('zh-CN', {
         connectionFailed: '连接失败',
         exportConfig: '导出配置',
         importConfig: '导入配置',
+        selectHost: '选择主机',
+        importCommand: '导入指令',
         // New keys for i18n
         createFirstCommand: '创建第一个指令',
         selectHostFirst: '请先选择一个主机',
@@ -766,6 +769,9 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('zh-CN', {
         exportActionDesc: '导出动作模板 <strong>{actionId}</strong> 的配置为加密配置包',
         importActionTitle: '导入动作模板',
         importActionDesc: '选择 .tscfg 配置包文件以导入动作模板',
+        packTypeSource: '数据源',
+        packTypeRule: '自动化规则',
+        packTypeAction: '动作模板',
         // Variable selection
         selectVariable: '选择变量',
         selectVariableTitle: '选择变量',
@@ -950,7 +956,7 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('zh-CN', {
     // 登录
     login: {
         title: '登录',
-        welcome: '欢迎使用 TianShanOS',
+        welcome: 'TianshanOS',
         username: '用户名',
         password: '密码',
         passwordPlaceholder: '请输入密码',
@@ -2096,7 +2102,7 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('zh-CN', {
         configExistsWarning: '该配置已存在，导入将覆盖现有文件',
         typeWithComment: '类型: {type} | 备注: {comment}',
         // 配置包 UI
-        configPack: '配置包 (Config Pack)',
+        configPack: '配置包',
         configPackDesc: '配置包系统允许安全地加密和签名配置文件，用于设备间配置分发',
         exportDeviceCert: '导出设备证书',
         importConfigPack: '导入配置包',
@@ -2144,6 +2150,7 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('zh-CN', {
         ecdsaWarning: 'ECDSA 密钥暂不支持 SSH 公钥认证，请使用 RSA',
         commentOptional: '备注 (可选)',
         commentPlaceholder: '如: TianshanOS@device',
+        commentUseForControl: '用于控制',
         aliasOptional: '别名 (可选)',
         aliasPlaceholder: '用于替代密钥 ID 显示',
         aliasHint: '启用「隐藏密钥」时建议填写，用于显示',

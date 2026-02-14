@@ -1190,13 +1190,13 @@ button.btn-gray:hover,
     box-shadow: 0 0 0 3px var(--blue-50);
 }
 
-/* Base .input / .form-control class — consistent sizing for inputs outside .form-group */
+/* Base .input / .form-control class — consistent sizing for inputs outside .form-group，圆角与卡片匹配 */
 .input,
 .form-control {
     width: 100%;
     padding: 9px 12px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     font-size: 0.875rem;
     font-family: inherit;
     background: var(--bg-card);
@@ -1474,10 +1474,11 @@ button.btn-gray:hover,
     box-shadow: var(--shadow-lg);
 }
 
-/* Data table (Tremor style) */
+/* Data table (Tremor style) - 圆角与外层 section 卡片一致，用 separate + border-spacing 以支持 border-radius */
 .data-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
 }
 
 .data-table th,
@@ -1495,6 +1496,22 @@ button.btn-gray:hover,
     text-transform: none;
 }
 
+/* 表头首行圆角（与 section 卡片匹配） */
+.data-table thead tr:first-child th:first-child {
+    border-top-left-radius: var(--radius);
+}
+.data-table thead tr:first-child th:last-child {
+    border-top-right-radius: var(--radius);
+}
+
+/* 末行单元格圆角 */
+.data-table tbody tr:last-child td:first-child {
+    border-bottom-left-radius: var(--radius);
+}
+.data-table tbody tr:last-child td:last-child {
+    border-bottom-right-radius: var(--radius);
+}
+
 .data-table td {
     font-size: 0.8125rem;
 }
@@ -1510,7 +1527,7 @@ button.btn-gray:hover,
 .data-table code {
     background: var(--bg-muted);
     padding: 2px 6px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     font-size: 0.8em;
     font-family: var(--font-mono);
 }
@@ -5561,10 +5578,11 @@ button.btn-gray:hover,
     white-space: nowrap;
 }
 
-/* 数据表格优化 */
+/* 数据表格优化 - 圆角与 section 卡片一致 */
 .page-automation .data-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     font-size: 0.9rem;
     table-layout: auto;
 }
@@ -5580,6 +5598,19 @@ button.btn-gray:hover,
     white-space: nowrap;
 }
 
+.page-automation .data-table thead tr:first-child th:first-child {
+    border-top-left-radius: var(--radius);
+}
+.page-automation .data-table thead tr:first-child th:last-child {
+    border-top-right-radius: var(--radius);
+}
+.page-automation .data-table tbody tr:last-child td:first-child {
+    border-bottom-left-radius: var(--radius);
+}
+.page-automation .data-table tbody tr:last-child td:last-child {
+    border-bottom-right-radius: var(--radius);
+}
+
 .page-automation .data-table td {
     padding: 10px 14px;
     border-bottom: 1px solid var(--border);
@@ -5593,7 +5624,7 @@ button.btn-gray:hover,
 .page-automation .data-table code {
     background: var(--bg-muted);
     padding: 2px 6px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     font-size: 0.85em;
 }
 

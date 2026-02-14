@@ -145,7 +145,11 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('en-US', {
         loadFailed: 'Load Failed',
         loadFailedMsg: 'Load failed: {msg}',
         refreshOnce: 'Refresh once',
-        uploadFailedMsg: 'Failed: {msg}'
+        uploadFailedMsg: 'Failed: {msg}',
+        copyToClipboard: 'Copy to Clipboard',
+        selectFile: 'Select File',
+        noFileSelected: 'No file selected',
+        install: 'Install'
     },
     
     // Status labels
@@ -536,6 +540,8 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('en-US', {
         connectionFailed: 'Connection Failed',
         exportConfig: 'Export Config',
         importConfig: 'Import Config',
+        selectHost: 'Select Host',
+        importCommand: 'Import Command',
         // Empty states
         selectHostFirst: 'Please select a host first',
         createFirstCommand: 'Create your first command',
@@ -571,6 +577,13 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('en-US', {
         // Import modal
         importCmdTitle: 'Import SSH Command Config',
         importCmdDesc: 'Select .tscfg file to import SSH command configuration',
+        importSshCmdTitle: 'Import SSH Command Config',
+        importSshCmdDesc: 'Select .tscfg config pack file to import SSH commands',
+        configPackContent: 'Config Pack Content',
+        overwriteExisting: 'Overwrite existing config',
+        importHostConfig: 'Also import included host config',
+        bindToHost: 'Bind to Host (Optional)',
+        bindToHostHint: 'Leave empty to use host specified in config pack',
         selectTscfgFile: 'Select .tscfg File',
         orPasteJson: 'Or paste JSON content',
         previewTitle: 'Configuration Preview',
@@ -586,6 +599,15 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('en-US', {
         verifyingPack: 'Verifying config pack...',
         verifyOnly: 'Verify Only',
         confirmImport: 'Confirm Import',
+        configId: 'Config ID',
+        signer: 'Signer',
+        official: 'Official',
+        restartToLoad: 'Load after restart',
+        cannotVerifyPack: 'Cannot verify config pack',
+        signatureVerified: 'Signature verified',
+        savingConfig: 'Saving config...',
+        sshCommand: 'SSH Command',
+        configExistsOverwrite: 'Config already exists, import will overwrite',
         // Command editor (nohup/pattern) - referenced as ssh.XXX
         readyPatternRequired: 'Ready Pattern',
         readyPatternHint: 'Mark as ready when this string appears in log (supports | for multiple patterns)',
@@ -759,6 +781,9 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('en-US', {
         exportActionDesc: 'Export action {id} config as encrypted package',
         importActionTitle: 'Import Action Template',
         importActionDesc: 'Select .tscfg config file to import action template',
+        packTypeSource: 'Data source',
+        packTypeRule: 'Automation rule',
+        packTypeAction: 'Action template',
         // Add source modal
         addSourceTitle: 'Add External Data Source',
         restTab: 'REST API',
@@ -950,7 +975,7 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('en-US', {
     // Login
     login: {
         title: 'Login',
-        welcome: 'Welcome to TianShanOS',
+        welcome: 'TianshanOS',
         username: 'Username',
         password: 'Password',
         passwordPlaceholder: 'Please enter password',
@@ -2142,6 +2167,7 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('en-US', {
         ecdsaWarning: 'ECDSA keys do not support SSH public key auth, please use RSA',
         commentOptional: 'Comment (Optional)',
         commentPlaceholder: 'e.g.: TianshanOS@device',
+        commentUseForControl: 'use for control',
         aliasOptional: 'Alias (Optional)',
         aliasPlaceholder: 'Used to display instead of Key ID',
         aliasHint: 'Recommended when "Hide Key ID" is enabled',
