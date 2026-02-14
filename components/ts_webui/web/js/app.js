@@ -773,7 +773,7 @@ async function loadSystemPage() {
     startDeviceStateMonitor();
 }
 
-// 单次刷新（初始加载）
+// 单次刷新（初始加载）；refreshSystemPage 为别名，供时区/服务操作等调用
 async function refreshSystemPageOnce() {
     // 系统信息
     try {
@@ -857,6 +857,7 @@ async function refreshSystemPageOnce() {
     // LPMU 状态检测
     await refreshLpmuState();
 }
+const refreshSystemPage = refreshSystemPageOnce;
 
 // =========================================================================
 // USB Mux 状态和切换 (支持 ESP32 / AGX / LPMU 三设备循环)
@@ -7096,7 +7097,7 @@ async function loadNetworkPage() {
             <!-- DHCP 客户端面板 -->
             <div class="net-section hidden" id="dhcp-clients-section">
                 <div class="section-header">
-                    <h3>DHCP 客户端</h3>
+                    <h3>${typeof t === 'function' ? t('networkPage.dhcpClients') : 'DHCP 客户端'}</h3>
                     <div class="section-actions">
                         <select id="dhcp-iface-select" class="select-sm" onchange="loadDhcpClients()">
                             <option value="ap">WiFi AP</option>
@@ -7657,7 +7658,7 @@ async function loadFilesPage() {
         
         <!-- 新建文件夹对话框 -->
         <div id="newfolder-modal" class="modal hidden">
-            <div class="modal-content">
+            <div class="modal-content" style="max-width:420px">
                 <h2>${t('files.newFolderTitle')}</h2>
                 <div class="form-group">
                     <label>${t('files.folderName')}</label>
@@ -8537,10 +8538,10 @@ async function loadCommandsPage() {
             <!-- 主机选择和指令列表 -->
             <div class="section">
                 <div class="section-header">
-                    <h2>${t('ssh.selectHost')}</h2>
+                    <h2 data-i18n="ssh.selectHost">${typeof t === 'function' ? t('ssh.selectHost') : '选择主机'}</h2>
                     <div class="section-actions">
-                        <button class="btn btn-small btn-service-style" onclick="showImportSshCommandModal()" style="font-size:0.85em"><i class="ri-download-line"></i> ${t('ssh.importCommand')}</button>
-                        <button class="btn btn-small btn-service-style" onclick="showAddCommandModal()" style="font-size:0.85em"><i class="ri-add-line"></i> ${t('ssh.newCommand')}</button>
+                        <button class="btn btn-small btn-service-style" onclick="showImportSshCommandModal()" style="font-size:0.85em"><i class="ri-download-line"></i> <span data-i18n="ssh.importCommand">${typeof t === 'function' ? t('ssh.importCommand') : '导入指令'}</span></button>
+                        <button class="btn btn-small btn-service-style" onclick="showAddCommandModal()" style="font-size:0.85em"><i class="ri-add-line"></i> <span data-i18n="ssh.newCommand">${typeof t === 'function' ? t('ssh.newCommand') : '新建指令'}</span></button>
                     </div>
                 </div>
                 <div id="host-selector" class="host-selector">
@@ -8880,7 +8881,7 @@ function addCommandsPageStyles() {
             color: var(--text-muted);
             background: var(--bg-muted);
             padding: 4px 8px;
-            border-radius: var(--radius-sm);
+            border-radius: var(--radius);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -9587,10 +9588,10 @@ function updateServiceModeState() {
     // 如果启用服务模式，变量名字段变为必填并提示
     if (varNameInput) {
         if (serviceMode) {
-            varNameInput.placeholder = '必填，例如：vllm（用于状态变量）';
+            varNameInput.placeholder = typeof t === 'function' ? t('sshPage.varNameRequiredPlaceholder') : '必填，例如：vllm（用于状态变量）';
             varNameInput.style.borderColor = varNameInput.value ? '' : 'var(--warning-color)';
         } else {
-            varNameInput.placeholder = '例如：ping_test';
+            varNameInput.placeholder = typeof t === 'function' ? t('ssh.cmdVarNamePlaceholder') : '例如：ping_test';
             varNameInput.style.borderColor = '';
         }
     }
@@ -10089,7 +10090,12 @@ async function showImportSshCommandModal() {
             <!-- 步骤 1: 选择文件 -->
             <div id="import-ssh-cmd-step1">
                 <div class="form-group" style="margin-top:15px">
-                    <input type="file" id="import-ssh-cmd-file" class="form-control" accept=".tscfg" onchange="previewSshCommandImport()">
+                    <label>${typeof t === 'function' ? t('common.selectFile') : '选择文件'}</label>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <input type="file" id="import-ssh-cmd-file" accept=".tscfg" onchange="previewSshCommandImport()" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none">
+                        <button type="button" class="btn btn-sm btn-gray" onclick="document.getElementById('import-ssh-cmd-file').click()"><i class="ri-folder-open-line"></i> ${typeof t === 'function' ? t('common.selectFile') : '选择文件'}</button>
+                        <span id="import-ssh-cmd-file-status" style="color:#6b7280;font-size:0.9em">${typeof t === 'function' ? t('common.noFileSelected') : '未选择任何文件'}</span>
+                    </div>
                 </div>
             </div>
             
@@ -10147,10 +10153,15 @@ async function previewSshCommandImport() {
     const previewDiv = document.getElementById('import-ssh-cmd-preview');
     const hostGroup = document.getElementById('import-ssh-cmd-host-group');
     const importBtn = document.getElementById('import-ssh-cmd-btn');
+    const statusEl = document.getElementById('import-ssh-cmd-file-status');
     
-    if (!fileInput.files || !fileInput.files[0]) return;
+    if (!fileInput.files || !fileInput.files[0]) {
+        if (statusEl) statusEl.textContent = typeof t === 'function' ? t('common.noFileSelected') : '未选择任何文件';
+        return;
+    }
     
     const file = fileInput.files[0];
+    if (statusEl) statusEl.textContent = file.name;
     
     resultBox.classList.remove('hidden', 'success', 'error', 'warning');
     resultBox.textContent = (typeof t === 'function' ? t('ssh.verifyingPack') : '正在验证配置包...');
@@ -11039,7 +11050,7 @@ async function loadSecurityPage() {
             <div class="section">
                 <h2>${t('security.keyManagement')}</h2>
                 <div class="button-group" style="margin-bottom:15px">
-                    <button class="btn btn-sm btn-service-style" onclick="showGenerateKeyModal()"><i class="ri-add-line"></i> ${t('ssh.generateNewKey')}</button>
+                    <button class="btn btn-sm btn-service-style" onclick="showGenerateKeyModal()"><i class="ri-add-line"></i> ${t('securityPage.generateNewKey')}</button>
                 </div>
                 <table class="data-table">
                     <thead>
@@ -11050,7 +11061,7 @@ async function loadSecurityPage() {
             </div>
             
             <div class="section">
-                <h2>${t('ssh.deployedHosts')}</h2>
+                <h2>${t('securityPage.deployedHosts')}</h2>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px">
                     <p style="color:#6b7280;margin:0"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.hostsHint') : '通过上方密钥的「部署」按钮将公钥部署到远程服务器后，主机将自动出现在此列表'}</p>
                     <button class="btn btn-sm btn-service-style" onclick="showImportSshHostModal()"><i class="ri-upload-line"></i> ${typeof t === 'function' ? t('securityPage.importHost') : '导入主机'}</button>
@@ -11064,7 +11075,7 @@ async function loadSecurityPage() {
             </div>
             
             <div class="section">
-                <h2>${t('ssh.knownHostFingerprints')}</h2>
+                <h2>${t('securityPage.knownHostFingerprints')}</h2>
                 <p style="color:#6b7280;margin-bottom:15px;font-size:0.9em"><i class="ri-information-line"></i> ${typeof t === 'function' ? t('securityPage.fingerprintHint') : 'SSH 连接时自动记录的服务器指纹，用于防止中间人攻击。如果服务器重装需要更新指纹。'}</p>
                 <table class="data-table">
                     <thead>
@@ -11172,7 +11183,11 @@ async function loadSecurityPage() {
                     <p style="color:#6b7280;margin-bottom:15px">${typeof t === 'function' ? t('securityPage.importPackDesc') : '上传或粘贴 .tscfg 配置包，验证后保存到设备（加密存储）'}</p>
                     <div class="form-group">
                         <label>${typeof t === 'function' ? t('common.selectFile') : '选择文件'}</label>
-                        <input type="file" id="pack-import-file" accept=".tscfg,.json" onchange="handlePackFileSelect(event)">
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <input type="file" id="pack-import-file" accept=".tscfg,.json" onchange="handlePackFileSelect(event)" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none">
+                            <button type="button" class="btn btn-sm btn-gray" onclick="document.getElementById('pack-import-file').click()"><i class="ri-folder-open-line"></i> ${typeof t === 'function' ? t('common.selectFile') : '选择文件'}</button>
+                            <span id="pack-import-file-status" style="color:#6b7280;font-size:0.9em">${typeof t === 'function' ? t('common.noFileSelected') : '未选择任何文件'}</span>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>${typeof t === 'function' ? t('securityPage.orPasteJson') : '或粘贴 JSON 内容'}</label>
@@ -11224,7 +11239,7 @@ async function loadSecurityPage() {
                     </div>
                     <div class="form-group">
                         <label>${typeof t === 'function' ? t('securityPage.descriptionOptional') : '描述 (可选)'}</label>
-                        <input type="text" id="pack-export-desc" placeholder="LED 特效配置">
+                        <input type="text" id="pack-export-desc" placeholder="${typeof t === 'function' ? t('securityPage.configDescPlaceholder') : 'LED 特效配置'}">
                     </div>
                     <div class="form-group">
                         <label>${typeof t === 'function' ? t('securityPage.targetDeviceCert') : '目标设备证书 (PEM)'}</label>
@@ -11273,7 +11288,7 @@ async function loadSecurityPage() {
             
             <!-- 生成密钥弹窗 -->
             <div class="modal hidden" id="keygen-modal">
-                <div class="modal-content">
+                <div class="modal-content" style="max-width:480px">
                     <h2>${typeof t === 'function' ? t('securityPage.generateNewKey') : '生成新密钥'}</h2>
                     <div class="form-group">
                         <label>${typeof t === 'function' ? t('securityPage.keyId') : '密钥 ID'}</label>
@@ -11564,7 +11579,7 @@ async function refreshSecurityPage() {
                         ${key.alias && !key.hidden ? `<div style="color:#6b7280;margin-top:2px">${escapeHtml(key.alias)}</div>` : ''}
                     </td>
                     <td>${escapeHtml(key.type_desc || key.type)}</td>
-                    <td><span class="badge badge-service-style">SSH</span> ${escapeHtml(key.comment) || '-'}</td>
+                    <td><span class="badge badge-service-style">SSH</span> ${(key.comment === 'use for control' && typeof t === 'function') ? t('securityPage.commentUseForControl') : (escapeHtml(key.comment) || '-')}</td>
                     <td>${formatTimestamp(key.created)}</td>
                     <td>${key.exportable ? (typeof t === 'function' ? t('common.yes') : '是') : (typeof t === 'function' ? t('common.no') : '否')}</td>
                     <td>
@@ -12010,7 +12025,11 @@ function showImportSshHostModal() {
             <div id="import-ssh-host-step1">
                 <div class="form-group" style="margin-top:15px">
                     <label>${typeof t === 'function' ? t('common.selectFile') : 'Select File'}</label>
-                    <input type="file" id="import-ssh-host-file" class="form-control" accept=".tscfg" onchange="previewSshHostImport()">
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <input type="file" id="import-ssh-host-file" accept=".tscfg" onchange="previewSshHostImport()" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none">
+                        <button type="button" class="btn btn-sm btn-gray" onclick="document.getElementById('import-ssh-host-file').click()"><i class="ri-folder-open-line"></i> ${typeof t === 'function' ? t('common.selectFile') : 'Select File'}</button>
+                        <span id="import-ssh-host-file-status" style="color:#6b7280;font-size:0.9em">${typeof t === 'function' ? t('common.noFileSelected') : 'No file selected'}</span>
+                    </div>
                 </div>
             </div>
             
@@ -12057,10 +12076,15 @@ async function previewSshHostImport() {
     const step2 = document.getElementById('import-ssh-host-step2');
     const previewDiv = document.getElementById('import-ssh-host-preview');
     const importBtn = document.getElementById('import-ssh-host-btn');
+    const statusEl = document.getElementById('import-ssh-host-file-status');
     
-    if (!fileInput.files || !fileInput.files[0]) return;
+    if (!fileInput.files || !fileInput.files[0]) {
+        if (statusEl) statusEl.textContent = typeof t === 'function' ? t('common.noFileSelected') : 'No file selected';
+        return;
+    }
     
     const file = fileInput.files[0];
+    if (statusEl) statusEl.textContent = file.name;
     
     resultBox.classList.remove('hidden', 'success', 'error', 'warning');
     resultBox.textContent = (typeof t === 'function' ? t('ssh.verifyingPack') : '正在验证配置包...');
@@ -12081,13 +12105,18 @@ async function previewSshHostImport() {
         
         if (result.code === 0 && result.data?.valid) {
             const data = result.data;
+            const configIdLbl = typeof t === 'function' ? t('securityPage.configId') : 'Config ID';
+            const signerLbl = typeof t === 'function' ? t('ssh.signer') : 'Signer';
+            const officialVal = data.official ? (typeof t === 'function' ? ' (' + t('ssh.official') + ')' : '（官方）') : '';
+            const noteLbl = typeof t === 'function' ? t('securityPage.noteLabel') : 'Note';
+            const defaultNote = typeof t === 'function' ? t('ssh.restartToLoad') : 'Load after restart';
             
             // 构建预览 HTML（轻量级验证只返回基本信息）
             let html = `
                 <table style="width:100%;font-size:0.9em">
-                    <tr><td style="width:80px;color:#6b7280">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#6b7280">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
-                    <tr><td style="color:#6b7280">备注:</td><td style="color:#9ca3af;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
+                    <tr><td style="width:80px;color:#6b7280">${configIdLbl}:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
+                    <tr><td style="color:#6b7280">${signerLbl}:</td><td>${escapeHtml(data.signer)}${officialVal}</td></tr>
+                    <tr><td style="color:#6b7280">${noteLbl}:</td><td style="color:#9ca3af;font-size:0.85em">${escapeHtml(data.note || defaultNote)}</td></tr>
                 </table>
             `;
             
@@ -12790,6 +12819,8 @@ function showConfigPackImportModal() {
     document.getElementById('pack-import-content').value = '';
     document.getElementById('pack-import-result').classList.add('hidden');
     document.getElementById('pack-import-preview').classList.add('hidden');
+    const statusEl = document.getElementById('pack-import-file-status');
+    if (statusEl) statusEl.textContent = typeof t === 'function' ? t('common.noFileSelected') : '未选择任何文件';
 }
 
 function hideConfigPackImportModal() {
@@ -12798,6 +12829,8 @@ function hideConfigPackImportModal() {
 
 function handlePackFileSelect(event) {
     const file = event.target.files[0];
+    const statusEl = document.getElementById('pack-import-file-status');
+    if (statusEl) statusEl.textContent = file ? file.name : (typeof t === 'function' ? t('common.noFileSelected') : '未选择任何文件');
     if (!file) return;
     
     const reader = new FileReader();
@@ -19887,7 +19920,7 @@ function switchSourceType(type) {
             // 其他类型：允许手动输入
             sourceIdInput.readOnly = false;
             sourceIdInput.style.backgroundColor = '';
-            sourceIdInput.placeholder = '如: agx_temp';
+            sourceIdInput.placeholder = typeof t === 'function' ? t('automation.sourceIdPlaceholder') : '如: agx_temp';
             sourceIdInput.value = '';  // 清空之前可能由指令填入的值
         }
     }
@@ -20387,7 +20420,7 @@ function toggleManualOnly() {
         // 禁用添加条件按钮，清空现有条件
         addBtn.disabled = true;
         addBtn.style.opacity = '0.5';
-        container.innerHTML = '<p class="empty-hint" style="color:var(--emerald-500)">此规则仅可通过手动触发按钮执行</p>';
+        container.innerHTML = '<p class="empty-hint" style="color:var(--emerald-500)">' + (typeof t === 'function' ? t('ui.manualTriggerOnly') : '此规则仅可通过手动触发按钮执行') + '</p>';
     } else {
         // 启用添加条件按钮
         addBtn.disabled = false;
@@ -20750,25 +20783,25 @@ async function addActionTemplateRow(templateId = '', delayMs = 0, repeatMode = '
             </div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                 <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);">
-                    延迟
+                    ${typeof t === 'function' ? t('ruleConfig.delay') : '延迟'}
                     <input type="number" class="input action-delay" placeholder="0" value="${delayMs}" min="0" style="width:70px;padding:4px 6px;">
                     <span>ms</span>
                 </label>
                 <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);">
-                    执行
+                    ${typeof t === 'function' ? t('ruleConfig.execute') : '执行'}
                     <select class="input action-repeat-mode" onchange="toggleRepeatOptions(${rowId})" style="padding:4px 6px;">
-                        <option value="once" ${repeatMode === 'once' ? 'selected' : ''}>单次</option>
-                        <option value="while_true" ${repeatMode === 'while_true' ? 'selected' : ''}>条件持续时重复</option>
-                        <option value="count" ${repeatMode === 'count' ? 'selected' : ''}>指定次数</option>
+                        <option value="once" ${repeatMode === 'once' ? 'selected' : ''}>${typeof t === 'function' ? t('ruleConfig.repeatOnce') : '单次'}</option>
+                        <option value="while_true" ${repeatMode === 'while_true' ? 'selected' : ''}>${typeof t === 'function' ? t('ruleConfig.repeatWhileTrue') : '条件持续时重复'}</option>
+                        <option value="count" ${repeatMode === 'count' ? 'selected' : ''}>${typeof t === 'function' ? t('ruleConfig.repeatCount') : '指定次数'}</option>
                     </select>
                 </label>
                 <span class="repeat-options" id="repeat-options-${rowId}" style="display:${showRepeatOptions ? 'flex' : 'none'};gap:8px;align-items:center;">
                     <label class="repeat-count-label" style="display:${repeatMode === 'count' ? 'flex' : 'none'};align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);">
-                        次数
+                        ${typeof t === 'function' ? t('ruleConfig.repeatTimes') : '次数'}
                         <input type="number" class="input action-repeat-count" value="${repeatCount}" min="1" max="100" style="width:50px;padding:4px 6px;">
                     </label>
                     <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);">
-                        间隔
+                        ${typeof t === 'function' ? t('ruleConfig.interval') : '间隔'}
                         <input type="number" class="input action-repeat-interval" value="${repeatIntervalMs}" min="100" style="width:70px;padding:4px 6px;">
                         <span>ms</span>
                     </label>
@@ -20777,7 +20810,7 @@ async function addActionTemplateRow(templateId = '', delayMs = 0, repeatMode = '
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                 <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);">
                     <input type="checkbox" class="action-has-condition" onchange="toggleActionCondition(${rowId})" ${hasCondition ? 'checked' : ''}>
-                    执行条件
+                    ${typeof t === 'function' ? t('ruleConfig.execCondition') : '执行条件'}
                 </label>
                 <span class="action-condition-fields" id="action-condition-${rowId}" style="display:${hasCondition ? 'flex' : 'none'};gap:6px;align-items:center;">
                     <button class="btn btn-xs btn-secondary action-condition-var-btn" 
@@ -20796,7 +20829,7 @@ async function addActionTemplateRow(templateId = '', delayMs = 0, repeatMode = '
                         <option value="le" ${hasCondition && condition.operator === 'le' ? 'selected' : ''}>≤</option>
                     </select>
                     <input type="text" class="input action-condition-value" 
-                           placeholder="值" value="${hasCondition ? condition.value : ''}" 
+                           placeholder="${typeof t === 'function' ? t('ruleConfig.value') : '值'}" value="${hasCondition ? condition.value : ''}" 
                            style="width:80px;padding:4px 6px;">
                 </span>
             </div>
@@ -21420,15 +21453,19 @@ function showImportSourceModal() {
     modal.innerHTML = `
         <div class="modal-content cc-compact" style="max-width:600px">
             <div class="modal-header">
-                <h2>${typeof t === 'function' ? t('automation.importSourceTitle') : '导入数据源配置'}</h2>
+                <h2 data-i18n="automation.importSourceTitle">${typeof t === 'function' ? t('automation.importSourceTitle') : '导入数据源配置'}</h2>
                 <button class="modal-close" onclick="hideImportSourceModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
-                <p style="color:#6b7280;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.importSourceDesc') : '选择 .tscfg 配置包文件以导入数据源'}</p>
+                <p data-i18n="automation.importSourceDesc" style="color:#6b7280;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.importSourceDesc') : '选择 .tscfg 配置包文件以导入数据源'}</p>
                 <div id="import-source-step1">
                     <div class="form-group" style="margin-top:15px">
-                        <label>${typeof t === 'function' ? t('ssh.selectFile') : '选择文件'}</label>
-                        <input type="file" id="import-source-file" class="form-control" accept=".tscfg" onchange="previewSourceImport()">
+                        <label data-i18n="common.selectFile">${typeof t === 'function' ? t('common.selectFile') : '选择文件'}</label>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <input type="file" id="import-source-file" accept=".tscfg" onchange="previewSourceImport()" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none">
+                            <button type="button" class="btn btn-sm btn-gray" onclick="document.getElementById('import-source-file').click()"><i class="ri-folder-open-line"></i> <span data-i18n="common.selectFile">${typeof t === 'function' ? t('common.selectFile') : '选择文件'}</span></button>
+                            <span id="import-source-file-status" style="color:#6b7280;font-size:0.9em" data-i18n="common.noFileSelected">${typeof t === 'function' ? t('common.noFileSelected') : '未选择任何文件'}</span>
+                        </div>
                     </div>
                 </div>
                 <div id="import-source-step2" style="display:none">
@@ -21444,14 +21481,16 @@ function showImportSourceModal() {
                 </div>
                 <div id="import-source-result" class="result-box hidden" style="margin-top:10px"></div>
                 <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
-                    <button class="btn btn-gray" onclick="hideImportSourceModal()">${typeof t === 'function' ? t('common.cancel') : '取消'}</button>
-                    <button class="btn btn-service-style" id="import-source-btn" onclick="confirmSourceImport()" disabled><i class="ri-upload-line"></i> ${typeof t === 'function' ? t('ssh.confirmImport') : '确认导入'}</button>
+                    <button class="btn btn-gray" onclick="hideImportSourceModal()" data-i18n="common.cancel">${typeof t === 'function' ? t('common.cancel') : '取消'}</button>
+                    <button class="btn btn-service-style" id="import-source-btn" onclick="confirmSourceImport()" disabled><i class="ri-upload-line"></i> <span data-i18n="ssh.confirmImport">${typeof t === 'function' ? t('ssh.confirmImport') : '确认导入'}</span></button>
                 </div>
             </div>
         </div>
     `;
     
     window._importSourceTscfg = null;
+    const statusEl = document.getElementById('import-source-file-status');
+    if (statusEl) statusEl.textContent = typeof t === 'function' ? t('common.noFileSelected') : '未选择任何文件';
     modal.classList.remove('hidden');
 }
 
@@ -21467,10 +21506,15 @@ async function previewSourceImport() {
     const step2 = document.getElementById('import-source-step2');
     const previewDiv = document.getElementById('import-source-preview');
     const importBtn = document.getElementById('import-source-btn');
+    const statusEl = document.getElementById('import-source-file-status');
     
-    if (!fileInput.files || !fileInput.files[0]) return;
+    if (!fileInput.files || !fileInput.files[0]) {
+        if (statusEl) statusEl.textContent = typeof t === 'function' ? t('common.noFileSelected') : '未选择任何文件';
+        return;
+    }
     
     const file = fileInput.files[0];
+    if (statusEl) statusEl.textContent = file.name;
     
     resultBox.classList.remove('hidden', 'success', 'error');
     resultBox.textContent = (typeof t === 'function' ? t('ssh.verifyingPack') : '正在验证配置包...');
@@ -21490,12 +21534,19 @@ async function previewSourceImport() {
         
         if (result.code === 0 && result.data?.valid) {
             const data = result.data;
+            const configIdLbl = typeof t === 'function' ? t('securityPage.configId') : 'Config ID';
+            const typeLbl = typeof t === 'function' ? t('common.type') : 'Type';
+            const typeVal = typeof t === 'function' ? t('automation.packTypeSource') : 'Data source';
+            const signerLbl = typeof t === 'function' ? t('ssh.signer') : 'Signer';
+            const officialVal = data.official ? (typeof t === 'function' ? ' (' + t('ssh.official') + ')' : '（官方）') : '';
+            const noteLbl = typeof t === 'function' ? t('securityPage.noteLabel') : 'Note';
+            const defaultNote = typeof t === 'function' ? t('ssh.restartToLoad') : 'Load after restart';
             let html = `
                 <table style="width:100%;font-size:0.9em">
-                    <tr><td style="width:80px;color:#6b7280">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#6b7280">类型:</td><td>数据源</td></tr>
-                    <tr><td style="color:#6b7280">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
-                    <tr><td style="color:#6b7280">备注:</td><td style="color:#9ca3af;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
+                    <tr><td style="width:80px;color:#6b7280">${configIdLbl}:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
+                    <tr><td style="color:#6b7280">${typeLbl}:</td><td>${typeVal}</td></tr>
+                    <tr><td style="color:#6b7280">${signerLbl}:</td><td>${escapeHtml(data.signer)}${officialVal}</td></tr>
+                    <tr><td style="color:#6b7280">${noteLbl}:</td><td style="color:#9ca3af;font-size:0.85em">${escapeHtml(data.note || defaultNote)}</td></tr>
                 </table>
             `;
             if (data.exists) {
@@ -21662,15 +21713,19 @@ function showImportRuleModal() {
     modal.innerHTML = `
         <div class="modal-content cc-compact" style="max-width:600px">
             <div class="modal-header">
-                <h2>${typeof t === 'function' ? t('automation.importRuleTitle') : '导入规则配置'}</h2>
+                <h2 data-i18n="automation.importRuleTitle">${typeof t === 'function' ? t('automation.importRuleTitle') : '导入规则配置'}</h2>
                 <button class="modal-close" onclick="hideImportRuleModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
-                <p style="color:#6b7280;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.importRuleDesc') : '选择 .tscfg 配置包文件以导入规则'}</p>
+                <p data-i18n="automation.importRuleDesc" style="color:#6b7280;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.importRuleDesc') : '选择 .tscfg 配置包文件以导入规则'}</p>
                 <div id="import-rule-step1">
                     <div class="form-group" style="margin-top:15px">
-                        <label>${typeof t === 'function' ? t('ssh.selectFile') : '选择文件'}</label>
-                        <input type="file" id="import-rule-file" class="form-control" accept=".tscfg" onchange="previewRuleImport()">
+                        <label data-i18n="common.selectFile">${typeof t === 'function' ? t('common.selectFile') : '选择文件'}</label>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <input type="file" id="import-rule-file" accept=".tscfg" onchange="previewRuleImport()" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none">
+                            <button type="button" class="btn btn-sm btn-gray" onclick="document.getElementById('import-rule-file').click()"><i class="ri-folder-open-line"></i> <span data-i18n="common.selectFile">${typeof t === 'function' ? t('common.selectFile') : '选择文件'}</span></button>
+                            <span id="import-rule-file-status" style="color:#6b7280;font-size:0.9em" data-i18n="common.noFileSelected">${typeof t === 'function' ? t('common.noFileSelected') : '未选择任何文件'}</span>
+                        </div>
                     </div>
                 </div>
                 <div id="import-rule-step2" style="display:none">
@@ -21686,14 +21741,16 @@ function showImportRuleModal() {
                 </div>
                 <div id="import-rule-result" class="result-box hidden" style="margin-top:10px"></div>
                 <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
-                    <button class="btn btn-gray" onclick="hideImportRuleModal()">${typeof t === 'function' ? t('common.cancel') : '取消'}</button>
-                    <button class="btn btn-service-style" id="import-rule-btn" onclick="confirmRuleImport()" disabled><i class="ri-upload-line"></i> ${typeof t === 'function' ? t('ssh.confirmImport') : '确认导入'}</button>
+                    <button class="btn btn-gray" onclick="hideImportRuleModal()" data-i18n="common.cancel">${typeof t === 'function' ? t('common.cancel') : '取消'}</button>
+                    <button class="btn btn-service-style" id="import-rule-btn" onclick="confirmRuleImport()" disabled><i class="ri-upload-line"></i> <span data-i18n="ssh.confirmImport">${typeof t === 'function' ? t('ssh.confirmImport') : '确认导入'}</span></button>
                 </div>
             </div>
         </div>
     `;
     
     window._importRuleTscfg = null;
+    const ruleStatusEl = document.getElementById('import-rule-file-status');
+    if (ruleStatusEl) ruleStatusEl.textContent = typeof t === 'function' ? t('common.noFileSelected') : '未选择任何文件';
     modal.classList.remove('hidden');
 }
 
@@ -21709,10 +21766,15 @@ async function previewRuleImport() {
     const step2 = document.getElementById('import-rule-step2');
     const previewDiv = document.getElementById('import-rule-preview');
     const importBtn = document.getElementById('import-rule-btn');
+    const statusEl = document.getElementById('import-rule-file-status');
     
-    if (!fileInput.files || !fileInput.files[0]) return;
+    if (!fileInput.files || !fileInput.files[0]) {
+        if (statusEl) statusEl.textContent = typeof t === 'function' ? t('common.noFileSelected') : '未选择任何文件';
+        return;
+    }
     
     const file = fileInput.files[0];
+    if (statusEl) statusEl.textContent = file.name;
     
     resultBox.classList.remove('hidden', 'success', 'error');
     resultBox.textContent = (typeof t === 'function' ? t('ssh.verifyingPack') : '正在验证配置包...');
@@ -21732,12 +21794,19 @@ async function previewRuleImport() {
         
         if (result.code === 0 && result.data?.valid) {
             const data = result.data;
+            const configIdLbl = typeof t === 'function' ? t('securityPage.configId') : '配置 ID';
+            const typeLbl = typeof t === 'function' ? t('common.type') : '类型';
+            const typeVal = typeof t === 'function' ? t('automation.packTypeRule') : '自动化规则';
+            const signerLbl = typeof t === 'function' ? t('ssh.signer') : '签名者';
+            const officialVal = data.official ? (typeof t === 'function' ? ' (' + t('ssh.official') + ')' : '（官方）') : '';
+            const noteLbl = typeof t === 'function' ? t('securityPage.noteLabel') : '备注';
+            const defaultNote = typeof t === 'function' ? t('ssh.restartToLoad') : '重启后自动加载';
             let html = `
                 <table style="width:100%;font-size:0.9em">
-                    <tr><td style="width:80px;color:#6b7280">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#6b7280">类型:</td><td>自动化规则</td></tr>
-                    <tr><td style="color:#6b7280">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
-                    <tr><td style="color:#6b7280">备注:</td><td style="color:#9ca3af;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
+                    <tr><td style="width:80px;color:#6b7280">${configIdLbl}:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
+                    <tr><td style="color:#6b7280">${typeLbl}:</td><td>${typeVal}</td></tr>
+                    <tr><td style="color:#6b7280">${signerLbl}:</td><td>${escapeHtml(data.signer)}${officialVal}</td></tr>
+                    <tr><td style="color:#6b7280">${noteLbl}:</td><td style="color:#9ca3af;font-size:0.85em">${escapeHtml(data.note || defaultNote)}</td></tr>
                 </table>
             `;
             if (data.exists) {
@@ -21750,7 +21819,7 @@ async function previewRuleImport() {
             importBtn.disabled = false;
         } else {
             resultBox.className = 'result-box error';
-            resultBox.textContent = (result.message || '无法验证配置包');
+            resultBox.textContent = (result.message || (typeof t === 'function' ? t('ssh.cannotVerifyPack') : '无法验证配置包'));
         }
     } catch (e) {
         resultBox.className = 'result-box error';
@@ -21904,15 +21973,19 @@ function showImportActionModal() {
     modal.innerHTML = `
         <div class="modal-content cc-compact" style="max-width:600px">
             <div class="modal-header">
-                <h2>${typeof t === 'function' ? t('automation.importActionTitle') : '导入动作模板'}</h2>
+                <h2 data-i18n="automation.importActionTitle">${typeof t === 'function' ? t('automation.importActionTitle') : '导入动作模板'}</h2>
                 <button class="modal-close" onclick="hideImportActionModal()"><i class="ri-close-line"></i></button>
             </div>
             <div class="modal-body">
-                <p style="color:#6b7280;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.importActionDesc') : '选择 .tscfg 配置包文件以导入动作模板'}</p>
+                <p data-i18n="automation.importActionDesc" style="color:#6b7280;font-size:0.9rem;margin-top:0">${typeof t === 'function' ? t('automation.importActionDesc') : '选择 .tscfg 配置包文件以导入动作模板'}</p>
                 <div id="import-action-step1">
                     <div class="form-group" style="margin-top:15px">
-                        <label>${typeof t === 'function' ? t('ssh.selectFile') : '选择文件'}</label>
-                        <input type="file" id="import-action-file" class="form-control" accept=".tscfg" onchange="previewActionImport()">
+                        <label data-i18n="common.selectFile">${typeof t === 'function' ? t('common.selectFile') : '选择文件'}</label>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            <input type="file" id="import-action-file" accept=".tscfg" onchange="previewActionImport()" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none">
+                            <button type="button" class="btn btn-sm btn-gray" onclick="document.getElementById('import-action-file').click()"><i class="ri-folder-open-line"></i> <span data-i18n="common.selectFile">${typeof t === 'function' ? t('common.selectFile') : '选择文件'}</span></button>
+                            <span id="import-action-file-status" style="color:#6b7280;font-size:0.9em" data-i18n="common.noFileSelected">${typeof t === 'function' ? t('common.noFileSelected') : '未选择任何文件'}</span>
+                        </div>
                     </div>
                 </div>
                 <div id="import-action-step2" style="display:none">
@@ -21928,14 +22001,16 @@ function showImportActionModal() {
                 </div>
                 <div id="import-action-result" class="result-box hidden" style="margin-top:10px"></div>
                 <div class="modal-footer cc-compact-footer" style="margin-top:15px;padding-top:15px;border-top:1px solid #eee">
-                    <button class="btn btn-gray" onclick="hideImportActionModal()">${typeof t === 'function' ? t('common.cancel') : '取消'}</button>
-                    <button class="btn btn-service-style" id="import-action-btn" onclick="confirmActionImport()" disabled><i class="ri-upload-line"></i> ${typeof t === 'function' ? t('ssh.confirmImport') : '确认导入'}</button>
+                    <button class="btn btn-gray" onclick="hideImportActionModal()" data-i18n="common.cancel">${typeof t === 'function' ? t('common.cancel') : '取消'}</button>
+                    <button class="btn btn-service-style" id="import-action-btn" onclick="confirmActionImport()" disabled><i class="ri-upload-line"></i> <span data-i18n="ssh.confirmImport">${typeof t === 'function' ? t('ssh.confirmImport') : '确认导入'}</span></button>
                 </div>
             </div>
         </div>
     `;
     
     window._importActionTscfg = null;
+    const actionStatusEl = document.getElementById('import-action-file-status');
+    if (actionStatusEl) actionStatusEl.textContent = typeof t === 'function' ? t('common.noFileSelected') : '未选择任何文件';
     modal.classList.remove('hidden');
 }
 
@@ -21951,10 +22026,15 @@ async function previewActionImport() {
     const step2 = document.getElementById('import-action-step2');
     const previewDiv = document.getElementById('import-action-preview');
     const importBtn = document.getElementById('import-action-btn');
+    const statusEl = document.getElementById('import-action-file-status');
     
-    if (!fileInput.files || !fileInput.files[0]) return;
+    if (!fileInput.files || !fileInput.files[0]) {
+        if (statusEl) statusEl.textContent = typeof t === 'function' ? t('common.noFileSelected') : '未选择任何文件';
+        return;
+    }
     
     const file = fileInput.files[0];
+    if (statusEl) statusEl.textContent = file.name;
     
     resultBox.classList.remove('hidden', 'success', 'error');
     resultBox.textContent = (typeof t === 'function' ? t('ssh.verifyingPack') : '正在验证配置包...');
@@ -21974,12 +22054,19 @@ async function previewActionImport() {
         
         if (result.code === 0 && result.data?.valid) {
             const data = result.data;
+            const configIdLbl = typeof t === 'function' ? t('securityPage.configId') : 'Config ID';
+            const typeLbl = typeof t === 'function' ? t('common.type') : 'Type';
+            const typeVal = typeof t === 'function' ? t('automation.packTypeAction') : 'Action template';
+            const signerLbl = typeof t === 'function' ? t('ssh.signer') : 'Signer';
+            const officialVal = data.official ? (typeof t === 'function' ? ' (' + t('ssh.official') + ')' : '（官方）') : '';
+            const noteLbl = typeof t === 'function' ? t('securityPage.noteLabel') : 'Note';
+            const defaultNote = typeof t === 'function' ? t('ssh.restartToLoad') : 'Load after restart';
             let html = `
                 <table style="width:100%;font-size:0.9em">
-                    <tr><td style="width:80px;color:#6b7280">配置 ID:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
-                    <tr><td style="color:#6b7280">类型:</td><td>动作模板</td></tr>
-                    <tr><td style="color:#6b7280">签名者:</td><td>${escapeHtml(data.signer)} ${data.official ? '（官方）' : ''}</td></tr>
-                    <tr><td style="color:#6b7280">备注:</td><td style="color:#9ca3af;font-size:0.85em">${escapeHtml(data.note || '重启后自动加载')}</td></tr>
+                    <tr><td style="width:80px;color:#6b7280">${configIdLbl}:</td><td><code>${escapeHtml(data.id)}</code></td></tr>
+                    <tr><td style="color:#6b7280">${typeLbl}:</td><td>${typeVal}</td></tr>
+                    <tr><td style="color:#6b7280">${signerLbl}:</td><td>${escapeHtml(data.signer)}${officialVal}</td></tr>
+                    <tr><td style="color:#6b7280">${noteLbl}:</td><td style="color:#9ca3af;font-size:0.85em">${escapeHtml(data.note || defaultNote)}</td></tr>
                 </table>
             `;
             if (data.exists) {
