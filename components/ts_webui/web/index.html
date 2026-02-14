@@ -282,8 +282,12 @@
         function init() {
             try {
                 var saved = localStorage.getItem('ts_language');
-                if (saved && languages[saved]) currentLang = saved;
-                else currentLang = (navigator.language || '').indexOf('zh') === 0 ? 'zh-CN' : 'en-US';
+                /* 使用 supportedLanguages 校验（languages 在 init 时尚未加载语言包） */
+                if (saved && supportedLanguages[saved]) {
+                    currentLang = saved;
+                } else {
+                    currentLang = (navigator.language || '').indexOf('zh') === 0 ? 'zh-CN' : 'en-US';
+                }
             } catch(e) {}
             document.documentElement.lang = currentLang;
         }
