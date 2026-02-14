@@ -129,9 +129,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初始化认证 UI
     updateAuthUI();
     
-    // 根据设备 system.language 同步 WebUI 语言（与设备终端 help i18n 一致）
+    // 仅当 localStorage 无有效语言偏好时，才从设备 system.language 同步（不覆盖用户已有选择）
     (async function syncLanguageFromDevice() {
         try {
+            const saved = localStorage.getItem('ts_language');
+            if (saved) return; /* 用户已有选择，优先尊重 */
             const r = await api.configGet('system.language');
             if (r && r.code === 0 && r.data && r.data.value !== undefined) {
                 const webLang = r.data.value === 1 ? 'zh-CN' : 'en-US';
