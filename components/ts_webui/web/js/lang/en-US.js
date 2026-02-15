@@ -706,6 +706,7 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('en-US', {
         partitionRunning: 'Running',
         partitionBootable: 'Bootable',
         partitionIdle: 'Idle',
+        markValid: 'Mark Valid',
         disableRollbackDesc: 'Disable auto rollback protection',
         rollbackToThis: 'Rollback to this version',
         loadAfterReboot: 'Load this partition after reboot',

@@ -694,6 +694,7 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('zh-CN', {
         partitionRunning: '运行中',
         partitionBootable: '可启动',
         partitionIdle: '空闲',
+        markValid: '标记有效',
         disableRollbackDesc: '取消自动回滚保护',
         rollbackToThis: '回滚到此版本',
         loadAfterReboot: '重启后加载此分区',
