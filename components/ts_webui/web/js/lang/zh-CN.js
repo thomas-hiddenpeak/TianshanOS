@@ -180,6 +180,7 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('zh-CN', {
         led: 'LED 控制',
         network: '网络',
         files: '文件',
+        terminal: '终端',
         ssh: 'SSH 命令',
         security: '安全',
         ota: 'OTA 升级',
@@ -258,7 +259,7 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('zh-CN', {
         widgetManager: '组件管理',
         
         // 网络和时间
-        networkTime: '网络 & 时间',
+        networkTime: '网络与时间',
         ethernet: '以太网',
         wifi: 'WiFi',
         ipAddress: 'IP 地址',
@@ -3317,6 +3318,7 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('zh-CN', {
         sessionRestored: '会话已恢复，请重试',
         terminalHint: '提示: 输入 <code>help</code> 查看命令 | <code>Ctrl+C</code> 中断 | <code>Ctrl+L</code> 清屏 | <code>↑↓</code> 历史',
         systemLogTitle: '系统日志',
+        systemLogsButton: '系统日志',
         levelLabel: '级别',
         levelAll: '全部',
         clearScreen: '清屏',
