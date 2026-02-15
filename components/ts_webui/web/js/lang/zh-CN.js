@@ -259,7 +259,7 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('zh-CN', {
         widgetManager: '组件管理',
         
         // 网络和时间
-        networkTime: '网络 & 时间',
+        networkTime: '网络与时间',
         ethernet: '以太网',
         wifi: 'WiFi',
         ipAddress: 'IP 地址',

@@ -604,7 +604,7 @@ async function loadSystemPage() {
                     </div>
                 </div>
                 
-                <!-- 网络 & 时间 -->
+                <!-- 网络与时间 -->
                 <div class="card">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
                         <h3 style="margin:0">${t('system.networkTime')}</h3>
