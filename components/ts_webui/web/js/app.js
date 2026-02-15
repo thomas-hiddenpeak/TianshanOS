@@ -13989,9 +13989,9 @@ async function loadTerminalPage() {
         <div class="terminal-page">
             <div class="terminal-header">
                 <div class="terminal-actions">
-                    <button class="btn btn-sm btn-service-style" onclick="console.log('Button clicked!'); window.showTerminalLogsModal();">${t('common.logs')}</button>
-                    <button class="btn btn-sm btn-service-style" onclick="terminalClear()">${t('terminal.clearScreen')}</button>
-                    <button class="btn btn-sm btn-danger" onclick="terminalDisconnect()">${t('terminal.disconnect')}</button>
+                    <button class="btn btn-sm btn-service-style" onclick="console.log('Button clicked!'); window.showTerminalLogsModal();"><i class="ri-file-list-line"></i> ${t('terminal.systemLogsButton')}</button>
+                    <button class="btn btn-sm btn-service-style" onclick="terminalClear()"><i class="ri-delete-bin-line"></i> ${t('terminal.clearScreen')}</button>
+                    <button class="btn btn-sm btn-danger" onclick="terminalDisconnect()"><i class="ri-link-unlink"></i> ${t('terminal.disconnect')}</button>
                 </div>
             </div>
             <div class="terminal-container" id="terminal-container"></div>
