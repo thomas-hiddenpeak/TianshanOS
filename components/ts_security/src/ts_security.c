@@ -166,6 +166,22 @@ esp_err_t ts_security_store_cert(const char *name, ts_cert_type_t type,
     return ret;
 }
 
+/**
+ * @brief 驱逐指定 client_id 的所有会话（释放槽位）
+ * @note 仅内部使用，在 create_session 槽位满时按同用户驱逐
+ */
+static void destroy_sessions_by_client(const char *client_id)
+{
+    if (!client_id || client_id[0] == '\0') return;
+    for (int i = 0; i < MAX_SESSIONS; i++) {
+        if (s_sessions[i].active &&
+            strcmp(s_sessions[i].session.client_id, client_id) == 0) {
+            s_sessions[i].active = false;
+            TS_LOGI(TAG, "Evicted session for client: %s", client_id);
+        }
+    }
+}
+
 esp_err_t ts_security_create_session(const char *client_id, ts_perm_level_t level,
                                       uint32_t *session_id)
 {
@@ -181,8 +197,19 @@ esp_err_t ts_security_create_session(const char *client_id, ts_perm_level_t leve
     }
     
     if (slot < 0) {
-        TS_LOGW(TAG, "No free session slots");
-        return ESP_ERR_NO_MEM;
+        if (client_id && client_id[0] != '\0') {
+            destroy_sessions_by_client(client_id);
+            for (int i = 0; i < MAX_SESSIONS; i++) {
+                if (!s_sessions[i].active) {
+                    slot = i;
+                    break;
+                }
+            }
+        }
+        if (slot < 0) {
+            TS_LOGW(TAG, "No free session slots");
+            return ESP_ERR_NO_MEM;
+        }
     }
     
     // Generate session ID
