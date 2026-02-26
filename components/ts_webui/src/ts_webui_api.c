@@ -305,6 +305,11 @@ static esp_err_t login_handler(ts_http_request_t *req, void *user_data)
     cJSON_AddNumberToObject(data, "session_id", session_id);
     cJSON_AddStringToObject(data, "username", username_copy);
     cJSON_AddStringToObject(data, "level", level_str);
+#ifdef CONFIG_TS_SECURITY_TOKEN_EXPIRE_SEC
+    cJSON_AddNumberToObject(data, "expires_in", CONFIG_TS_SECURITY_TOKEN_EXPIRE_SEC);
+#else
+    cJSON_AddNumberToObject(data, "expires_in", 86400);  /* 24 hours */
+#endif
     cJSON_AddBoolToObject(data, "password_changed", password_changed);
     cJSON_AddItemToObject(response, "data", data);
     

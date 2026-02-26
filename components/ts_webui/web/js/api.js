@@ -222,7 +222,10 @@ class TianShanAPI {
             // 尝试从 localStorage 恢复
             const savedToken = localStorage.getItem('ts_token');
             const expires = localStorage.getItem('ts_expires');
-            if (savedToken && expires && Date.now() < parseInt(expires)) {
+            const parsed = expires ? parseInt(expires) : NaN;
+            const now = Date.now();
+            const valid = savedToken && expires && now < parsed;
+            if (valid) {
                 this.token = savedToken;
                 this.username = localStorage.getItem('ts_username');
                 this.level = localStorage.getItem('ts_level');
@@ -232,7 +235,9 @@ class TianShanAPI {
         }
         // 检查是否过期
         const expires = localStorage.getItem('ts_expires');
-        if (expires && Date.now() >= parseInt(expires)) {
+        const parsed = expires ? parseInt(expires) : NaN;
+        const expired = expires && Date.now() >= parsed;
+        if (expired) {
             this.logout();  // 清理过期的 token
             return false;
         }
