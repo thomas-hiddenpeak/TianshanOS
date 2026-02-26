@@ -370,6 +370,8 @@
             var nameEl = document.getElementById('lang-name');
             if (nameEl) nameEl.textContent = cur === 'zh-CN' ? '中文' : 'EN';
             i18n.translateDOM();
+            /* translateDOM 会覆盖 #user-name 为「未登录」，需在之后恢复已登录状态 */
+            if (typeof updateAuthUI === 'function') setTimeout(updateAuthUI, 0);
         };
         document.head.appendChild(s);
     })();

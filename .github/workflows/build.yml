@@ -24,6 +24,8 @@ jobs:
   build:
     name: Build ESP32-S3 Firmware
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     
     steps:
       - name: Checkout repository
@@ -87,9 +89,9 @@ jobs:
         run: |
           if [ -f build/project_description.json ]; then
             VERSION=$(grep -o '"project_version":[^,]*' build/project_description.json | cut -d'"' -f4)
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "📦 Build version: $VERSION"
           fi
+          echo "version=${VERSION:-0.0.0}" >> $GITHUB_OUTPUT
+          echo "📦 Build version: ${VERSION:-0.0.0}"
 
       - name: Print build size
         run: |
@@ -118,11 +120,11 @@ jobs:
             build/config/sdkconfig.h
           retention-days: 7
 
-  # 可选：发布版本时创建 Release
+  # 编译成功后自动创建 Release：tag 推送 或 main 分支推送
   release:
     name: Create Release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && github.event_name == 'push')
     runs-on: ubuntu-latest
     permissions:
       contents: write  # 创建 Release 需要写权限
@@ -134,9 +136,24 @@ jobs:
           pattern: tianshanos-firmware-*
           path: firmware
 
+      - name: Check if release already exists (main branch)
+        if: github.ref == 'refs/heads/main'
+        id: check
+        run: |
+          TAG="v${{ needs.build.outputs.version }}"
+          if gh release view "$TAG" 2>/dev/null; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "⏭️ Release $TAG already exists, skipping"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/') || (github.ref == 'refs/heads/main' && steps.check.outputs.skip != 'true')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', needs.build.outputs.version) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', needs.build.outputs.version) }}
           files: firmware/**/*.bin
           generate_release_notes: true
         env:

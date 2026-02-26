@@ -194,7 +194,6 @@ document.addEventListener('DOMContentLoaded', () => {
 function updateAuthUI() {
     const loginBtn = document.getElementById('login-btn');
     const userName = document.getElementById('user-name');
-    
     if (api.isLoggedIn()) {
         const username = api.getUsername();
         const level = api.getLevel();
@@ -7673,7 +7672,7 @@ async function loadFilesPage() {
         
         <!-- 重命名对话框 -->
         <div id="rename-modal" class="modal hidden">
-            <div class="modal-content">
+            <div class="modal-content" style="max-width:420px">
                 <h2>${t('files.renameTitle')}</h2>
                 <div class="form-group">
                     <label>${t('files.newName')}</label>
