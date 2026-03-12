@@ -169,6 +169,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 语言切换时重新渲染当前页，使主内容使用新语言；下一帧恢复右上角登录态（避免 translateDOM 覆盖 #user-name）
     window.addEventListener('languageChanged', () => {
+        if (typeof stopSystemPageTimers === 'function') {
+            stopSystemPageTimers();
+        }
         const loader = router.getCurrentLoader();
         if (loader) loader();
         setTimeout(() => updateAuthUI(), 0);
@@ -770,6 +773,39 @@ async function loadSystemPage() {
     
     // 启动设备状态实时监控
     startDeviceStateMonitor();
+    
+    // 初始化设备面板长按拖拽排序
+    const widgetGrid = document.getElementById('data-widgets-grid');
+    if (widgetGrid && typeof initLongPressDragSort === 'function') {
+        const { destroy: destroyWidgetSort } = initLongPressDragSort(widgetGrid, {
+            itemSelector: '.dw-card',
+            idAttribute: 'data-widget-id',
+            holdMs: 3000,
+            onReorder(oldIdx, newIdx) {
+                const [moved] = dataWidgets.splice(oldIdx, 1);
+                dataWidgets.splice(newIdx, 0, moved);
+                saveDataWidgets();
+                renderDataWidgets();
+            }
+        });
+        window._destroyWidgetSort = destroyWidgetSort;
+    }
+    const quickGrid = document.getElementById('quick-actions-grid');
+    if (quickGrid && typeof initLongPressDragSort === 'function') {
+        const { destroy: destroyQuickSort } = initLongPressDragSort(quickGrid, {
+            itemSelector: '.quick-action-card',
+            idAttribute: 'data-rule-id',
+            holdMs: 3000,
+            updateDOM: true,
+            onReorder() {
+                const newOrder = [...quickGrid.querySelectorAll('.quick-action-card')]
+                    .map(el => el.getAttribute('data-rule-id')).filter(Boolean);
+                try { localStorage.setItem('quick_actions_order', JSON.stringify(newOrder)); }
+                catch (e) { /* 静默忽略 */ }
+            }
+        });
+        window._destroyQuickSort = destroyQuickSort;
+    }
 }
 
 // 单次刷新（初始加载）；refreshSystemPage 为别名，供时区/服务操作等调用
@@ -4016,6 +4052,26 @@ async function refreshQuickActions() {
             const allRules = result.data.rules;
             const manualRules = allRules.filter(r => r.enabled && r.manual_trigger);
             
+            // 按 localStorage 保存的顺序排列快捷操作
+            let savedOrder = [];
+            try {
+                const raw = localStorage.getItem('quick_actions_order');
+                if (raw) {
+                    savedOrder = JSON.parse(raw);
+                    if (!Array.isArray(savedOrder)) savedOrder = [];
+                }
+            } catch (e) { savedOrder = []; }
+            if (savedOrder.length > 0) {
+                manualRules.sort((a, b) => {
+                    const ia = savedOrder.indexOf(a.id);
+                    const ib = savedOrder.indexOf(b.id);
+                    if (ia === -1 && ib === -1) return 0;
+                    if (ia === -1) return 1;
+                    if (ib === -1) return -1;
+                    return ia - ib;
+                });
+            }
+            
             if (manualRules.length > 0) {
                 // 串行检查每个规则的 nohup 状态并生成卡片，避免多路 ssh.exec 并发导致后端串行/覆盖、结果错位
                 const cardsHtml = [];
@@ -4193,11 +4249,19 @@ let _quickActionTriggerCooldownUntil = 0;
 let _quickActionLastTriggeredId = '';
 let quickActionsTimeoutId = null;  // 用于导航时取消，避免 quick-actions-grid not found
 
-/** 供 router 在页面切换时取消快捷操作定时器 */
+/** 供 router 在页面切换时取消快捷操作定时器，并销毁拖拽排序（防止 ghost 残留） */
 window.stopSystemPageTimers = function() {
     if (quickActionsTimeoutId) {
         clearTimeout(quickActionsTimeoutId);
         quickActionsTimeoutId = null;
+    }
+    if (typeof window._destroyWidgetSort === 'function') {
+        window._destroyWidgetSort();
+        window._destroyWidgetSort = null;
+    }
+    if (typeof window._destroyQuickSort === 'function') {
+        window._destroyQuickSort();
+        window._destroyQuickSort = null;
     }
 };
 

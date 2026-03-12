@@ -208,6 +208,8 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('en-US', {
         usbSwitchTo: 'Switching USB to {name}...',
         usbSwitchedTo: 'USB switched to {name}',
         noDataWidgetsYet: 'No data widgets added yet',
+        dragPending: 'Keep holding to sort...',
+        dragActive: 'Drag to reorder',
         firmware: 'Firmware',
         version: 'Version',
         idfVersion: 'IDF Version',

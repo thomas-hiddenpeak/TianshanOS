@@ -208,6 +208,8 @@ if (typeof i18n !== 'undefined') i18n.registerLanguage('zh-CN', {
         usbSwitchTo: '切换 USB 到 {name}...',
         usbSwitchedTo: 'USB 已切换到 {name}',
         noDataWidgetsYet: '还没有添加数据组件',
+        dragPending: '继续按住以排序...',
+        dragActive: '拖拽以排序',
         firmware: '固件',
         version: '版本',
         idfVersion: 'IDF 版本',

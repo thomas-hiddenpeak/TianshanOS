@@ -7591,6 +7591,20 @@ button.btn-gray:hover,
     box-shadow: 0 2px 8px var(--blue-100);
 }
 
+/* 长按拖拽排序：等待中、拖拽中、插入位置指示 */
+.drag-pending {
+    outline: 2px solid var(--blue-500) !important;
+    outline-offset: 2px;
+    opacity: 0.8;
+    transition: opacity 3s linear;
+}
+.drag-active-source {
+    opacity: 0.25 !important;
+}
+.drag-over-before {
+    border-top: 2px solid var(--blue-500) !important;
+}
+
 .dw-card-header {
     display: flex;
     justify-content: space-between;
