@@ -1,11 +1,11 @@
 /**
  * 长按拖拽排序工具
- * 用于设备面板的数据组件和快捷操作区域，按住 3 秒后进入拖拽模式
+ * 用于设备面板的数据组件和快捷操作区域，按住 1.5 秒后进入拖拽模式
  */
 (function() {
     'use strict';
 
-    const HOLD_MS = 3000;
+    const HOLD_MS = 1500;
     const MOVE_THRESHOLD = 8;
     const EXCLUDE_SELECTORS = 'button, a, .dw-log-toolbar, .quick-action-nohup-bar';
 
@@ -14,7 +14,7 @@
      * @param {Object} options
      * @param {string} options.itemSelector - 可拖拽子项选择器
      * @param {string} options.idAttribute - ID 属性名
-     * @param {number} [options.holdMs=3000] - 长按阈值(ms)
+     * @param {number} [options.holdMs=1500] - 长按阈值(ms)
      * @param {number} [options.moveThreshold=8] - 取消长按的移动阈值(px)
      * @param {boolean} [options.updateDOM=false] - true 时工具函数在 drop 时移动 DOM
      * @param {function(oldIndex, newIndex)} options.onReorder - 排序完成回调

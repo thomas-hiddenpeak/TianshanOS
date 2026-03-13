@@ -780,7 +780,7 @@ async function loadSystemPage() {
         const { destroy: destroyWidgetSort } = initLongPressDragSort(widgetGrid, {
             itemSelector: '.dw-card',
             idAttribute: 'data-widget-id',
-            holdMs: 3000,
+            holdMs: 1500,
             onReorder(oldIdx, newIdx) {
                 const [moved] = dataWidgets.splice(oldIdx, 1);
                 dataWidgets.splice(newIdx, 0, moved);
@@ -795,7 +795,7 @@ async function loadSystemPage() {
         const { destroy: destroyQuickSort } = initLongPressDragSort(quickGrid, {
             itemSelector: '.quick-action-card',
             idAttribute: 'data-rule-id',
-            holdMs: 3000,
+            holdMs: 1500,
             updateDOM: true,
             onReorder() {
                 const newOrder = [...quickGrid.querySelectorAll('.quick-action-card')]
